@@ -1,0 +1,55 @@
+# Issue tracker: Plane
+
+Issues and specs for this repo live in Plane Cloud, not on GitHub. Use the Plane MCP server for all operations. Its tools take an `action` argument, for example `workitem` with `action: "create"`.
+
+- Workspace slug: `reilley`
+- Project: `selfless`, identifier `SELFLESS`, id `00ca7d3a-c854-4422-b586-9d46503cda0a`
+- Work item URL: `https://app.plane.so/reilley/browse/SELFLESS-<n>/`
+
+Plane calls issues "work items". Tools that take a UUID (`state`, `labels`, `assignees`, `parent`) need the id, not the name. Look ids up with `state list`, `label list` and `member me` first.
+
+## States and the board
+
+The board columns are the project's states. Move a work item by updating its `state`.
+
+| State | Group | Meaning |
+| --- | --- | --- |
+| Backlog | backlog | Open, not ready to start. The default for new work items. |
+| Todo | unstarted | Open and ready to start. |
+| In Progress | started | Claimed and being worked on. |
+| Done | completed | Resolved. |
+| Cancelled | cancelled | Will not be done, or ruled out of scope. |
+
+A work item is **open** while its state group is `backlog`, `unstarted` or `started`, and **closed** once it is `completed` or `cancelled`.
+
+## Conventions
+
+- **Create an issue**: `workitem create` with `project_id`, `name` and `description_html`. Descriptions and comments are HTML, so convert markdown before sending it.
+- **Read an issue**: `workitem retrieve_by_identifier` with `workitem_identifier: "SELFLESS-<n>"`. Read its comments with `workitem_comment list`.
+- **List issues**: `workitem list` with `project_id` and a PQL filter, for example `stateGroup IN openStates() AND label = "<label id>"`. Pass `fields` (such as `id,name,parent,assignees,labels,sequence_id,state`) to keep the result small. Call `get_pql_reference` for the syntax. PQL cannot filter on `parent`, so filter children in code.
+- **Make an issue a sub-issue of a parent**: pass `parent: <parent id>` to `workitem create`, or set it later with `workitem update`.
+- **Blocking**: Plane's native dependencies. `workitem_relation create` with `workitem_id: <blocked id>`, `workitem_ids: [<blocker id>, ...]` and `relation_type: "blocked_by"`. A work item is unblocked when every item in its `blocked_by` list is closed.
+- **Count open blockers**: `workitem_relation list` on the work item returns `dependencies.blocked_by` with each blocker's `state_id`. Count the blockers whose state is in an open group.
+- **Comment on an issue**: `workitem_comment create` with `comment_html`.
+- **Apply / remove labels**: `workitem manage_label` with `add_label_id` or `remove_label_id`. Create a missing label first with `label create`.
+- **Close**: post the explanation with `workitem_comment create`, then `workitem update` with the Done state. Use the Cancelled state instead when the issue will not be done.
+
+## When a skill says "publish to the issue tracker"
+
+Create a work item in the `selfless` project.
+
+## When a skill says "fetch the relevant ticket"
+
+Read it as in **Read an issue** above.
+
+## Wayfinding operations
+
+Used by `/wayfinder`. The **map** is a single work item with **child** work items as tickets.
+
+- **Map**: a work item labelled `wayfinder:map`, holding the Destination / Notes / Decisions so far / Not yet specified / Out of scope body. It stays In Progress while the effort runs and moves to Done when the destination is reached.
+- **Child ticket**: a work item whose `parent` is the map. Labels: `wayfinder:<type>` (`research`/`prototype`/`grilling`/`task`). New tickets start in Backlog. Once claimed, the ticket is assigned to the driving dev and moves to In Progress.
+- **Blocking**: see **Blocking** under Conventions. Create every ticket first, then add the relations in a second pass, because relations need ids.
+- **Frontier query**: list the project's open work items with `fields` including `parent` and `assignees`, keep those whose `parent` is the map, drop any with an assignee, then drop any with an open blocker (see **Count open blockers**). The lowest `sequence_id` wins.
+- **Claim**: `workitem update` with `assignees: [<your member id>]` and the In Progress state, as the session's first write. Get the member id from `member me`.
+- **Resolve**: post the answer with `workitem_comment create`, move the ticket to Done, then append a context pointer (gist + link) to the map's Decisions so far with `workitem update` on the map's `description_html`.
+- **Out of scope**: move the ticket to Cancelled and add one line to the map's Out of scope section.
