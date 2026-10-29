@@ -1,3 +1,4 @@
+mod admins;
 pub mod components;
 pub mod local_time;
 
@@ -7,6 +8,7 @@ use application::attributes::SELFLESS_ADMIN_TARGET_ID;
 use components::button::ButtonSize;
 use components::button::ButtonVariant;
 use components::button::button;
+use components::dropdown_menu::ITEM;
 use components::dropdown_menu::dropdown_menu;
 use components::dropdown_menu::dropdown_menu_content;
 use components::dropdown_menu::dropdown_menu_item;
@@ -62,6 +64,8 @@ use uuid::Uuid;
 
 const HOME_PATH: &str = "/admin";
 const SYNC_PATH: &str = "/admin/sync";
+const ADMINS_PATH: &str = "/admin/admins";
+const ACCOUNT_PASSWORD_PATH: &str = "/admin/account/password";
 const SIGN_IN_PATH: &str = "/admin/sign-in";
 const SIGN_OUT_PATH: &str = "/admin/sign-out";
 const SESSION_COOKIE: &str = "session";
@@ -69,7 +73,7 @@ const CSRF_COOKIE: &str = "csrf";
 const CSRF_HEADER: &str = "x-csrf-token";
 const SIDEBAR_ID: &str = "sidebar";
 const ACCOUNT_MENU_ID: &str = "account-menu";
-const SECTIONS: [(&str, &str); 1] = [(SYNC_PATH, "Sync status")];
+const SECTIONS: [(&str, &str); 2] = [(SYNC_PATH, "Sync status"), (ADMINS_PATH, "Admins")];
 const STYLES: Asset = asset!("../dist/styles.css");
 const HTMX: Asset = asset!(
     "https://cdn.jsdelivr.net/npm/htmx.org@2.0.11/dist/htmx.min.js",
@@ -80,7 +84,7 @@ const HTMX_CONFIG: &str =
     r#"{"includeIndicatorStyles":false,"allowEval":false,"allowScriptTags":false}"#;
 
 pub fn register(router: RouterBuilder, assets: AssetBundle) -> RouterBuilder {
-    router
+    admins::register(router)
         .route(home)
         .page(sync)
         .page(sign_in_form)
@@ -291,6 +295,7 @@ async fn admin_page(
                                 id: ACCOUNT_MENU_ID,
                                 side: FloatingSide::Top,
                                 align: FloatingAlign::Start,
+                                <a href=(ACCOUNT_PASSWORD_PATH) class=(ITEM)>"Change my password"</a>
                                 <form method="post" action=(SIGN_OUT_PATH)>
                                     csrf_field()
                                     dropdown_menu_item(attrs: attributes! { type="submit" }, "Sign out")

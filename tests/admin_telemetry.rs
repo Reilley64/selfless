@@ -90,3 +90,96 @@ async fn a_failed_admin_sign_in_logs_a_warning_without_the_name() {
     drop(server);
     database.drop().await;
 }
+
+#[tokio::test]
+async fn admin_and_account_actions_log_the_action_and_target_without_names_or_passwords() {
+    let exporter = InMemoryLogExporter::default();
+    let provider = SdkLoggerProvider::builder()
+        .with_simple_exporter(exporter.clone())
+        .build();
+    let _tracing = tracing::subscriber::set_default(
+        tracing_subscriber::registry()
+            .with(LevelFilter::INFO)
+            .with(OpenTelemetryTracingBridge::new(&provider)),
+    );
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+    let maya = database.admin_id(ADMIN_NAME).await;
+    let mut browser = server.browser();
+    browser.sign_in(ADMIN_NAME, ADMIN_PASSWORD).await;
+    let csrf = browser.get("/admin/admins").await.csrf_token();
+
+    browser
+        .post_form(
+            "/admin/admins",
+            &[
+                ("csrf", &csrf),
+                ("name", "Ravi"),
+                ("password", "ravi's password"),
+            ],
+        )
+        .await;
+    let ravi = database.admin_id("Ravi").await;
+    browser
+        .post_form(
+            &format!("/admin/admins/{ravi}/password"),
+            &[("csrf", &csrf), ("password", "ravi's new password")],
+        )
+        .await;
+    browser
+        .post_form(&format!("/admin/admins/{ravi}/delete"), &[("csrf", &csrf)])
+        .await;
+    browser
+        .post_form(
+            "/admin/account/password",
+            &[
+                ("csrf", &csrf),
+                ("current_password", ADMIN_PASSWORD),
+                ("new_password", "maya's new password"),
+            ],
+        )
+        .await;
+
+    let logs = exporter.get_emitted_logs().unwrap();
+    let actions = logs
+        .iter()
+        .filter(|x| x.record.body() == Some(&AnyValue::from("admin action")))
+        .map(|x| {
+            let attribute = |key: &str| {
+                x.record
+                    .attributes_iter()
+                    .find(|(name, _)| name.as_str() == key)
+                    .and_then(|(_, value)| match value {
+                        AnyValue::String(value) => Some(value.as_str().to_owned()),
+                        _ => None,
+                    })
+                    .unwrap_or_default()
+            };
+            let attributes = format!("{:?}", x.record.attributes_iter().collect::<Vec<_>>());
+            for secret in [
+                "Ravi",
+                ADMIN_NAME,
+                ADMIN_PASSWORD,
+                "ravi's password",
+                "ravi's new password",
+                "maya's new password",
+            ] {
+                assert!(!attributes.contains(secret), "{attributes}");
+            }
+            (
+                attribute("selfless.admin.action"),
+                attribute("selfless.admin.target.id"),
+            )
+        })
+        .collect::<Vec<_>>();
+    let expected = [
+        ("admin.create", ravi),
+        ("admin.set_password", ravi),
+        ("admin.delete", ravi),
+        ("account.change_password", maya),
+    ]
+    .map(|(action, target)| (action.to_owned(), target.to_string()));
+    assert_eq!(actions, expected);
+    drop(server);
+    database.drop().await;
+}

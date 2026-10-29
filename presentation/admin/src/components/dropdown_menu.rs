@@ -148,7 +148,7 @@ pub async fn dropdown_menu_content(
 }
 
 /// Classes for a menu item and its interaction states.
-const ITEM: StaticClass = class!(
+pub const ITEM: StaticClass = class!(
     "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm",
     "whitespace-nowrap outline-none hover:bg-foreground/5 focus-visible:bg-foreground/5",
     "active:bg-foreground/10 disabled:pointer-events-none disabled:opacity-50",

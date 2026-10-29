@@ -15,6 +15,7 @@ dependencies = [
  "application",
  "infrastructure",
  "jiff",
+ "ohno",
  "serde",
  "topcoat",
  "tracing",
