@@ -1,4 +1,5 @@
 use api::Availability;
+use application::BuildInfo;
 use application::DbContext;
 use infrastructure::AppState;
 use infrastructure::persistence;
@@ -23,6 +24,13 @@ pub async fn start(settings: AppSettings) -> Result<Server, AppError> {
     let db = persistence::connect(&settings.database).await?;
     persistence::migrate(&db).await?;
     let state = AppState::builder()
+        .build_info(|_| BuildInfo {
+            name: env!("CARGO_PKG_NAME"),
+            version: env!("CARGO_PKG_VERSION"),
+            git_branch: env!("GIT_BRANCH"),
+            git_commit_id: env!("GIT_COMMIT"),
+            git_commit_time: env!("GIT_COMMIT_TIME"),
+        })
         .db_context(|_| DbContext::new(db.clone()))
         .build();
     let availability = Availability::default();

@@ -70,9 +70,22 @@ paths:
               schema:
                 $ref: "#/components/schemas/ReadinessHealth"
               example: {"status":"OUT_OF_SERVICE","components":{"db":{"status":"UP"},"readinessState":{"status":"OUT_OF_SERVICE"}}}
+  /actuator/info/v1:
+    get:
+      operationId: getInfo
+      summary: Build and git information of the running server
+      tags: [actuator]
+      responses:
+        "200":
+          description: The build and git information.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Info"
+              example: {"build":{"name":"selfless","version":"0.1.0"},"git":{"branch":"main","commit":{"id":"56ad9034","time":"2026-10-29T06:12:00Z"}}}
 tags:
   - name: actuator
-    description: Health endpoints in the shape of Spring Boot Actuator.
+    description: Health and info endpoints in the shape of Spring Boot Actuator.
 components:
   schemas:
     HealthStatus:
@@ -139,5 +152,51 @@ components:
               $ref: "#/components/schemas/HealthComponent"
             readinessState:
               $ref: "#/components/schemas/HealthComponent"
+          additionalProperties: false
+      additionalProperties: false
+    Info:
+      description: Build and git information in the shape of Spring Boot Actuator's info endpoint, with git in simple mode.
+      type: object
+      required: [build, git]
+      properties:
+        build:
+          description: The server build.
+          type: object
+          required: [name, version]
+          properties:
+            name:
+              description: The name of the root crate.
+              type: string
+              examples: [selfless]
+            version:
+              description: The version of the root crate.
+              type: string
+              examples: [0.1.0]
+          additionalProperties: false
+        git:
+          description: The git commit the server was built from.
+          type: object
+          required: [branch, commit]
+          properties:
+            branch:
+              description: The branch the server was built from.
+              type: string
+              examples: [main]
+            commit:
+              description: The commit the server was built from.
+              type: object
+              required: [id, time]
+              properties:
+                id:
+                  description: The first 8 characters of the commit hash, as in the image tag.
+                  type: string
+                  pattern: "^[0-9a-f]{8}$"
+                  examples: [56ad9034]
+                time:
+                  description: The commit time in UTC.
+                  type: string
+                  format: date-time
+                  examples: ["2026-10-29T06:12:00Z"]
+              additionalProperties: false
           additionalProperties: false
       additionalProperties: false

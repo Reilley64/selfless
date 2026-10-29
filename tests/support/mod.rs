@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use jsonschema::Registry;
 use reqwest::StatusCode;
 use serde_json::Value;

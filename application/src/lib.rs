@@ -1,6 +1,15 @@
 pub mod check_database;
 
 #[derive(Clone)]
+pub struct BuildInfo {
+    pub name: &'static str,
+    pub version: &'static str,
+    pub git_branch: &'static str,
+    pub git_commit_id: &'static str,
+    pub git_commit_time: &'static str,
+}
+
+#[derive(Clone)]
 pub struct DbContext {
     db: toasty::Db,
 }

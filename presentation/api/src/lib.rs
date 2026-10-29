@@ -32,5 +32,6 @@ pub fn router(state: AppState, availability: Availability) -> Router {
         .route(actuator::health)
         .route(actuator::liveness)
         .route(actuator::readiness)
+        .route(actuator::info)
         .build()
 }
