@@ -9,3 +9,4 @@ publish.workspace = true
 config = { workspace = true }
 persistence = { workspace = true }
 serde = { workspace = true }
+telemetry = { workspace = true }

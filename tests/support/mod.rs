@@ -2,11 +2,13 @@
 
 use jsonschema::Registry;
 use reqwest::StatusCode;
+use reqwest::header::CONTENT_TYPE;
 use serde_json::Value;
 use serde_json::json;
 use settings::AppSettings;
 use settings::DatabaseSettings;
 use settings::HttpSettings;
+use settings::OtlpSettings;
 use settings::WebSettings;
 use std::net::SocketAddr;
 use std::sync::atomic::AtomicU64;
@@ -22,6 +24,7 @@ use url::Url;
 
 const OPENAPI: &str = include_str!("../../openapi.yaml");
 const OPENAPI_URI: &str = "urn:selfless:openapi";
+const PROTOBUF: &str = "application/x-protobuf";
 
 pub struct TestDatabase {
     url: Url,
@@ -78,12 +81,28 @@ pub struct TestServer {
 
 impl TestServer {
     pub async fn start(database_url: Url) -> Self {
+        Self::start_with_otlp(database_url, OtlpSettings::default()).await
+    }
+
+    pub async fn start_with_collector(database_url: Url, collector_url: &str) -> Self {
+        Self::start_with_otlp(
+            database_url,
+            OtlpSettings {
+                endpoint: Some(collector_url.to_owned()),
+                ..OtlpSettings::default()
+            },
+        )
+        .await
+    }
+
+    async fn start_with_otlp(database_url: Url, otlp: OtlpSettings) -> Self {
         let server = selfless::start(AppSettings {
             http: HttpSettings { port: 0 },
             database: DatabaseSettings {
                 url: database_url.to_string(),
             },
             web: WebSettings::default(),
+            otlp,
         })
         .await
         .unwrap();
@@ -117,6 +136,38 @@ impl TestServer {
         let status = response.status();
         let body = response.json::<Value>().await.unwrap();
         assert_matches_openapi(path, status, &body);
+        (status, body)
+    }
+
+    pub async fn post_protobuf(&self, path: &str, body: Vec<u8>) -> (StatusCode, Vec<u8>) {
+        let response = reqwest::Client::new()
+            .post(format!("http://{}{path}", self.address))
+            .header(CONTENT_TYPE, PROTOBUF)
+            .body(body)
+            .send()
+            .await
+            .unwrap();
+        let status = response.status();
+        let content_type = response.headers().get(CONTENT_TYPE).cloned();
+        let body = response.bytes().await.unwrap().to_vec();
+        let openapi: Value = serde_saphyr::from_str(OPENAPI).unwrap();
+        let operation = format!("/paths/{}/post", path.replace('~', "~0").replace('/', "~1"));
+        for pointer in [
+            format!("{operation}/requestBody/content/application~1x-protobuf"),
+            format!(
+                "{operation}/responses/{}/content/application~1x-protobuf",
+                status.as_u16()
+            ),
+        ] {
+            assert!(
+                openapi.pointer(&pointer).is_some(),
+                "openapi.yaml has nothing at {pointer}"
+            );
+        }
+        assert_eq!(
+            content_type.as_ref().and_then(|x| x.to_str().ok()),
+            Some(PROTOBUF)
+        );
         (status, body)
     }
 }

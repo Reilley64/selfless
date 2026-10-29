@@ -1,4 +1,6 @@
 pub mod check_database;
+pub mod ports;
+pub mod relay_telemetry;
 
 pub mod attributes {
     include!(concat!(env!("OUT_DIR"), "/attributes.rs"));

@@ -4,6 +4,7 @@ use application::DbContext;
 use application::DbServer;
 use infrastructure::AppState;
 use infrastructure::persistence;
+use infrastructure::telemetry;
 use ohno::AppError;
 use settings::AppSettings;
 use std::future::Future;
@@ -40,6 +41,7 @@ pub async fn start(settings: AppSettings) -> Result<Server, AppError> {
             git_commit_time: env!("GIT_COMMIT_TIME"),
         })
         .db_context(|_| DbContext::new(db.clone(), server.clone()))
+        .export_telemetry_try(|_| telemetry::export_telemetry(&settings.otlp))?
         .build();
     let availability = Availability::default();
     let router = api::router(

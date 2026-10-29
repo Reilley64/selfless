@@ -1,5 +1,6 @@
 mod actuator;
 mod http_server;
+mod telemetry;
 mod web;
 
 use infrastructure::AppState;
@@ -37,6 +38,9 @@ pub fn router(state: AppState, availability: Availability, web_dir: PathBuf) -> 
         .route(actuator::liveness)
         .route(actuator::readiness)
         .route(actuator::info)
+        .route(telemetry::traces)
+        .route(telemetry::metrics)
+        .route(telemetry::logs)
         .route(web::index)
         .public_dir(web_dir)
         .layer(http_server::HttpServerLayer::new())

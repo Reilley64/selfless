@@ -1,5 +1,6 @@
 use application::BuildInfo;
 use application::DbContext;
+use application::ports::ExportTelemetry;
 
 pub use persistence;
 pub use telemetry;
@@ -9,4 +10,5 @@ pub use telemetry;
 pub struct AppState {
     pub build_info: BuildInfo,
     pub db_context: DbContext,
+    pub export_telemetry: ExportTelemetry,
 }

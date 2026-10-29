@@ -83,10 +83,101 @@ paths:
               schema:
                 $ref: "#/components/schemas/Info"
               example: {"build":{"name":"selfless","version":"0.1.0"},"git":{"branch":"main","commit":{"id":"56ad9034","time":"2026-10-29T06:12:00Z"}}}
+  /api/telemetry/traces/v1:
+    post:
+      operationId: relayTraces
+      summary: Relay OTLP traces from an app to the server's collector
+      description: Takes OTLP/HTTP protobuf traces and forwards them to the server's own OTLP endpoint over gRPC. It checks no token yet.
+      tags: [telemetry]
+      requestBody:
+        description: The traces the app exports.
+        required: true
+        content:
+          application/x-protobuf:
+            schema:
+              description: A protobuf-encoded opentelemetry.proto.collector.trace.v1.ExportTraceServiceRequest.
+              type: string
+              contentMediaType: application/x-protobuf
+      responses:
+        "200":
+          description: The collector accepted the traces.
+          content:
+            application/x-protobuf:
+              schema:
+                description: The collector's protobuf-encoded opentelemetry.proto.collector.trace.v1.ExportTraceServiceResponse.
+                type: string
+                contentMediaType: application/x-protobuf
+        "400":
+          $ref: "#/components/responses/MalformedTelemetry"
+        "502":
+          $ref: "#/components/responses/CollectorFailed"
+  /api/telemetry/metrics/v1:
+    post:
+      operationId: relayMetrics
+      summary: Relay OTLP metrics from an app to the server's collector
+      description: Takes OTLP/HTTP protobuf metrics and forwards them to the server's own OTLP endpoint over gRPC. It checks no token yet.
+      tags: [telemetry]
+      requestBody:
+        description: The metrics the app exports.
+        required: true
+        content:
+          application/x-protobuf:
+            schema:
+              description: A protobuf-encoded opentelemetry.proto.collector.metrics.v1.ExportMetricsServiceRequest.
+              type: string
+              contentMediaType: application/x-protobuf
+      responses:
+        "200":
+          description: The collector accepted the metrics.
+          content:
+            application/x-protobuf:
+              schema:
+                description: The collector's protobuf-encoded opentelemetry.proto.collector.metrics.v1.ExportMetricsServiceResponse.
+                type: string
+                contentMediaType: application/x-protobuf
+        "400":
+          $ref: "#/components/responses/MalformedTelemetry"
+        "502":
+          $ref: "#/components/responses/CollectorFailed"
+  /api/telemetry/logs/v1:
+    post:
+      operationId: relayLogs
+      summary: Relay OTLP logs from an app to the server's collector
+      description: Takes OTLP/HTTP protobuf logs and forwards them to the server's own OTLP endpoint over gRPC. It checks no token yet.
+      tags: [telemetry]
+      requestBody:
+        description: The logs the app exports.
+        required: true
+        content:
+          application/x-protobuf:
+            schema:
+              description: A protobuf-encoded opentelemetry.proto.collector.logs.v1.ExportLogsServiceRequest.
+              type: string
+              contentMediaType: application/x-protobuf
+      responses:
+        "200":
+          description: The collector accepted the logs.
+          content:
+            application/x-protobuf:
+              schema:
+                description: The collector's protobuf-encoded opentelemetry.proto.collector.logs.v1.ExportLogsServiceResponse.
+                type: string
+                contentMediaType: application/x-protobuf
+        "400":
+          $ref: "#/components/responses/MalformedTelemetry"
+        "502":
+          $ref: "#/components/responses/CollectorFailed"
 tags:
   - name: actuator
     description: Health and info endpoints in the shape of Spring Boot Actuator.
+  - name: telemetry
+    description: The relay that forwards OTLP from the web and TV apps to the server's collector.
 components:
+  responses:
+    MalformedTelemetry:
+      description: The body is not a valid OTLP protobuf request for this signal.
+    CollectorFailed:
+      description: The collector did not accept the request. The app may retry.
   schemas:
     HealthStatus:
       description: The status of a health group or component, as in Spring Boot Actuator.
