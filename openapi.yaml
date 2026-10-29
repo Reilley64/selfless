@@ -111,6 +111,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/SignedIn"
               example: {"token":"q2Xz8kQ0mJ3Hc1yF5bR7tVw9nL4pA6sD0eG2iK8uO1M","user":{"id":"01890a5d-ac96-774b-bcce-b302099a8057","name":"Noor","colour":"amber","symbol":"ring"}}
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/WrongNameOrPassword"
   /api/sessions/current/v1:
@@ -155,6 +157,8 @@ paths:
       responses:
         "204":
           description: The password has changed, and the user's other sessions have ended.
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
@@ -184,6 +188,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/User"
               example: {"id":"01890a5d-ac96-774b-bcce-b302099a8057","name":"Noor","colour":"amber","symbol":"ring"}
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "404":
           $ref: "#/components/responses/InviteNotFound"
         "409":
@@ -302,6 +308,19 @@ components:
       description: The body is not a valid OTLP protobuf request for this signal.
     CollectorFailed:
       description: The collector did not accept the request. The app may retry.
+    BadRequest:
+      description: The body is not JSON, or it lacks a field or has one of the wrong type. Nothing changes.
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Problem"
+              - properties:
+                  type:
+                    const: urn:selfless:problem:bad-request
+                  status:
+                    const: 400
+          example: {"type":"urn:selfless:problem:bad-request","title":"The request body is not valid.","status":400}
     Unauthenticated:
       description: The request has no Authorization header with a Bearer token, or the token is unknown or its session has ended.
       content:

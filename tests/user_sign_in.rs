@@ -6,6 +6,7 @@ use jiff::SignedDuration;
 use reqwest::Method;
 use reqwest::StatusCode;
 use serde_json::Value;
+use serde_json::json;
 use sha2::Digest;
 use sha2::Sha256;
 use support::ADMIN_NAME;
@@ -327,5 +328,26 @@ async fn the_actuator_endpoints_and_the_web_app_stay_public() {
     assert_eq!(script, StatusCode::OK);
     drop(server);
     std::fs::remove_dir_all(web_dir).unwrap();
+    database.drop().await;
+}
+
+#[tokio::test]
+async fn a_sign_in_body_without_a_field_or_with_an_unknown_client_kind_returns_a_bad_request_problem()
+ {
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+
+    for body in [
+        json!({ "name": NAME, "password": PASSWORD, "deviceName": "Living Room" }),
+        json!({ "name": NAME, "password": PASSWORD, "clientKind": "toaster", "deviceName": "Kitchen" }),
+    ] {
+        let (status, problem) = server
+            .request(Method::POST, "/api/sessions/v1", None, Some(body))
+            .await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(problem["type"], "urn:selfless:problem:bad-request");
+    }
+    drop(server);
     database.drop().await;
 }

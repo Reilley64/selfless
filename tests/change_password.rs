@@ -118,3 +118,24 @@ async fn an_empty_new_password_is_rejected_and_changes_nothing() {
     drop(server);
     database.drop().await;
 }
+
+#[tokio::test]
+async fn a_password_change_without_the_current_password_returns_a_bad_request_problem() {
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+    let token = server.signed_in_user().await;
+
+    let (status, problem) = server
+        .request(
+            Method::PUT,
+            "/api/me/password/v1",
+            Some(&token),
+            Some(json!({ "newPassword": "a longer passphrase about coffee" })),
+        )
+        .await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(problem["type"], "urn:selfless:problem:bad-request");
+    drop(server);
+    database.drop().await;
+}

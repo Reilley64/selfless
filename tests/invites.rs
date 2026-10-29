@@ -440,3 +440,24 @@ async fn a_cancelled_invite_is_no_longer_pending_and_its_link_stops_working() {
     drop(server);
     database.drop().await;
 }
+
+#[tokio::test]
+async fn accepting_without_a_password_returns_a_bad_request_problem() {
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+    invite(&server, &database, EMAIL).await.unwrap();
+
+    let (status, problem) = server
+        .request(
+            Method::POST,
+            "/api/invites/accept/v1",
+            None,
+            Some(json!({ "token": token_from_last_email(&server), "name": NAME })),
+        )
+        .await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(problem["type"], "urn:selfless:problem:bad-request");
+    drop(server);
+    database.drop().await;
+}

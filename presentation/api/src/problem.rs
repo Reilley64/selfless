@@ -1,6 +1,12 @@
 use serde_json::json;
 use topcoat::context::Cx;
+use topcoat::router::Body;
+use topcoat::router::Layer;
+use topcoat::router::LayerFuture;
+use topcoat::router::Next;
+use topcoat::router::Path;
 use topcoat::router::StatusCode;
+use topcoat::router::error::BadRequestError;
 use topcoat::router::header::CONTENT_TYPE;
 use topcoat::router::response::IntoResponse;
 use topcoat::router::response::Response;
@@ -10,6 +16,12 @@ pub(crate) struct Problem {
     title: &'static str,
     status: StatusCode,
 }
+
+pub(crate) const BAD_REQUEST: Problem = Problem {
+    problem_type: "urn:selfless:problem:bad-request",
+    title: "The request body is not valid.",
+    status: StatusCode::BAD_REQUEST,
+};
 
 pub(crate) const WRONG_NAME_OR_PASSWORD: Problem = Problem {
     problem_type: "urn:selfless:problem:wrong-name-or-password",
@@ -60,5 +72,24 @@ impl IntoResponse for Problem {
             .to_string(),
         )
             .into_response(cx)
+    }
+}
+
+pub(crate) struct BadRequestProblemLayer(pub(crate) &'static str);
+
+impl Layer for BadRequestProblemLayer {
+    fn path(&self) -> Option<&Path> {
+        Some(Path::new(self.0))
+    }
+
+    fn handle<'a>(&'a self, cx: &'a Cx, body: Body, next: Next<'a>) -> LayerFuture<'a> {
+        Box::pin(async move {
+            match next.run(cx, body).await {
+                Err(error) if error.downcast_ref::<BadRequestError>().is_some() => {
+                    BAD_REQUEST.into_response(cx)
+                }
+                result => result,
+            }
+        })
     }
 }
