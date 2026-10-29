@@ -260,7 +260,7 @@ test("signing in again as a user on the picker replaces their entry and ends the
   expect(sentHeaders(fetch, `${serverUrl}/api/sessions/current/v1`).get("Authorization")).toBe(`Bearer ${token}`);
 });
 
-test("signing in again ends the old session before signing in", async () => {
+test("signing in again ends the old session after the new sign-in succeeds", async () => {
   mockServer();
   const session = await connectedTv();
   await session.signIn("Noor", "correct horse", "Living Room");
@@ -270,8 +270,8 @@ test("signing in again ends the old session before signing in", async () => {
   await session.signIn("Noor", "correct horse", "Living Room");
 
   expect(fetch.mock.calls.map(([input, init]) => `${init?.method ?? "GET"} ${input}`)).toEqual([
-    `DELETE ${serverUrl}/api/sessions/current/v1`,
     `POST ${serverUrl}/api/sessions/v1`,
+    `DELETE ${serverUrl}/api/sessions/current/v1`,
   ]);
 });
 
@@ -291,22 +291,24 @@ test.each([
 
     await expect(session.signIn("Noor", "correct horse", "Living Room")).rejects.toThrow();
 
-    expect(fetch.mock.calls.some(([input]) => input === `${serverUrl}/api/sessions/v1`)).toBe(false);
     expect(startTvSession(storage, "appleTv").state().users).toEqual([{ token, ...user }]);
   },
 );
 
-test("when signing in again fails after the old session ended, the user stays on the picker, dimmed", async () => {
+test("a wrong password when signing in again leaves the old entry and its session alone", async () => {
   mockServer();
   const storage = fakeStorage();
   const session = await connectedTv(storage);
   await session.signIn("Noor", "correct horse", "Living Room");
+  session.switchUser();
+  const fetch = mockServer();
+  fetch.mockClear();
 
   const response = await session.signIn("Noor", "wrong", "Living Room");
 
   expect(response.status).toBe(401);
-  expect(session.state().currentUserId).toBeUndefined();
-  expect(startTvSession(storage, "appleTv").state().users).toEqual([{ token, ...user, dimmed: true }]);
+  expect(fetch.mock.calls.some(([, init]) => init?.method === "DELETE")).toBe(false);
+  expect(startTvSession(storage, "appleTv").state().users).toEqual([{ token, ...user }]);
 });
 
 test("removing a user ends their session and takes them off the picker", async () => {
