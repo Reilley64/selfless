@@ -12,7 +12,7 @@ const accents: Record<string, string> = {
 
 const params = new URLSearchParams(location.search);
 const apply = (key: string) => {
-  document.documentElement.style.setProperty("--color-accent", accents[key] ?? accents.amber);
+  document.documentElement.style.setProperty("--color-accent", accents[key] ?? accents.red);
   chips.querySelectorAll("button").forEach((b) => b.toggleAttribute("data-on", b.dataset.key === key));
 };
 
@@ -34,4 +34,4 @@ const style = document.createElement("style");
 style.textContent = "[data-on]{outline-color:#111 !important}";
 document.head.append(style);
 document.body.append(chips);
-apply(params.get("accent") ?? "amber");
+apply(params.get("accent") ?? "red");

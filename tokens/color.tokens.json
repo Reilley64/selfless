@@ -56,13 +56,13 @@
       "$value": {
         "colorSpace": "srgb",
         "components": [
-          0.851,
-          0.4667,
-          0.0235
+          0.8627,
+          0.149,
+          0.149
         ],
-        "hex": "#d97706"
+        "hex": "#dc2626"
       },
-      "$description": "Brand amber: progress, current item, kicker."
+      "$description": "Brand red: progress, current item, kicker."
     },
     "text": {
       "primary": {
