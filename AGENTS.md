@@ -12,4 +12,4 @@ The five default triage labels. See `docs/agents/triage-labels.md`.
 
 ### Domain docs
 
-Single-context: one `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+Single-context: one `GLOSSARY.md` at the repo root. ADRs are Plane pages under Architecture decisions. See `docs/agents/domain.md`.
