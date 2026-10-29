@@ -38,6 +38,10 @@ pub mod metrics {
     include!(concat!(env!("OUT_DIR"), "/metrics.rs"));
 }
 
+pub mod spans {
+    include!(concat!(env!("OUT_DIR"), "/spans.rs"));
+}
+
 use async_trait::async_trait;
 use opentelemetry::KeyValue;
 use opentelemetry::global;

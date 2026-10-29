@@ -1,3 +1,11 @@
 {% for attribute in ctx.attributes %}
 pub const {{ attribute.name | screaming_snake_case }}: &str = "{{ attribute.name }}";
+{% if attribute.type.members is defined %}
+
+pub mod {{ attribute.name | snake_case }} {
+{% for member in attribute.type.members %}
+    pub const {{ member.id | screaming_snake_case }}: &str = "{{ member.value }}";
+{% endfor %}
+}
+{% endif %}
 {% endfor %}
