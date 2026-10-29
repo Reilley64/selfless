@@ -3,6 +3,8 @@ use serde::Deserialize;
 use std::time::Duration;
 use url::Url;
 
+const POOL_TIMEOUT: Duration = Duration::from_secs(5);
+
 #[derive(Clone, Deserialize)]
 pub struct DatabaseSettings {
     pub url: Url,
@@ -32,8 +34,8 @@ pub async fn connect(settings: &DatabaseSettings) -> Result<toasty::Db, ConnectE
     let driver = toasty_driver_postgresql::PostgreSQL::new(settings.url.as_str())?;
     Ok(toasty::Db::builder()
         .models(application::models())
-        .pool_create_timeout(Some(Duration::from_secs(1)))
-        .pool_wait_timeout(Some(Duration::from_secs(1)))
+        .pool_create_timeout(Some(POOL_TIMEOUT))
+        .pool_wait_timeout(Some(POOL_TIMEOUT))
         .build(driver)
         .await?)
 }
