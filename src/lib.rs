@@ -1,5 +1,6 @@
 use api::Availability;
 use application::DbContext;
+use application::DbServer;
 use infrastructure::AppState;
 use infrastructure::persistence;
 use ohno::AppError;
@@ -10,6 +11,7 @@ use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::net::TcpListener;
 use topcoat::router::Router;
+use url::Url;
 
 const DRAIN_PERIOD: Duration = Duration::from_secs(5);
 
@@ -22,8 +24,14 @@ pub struct Server {
 pub async fn start(settings: AppSettings) -> Result<Server, AppError> {
     let db = persistence::connect(&settings.database).await?;
     persistence::migrate(&db).await?;
+    let database_url = Url::parse(&settings.database.url)?;
+    let server = DbServer {
+        database: database_url.path().trim_start_matches('/').to_owned(),
+        address: database_url.host_str().unwrap_or_default().to_owned(),
+        port: database_url.port().unwrap_or(5432),
+    };
     let state = AppState::builder()
-        .db_context(|_| DbContext::new(db.clone()))
+        .db_context(|_| DbContext::new(db.clone(), server.clone()))
         .build();
     let availability = Availability::default();
     let router = api::router(state, availability.clone());

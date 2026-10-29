@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use jsonschema::Registry;
 use reqwest::StatusCode;
 use serde_json::Value;
@@ -95,6 +97,19 @@ impl TestServer {
 
     pub async fn get(&self, path: &str) -> (StatusCode, Value) {
         let response = reqwest::get(format!("http://{}{path}", self.address))
+            .await
+            .unwrap();
+        let status = response.status();
+        let body = response.json::<Value>().await.unwrap();
+        assert_matches_openapi(path, status, &body);
+        (status, body)
+    }
+
+    pub async fn get_with_traceparent(&self, path: &str, traceparent: &str) -> (StatusCode, Value) {
+        let response = reqwest::Client::new()
+            .get(format!("http://{}{path}", self.address))
+            .header("traceparent", traceparent)
+            .send()
             .await
             .unwrap();
         let status = response.status();

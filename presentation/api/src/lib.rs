@@ -1,4 +1,5 @@
 mod actuator;
+mod http_server;
 
 use infrastructure::AppState;
 use std::sync::Arc;
@@ -32,5 +33,6 @@ pub fn router(state: AppState, availability: Availability) -> Router {
         .route(actuator::health)
         .route(actuator::liveness)
         .route(actuator::readiness)
+        .layer(http_server::HttpServerLayer::new())
         .build()
 }
