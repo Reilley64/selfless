@@ -4,6 +4,13 @@ const expoConfig = require("eslint-config-expo/flat");
 module.exports = defineConfig([
   expoConfig,
   {
-    ignores: ["target/", "**/dist/", "**/.expo/", "presentation/api-client/src/generated/"],
+    ignores: [
+      "target/",
+      "**/dist/",
+      "**/.expo/",
+      "presentation/api-client/src/generated/",
+      "presentation/tv/android/",
+      "presentation/tv/ios/",
+    ],
   },
 ]);

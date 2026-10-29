@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "selfless",
+    "slug": "selfless-tv",
+    "version": "0.0.0",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "orientation": "landscape",
+    "scheme": "selfless",
+    "ios": {
+      "bundleIdentifier": "dev.reilley.selfless"
+    },
+    "android": {
+      "package": "dev.reilley.selfless"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "@react-native-tvos/config-tv",
+        {
+          "androidTVRequired": true
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
+    ]
+  }
+}
