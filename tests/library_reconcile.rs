@@ -283,6 +283,26 @@ async fn a_failed_listing_call_removes_nothing() {
 }
 
 #[tokio::test]
+async fn a_failed_metadata_call_removes_nothing_but_still_adds_movies() {
+    let fixture = Fixture::start(&[42, 43], &[]).await;
+    fixture.reconciled(Source::Radarr).await;
+
+    fixture.arrs.radarr_lists(&[42, 44]).await;
+    fixture.arrs.radarr.fail_metadata().await;
+    let status = fixture.sync_now(Source::Radarr).await;
+
+    assert_eq!(
+        status.last_reconcile.unwrap().result,
+        ReconcileResult::Failed
+    );
+    assert_eq!(
+        fixture.movie_titles().await,
+        ["Arrival", "Blade Runner 2049", "Dune"]
+    );
+    fixture.stop().await;
+}
+
+#[tokio::test]
 async fn a_failed_episodes_call_removes_no_show_until_every_call_succeeds() {
     let fixture = Fixture::start(&[], &[SEVERANCE, ANDOR]).await;
     fixture.reconciled(Source::Sonarr).await;

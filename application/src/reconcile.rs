@@ -114,9 +114,10 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
         Source::Radarr => {
             async {
                 let kodi_metadata = check_radarr_kodi_metadata.call().await;
-                record_kodi_metadata(&source_health, source, kodi_metadata);
+                let failed_calls = record_kodi_metadata(&source_health, source, kodi_metadata);
                 reconcile_movies(
                     &mut db_context,
+                    failed_calls,
                     &inspector,
                     &list_radarr_movies,
                     &read_movie_folder,
@@ -132,9 +133,10 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
         Source::Sonarr => {
             async {
                 let kodi_metadata = check_sonarr_kodi_metadata.call().await;
-                record_kodi_metadata(&source_health, source, kodi_metadata);
+                let failed_calls = record_kodi_metadata(&source_health, source, kodi_metadata);
                 reconcile_shows(
                     &mut db_context,
+                    failed_calls,
                     &inspector,
                     &list_sonarr_series,
                     &get_sonarr_episodes,
@@ -203,19 +205,26 @@ fn record_kodi_metadata(
     source_health: &SourceHealth,
     source: Source,
     kodi_metadata: Result<bool, impl std::error::Error + 'static>,
-) {
+) -> usize {
     match source_health.api_call(source, kodi_metadata) {
-        Ok(enabled) => source_health.source(source).lock().unwrap().kodi_metadata = Some(enabled),
-        Err(error) => tracing::warn!(
-            error = &error as &dyn std::error::Error,
-            selfless.library.source = source.name(),
-            "failed to read the metadata settings"
-        ),
+        Ok(enabled) => {
+            source_health.source(source).lock().unwrap().kodi_metadata = Some(enabled);
+            0
+        }
+        Err(error) => {
+            tracing::warn!(
+                error = &error as &dyn std::error::Error,
+                selfless.library.source = source.name(),
+                "failed to read the metadata settings"
+            );
+            1
+        }
     }
 }
 
 async fn reconcile_movies(
     db_context: &mut DbContext,
+    failed_calls: usize,
     inspector: &Inspector,
     list_radarr_movies: &ListRadarrMovies,
     read_movie_folder: &ReadMovieFolder,
@@ -272,6 +281,11 @@ async fn reconcile_movies(
         imported(progress);
     }
     resolve_failed_rows(db_context, Source::Radarr, &synced).await?;
+    if failed_calls > 0 {
+        return Err(Error::caused_by(format!(
+            "{failed_calls} calls to Radarr failed, so nothing was removed"
+        )));
+    }
     let movies = Movie::all()
         .exec(db_context.executor_mut())
         .await
@@ -287,6 +301,7 @@ async fn reconcile_movies(
 
 async fn reconcile_shows(
     db_context: &mut DbContext,
+    mut failed_calls: usize,
     inspector: &Inspector,
     list_sonarr_series: &ListSonarrSeries,
     get_sonarr_episodes: &GetSonarrEpisodes,
@@ -299,7 +314,6 @@ async fn reconcile_shows(
         .map_err(Error::caused_by)?;
     let listed = series.iter().map(|x| x.tvdb_id).collect::<HashSet<_>>();
     set_total(progress, series.len());
-    let mut failed_calls = 0;
     let mut synced = HashSet::new();
     for series in series {
         let span = sync_show::span();

@@ -574,6 +574,16 @@ impl StubRadarr {
             .await;
     }
 
+    pub async fn fail_metadata(&self) {
+        Mock::given(method("GET"))
+            .and(path("/api/v3/metadata"))
+            .respond_with(ResponseTemplate::new(
+                StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
+            ))
+            .mount(&self.0)
+            .await;
+    }
+
     pub async fn serve_movies(&self, status: StatusCode, body: &str) {
         self.0.reset().await;
         Mock::given(method("GET"))
@@ -583,6 +593,9 @@ impl StubRadarr {
                 ResponseTemplate::new(status.as_u16())
                     .set_body_raw(body.to_owned(), "application/json"),
             )
+            .mount(&self.0)
+            .await;
+        default_metadata(RADARR_API_KEY, &fixture("radarr/api/metadata.json"))
             .mount(&self.0)
             .await;
     }
@@ -633,6 +646,9 @@ impl StubSonarr {
     pub async fn serve_series_list(&self, series: &str) {
         self.0.reset().await;
         self.mount("/api/v3/series", None, StatusCode::OK, series)
+            .await;
+        default_metadata(SONARR_API_KEY, &fixture("sonarr/api/metadata.json"))
+            .mount(&self.0)
             .await;
     }
 
@@ -697,6 +713,17 @@ impl StubSonarr {
         .mount(&self.0)
         .await;
     }
+}
+
+fn default_metadata(api_key: &str, body: &str) -> Mock {
+    Mock::given(method("GET"))
+        .and(path("/api/v3/metadata"))
+        .and(header("X-Api-Key", api_key))
+        .respond_with(
+            ResponseTemplate::new(StatusCode::OK.as_u16())
+                .set_body_raw(body.to_owned(), "application/json"),
+        )
+        .with_priority(10)
 }
 
 pub struct MediaFolder(TempDir);
