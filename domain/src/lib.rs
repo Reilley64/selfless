@@ -1,16 +1,19 @@
 use jiff::Timestamp;
+use jiff::civil::Date;
 use uuid::Uuid;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, toasty::Embed)]
 #[column(type = text)]
 pub enum Source {
     Radarr,
+    Sonarr,
 }
 
 impl Source {
     pub fn name(self) -> &'static str {
         match self {
             Source::Radarr => "radarr",
+            Source::Sonarr => "sonarr",
         }
     }
 }
@@ -20,6 +23,7 @@ impl Source {
 pub enum InboxRowStatus {
     Pending,
     Processing,
+    Processed,
     Ignored,
     Failed,
 }
@@ -44,4 +48,69 @@ pub struct SourceState {
     pub source: Source,
     pub last_webhook_at: Option<Timestamp>,
     pub rejected_webhooks: i64,
+}
+
+#[derive(Debug, toasty::Model)]
+pub struct Show {
+    #[key]
+    #[auto]
+    pub id: Uuid,
+    #[unique]
+    pub tvdb_id: i64,
+    #[unique]
+    pub sonarr_id: i64,
+    pub title: String,
+    pub year: Option<i64>,
+    pub genres: Vec<String>,
+    pub overview: Option<String>,
+    #[has_many]
+    pub seasons: toasty::Deferred<Vec<Season>>,
+}
+
+#[derive(Debug, toasty::Model)]
+pub struct Season {
+    #[key]
+    #[auto]
+    pub id: Uuid,
+    #[index]
+    pub show_id: Uuid,
+    #[belongs_to(key = show_id, references = id)]
+    pub show: toasty::Deferred<Show>,
+    pub number: i64,
+    #[has_many]
+    pub episodes: toasty::Deferred<Vec<Episode>>,
+}
+
+#[derive(Debug, toasty::Model)]
+pub struct Episode {
+    #[key]
+    #[auto]
+    pub id: Uuid,
+    #[index]
+    pub season_id: Uuid,
+    #[belongs_to(key = season_id, references = id)]
+    pub season: toasty::Deferred<Season>,
+    #[unique]
+    pub tvdb_id: i64,
+    pub number: i64,
+    pub title: String,
+    pub air_date: Option<Date>,
+    pub overview: Option<String>,
+    pub added_at: Option<Timestamp>,
+    #[index]
+    pub media_file_id: Option<Uuid>,
+    #[belongs_to(key = media_file_id, references = id)]
+    pub media_file: toasty::Deferred<Option<MediaFile>>,
+    pub visible: bool,
+}
+
+#[derive(Debug, toasty::Model)]
+pub struct MediaFile {
+    #[key]
+    #[auto]
+    pub id: Uuid,
+    #[unique]
+    pub path: String,
+    #[has_many]
+    pub episodes: toasty::Deferred<Vec<Episode>>,
 }

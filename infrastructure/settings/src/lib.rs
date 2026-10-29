@@ -6,6 +6,7 @@ use std::path::PathBuf;
 
 pub use persistence::DatabaseSettings;
 pub use radarr::RadarrSettings;
+pub use sonarr::SonarrSettings;
 pub use telemetry::OtlpSettings;
 
 #[derive(Clone, Deserialize)]
@@ -19,6 +20,8 @@ pub struct AppSettings {
     pub otlp: OtlpSettings,
     #[serde(default)]
     pub radarr: RadarrSettings,
+    #[serde(default)]
+    pub sonarr: SonarrSettings,
 }
 
 impl AppSettings {

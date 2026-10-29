@@ -14,6 +14,7 @@ pub struct Error;
 
 pub struct SyncStatus {
     pub radarr: SourceStatus,
+    pub sonarr: SourceStatus,
 }
 
 #[derive(Default)]
@@ -24,7 +25,14 @@ pub struct SourceStatus {
 
 pub async fn call(dependencies: impl Into<Dependencies>) -> Result<SyncStatus, Error> {
     let mut db_context = dependencies.into().db_context;
-    let radarr = SourceState::filter_by_source(Source::Radarr)
+    Ok(SyncStatus {
+        radarr: source_status(&mut db_context, Source::Radarr).await?,
+        sonarr: source_status(&mut db_context, Source::Sonarr).await?,
+    })
+}
+
+async fn source_status(db_context: &mut DbContext, source: Source) -> Result<SourceStatus, Error> {
+    Ok(SourceState::filter_by_source(source)
         .first()
         .exec(db_context.executor_mut())
         .await
@@ -33,6 +41,5 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<SyncStatus, E
             last_webhook_at: x.last_webhook_at,
             rejected_webhooks: x.rejected_webhooks,
         })
-        .unwrap_or_default();
-    Ok(SyncStatus { radarr })
+        .unwrap_or_default())
 }

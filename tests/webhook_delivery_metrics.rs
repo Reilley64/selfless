@@ -8,7 +8,10 @@ use opentelemetry_sdk::metrics::data::AggregatedMetrics;
 use opentelemetry_sdk::metrics::data::MetricData;
 use reqwest::Method;
 use reqwest::StatusCode;
+use support::MediaFolder;
 use support::RADARR_WEBHOOK_PASSWORD;
+use support::SONARR_WEBHOOK_PASSWORD;
+use support::StubSonarr;
 use support::TestDatabase;
 use support::TestServer;
 use support::eventually;
@@ -24,14 +27,16 @@ const IGNORED_EVENTS: [(&str, &str); 6] = [
 ];
 
 #[tokio::test]
-async fn radarr_deliveries_are_counted_as_stored_rejected_and_ignored_by_event_type() {
+async fn deliveries_are_counted_as_stored_rejected_processed_and_ignored_by_source_and_event_type()
+{
     let exporter = InMemoryMetricExporter::default();
     let provider = SdkMeterProvider::builder()
         .with_periodic_exporter(exporter.clone())
         .build();
     global::set_meter_provider(provider.clone());
     let database = TestDatabase::create().await;
-    let server = TestServer::start(database.url()).await;
+    let sonarr = StubSonarr::start().await;
+    let server = TestServer::start_with_sonarr(database.url(), &sonarr).await;
 
     for (_, name) in IGNORED_EVENTS {
         let status = server
@@ -51,8 +56,27 @@ async fn radarr_deliveries_are_counted_as_stored_rejected_and_ignored_by_event_t
         )
         .await;
     assert_eq!(rejected, StatusCode::UNAUTHORIZED);
+    let media = MediaFolder::new();
+    sonarr
+        .serve_series(
+            7,
+            &media.sonarr_fixture("sonarr/api/series.json"),
+            &media.sonarr_fixture("sonarr/api/episodes.json"),
+            &media.sonarr_fixture("sonarr/api/episode-files.json"),
+        )
+        .await;
+    for (_, name) in IGNORED_EVENTS.iter().chain([&("Download", "download")]) {
+        let status = server
+            .send_sonarr_webhook(
+                Method::POST,
+                Some(("sonarr", SONARR_WEBHOOK_PASSWORD)),
+                &fixture(&format!("sonarr/webhooks/{name}.json")),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK);
+    }
 
-    let count = |outcome: &'static str, event_type: Option<&'static str>| {
+    let count = |source: &'static str, outcome: &'static str, event_type: Option<&'static str>| {
         provider.force_flush().unwrap();
         exporter
             .get_finished_metrics()
@@ -68,7 +92,7 @@ async fn radarr_deliveries_are_counted_as_stored_rejected_and_ignored_by_event_t
                         let mut attributes = x.attributes().cloned().collect::<Vec<_>>();
                         attributes.sort_by(|a, b| a.key.cmp(&b.key));
                         let mut expected = vec![
-                            KeyValue::new("selfless.webhook.source", "radarr"),
+                            KeyValue::new("selfless.webhook.source", source),
                             KeyValue::new("selfless.webhook.outcome", outcome),
                         ];
                         expected.extend(
@@ -82,11 +106,22 @@ async fn radarr_deliveries_are_counted_as_stored_rejected_and_ignored_by_event_t
             })
             .last()
     };
-    for (event_type, _) in IGNORED_EVENTS {
-        eventually(async || (count("ignored", Some(event_type)) == Some(1)).then_some(())).await;
-        assert_eq!(count("stored", Some(event_type)), Some(1), "{event_type}");
+    for source in ["radarr", "sonarr"] {
+        for (event_type, _) in IGNORED_EVENTS {
+            eventually(async || {
+                (count(source, "ignored", Some(event_type)) == Some(1)).then_some(())
+            })
+            .await;
+            assert_eq!(
+                count(source, "stored", Some(event_type)),
+                Some(1),
+                "{source} {event_type}"
+            );
+        }
     }
-    assert_eq!(count("rejected", None), Some(1));
+    eventually(async || (count("sonarr", "processed", Some("Download")) == Some(1)).then_some(()))
+        .await;
+    assert_eq!(count("radarr", "rejected", None), Some(1));
     drop(server);
     database.drop().await;
 }

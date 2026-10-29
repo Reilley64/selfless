@@ -17,12 +17,17 @@ use topcoat::router::response::Response;
 use topcoat::router::route;
 
 pub fn register(router: RouterBuilder) -> RouterBuilder {
-    router.route(radarr)
+    router.route(radarr).route(sonarr)
 }
 
 #[route([POST, PUT] "/webhooks/radarr/v1")]
 async fn radarr(cx: &Cx, body: Bytes) -> topcoat::Result<Response> {
     store(cx, Source::Radarr, body).await
+}
+
+#[route([POST, PUT] "/webhooks/sonarr/v1")]
+async fn sonarr(cx: &Cx, body: Bytes) -> topcoat::Result<Response> {
+    store(cx, Source::Sonarr, body).await
 }
 
 async fn store(cx: &Cx, source: Source, body: Bytes) -> topcoat::Result<Response> {

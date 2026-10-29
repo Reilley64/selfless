@@ -1,8 +1,11 @@
 use crate::DbContext;
+use crate::ports::GetSonarrShow;
+use crate::sync_show;
 use crate::unsampled;
 use crate::webhook_deliveries;
 use domain::InboxRow;
 use domain::InboxRowStatus;
+use domain::Source;
 use opentelemetry::propagation::TextMapPropagator;
 use opentelemetry::trace::TraceContextExt;
 use opentelemetry_sdk::propagation::TraceContextPropagator;
@@ -17,6 +20,7 @@ use uuid::Uuid;
 #[fundle::deps]
 pub struct Dependencies {
     pub db_context: DbContext,
+    pub get_sonarr_show: GetSonarrShow,
 }
 
 #[ohno::error]
@@ -36,8 +40,44 @@ enum RadarrEvent {
     Other,
 }
 
+#[derive(Deserialize)]
+#[serde(tag = "eventType")]
+enum SonarrEvent {
+    Download {
+        series: SonarrSeries,
+    },
+    Rename {
+        series: SonarrSeries,
+    },
+    SeriesAdd {
+        series: SonarrSeries,
+    },
+    SeriesDelete {
+        series: SonarrSeries,
+    },
+    EpisodeFileDelete {
+        series: SonarrSeries,
+    },
+    Test,
+    Grab,
+    Health,
+    HealthRestored,
+    ApplicationUpdate,
+    ManualInteractionRequired,
+    #[serde(other)]
+    Other,
+}
+
+#[derive(Deserialize)]
+struct SonarrSeries {
+    id: i64,
+}
+
 pub async fn call(dependencies: impl Into<Dependencies>) -> Result<bool, Error> {
-    let mut db_context = dependencies.into().db_context;
+    let Dependencies {
+        mut db_context,
+        get_sonarr_show,
+    } = dependencies.into();
     let Some(claimed) = toasty::sql::query(
         "UPDATE inbox_rows SET status = 'processing' WHERE id = (\
          SELECT id FROM inbox_rows WHERE status = 'pending' \
@@ -83,24 +123,19 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<bool, Error> 
         );
         span.record("selfless.webhook.source", row.source.name());
         span.record("selfless.webhook.event_type", row.event_type.as_deref());
-        let (status, outcome) = match serde_json::from_slice::<RadarrEvent>(&row.body) {
-            Ok(
-                RadarrEvent::Test
-                | RadarrEvent::Grab
-                | RadarrEvent::Health
-                | RadarrEvent::HealthRestored
-                | RadarrEvent::ApplicationUpdate
-                | RadarrEvent::ManualInteractionRequired
-                | RadarrEvent::Other,
-            ) => (InboxRowStatus::Ignored, "ignored"),
-            Err(error) => {
+        let sync_show = sync_show::Dependencies {
+            db_context: db_context.clone(),
+            get_sonarr_show,
+        };
+        let (status, outcome) = dispatch(row.source, &row.body, sync_show)
+            .await
+            .unwrap_or_else(|error| {
                 tracing::warn!(
-                    error = &error as &dyn std::error::Error,
-                    "failed to read a webhook delivery"
+                    error = &*error as &dyn std::error::Error,
+                    "failed to process a webhook delivery"
                 );
                 (InboxRowStatus::Failed, "failed")
-            }
-        };
+            });
         span.record("selfless.webhook.outcome", outcome);
         let (source, event_type) = (row.source, row.event_type.clone());
         row.update()
@@ -113,4 +148,40 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<bool, Error> 
     }
     .instrument(span)
     .await
+}
+
+async fn dispatch(
+    source: Source,
+    body: &[u8],
+    sync_show: sync_show::Dependencies,
+) -> Result<(InboxRowStatus, &'static str), Box<dyn std::error::Error + Send + Sync>> {
+    let ignored = (InboxRowStatus::Ignored, "ignored");
+    match source {
+        Source::Radarr => match serde_json::from_slice(body)? {
+            RadarrEvent::Test
+            | RadarrEvent::Grab
+            | RadarrEvent::Health
+            | RadarrEvent::HealthRestored
+            | RadarrEvent::ApplicationUpdate
+            | RadarrEvent::ManualInteractionRequired
+            | RadarrEvent::Other => Ok(ignored),
+        },
+        Source::Sonarr => match serde_json::from_slice(body)? {
+            SonarrEvent::Download { series }
+            | SonarrEvent::Rename { series }
+            | SonarrEvent::SeriesAdd { series }
+            | SonarrEvent::SeriesDelete { series }
+            | SonarrEvent::EpisodeFileDelete { series } => {
+                sync_show::call(sync_show, series.id).await?;
+                Ok((InboxRowStatus::Processed, "processed"))
+            }
+            SonarrEvent::Test
+            | SonarrEvent::Grab
+            | SonarrEvent::Health
+            | SonarrEvent::HealthRestored
+            | SonarrEvent::ApplicationUpdate
+            | SonarrEvent::ManualInteractionRequired
+            | SonarrEvent::Other => Ok(ignored),
+        },
+    }
 }

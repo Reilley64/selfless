@@ -28,7 +28,9 @@ pub struct Server {
 pub async fn start(settings: AppSettings, clock: Clock) -> Result<Server, AppError> {
     let webhook_passwords = WebhookPasswords {
         radarr: settings.radarr.webhook_password()?,
+        sonarr: settings.sonarr.webhook_password()?,
     };
+    let get_sonarr_show = settings.sonarr.get_show()?;
     let db = persistence::connect(&settings.database).await?;
     persistence::migrate(&db).await?;
     let state = AppState::builder()
@@ -42,6 +44,7 @@ pub async fn start(settings: AppSettings, clock: Clock) -> Result<Server, AppErr
         .clock(|_| clock.clone())
         .db_context(|_| DbContext::new(db.clone(), settings.database.location()))
         .export_telemetry_try(|_| telemetry::export_telemetry(&settings.otlp))?
+        .get_sonarr_show(|_| get_sonarr_show.clone())
         .inbox_wakeup(|_| InboxWakeup::default())
         .webhook_passwords(|_| webhook_passwords.clone())
         .build();

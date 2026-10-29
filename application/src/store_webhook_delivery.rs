@@ -51,6 +51,7 @@ pub async fn call(
     } = dependencies.into();
     let expected_password = match source {
         Source::Radarr => webhook_passwords.radarr,
+        Source::Sonarr => webhook_passwords.sonarr,
     };
     if password != Some(expected_password) {
         toasty::sql::statement(

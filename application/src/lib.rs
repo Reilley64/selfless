@@ -1,9 +1,13 @@
 pub mod check_database;
+pub mod list_episodes;
+pub mod list_seasons;
+pub mod list_shows;
 pub mod ports;
 pub mod process_inbox_row;
 pub mod relay_telemetry;
 pub mod release_inbox_rows;
 pub mod store_webhook_delivery;
+pub mod sync_show;
 pub mod sync_status;
 mod unsampled;
 mod webhook_deliveries;
@@ -57,6 +61,7 @@ pub struct BuildInfo {
 #[derive(Clone)]
 pub struct WebhookPasswords {
     pub radarr: String,
+    pub sonarr: String,
 }
 
 #[derive(Clone, Default)]
@@ -82,12 +87,14 @@ impl DbContext {
         Self {
             executor: InstrumentedDb {
                 db,
-                location,
-                duration: global::meter("selfless")
-                    .f64_histogram("db.client.operation.duration")
-                    .with_unit("s")
-                    .with_boundaries(vec![0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 10.0])
-                    .build(),
+                instruments: DbInstruments {
+                    location,
+                    duration: global::meter("selfless")
+                        .f64_histogram("db.client.operation.duration")
+                        .with_unit("s")
+                        .with_boundaries(vec![0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 10.0])
+                        .build(),
+                },
             },
         }
     }
@@ -95,13 +102,61 @@ impl DbContext {
     pub fn executor_mut(&mut self) -> &mut dyn toasty::Executor {
         &mut self.executor
     }
+
+    pub async fn transaction(&mut self) -> toasty::Result<DbTransaction<'_>> {
+        Ok(DbTransaction {
+            transaction: self.executor.db.transaction().await?,
+            instruments: &self.executor.instruments,
+        })
+    }
+}
+
+pub struct DbTransaction<'a> {
+    transaction: toasty::Transaction<'a>,
+    instruments: &'a DbInstruments,
+}
+
+impl DbTransaction<'_> {
+    pub fn executor_mut(&mut self) -> &mut dyn toasty::Executor {
+        self
+    }
+
+    pub async fn commit(self) -> toasty::Result<()> {
+        self.transaction.commit().await
+    }
+}
+
+#[async_trait]
+impl toasty::Executor for DbTransaction<'_> {
+    async fn transaction(&mut self) -> toasty::Result<toasty::Transaction<'_>> {
+        self.transaction.transaction().await
+    }
+
+    async fn exec_untyped(&mut self, stmt: Statement) -> toasty::Result<ExecResponse> {
+        self.instruments
+            .exec_untyped(&mut self.transaction, stmt)
+            .await
+    }
+
+    async fn exec_raw_sql(&mut self, raw: RawSql) -> toasty::Result<ExecResponse> {
+        self.instruments
+            .exec_raw_sql(&mut self.transaction, raw)
+            .await
+    }
+
+    fn capability(&mut self) -> &Capability {
+        toasty::Executor::capability(&mut self.transaction)
+    }
+
+    fn schema(&mut self) -> &Arc<Schema> {
+        toasty::Executor::schema(&mut self.transaction)
+    }
 }
 
 #[derive(Clone)]
 struct InstrumentedDb {
     db: toasty::Db,
-    location: DbLocation,
-    duration: Histogram<f64>,
+    instruments: DbInstruments,
 }
 
 #[async_trait]
@@ -111,6 +166,34 @@ impl toasty::Executor for InstrumentedDb {
     }
 
     async fn exec_untyped(&mut self, stmt: Statement) -> toasty::Result<ExecResponse> {
+        self.instruments.exec_untyped(&mut self.db, stmt).await
+    }
+
+    async fn exec_raw_sql(&mut self, raw: RawSql) -> toasty::Result<ExecResponse> {
+        self.instruments.exec_raw_sql(&mut self.db, raw).await
+    }
+
+    fn capability(&mut self) -> &Capability {
+        self.db.capability()
+    }
+
+    fn schema(&mut self) -> &Arc<Schema> {
+        self.db.schema()
+    }
+}
+
+#[derive(Clone)]
+struct DbInstruments {
+    location: DbLocation,
+    duration: Histogram<f64>,
+}
+
+impl DbInstruments {
+    async fn exec_untyped(
+        &self,
+        executor: &mut dyn toasty::Executor,
+        stmt: Statement,
+    ) -> toasty::Result<ExecResponse> {
         let (operation, model) = match &stmt {
             Statement::Query(x) => (
                 "SELECT",
@@ -135,36 +218,32 @@ impl toasty::Executor for InstrumentedDb {
             ),
             Statement::Delete(x) => ("DELETE", x.from.as_model().map(|x| x.id)),
         };
-        let collection = model.map(|x| self.db.schema().table_for(x).name.clone());
-        self.instrument(Some(operation), collection, None, async |db| {
-            db.exec_untyped(stmt).await
-        })
+        let collection = model.map(|x| executor.schema().table_for(x).name.clone());
+        self.instrument(
+            Some(operation),
+            collection,
+            None,
+            executor.exec_untyped(stmt),
+        )
         .await
     }
 
-    async fn exec_raw_sql(&mut self, raw: RawSql) -> toasty::Result<ExecResponse> {
-        self.instrument(None, None, Some(raw.sql.clone()), async |db| {
-            db.exec_raw_sql(raw).await
-        })
-        .await
+    async fn exec_raw_sql(
+        &self,
+        executor: &mut dyn toasty::Executor,
+        raw: RawSql,
+    ) -> toasty::Result<ExecResponse> {
+        let query_text = raw.sql.clone();
+        self.instrument(None, None, Some(query_text), executor.exec_raw_sql(raw))
+            .await
     }
 
-    fn capability(&mut self) -> &Capability {
-        self.db.capability()
-    }
-
-    fn schema(&mut self) -> &Arc<Schema> {
-        self.db.schema()
-    }
-}
-
-impl InstrumentedDb {
     async fn instrument(
-        &mut self,
+        &self,
         operation: Option<&'static str>,
         collection: Option<String>,
         query_text: Option<String>,
-        execute: impl AsyncFnOnce(&mut toasty::Db) -> toasty::Result<ExecResponse>,
+        execute: impl Future<Output = toasty::Result<ExecResponse>>,
     ) -> toasty::Result<ExecResponse> {
         let start = Instant::now();
         let target = collection.as_deref().unwrap_or(&self.location.database);
@@ -182,7 +261,7 @@ impl InstrumentedDb {
             server.port = self.location.port,
             error.type = field::Empty,
         );
-        let result = execute(&mut self.db).instrument(span.clone()).await;
+        let result = execute.instrument(span.clone()).await;
         let mut attributes = vec![
             KeyValue::new("db.system.name", "postgresql"),
             KeyValue::new("db.namespace", self.location.database.clone()),

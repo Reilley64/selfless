@@ -16,6 +16,7 @@ use settings::DatabaseSettings;
 use settings::HttpSettings;
 use settings::OtlpSettings;
 use settings::RadarrSettings;
+use settings::SonarrSettings;
 use settings::WebSettings;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -24,6 +25,7 @@ use std::sync::Mutex;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 use std::time::SystemTime;
+use tempfile::TempDir;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
 use tokio::task::JoinHandle;
@@ -31,12 +33,22 @@ use tokio::task::JoinSet;
 use tokio_postgres::NoTls;
 use tokio_util::sync::CancellationToken;
 use url::Url;
+use wiremock::Mock;
+use wiremock::MockServer;
+use wiremock::ResponseTemplate;
+use wiremock::matchers::header;
+use wiremock::matchers::method;
+use wiremock::matchers::path;
+use wiremock::matchers::query_param;
 
 static OPENAPI: LazyLock<Value> =
     LazyLock::new(|| serde_saphyr::from_str(include_str!("../../openapi.yaml")).unwrap());
 const OPENAPI_URI: &str = "urn:selfless:openapi";
 const PROTOBUF: &str = "application/x-protobuf";
 pub const RADARR_WEBHOOK_PASSWORD: &str = "radarr webhook password";
+pub const SONARR_WEBHOOK_PASSWORD: &str = "sonarr webhook password";
+pub const SONARR_API_KEY: &str = "sonarr api key";
+const MEDIA_ROOT: &str = "/mnt/media";
 
 pub struct TestDatabase {
     url: Url,
@@ -102,6 +114,11 @@ pub fn settings(database_url: Url) -> AppSettings {
         radarr: RadarrSettings {
             webhook_password: Some(RADARR_WEBHOOK_PASSWORD.to_owned()),
         },
+        sonarr: SonarrSettings {
+            url: Some("http://127.0.0.1:1".parse().unwrap()),
+            api_key: Some(SONARR_API_KEY.to_owned()),
+            webhook_password: Some(SONARR_WEBHOOK_PASSWORD.to_owned()),
+        },
     }
 }
 
@@ -128,6 +145,12 @@ impl FakeClock {
 impl TestServer {
     pub async fn start(database_url: Url) -> Self {
         Self::start_with(settings(database_url), FakeClock::new()).await
+    }
+
+    pub async fn start_with_sonarr(database_url: Url, sonarr: &StubSonarr) -> Self {
+        let mut settings = settings(database_url);
+        settings.sonarr.url = Some(sonarr.url());
+        Self::start_with(settings, FakeClock::new()).await
     }
 
     pub async fn start_with_collector(database_url: Url, collector_url: &str) -> Self {
@@ -215,6 +238,16 @@ impl TestServer {
         body: &str,
     ) -> StatusCode {
         self.send_webhook(method, "/webhooks/radarr/v1", credentials, body)
+            .await
+    }
+
+    pub async fn send_sonarr_webhook(
+        &self,
+        method: Method,
+        credentials: Option<(&str, &str)>,
+        body: &str,
+    ) -> StatusCode {
+        self.send_webhook(method, "/webhooks/sonarr/v1", credentials, body)
             .await
     }
 
@@ -345,5 +378,85 @@ impl Proxy {
 
     pub fn stop(&self) {
         self.task.abort();
+    }
+}
+
+pub struct StubSonarr(MockServer);
+
+impl StubSonarr {
+    pub async fn start() -> Self {
+        Self(MockServer::start().await)
+    }
+
+    pub fn url(&self) -> Url {
+        self.0.uri().parse().unwrap()
+    }
+
+    pub async fn serve_series(&self, id: i64, series: &str, episodes: &str, episode_files: &str) {
+        self.0.reset().await;
+        self.mount(
+            &format!("/api/v3/series/{id}"),
+            None,
+            StatusCode::OK,
+            series,
+        )
+        .await;
+        self.mount("/api/v3/episode", Some(id), StatusCode::OK, episodes)
+            .await;
+        self.mount(
+            "/api/v3/episodefile",
+            Some(id),
+            StatusCode::OK,
+            episode_files,
+        )
+        .await;
+    }
+
+    pub async fn forget_series(&self, id: i64) {
+        self.0.reset().await;
+        self.mount(
+            &format!("/api/v3/series/{id}"),
+            None,
+            StatusCode::NOT_FOUND,
+            &fixture("sonarr/api/series-not-found.json"),
+        )
+        .await;
+    }
+
+    async fn mount(&self, url_path: &str, series_id: Option<i64>, status: StatusCode, body: &str) {
+        let mut mock = Mock::given(method("GET"))
+            .and(path(url_path))
+            .and(header("X-Api-Key", SONARR_API_KEY));
+        if let Some(series_id) = series_id {
+            mock = mock.and(query_param("seriesId", series_id.to_string()));
+        }
+        mock.respond_with(
+            ResponseTemplate::new(status.as_u16())
+                .set_body_raw(body.to_owned(), "application/json"),
+        )
+        .mount(&self.0)
+        .await;
+    }
+}
+
+pub struct MediaFolder(TempDir);
+
+impl MediaFolder {
+    pub fn new() -> Self {
+        Self(TempDir::new().unwrap())
+    }
+
+    pub fn create(&self, relative_path: &str) {
+        let path = self.0.path().join(relative_path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, []).unwrap();
+    }
+
+    pub fn remove(&self, relative_path: &str) {
+        std::fs::remove_file(self.0.path().join(relative_path)).unwrap();
+    }
+
+    pub fn sonarr_fixture(&self, path: &str) -> String {
+        fixture(path).replace(MEDIA_ROOT, &self.0.path().to_string_lossy())
     }
 }
