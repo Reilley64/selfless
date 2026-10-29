@@ -13,15 +13,19 @@ async fn main() -> Result<(), AppError> {
         signal(SignalKind::terminate()).into_app_err("failed to install the SIGTERM handler")?;
     let telemetry = telemetry::init()?;
     let result = async {
-        selfless::start(settings)
-            .await?
-            .serve(async move {
-                tokio::select! {
-                    _ = terminate.recv() => {}
-                    _ = tokio::signal::ctrl_c() => {}
-                }
-            })
-            .await
+        selfless::start(
+            settings,
+            infrastructure::system_clock(),
+            infrastructure::ffmpeg::probe_media_file(),
+        )
+        .await?
+        .serve(async move {
+            tokio::select! {
+                _ = terminate.recv() => {}
+                _ = tokio::signal::ctrl_c() => {}
+            }
+        })
+        .await
     }
     .await;
     telemetry.shutdown();

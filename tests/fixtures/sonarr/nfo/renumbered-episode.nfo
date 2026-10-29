@@ -1,0 +1,36 @@
+<episodedetails>
+  <title>Hello, Ms. Cobel</title>
+  <season>3</season>
+  <episode>9</episode>
+  <aired>2025-01-17</aired>
+  <plot>Mark leads his team on a search for answers, while Helly questions where her loyalties lie.</plot>
+  <uniqueid type="tvdb" default="true">10535541</uniqueid>
+  <uniqueid type="sonarr">1021</uniqueid>
+  <thumb />
+  <watched>false</watched>
+  <rating>8.6</rating>
+  <fileinfo>
+    <streamdetails>
+      <video>
+        <aspect>1.78</aspect>
+        <bitrate>0</bitrate>
+        <codec>h264</codec>
+        <framerate>23.976</framerate>
+        <height>1080</height>
+        <scantype>Progressive</scantype>
+        <width>1920</width>
+        <duration>55.2</duration>
+        <durationinseconds>3312</durationinseconds>
+      </video>
+      <audio>
+        <bitrate>640000</bitrate>
+        <channels>6</channels>
+        <codec>EAC3</codec>
+        <language>eng</language>
+      </audio>
+      <subtitle>
+        <language>eng</language>
+      </subtitle>
+    </streamdetails>
+  </fileinfo>
+</episodedetails>

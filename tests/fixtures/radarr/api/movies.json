@@ -1,0 +1,492 @@
+[
+  {
+    "id": 42,
+    "title": "Arrival",
+    "originalTitle": "Arrival",
+    "originalLanguage": {
+      "id": 1,
+      "name": "English"
+    },
+    "alternateTitles": [],
+    "secondaryYearSourceId": 0,
+    "sortTitle": "arrival",
+    "sizeOnDisk": 9876543210,
+    "status": "released",
+    "overview": "Taking place after alien crafts land around the world, an expert linguist is recruited by the military to determine whether they come in peace or are a threat.",
+    "inCinemas": "2016-11-10T00:00:00Z",
+    "physicalRelease": "2017-02-14T00:00:00Z",
+    "digitalRelease": "2017-01-31T00:00:00Z",
+    "releaseDate": "2017-02-14T00:00:00Z",
+    "images": [
+      {
+        "coverType": "poster",
+        "url": "/MediaCover/42/poster.jpg?lastWrite=638663000000000000",
+        "remoteUrl": "https://image.tmdb.org/t/p/original/x2FJsf1ElAgr63Y3PNPtJrcmpoe.jpg"
+      }
+    ],
+    "website": "https://www.paramount.com/movies/arrival",
+    "year": 2016,
+    "youTubeTrailerId": "tFMo3UJ4B4g",
+    "studio": "FilmNation Entertainment",
+    "path": "/mnt/media/Movies/Arrival (2016)",
+    "qualityProfileId": 4,
+    "hasFile": true,
+    "movieFileId": 77,
+    "monitored": true,
+    "minimumAvailability": "released",
+    "isAvailable": true,
+    "folderName": "/mnt/media/Movies/Arrival (2016)",
+    "runtime": 116,
+    "cleanTitle": "arrival",
+    "imdbId": "tt2543164",
+    "tmdbId": 329865,
+    "titleSlug": "329865",
+    "rootFolderPath": "/mnt/media/Movies",
+    "certification": "PG-13",
+    "genres": [
+      "Drama",
+      "Science Fiction",
+      "Mystery"
+    ],
+    "keywords": [
+      "linguistics",
+      "alien contact"
+    ],
+    "tags": [],
+    "added": "2026-10-28T09:00:00Z",
+    "ratings": {
+      "imdb": {
+        "votes": 812345,
+        "value": 7.9,
+        "type": "user"
+      },
+      "tmdb": {
+        "votes": 18123,
+        "value": 7.6,
+        "type": "user"
+      }
+    },
+    "movieFile": {
+      "id": 77,
+      "movieId": 42,
+      "relativePath": "Arrival (2016) Bluray-1080p.mkv",
+      "path": "/mnt/media/Movies/Arrival (2016)/Arrival (2016) Bluray-1080p.mkv",
+      "size": 9876543210,
+      "dateAdded": "2026-10-29T10:00:00Z",
+      "sceneName": "Arrival.2016.1080p.BluRay.x264-SPARKS",
+      "releaseGroup": "SPARKS",
+      "edition": "",
+      "languages": [
+        {
+          "id": 1,
+          "name": "English"
+        }
+      ],
+      "quality": {
+        "quality": {
+          "id": 7,
+          "name": "Bluray-1080p",
+          "source": "bluray",
+          "resolution": 1080,
+          "modifier": "none"
+        },
+        "revision": {
+          "version": 1,
+          "real": 0,
+          "isRepack": false
+        }
+      },
+      "customFormats": [],
+      "customFormatScore": 0,
+      "indexerFlags": 0,
+      "mediaInfo": {
+        "audioBitrate": 1509000,
+        "audioChannels": 5.1,
+        "audioCodec": "DTS",
+        "audioLanguages": "eng",
+        "audioStreamCount": 1,
+        "videoBitDepth": 8,
+        "videoBitrate": 0,
+        "videoCodec": "x264",
+        "videoFps": 23.976,
+        "videoDynamicRange": "",
+        "videoDynamicRangeType": "",
+        "resolution": "1920x800",
+        "runTime": "1:56:20",
+        "scanType": "Progressive",
+        "subtitles": "eng"
+      },
+      "originalFilePath": "Arrival.2016.1080p.BluRay.x264-SPARKS/arrival.mkv",
+      "qualityCutoffNotMet": true
+    },
+    "popularity": 21.4,
+    "statistics": {
+      "movieFileCount": 1,
+      "sizeOnDisk": 9876543210,
+      "releaseGroups": [
+        "SPARKS"
+      ]
+    }
+  },
+  {
+    "id": 43,
+    "title": "Dune",
+    "originalTitle": "Dune",
+    "originalLanguage": {
+      "id": 1,
+      "name": "English"
+    },
+    "alternateTitles": [],
+    "secondaryYearSourceId": 0,
+    "sortTitle": "dune",
+    "sizeOnDisk": 21474836480,
+    "status": "released",
+    "overview": "Paul Atreides, a brilliant and gifted young man born into a great destiny beyond his understanding, must travel to the most dangerous planet in the universe to ensure the future of his family and his people.",
+    "images": [
+      {
+        "coverType": "poster",
+        "url": "/MediaCover/43/poster.jpg?lastWrite=638663000000000000",
+        "remoteUrl": "https://image.tmdb.org/t/p/original/poster.jpg"
+      }
+    ],
+    "website": "",
+    "year": 2021,
+    "youTubeTrailerId": "",
+    "studio": "Legendary Pictures",
+    "path": "/mnt/media/Movies/Dune (2021)",
+    "qualityProfileId": 4,
+    "hasFile": true,
+    "movieFileId": 78,
+    "monitored": true,
+    "minimumAvailability": "released",
+    "isAvailable": true,
+    "folderName": "/mnt/media/Movies/Dune (2021)",
+    "runtime": 155,
+    "cleanTitle": "dune",
+    "imdbId": "tt1160419",
+    "tmdbId": 438631,
+    "titleSlug": "438631",
+    "rootFolderPath": "/mnt/media/Movies",
+    "certification": "PG-13",
+    "genres": [
+      "Science Fiction",
+      "Adventure"
+    ],
+    "keywords": [],
+    "tags": [],
+    "added": "2026-10-28T09:00:00Z",
+    "ratings": {
+      "imdb": {
+        "votes": 812345,
+        "value": 7.9,
+        "type": "user"
+      },
+      "tmdb": {
+        "votes": 18123,
+        "value": 7.6,
+        "type": "user"
+      }
+    },
+    "movieFile": {
+      "id": 78,
+      "movieId": 43,
+      "relativePath": "Dune (2021) Bluray-2160p.mkv",
+      "path": "/mnt/media/Movies/Dune (2021)/Dune (2021) Bluray-2160p.mkv",
+      "size": 21474836480,
+      "dateAdded": "2026-10-20T08:30:00Z",
+      "sceneName": "",
+      "releaseGroup": "SPARKS",
+      "edition": "",
+      "languages": [
+        {
+          "id": 1,
+          "name": "English"
+        }
+      ],
+      "quality": {
+        "quality": {
+          "id": 7,
+          "name": "Bluray-1080p",
+          "source": "bluray",
+          "resolution": 1080,
+          "modifier": "none"
+        },
+        "revision": {
+          "version": 1,
+          "real": 0,
+          "isRepack": false
+        }
+      },
+      "customFormats": [],
+      "customFormatScore": 0,
+      "indexerFlags": 0,
+      "mediaInfo": {
+        "audioBitrate": 1509000,
+        "audioChannels": 5.1,
+        "audioCodec": "DTS",
+        "audioLanguages": "eng",
+        "audioStreamCount": 1,
+        "videoBitDepth": 8,
+        "videoBitrate": 0,
+        "videoCodec": "x264",
+        "videoFps": 23.976,
+        "videoDynamicRange": "",
+        "videoDynamicRangeType": "",
+        "resolution": "1920x800",
+        "runTime": "1:56:20",
+        "scanType": "Progressive",
+        "subtitles": "eng"
+      },
+      "qualityCutoffNotMet": true
+    },
+    "popularity": 21.4,
+    "statistics": {
+      "movieFileCount": 1,
+      "sizeOnDisk": 21474836480,
+      "releaseGroups": [
+        "SPARKS"
+      ]
+    }
+  },
+  {
+    "id": 44,
+    "title": "Blade Runner 2049",
+    "originalTitle": "Blade Runner 2049",
+    "originalLanguage": {
+      "id": 1,
+      "name": "English"
+    },
+    "alternateTitles": [],
+    "secondaryYearSourceId": 0,
+    "sortTitle": "blade runner 2049",
+    "sizeOnDisk": 15032385536,
+    "status": "released",
+    "overview": "Thirty years after the events of the first film, a new blade runner, LAPD Officer K, unearths a long-buried secret that has the potential to plunge what's left of society into chaos.",
+    "images": [
+      {
+        "coverType": "poster",
+        "url": "/MediaCover/44/poster.jpg?lastWrite=638663000000000000",
+        "remoteUrl": "https://image.tmdb.org/t/p/original/poster.jpg"
+      }
+    ],
+    "website": "",
+    "year": 2017,
+    "youTubeTrailerId": "",
+    "studio": "Alcon Entertainment",
+    "path": "/mnt/media/Movies/Blade Runner 2049 (2017)",
+    "qualityProfileId": 4,
+    "hasFile": true,
+    "movieFileId": 79,
+    "monitored": true,
+    "minimumAvailability": "released",
+    "isAvailable": true,
+    "folderName": "/mnt/media/Movies/Blade Runner 2049 (2017)",
+    "runtime": 164,
+    "cleanTitle": "bladerunner2049",
+    "imdbId": "tt1856101",
+    "tmdbId": 335984,
+    "titleSlug": "335984",
+    "rootFolderPath": "/mnt/media/Movies",
+    "certification": "R",
+    "genres": [
+      "Science Fiction",
+      "Drama"
+    ],
+    "keywords": [],
+    "tags": [],
+    "added": "2026-10-28T09:00:00Z",
+    "ratings": {
+      "imdb": {
+        "votes": 812345,
+        "value": 7.9,
+        "type": "user"
+      },
+      "tmdb": {
+        "votes": 18123,
+        "value": 7.6,
+        "type": "user"
+      }
+    },
+    "movieFile": {
+      "id": 79,
+      "movieId": 44,
+      "relativePath": "Blade Runner 2049 (2017) Bluray-1080p.mkv",
+      "path": "/mnt/media/Movies/Blade Runner 2049 (2017)/Blade Runner 2049 (2017) Bluray-1080p.mkv",
+      "size": 15032385536,
+      "dateAdded": "2026-10-21T12:15:00Z",
+      "sceneName": "",
+      "releaseGroup": "SPARKS",
+      "edition": "",
+      "languages": [
+        {
+          "id": 1,
+          "name": "English"
+        }
+      ],
+      "quality": {
+        "quality": {
+          "id": 7,
+          "name": "Bluray-1080p",
+          "source": "bluray",
+          "resolution": 1080,
+          "modifier": "none"
+        },
+        "revision": {
+          "version": 1,
+          "real": 0,
+          "isRepack": false
+        }
+      },
+      "customFormats": [],
+      "customFormatScore": 0,
+      "indexerFlags": 0,
+      "mediaInfo": {
+        "audioBitrate": 1509000,
+        "audioChannels": 5.1,
+        "audioCodec": "DTS",
+        "audioLanguages": "eng",
+        "audioStreamCount": 1,
+        "videoBitDepth": 8,
+        "videoBitrate": 0,
+        "videoCodec": "x264",
+        "videoFps": 23.976,
+        "videoDynamicRange": "",
+        "videoDynamicRangeType": "",
+        "resolution": "1920x800",
+        "runTime": "1:56:20",
+        "scanType": "Progressive",
+        "subtitles": "eng"
+      },
+      "qualityCutoffNotMet": true
+    },
+    "popularity": 21.4,
+    "statistics": {
+      "movieFileCount": 1,
+      "sizeOnDisk": 15032385536,
+      "releaseGroups": [
+        "SPARKS"
+      ]
+    }
+  },
+  {
+    "id": 45,
+    "title": "Sicario",
+    "originalTitle": "Sicario",
+    "originalLanguage": {
+      "id": 1,
+      "name": "English"
+    },
+    "alternateTitles": [],
+    "secondaryYearSourceId": 0,
+    "sortTitle": "sicario",
+    "sizeOnDisk": 10737418240,
+    "status": "released",
+    "overview": "An idealistic FBI agent is enlisted by a government task force to aid in the escalating war against drugs at the border area between the U.S. and Mexico.",
+    "images": [
+      {
+        "coverType": "poster",
+        "url": "/MediaCover/45/poster.jpg?lastWrite=638663000000000000",
+        "remoteUrl": "https://image.tmdb.org/t/p/original/poster.jpg"
+      }
+    ],
+    "website": "",
+    "year": 2015,
+    "youTubeTrailerId": "",
+    "studio": "Lionsgate",
+    "path": "/mnt/media/Movies/Sicario (2015)",
+    "qualityProfileId": 4,
+    "hasFile": true,
+    "movieFileId": 80,
+    "monitored": true,
+    "minimumAvailability": "released",
+    "isAvailable": true,
+    "folderName": "/mnt/media/Movies/Sicario (2015)",
+    "runtime": 121,
+    "cleanTitle": "sicario",
+    "imdbId": "tt3397884",
+    "tmdbId": 273481,
+    "titleSlug": "273481",
+    "rootFolderPath": "/mnt/media/Movies",
+    "certification": "R",
+    "genres": [
+      "Action",
+      "Crime",
+      "Thriller"
+    ],
+    "keywords": [],
+    "tags": [],
+    "added": "2026-10-28T09:00:00Z",
+    "ratings": {
+      "imdb": {
+        "votes": 812345,
+        "value": 7.9,
+        "type": "user"
+      },
+      "tmdb": {
+        "votes": 18123,
+        "value": 7.6,
+        "type": "user"
+      }
+    },
+    "movieFile": {
+      "id": 80,
+      "movieId": 45,
+      "relativePath": "Sicario (2015) Bluray-1080p.mkv",
+      "path": "/mnt/media/Movies/Sicario (2015)/Sicario (2015) Bluray-1080p.mkv",
+      "size": 10737418240,
+      "dateAdded": "2026-10-22T19:45:00Z",
+      "sceneName": "",
+      "releaseGroup": "SPARKS",
+      "edition": "",
+      "languages": [
+        {
+          "id": 1,
+          "name": "English"
+        }
+      ],
+      "quality": {
+        "quality": {
+          "id": 7,
+          "name": "Bluray-1080p",
+          "source": "bluray",
+          "resolution": 1080,
+          "modifier": "none"
+        },
+        "revision": {
+          "version": 1,
+          "real": 0,
+          "isRepack": false
+        }
+      },
+      "customFormats": [],
+      "customFormatScore": 0,
+      "indexerFlags": 0,
+      "mediaInfo": {
+        "audioBitrate": 1509000,
+        "audioChannels": 5.1,
+        "audioCodec": "DTS",
+        "audioLanguages": "eng",
+        "audioStreamCount": 1,
+        "videoBitDepth": 8,
+        "videoBitrate": 0,
+        "videoCodec": "x264",
+        "videoFps": 23.976,
+        "videoDynamicRange": "",
+        "videoDynamicRangeType": "",
+        "resolution": "1920x800",
+        "runTime": "1:56:20",
+        "scanType": "Progressive",
+        "subtitles": "eng"
+      },
+      "qualityCutoffNotMet": true
+    },
+    "popularity": 21.4,
+    "statistics": {
+      "movieFileCount": 1,
+      "sizeOnDisk": 10737418240,
+      "releaseGroups": [
+        "SPARKS"
+      ]
+    }
+  }
+]

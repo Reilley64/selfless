@@ -1,0 +1,8 @@
+{
+  "message": "Radarr updated from 6.3.0.10500 to 6.4.4.10685",
+  "previousVersion": "6.3.0.10500",
+  "newVersion": "6.4.4.10685",
+  "eventType": "ApplicationUpdate",
+  "instanceName": "Radarr",
+  "applicationUrl": ""
+}

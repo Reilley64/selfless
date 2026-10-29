@@ -31,6 +31,7 @@ pub struct MigrateError;
 pub async fn connect(settings: &DatabaseSettings) -> Result<toasty::Db, ConnectError> {
     let driver = toasty_driver_postgresql::PostgreSQL::new(settings.url.as_str())?;
     Ok(toasty::Db::builder()
+        .models(application::models())
         .pool_create_timeout(Some(Duration::from_secs(1)))
         .pool_wait_timeout(Some(Duration::from_secs(1)))
         .build(driver)

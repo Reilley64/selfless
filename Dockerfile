@@ -39,14 +39,14 @@ FROM debian:trixie-slim
 ARG JELLYFIN_FFMPEG_VERSION
 RUN --mount=from=jellyfin-ffmpeg,target=/mnt/jellyfin-ffmpeg \
     apt-get update \
-    && apt-get install --yes --no-install-recommends /mnt/jellyfin-ffmpeg/jellyfin-ffmpeg.deb \
+    && apt-get install --yes --no-install-recommends ca-certificates /mnt/jellyfin-ffmpeg/jellyfin-ffmpeg.deb \
     && rm -rf /var/lib/apt/lists/* \
     && echo "https://github.com/jellyfin/jellyfin-ffmpeg/tree/v${JELLYFIN_FFMPEG_VERSION}" > /usr/share/doc/jellyfin-ffmpeg8/SOURCE \
     && useradd --system --uid 10001 --user-group --no-create-home --shell /usr/sbin/nologin selfless
 WORKDIR /app
 COPY --from=build /app/target/release/selfless ./selfless
 COPY --from=web /app/presentation/web/dist ./web
-ENV WEB__DIR=/app/web OTEL_SERVICE_NAME=selfless
+ENV WEB__DIR=/app/web OTEL_SERVICE_NAME=selfless PATH=/usr/lib/jellyfin-ffmpeg:$PATH
 USER 10001:10001
 EXPOSE 8080
 ARG GIT_COMMIT VERSION
