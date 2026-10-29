@@ -10,8 +10,12 @@ use crate::ports::Clock;
 use crate::ports::GetSonarrEpisodes;
 use crate::ports::ListRadarrMovies;
 use crate::ports::ListSonarrSeries;
+use crate::ports::ReadEpisodeFolder;
+use crate::ports::ReadEpisodeNfo;
 use crate::ports::ReadMovieFolder;
 use crate::ports::ReadMovieNfo;
+use crate::ports::ReadShowFolder;
+use crate::ports::ReadShowNfo;
 use crate::ports::SonarrShow;
 use crate::sync_movie;
 use crate::sync_show;
@@ -43,6 +47,10 @@ pub struct Dependencies {
     pub list_sonarr_series: ListSonarrSeries,
     pub read_movie_folder: ReadMovieFolder,
     pub read_movie_nfo: ReadMovieNfo,
+    pub read_show_folder: ReadShowFolder,
+    pub read_show_nfo: ReadShowNfo,
+    pub read_episode_folder: ReadEpisodeFolder,
+    pub read_episode_nfo: ReadEpisodeNfo,
     pub reconciles: Reconciles,
     pub source_health: SourceHealth,
 }
@@ -62,6 +70,10 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
         list_sonarr_series,
         read_movie_folder,
         read_movie_nfo,
+        read_show_folder,
+        read_show_nfo,
+        read_episode_folder,
+        read_episode_nfo,
         reconciles,
         source_health,
     } = dependencies.into();
@@ -108,6 +120,12 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
                     &mut db_context,
                     &list_sonarr_series,
                     &get_sonarr_episodes,
+                    sync_show::Readers {
+                        read_show_folder: &read_show_folder,
+                        read_show_nfo: &read_show_nfo,
+                        read_episode_folder: &read_episode_folder,
+                        read_episode_nfo: &read_episode_nfo,
+                    },
                     &source_health,
                     progress,
                 )
@@ -221,6 +239,7 @@ async fn reconcile_shows(
     db_context: &mut DbContext,
     list_sonarr_series: &ListSonarrSeries,
     get_sonarr_episodes: &GetSonarrEpisodes,
+    readers: sync_show::Readers<'_>,
     source_health: &SourceHealth,
     progress: &Mutex<Option<ReconcileProgress>>,
 ) -> Result<(), Error> {
@@ -240,7 +259,7 @@ async fn reconcile_shows(
         match source_health.api_call(Source::Sonarr, episodes) {
             Ok(episodes) => {
                 synced.insert(series.sonarr_id);
-                sync_show::save(db_context, SonarrShow { series, episodes })
+                sync_show::save(db_context, readers, SonarrShow { series, episodes })
                     .instrument(span)
                     .await
                     .map_err(Error::caused_by)?;

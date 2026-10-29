@@ -58,6 +58,10 @@ pub enum ProblemItem {
         title: String,
         id: Uuid,
     },
+    Show {
+        title: String,
+        id: Uuid,
+    },
     Episode {
         show: String,
         season: i64,
@@ -263,20 +267,21 @@ async fn problems(db_context: &mut DbContext) -> Result<Vec<Problem>, Error> {
         .map(|x| (x.id, x))
         .collect::<HashMap<_, _>>()
     };
-    let shows = if seasons.is_empty() {
+    let show_ids = seasons
+        .values()
+        .map(|x| x.show_id)
+        .chain(stored.iter().filter_map(|x| x.show_id))
+        .collect::<Vec<_>>();
+    let shows = if show_ids.is_empty() {
         HashMap::new()
     } else {
-        Show::filter(
-            Show::fields()
-                .id()
-                .in_list(seasons.values().map(|x| x.show_id).collect::<Vec<_>>()),
-        )
-        .exec(db_context.executor_mut())
-        .await
-        .map_err(Error::caused_by)?
-        .into_iter()
-        .map(|x| (x.id, x.title))
-        .collect::<HashMap<_, _>>()
+        Show::filter(Show::fields().id().in_list(show_ids))
+            .exec(db_context.executor_mut())
+            .await
+            .map_err(Error::caused_by)?
+            .into_iter()
+            .map(|x| (x.id, x.title))
+            .collect::<HashMap<_, _>>()
     };
     let mut problems = Vec::new();
     for problem in stored {
@@ -303,7 +308,17 @@ async fn problems(db_context: &mut DbContext) -> Result<Vec<Problem>, Error> {
                     id: x.id,
                 })
             });
-        for item in movie_items.chain(episode_items).collect::<Vec<_>>() {
+        let show_items = problem.show_id.and_then(|id| {
+            Some(ProblemItem::Show {
+                title: shows.get(&id)?.clone(),
+                id,
+            })
+        });
+        for item in movie_items
+            .chain(show_items)
+            .chain(episode_items)
+            .collect::<Vec<_>>()
+        {
             problems.push(Problem {
                 kind: problem.kind,
                 item,

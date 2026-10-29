@@ -1,0 +1,35 @@
+<episodedetails>
+  <title>Inside the Episode</title>
+  <season>0</season>
+  <episode>1</episode>
+  <aired>2022-02-18</aired>
+  <plot>Ben Stiller and the cast talk about making the first season of Severance.</plot>
+  <uniqueid type="tvdb" default="true">9094718</uniqueid>
+  <thumb />
+  <watched>false</watched>
+  <rating>7.2</rating>
+  <fileinfo>
+    <streamdetails>
+      <video>
+        <aspect>1.78</aspect>
+        <bitrate>0</bitrate>
+        <codec>h264</codec>
+        <framerate>23.976</framerate>
+        <height>1080</height>
+        <scantype>Progressive</scantype>
+        <width>1920</width>
+        <duration>55.2</duration>
+        <durationinseconds>3312</durationinseconds>
+      </video>
+      <audio>
+        <bitrate>640000</bitrate>
+        <channels>6</channels>
+        <codec>EAC3</codec>
+        <language>eng</language>
+      </audio>
+      <subtitle>
+        <language>eng</language>
+      </subtitle>
+    </streamdetails>
+  </fileinfo>
+</episodedetails>

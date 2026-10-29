@@ -122,6 +122,7 @@ struct MetadataConsumer {
 struct Series {
     id: i64,
     tvdb_id: i64,
+    path: String,
     title: String,
     year: i64,
     genres: Vec<String>,
@@ -131,6 +132,7 @@ struct Series {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Episode {
+    id: i64,
     tvdb_id: i64,
     episode_file_id: i64,
     season_number: i64,
@@ -182,6 +184,7 @@ impl Api {
         Ok(episodes
             .into_iter()
             .map(|x| SonarrEpisode {
+                sonarr_id: x.id,
                 tvdb_id: x.tvdb_id,
                 season_number: x.season_number,
                 episode_number: x.episode_number,
@@ -253,6 +256,7 @@ impl From<Series> for SonarrSeries {
         SonarrSeries {
             sonarr_id: series.id,
             tvdb_id: series.tvdb_id,
+            path: series.path,
             title: series.title,
             year: (series.year != 0).then_some(series.year),
             genres: series.genres,

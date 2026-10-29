@@ -1,0 +1,36 @@
+<episodedetails>
+  <title>Kassa</title>
+  <season>1</season>
+  <episode>1</episode>
+  <aired>2022-09-21</aired>
+  <plot>Cassian Andor looks for his missing sister on the industrial planet of Morlana One.</plot>
+  <uniqueid type="tvdb" default="true">8890960</uniqueid>
+  <uniqueid type="sonarr">1101</uniqueid>
+  <thumb />
+  <watched>false</watched>
+  <rating>7.5</rating>
+  <fileinfo>
+    <streamdetails>
+      <video>
+        <aspect>1.78</aspect>
+        <bitrate>0</bitrate>
+        <codec>h264</codec>
+        <framerate>23.976</framerate>
+        <height>1080</height>
+        <scantype>Progressive</scantype>
+        <width>1920</width>
+        <duration>55.2</duration>
+        <durationinseconds>3312</durationinseconds>
+      </video>
+      <audio>
+        <bitrate>640000</bitrate>
+        <channels>6</channels>
+        <codec>EAC3</codec>
+        <language>eng</language>
+      </audio>
+      <subtitle>
+        <language>eng</language>
+      </subtitle>
+    </streamdetails>
+  </fileinfo>
+</episodedetails>

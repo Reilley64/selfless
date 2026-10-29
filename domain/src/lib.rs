@@ -108,7 +108,9 @@ pub struct Actor {
     #[auto]
     pub id: Uuid,
     #[index]
-    pub movie_id: Uuid,
+    pub movie_id: Option<Uuid>,
+    #[index]
+    pub show_id: Option<Uuid>,
     pub name: String,
     pub role: Option<String>,
     pub order: Option<i64>,
@@ -120,6 +122,7 @@ pub enum ArtworkKind {
     Poster,
     Fanart,
     Clearlogo,
+    Thumb,
 }
 
 #[derive(Debug, toasty::Model)]
@@ -128,7 +131,13 @@ pub struct Artwork {
     #[auto]
     pub id: Uuid,
     #[index]
-    pub movie_id: Uuid,
+    pub movie_id: Option<Uuid>,
+    #[index]
+    pub show_id: Option<Uuid>,
+    #[index]
+    pub season_id: Option<Uuid>,
+    #[index]
+    pub episode_id: Option<Uuid>,
     pub kind: ArtworkKind,
     pub path: String,
     pub modified_at: Timestamp,
@@ -150,6 +159,8 @@ pub struct SyncProblem {
     pub movie_id: Option<Uuid>,
     #[index]
     pub media_file_id: Option<Uuid>,
+    #[index]
+    pub show_id: Option<Uuid>,
     pub kind: SyncProblemKind,
     pub path: String,
 }
@@ -167,6 +178,14 @@ pub struct Show {
     pub year: Option<i64>,
     pub genres: Vec<String>,
     pub overview: Option<String>,
+    pub sort_title: Option<String>,
+    pub certification: Option<String>,
+    pub premiered: Option<Date>,
+    pub end_date: Option<Date>,
+    pub status: Option<String>,
+    pub network: Option<String>,
+    pub rating: Option<f64>,
+    pub nfo_modified_at: Option<Timestamp>,
     #[has_many]
     pub seasons: toasty::Deferred<Vec<Season>>,
 }
@@ -206,6 +225,8 @@ pub struct Episode {
     #[belongs_to(key = media_file_id, references = id)]
     pub media_file: toasty::Deferred<Option<MediaFile>>,
     pub visible: bool,
+    pub rating: Option<f64>,
+    pub nfo_modified_at: Option<Timestamp>,
 }
 
 #[derive(Debug, toasty::Model)]

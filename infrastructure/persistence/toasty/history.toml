@@ -34,3 +34,8 @@ snapshot_name = "20261029_134758_snapshot.toml"
 id = 8136365159950297493
 name = "20261029_135507_sync_problem_owners.sql"
 snapshot_name = "20261029_135507_snapshot.toml"
+
+[[migrations]]
+id = 1052469859776271405
+name = "20261029_140219_show_nfo.sql"
+snapshot_name = "20261029_140219_snapshot.toml"

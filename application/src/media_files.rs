@@ -77,6 +77,7 @@ async fn save_file_not_found(
         toasty::create!(SyncProblem {
             movie_id: None,
             media_file_id: Some(media_file_id),
+            show_id: None,
             kind: SyncProblemKind::FileNotFound,
             path: path.to_owned(),
         })
