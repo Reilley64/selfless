@@ -138,6 +138,29 @@ paths:
               example: {"id":"01890a5d-ac96-774b-bcce-b302099a8057","name":"Noor","colour":"amber","symbol":"ring"}
         "401":
           $ref: "#/components/responses/Unauthenticated"
+  /api/me/password/v1:
+    put:
+      operationId: changePassword
+      summary: Change the signed-in user's password
+      description: Ends every other session of the user, on the web and on TVs. The session that made the call stays signed in.
+      tags: [users]
+      requestBody:
+        description: The current password and the new one.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangePasswordRequest"
+            example: {"currentPassword":"a long passphrase about tea","newPassword":"a longer passphrase about coffee"}
+      responses:
+        "204":
+          description: The password has changed, and the user's other sessions have ended.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/WrongCurrentPassword"
+        "422":
+          $ref: "#/components/responses/EmptyPassword"
   /api/telemetry/traces/v1:
     post:
       operationId: relayTraces
@@ -274,6 +297,32 @@ components:
                   status:
                     const: 401
           example: {"type":"urn:selfless:problem:wrong-name-or-password","title":"The name or password is wrong.","status":401}
+    WrongCurrentPassword:
+      description: The current password is wrong. Nothing changes.
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Problem"
+              - properties:
+                  type:
+                    const: urn:selfless:problem:wrong-current-password
+                  status:
+                    const: 403
+          example: {"type":"urn:selfless:problem:wrong-current-password","title":"The current password is wrong.","status":403}
+    EmptyPassword:
+      description: The new password is empty. A password can be any string except the empty one. Nothing changes.
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Problem"
+              - properties:
+                  type:
+                    const: urn:selfless:problem:empty-password
+                  status:
+                    const: 422
+          example: {"type":"urn:selfless:problem:empty-password","title":"The password is empty.","status":422}
   schemas:
     Problem:
       description: An RFC 9457 problem details object. The type is stable and identifies the problem.
@@ -359,6 +408,21 @@ components:
           examples: [q2Xz8kQ0mJ3Hc1yF5bR7tVw9nL4pA6sD0eG2iK8uO1M]
         user:
           $ref: "#/components/schemas/User"
+      additionalProperties: false
+    ChangePasswordRequest:
+      description: The user's current password and the new one.
+      type: object
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword:
+          description: The password the user signs in with now.
+          type: string
+          examples: [a long passphrase about tea]
+        newPassword:
+          description: The new password. Any non-empty string.
+          type: string
+          minLength: 1
+          examples: [a longer passphrase about coffee]
       additionalProperties: false
     HealthStatus:
       description: The status of a health group or component, as in Spring Boot Actuator.
