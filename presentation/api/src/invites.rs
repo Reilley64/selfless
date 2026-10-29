@@ -23,7 +23,7 @@ struct AcceptInvite {
     password: String,
 }
 
-#[route(POST "/api/invites/accept/v1")]
+#[route(POST "/(public)/api/invites/accept/v1")]
 pub(crate) async fn accept(
     cx: &Cx,
     Json(request): Json<AcceptInvite>,

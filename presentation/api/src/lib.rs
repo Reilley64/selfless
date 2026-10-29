@@ -63,6 +63,7 @@ pub fn router(
         .serve_dir(web::FILES, web_dir)
         .layer(web::ContentSecurityPolicyLayer)
         .layer(problem::BadRequestProblemLayer("/api"))
+        .layer(problem::BadRequestProblemLayer("/(public)/api"))
         .layer(user_auth::UserAuthLayer)
         .layer(http_server::HttpServerLayer::new())
         .build()

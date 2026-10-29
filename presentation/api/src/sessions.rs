@@ -29,7 +29,7 @@ struct SignedIn {
     user: UserBody,
 }
 
-#[route(POST "/api/sessions/v1")]
+#[route(POST "/(public)/api/sessions/v1")]
 pub(crate) async fn sign_in(cx: &Cx, Json(request): Json<SignIn>) -> topcoat::Result<Response> {
     let signed_in = application::sign_in::call(
         app_context::<AppState>(cx),
