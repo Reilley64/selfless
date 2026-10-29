@@ -419,6 +419,11 @@ async fn write(
     let mut nfo_roots = HashMap::new();
     let mut unreadable_nfos = HashMap::new();
     let mut saved = HashMap::new();
+    let sonarr_ids = sonarr_show
+        .episodes
+        .iter()
+        .map(|x| x.sonarr_id)
+        .collect::<HashSet<_>>();
     for sonarr_episode in sonarr_show.episodes {
         let file = sonarr_episode
             .episode_file
@@ -447,12 +452,16 @@ async fn write(
                 }
                 match &nfo_roots[&nfo_file.path] {
                     None => Nfo::Unreadable(nfo_file.path.clone()),
-                    Some(roots) => match roots.iter().find(|x| {
-                        x.sonarr_id == Some(sonarr_episode.sonarr_id)
-                            || x.sonarr_id.is_none()
-                                && x.season_number == Some(sonarr_episode.season_number)
-                                && x.episode_number == Some(sonarr_episode.episode_number)
-                    }) {
+                    Some(roots) => match roots
+                        .iter()
+                        .find(|x| x.sonarr_id == Some(sonarr_episode.sonarr_id))
+                        .or_else(|| {
+                            roots.iter().find(|x| {
+                                !x.sonarr_id.is_some_and(|x| sonarr_ids.contains(&x))
+                                    && x.season_number == Some(sonarr_episode.season_number)
+                                    && x.episode_number == Some(sonarr_episode.episode_number)
+                            })
+                        }) {
                         Some(root) => Nfo::Read(root.clone(), nfo_file.modified_at),
                         None => Nfo::Missing,
                     },

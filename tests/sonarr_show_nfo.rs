@@ -384,6 +384,71 @@ async fn an_unchanged_episode_nfo_takes_sonarrs_new_episode_number() {
 }
 
 #[tokio::test]
+async fn an_episode_nfo_of_a_re_added_show_matches_by_season_and_episode_number() {
+    let fixture = Fixture::start().await;
+    fixture.create_files(&SEVERANCE);
+    fixture.write_nfo(&format!("{S01E02_E03}.nfo"), "two-episodes");
+
+    let show = fixture
+        .reconcile_with_episodes(
+            &SEVERANCE,
+            &fixture
+                .media
+                .fixture("sonarr/api/episodes.json")
+                .replace("\"id\": 10", "\"id\": 20"),
+        )
+        .await;
+
+    let episodes = fixture.episodes(show.id, 1).await;
+    assert_eq!(
+        episodes
+            .iter()
+            .map(|x| (x.number, x.title.as_str(), x.rating))
+            .collect::<Vec<_>>(),
+        [
+            (1, "Good News About Hell", None),
+            (2, "Half Loop", Some(8.1)),
+            (3, "In Perpetuity", Some(8.3)),
+        ]
+    );
+    fixture.stop().await;
+}
+
+#[tokio::test]
+async fn an_episode_nfo_entry_whose_sonarr_uniqueid_belongs_to_another_episode_is_not_matched_by_number()
+ {
+    let fixture = Fixture::start().await;
+    fixture.create_files(&SEVERANCE);
+    fixture.write_nfo(&format!("{S01E02_E03}.nfo"), "two-episodes");
+
+    let show = fixture
+        .reconcile_with_episodes(
+            &SEVERANCE,
+            &fixture
+                .media
+                .fixture("sonarr/api/episodes.json")
+                .replace("\"episodeNumber\": 2,", "\"episodeNumber\": 4,")
+                .replace("\"episodeNumber\": 3,", "\"episodeNumber\": 2,")
+                .replace("\"id\": 1013", "\"id\": 1014"),
+        )
+        .await;
+
+    let episodes = fixture.episodes(show.id, 1).await;
+    assert_eq!(
+        episodes
+            .iter()
+            .map(|x| (x.number, x.title.as_str(), x.rating))
+            .collect::<Vec<_>>(),
+        [
+            (1, "Good News About Hell", None),
+            (2, "In Perpetuity", None),
+            (4, "Half Loop", Some(8.1)),
+        ]
+    );
+    fixture.stop().await;
+}
+
+#[tokio::test]
 async fn show_artwork_season_and_specials_posters_and_episode_thumbs_are_kept() {
     let fixture = Fixture::start().await;
     fixture.create_files(&SEVERANCE);
