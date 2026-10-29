@@ -1,4 +1,5 @@
 use super::AdminAction;
+use super::PAGE_TITLE_ID;
 use super::admin_page;
 use super::components::alert::AlertVariant;
 use super::components::alert::alert;
@@ -33,6 +34,8 @@ use super::require_admin;
 use super::verify_csrf;
 use application::EmptyPassword;
 use application::create_invite::AddressTaken;
+use application::create_user::NameTaken;
+use application::rename_user::EmptyName;
 use domain::Colour;
 use domain::Symbol;
 use domain::User;
@@ -70,6 +73,8 @@ const USERS_ID: &str = "users";
 const USER_ID: &str = "user";
 const INVITE_DIALOG_ID: &str = "invite-dialog";
 const INVITE_FORM_ID: &str = "invite-form";
+const RENAME_DIALOG_ID: &str = "rename-user-dialog";
+const RENAME_FORM_ID: &str = "rename-user-form";
 const RESET_PASSWORD_DIALOG_ID: &str = "reset-password-dialog";
 const RESET_PASSWORD_FORM_ID: &str = "reset-password-form";
 const DELETE_DIALOG_ID: &str = "delete-user-dialog";
@@ -104,6 +109,7 @@ pub(crate) fn register(router: RouterBuilder) -> RouterBuilder {
         .route(resend_invite)
         .route(cancel_invite)
         .page(user_page)
+        .route(rename_user)
         .route(reset_password)
         .route(delete_user)
 }
@@ -206,6 +212,46 @@ async fn user_page(cx: &Cx) -> topcoat::Result<impl View> {
     Ok(view! {
         admin_page(path: USERS_PATH, title: &user.name, user_section(user: &user, notice: None))
     })
+}
+
+#[derive(Deserialize)]
+struct RenameForm {
+    #[serde(default)]
+    csrf: String,
+    name: String,
+}
+
+#[route(POST "/admin/users/{user_id}/name")]
+async fn rename_user(cx: &Cx, Form(form): Form<RenameForm>) -> topcoat::Result<ViewHandle> {
+    require_admin(cx).await?;
+    verify_csrf(cx, &form.csrf)?;
+    let mut user = find_user(cx).await?;
+    let result =
+        application::rename_user::call(app_context::<AppState>(cx), user.id, form.name.clone())
+            .await;
+    let error = match result {
+        Ok(()) => None,
+        Err(error) if error.find_source::<NameTaken>().is_some() => {
+            Some("A user already has this name.")
+        }
+        Err(error) if error.find_source::<EmptyName>().is_some() => Some("Enter a name."),
+        Err(error) => return Err(error.into()),
+    };
+    if let Some(error) = error {
+        retarget(cx, RENAME_FORM_ID);
+        return view! { cx => rename_form(user: &user, typed: &form.name, error: Some(error)) }
+            .single()
+            .await;
+    }
+    log_admin_action(AdminAction::UserRename, user.id);
+    let notice = Notice::Done(format!("Renamed {} to {}.", user.name, form.name));
+    user.name = form.name;
+    view! { cx =>
+        user_section(user: &user, notice: Some(notice))
+        <span hx-swap-oob=(format!("innerHTML:#{PAGE_TITLE_ID}"))>(&user.name)</span>
+    }
+    .single()
+    .await
 }
 
 #[derive(Deserialize)]
@@ -595,6 +641,20 @@ async fn user_section(user: &User, notice: Option<Notice>) -> topcoat::Result<im
             }
             <section class="flex flex-col items-start gap-2">
                 <p class="text-sm text-muted-foreground">
+                    "Fix a typo in their name. They stay signed in, and their apps and TVs show the new name."
+                </p>
+                button(
+                    variant: ButtonVariant::Outline,
+                    attrs: attributes! {
+                        type="button"
+                        commandfor=(RENAME_DIALOG_ID)
+                        command="show-modal"
+                    },
+                    "Rename"
+                )
+            </section>
+            <section class="flex flex-col items-start gap-2">
+                <p class="text-sm text-muted-foreground">
                     "Set a new password when they forget theirs. This signs them out everywhere."
                 </p>
                 button(
@@ -623,6 +683,17 @@ async fn user_section(user: &User, notice: Option<Notice>) -> topcoat::Result<im
             </section>
             dialog(
                 open: false,
+                attrs: attributes! { id=(RENAME_DIALOG_ID) },
+                dialog_content(
+                    dialog_header(
+                        dialog_title((format!("Rename {}", user.name)))
+                        dialog_description("Names are unique, ignoring capitals.")
+                    )
+                    rename_form(user: user, typed: &user.name, error: None)
+                )
+            )
+            dialog(
+                open: false,
                 attrs: attributes! { id=(RESET_PASSWORD_DIALOG_ID) },
                 dialog_content(
                     dialog_header(
@@ -646,6 +717,56 @@ async fn user_section(user: &User, notice: Option<Notice>) -> topcoat::Result<im
                 )
             )
         </div>
+    })
+}
+
+#[component]
+async fn rename_form(
+    user: &User,
+    typed: &str,
+    error: Option<&'static str>,
+) -> topcoat::Result<impl View> {
+    let action = format!("{USERS_PATH}/{}/name", user.id);
+    Ok(view! {
+        <form
+            id=(RENAME_FORM_ID)
+            method="post"
+            action=(&action)
+            hx-post=(&action)
+            hx-target=(format!("#{USER_ID}"))
+            hx-swap=(SWAP)
+            class="flex flex-col gap-4"
+        >
+            csrf_field()
+            field(
+                field_label(attrs: attributes! { for="rename-name" }, "Name")
+                input(attrs: attributes! {
+                    id="rename-name"
+                    type="text"
+                    name="name"
+                    value=(typed)
+                    autocomplete="off"
+                    required=(true)
+                    aria-invalid=(error.map(|_| "true"))
+                    aria-describedby=(error.map(|_| "rename-name-error"))
+                })
+                if let Some(error) = error {
+                    field_error(attrs: attributes! { id="rename-name-error" }, (error))
+                }
+            )
+            dialog_footer(
+                button(
+                    variant: ButtonVariant::Outline,
+                    attrs: attributes! {
+                        type="button"
+                        commandfor=(RENAME_DIALOG_ID)
+                        command="close"
+                    },
+                    "Cancel"
+                )
+                button(attrs: attributes! { type="submit" }, "Save")
+            )
+        </form>
     })
 }
 

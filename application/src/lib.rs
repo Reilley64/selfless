@@ -40,6 +40,7 @@ pub mod process_inbox_row;
 pub mod reconcile;
 pub mod relay_telemetry;
 pub mod release_inbox_rows;
+pub mod rename_user;
 pub mod resend_invite;
 pub mod reset_user_password;
 pub mod retry_failed_row;
