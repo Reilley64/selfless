@@ -337,7 +337,8 @@ pub(crate) async fn save(
     if let Nfo::Read(nfo, _) = &nfo {
         for actor in &nfo.actors {
             toasty::create!(Actor {
-                movie_id,
+                movie_id: Some(movie_id),
+                show_id: None,
                 name: actor.name.clone(),
                 role: actor.role.clone(),
                 order: actor.order,
@@ -393,7 +394,10 @@ async fn save_artwork(
         .map_err(Error::caused_by)?;
     for (kind, file) in found {
         toasty::create!(Artwork {
-            movie_id,
+            movie_id: Some(movie_id),
+            show_id: None,
+            season_id: None,
+            episode_id: None,
             kind,
             path: file.path,
             modified_at: file.modified_at,
@@ -427,6 +431,7 @@ async fn save_unreadable_nfo(
         toasty::create!(SyncProblem {
             movie_id: Some(movie_id),
             media_file_id: None,
+            show_id: None,
             kind: SyncProblemKind::UnreadableNfo,
             path: path.to_owned(),
         })

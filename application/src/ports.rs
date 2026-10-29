@@ -170,6 +170,7 @@ impl RadarrError {
 pub struct SonarrSeries {
     pub sonarr_id: i64,
     pub tvdb_id: i64,
+    pub path: String,
     pub title: String,
     pub year: Option<i64>,
     pub genres: Vec<String>,
@@ -182,6 +183,7 @@ pub struct SonarrShow {
 }
 
 pub struct SonarrEpisode {
+    pub sonarr_id: i64,
     pub tvdb_id: i64,
     pub season_number: i64,
     pub episode_number: i64,
@@ -364,6 +366,114 @@ impl UnreadableNfo {
         Self {
             core: ohno::OhnoCore::from(source),
         }
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct ShowFolder {
+    pub nfo: Option<FoundFile>,
+    pub poster: Option<FoundFile>,
+    pub fanart: Option<FoundFile>,
+    pub clearlogo: Option<FoundFile>,
+    pub season_posters: Vec<(i64, FoundFile)>,
+}
+
+type ReadShowFolderFn = dyn Fn(String, Vec<i64>) -> PortFuture<ShowFolder> + Send + Sync;
+
+#[derive(Clone)]
+pub struct ReadShowFolder(Arc<ReadShowFolderFn>);
+
+impl ReadShowFolder {
+    pub fn new(
+        f: impl Fn(String, Vec<i64>) -> PortFuture<ShowFolder> + Send + Sync + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self, show_path: &str, season_numbers: Vec<i64>) -> PortFuture<ShowFolder> {
+        (self.0)(show_path.to_owned(), season_numbers)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct ShowNfo {
+    pub title: Option<String>,
+    pub sort_title: Option<String>,
+    pub plot: Option<String>,
+    pub certification: Option<String>,
+    pub premiered: Option<Date>,
+    pub end_date: Option<Date>,
+    pub status: Option<String>,
+    pub network: Option<String>,
+    pub genres: Vec<String>,
+    pub rating: Option<f64>,
+    pub actors: Vec<NfoActor>,
+}
+
+type ReadShowNfoFn = dyn Fn(String) -> PortFuture<Result<ShowNfo, UnreadableNfo>> + Send + Sync;
+
+#[derive(Clone)]
+pub struct ReadShowNfo(Arc<ReadShowNfoFn>);
+
+impl ReadShowNfo {
+    pub fn new(
+        f: impl Fn(String) -> PortFuture<Result<ShowNfo, UnreadableNfo>> + Send + Sync + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self, path: &str) -> PortFuture<Result<ShowNfo, UnreadableNfo>> {
+        (self.0)(path.to_owned())
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct EpisodeFolder {
+    pub nfo: Option<FoundFile>,
+    pub thumb: Option<FoundFile>,
+}
+
+type ReadEpisodeFolderFn = dyn Fn(String) -> PortFuture<EpisodeFolder> + Send + Sync;
+
+#[derive(Clone)]
+pub struct ReadEpisodeFolder(Arc<ReadEpisodeFolderFn>);
+
+impl ReadEpisodeFolder {
+    pub fn new(f: impl Fn(String) -> PortFuture<EpisodeFolder> + Send + Sync + 'static) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self, media_file_path: &str) -> PortFuture<EpisodeFolder> {
+        (self.0)(media_file_path.to_owned())
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct EpisodeNfo {
+    pub sonarr_id: Option<i64>,
+    pub title: Option<String>,
+    pub season_number: Option<i64>,
+    pub episode_number: Option<i64>,
+    pub air_date: Option<Date>,
+    pub plot: Option<String>,
+    pub rating: Option<f64>,
+}
+
+type ReadEpisodeNfoFn =
+    dyn Fn(String) -> PortFuture<Result<Vec<EpisodeNfo>, UnreadableNfo>> + Send + Sync;
+
+#[derive(Clone)]
+pub struct ReadEpisodeNfo(Arc<ReadEpisodeNfoFn>);
+
+impl ReadEpisodeNfo {
+    pub fn new(
+        f: impl Fn(String) -> PortFuture<Result<Vec<EpisodeNfo>, UnreadableNfo>> + Send + Sync + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self, path: &str) -> PortFuture<Result<Vec<EpisodeNfo>, UnreadableNfo>> {
+        (self.0)(path.to_owned())
     }
 }
 
