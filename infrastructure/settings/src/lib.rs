@@ -4,6 +4,7 @@ use config::Environment;
 use serde::Deserialize;
 use std::path::PathBuf;
 
+pub use email::SmtpSettings;
 pub use persistence::DatabaseSettings;
 pub use telemetry::OtlpSettings;
 
@@ -16,6 +17,8 @@ pub struct AppSettings {
     pub web: WebSettings,
     #[serde(flatten)]
     pub otlp: OtlpSettings,
+    #[serde(default)]
+    pub smtp: SmtpSettings,
 }
 
 impl AppSettings {

@@ -53,6 +53,47 @@ impl ExportTelemetryError {
     }
 }
 
+type SendEmailFn =
+    dyn Fn(String, String, String) -> PortFuture<Result<(), SendEmailError>> + Send + Sync;
+
+#[derive(Clone)]
+pub struct SendEmail(Arc<SendEmailFn>);
+
+impl SendEmail {
+    pub fn new(
+        f: impl Fn(String, String, String) -> PortFuture<Result<(), SendEmailError>>
+        + Send
+        + Sync
+        + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(
+        &self,
+        recipient: String,
+        subject: String,
+        body: String,
+    ) -> PortFuture<Result<(), SendEmailError>> {
+        (self.0)(recipient, subject, body)
+    }
+}
+
+#[derive(ohno::Error, Default)]
+#[no_constructors]
+#[display("failed to send the email")]
+pub struct SendEmailError {
+    core: ohno::OhnoCore,
+}
+
+impl SendEmailError {
+    pub fn caused_by(source: impl Into<Box<dyn Error + Send + Sync>>) -> Self {
+        Self {
+            core: ohno::OhnoCore::from(source),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct MalformedTelemetry;
 

@@ -935,6 +935,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "email"
+version = "0.1.0"
+dependencies = [
+ "application",
+ "lettre",
+ "ohno",
+ "opentelemetry",
+ "opentelemetry_sdk",
+ "serde",
+ "tokio",
+ "tracing",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "email-encoding"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1661,6 +1677,7 @@ name = "infrastructure"
 version = "0.1.0"
 dependencies = [
  "application",
+ "email",
  "fundle",
  "persistence",
  "telemetry",
@@ -1891,15 +1908,27 @@ version = "0.11.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f2c646bd5cc763b1087b15493e29a64be6147ba8f19342004fa52048ee596eae"
 dependencies = [
+ "async-trait",
+ "base64 0.23.1",
  "email-encoding",
  "email_address",
  "fastrand",
+ "futures-io",
+ "futures-util",
  "hostname",
  "httpdate",
  "idna",
  "mime",
  "nom",
+ "percent-encoding",
  "quoted_printable",
+ "rustls",
+ "rustls-platform-verifier",
+ "serde",
+ "socket2",
+ "tokio",
+ "tokio-rustls",
+ "url",
 ]
 
 [[package]]
@@ -2867,6 +2896,7 @@ version = "0.23.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf"
 dependencies = [
+ "log",
  "once_cell",
  "ring",
  "rustls-pki-types",
@@ -3151,6 +3181,7 @@ name = "settings"
 version = "0.1.0"
 dependencies = [
  "config",
+ "email",
  "persistence",
  "serde",
  "telemetry",

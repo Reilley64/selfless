@@ -1,0 +1,36 @@
+groups:
+  - id: registry.selfless.email
+    type: attribute_group
+    brief: Attributes of emails the server sends.
+    stability: development
+    attributes:
+      - id: selfless.email.outcome
+        type:
+          members:
+            - id: sent
+              value: sent
+              brief: The SMTP server accepted the message.
+              stability: development
+            - id: failed
+              value: failed
+              brief: The message was not sent.
+              stability: development
+        brief: Whether the SMTP server accepted the message.
+        stability: development
+        examples: [sent]
+      - id: selfless.email.smtp.reply_code
+        type: int
+        brief: The SMTP reply code the server gave when a send failed.
+        stability: development
+        examples: [550]
+  - id: span.selfless.email.send
+    type: span
+    span_kind: client
+    brief: Sending one email through the SMTP server.
+    stability: development
+    attributes:
+      - ref: selfless.email.outcome
+        requirement_level: required
+      - ref: selfless.email.smtp.reply_code
+        requirement_level:
+          conditionally_required: When the send failed and the SMTP server gave a reply code.

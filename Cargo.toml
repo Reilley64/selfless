@@ -4,6 +4,7 @@ members = [
     "application",
     "domain",
     "infrastructure/dependencies",
+    "infrastructure/email",
     "infrastructure/persistence",
     "infrastructure/settings",
     "infrastructure/telemetry",
@@ -25,6 +26,7 @@ config = { version = "0.15.27", default-features = false }
 fundle = "0.4.1"
 http = "1.5.0"
 jsonschema = { version = "0.60.2", default-features = false }
+lettre = { version = "0.11.23", default-features = false }
 ohno = "0.5.3"
 opentelemetry = "0.33.1"
 opentelemetry-appender-tracing = "0.33.1"
@@ -54,6 +56,7 @@ uuid = { version = "1.29.0", features = ["v4"] }
 
 application = { path = "application" }
 domain = { path = "domain" }
+email = { path = "infrastructure/email" }
 infrastructure = { path = "infrastructure/dependencies" }
 persistence = { path = "infrastructure/persistence" }
 settings = { path = "infrastructure/settings" }

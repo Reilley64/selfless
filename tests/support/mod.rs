@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use application::ports::SendEmail;
 use jsonschema::Registry;
 use reqwest::RequestBuilder;
 use reqwest::StatusCode;
@@ -10,9 +11,12 @@ use settings::AppSettings;
 use settings::DatabaseSettings;
 use settings::HttpSettings;
 use settings::OtlpSettings;
+use settings::SmtpSettings;
 use settings::WebSettings;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::sync::LazyLock;
+use std::sync::Mutex;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 use std::time::SystemTime;
@@ -77,9 +81,40 @@ async fn execute(sql: &str) {
     connection.await.unwrap().unwrap();
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SentEmail {
+    pub recipient: String,
+    pub subject: String,
+    pub body: String,
+}
+
+#[derive(Clone, Default)]
+pub struct FakeMailer {
+    sent: Arc<Mutex<Vec<SentEmail>>>,
+}
+
+impl FakeMailer {
+    pub fn sent(&self) -> Vec<SentEmail> {
+        self.sent.lock().unwrap().clone()
+    }
+
+    fn send_email(&self) -> SendEmail {
+        let sent = self.sent.clone();
+        SendEmail::new(move |recipient, subject, body| {
+            sent.lock().unwrap().push(SentEmail {
+                recipient,
+                subject,
+                body,
+            });
+            Box::pin(async { Ok(()) })
+        })
+    }
+}
+
 pub struct TestServer {
     address: SocketAddr,
     shutdown: CancellationToken,
+    pub mailer: FakeMailer,
 }
 
 impl TestServer {
@@ -99,18 +134,27 @@ impl TestServer {
     }
 
     async fn start_with_otlp(database_url: Url, otlp: OtlpSettings) -> Self {
-        let server = selfless::start(AppSettings {
-            http: HttpSettings { port: 0 },
-            database: DatabaseSettings { url: database_url },
-            web: WebSettings::default(),
-            otlp,
-        })
+        let mailer = FakeMailer::default();
+        let server = selfless::start(
+            AppSettings {
+                http: HttpSettings { port: 0 },
+                database: DatabaseSettings { url: database_url },
+                web: WebSettings::default(),
+                otlp,
+                smtp: SmtpSettings::default(),
+            },
+            mailer.send_email(),
+        )
         .await
         .unwrap();
         let address = server.local_addr().unwrap();
         let shutdown = CancellationToken::new();
         tokio::spawn(server.serve(shutdown.clone().cancelled_owned()));
-        Self { address, shutdown }
+        Self {
+            address,
+            shutdown,
+            mailer,
+        }
     }
 
     pub fn shut_down(&self) {

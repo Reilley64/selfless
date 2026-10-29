@@ -1,5 +1,6 @@
 mod telemetry;
 
+use infrastructure::email;
 use ohno::AppError;
 use ohno::IntoAppError;
 use settings::AppSettings;
@@ -9,11 +10,12 @@ use tokio::signal::unix::signal;
 #[tokio::main]
 async fn main() -> Result<(), AppError> {
     let settings = AppSettings::load()?;
+    let send_email = email::send_email(&settings.smtp)?;
     let mut terminate =
         signal(SignalKind::terminate()).into_app_err("failed to install the SIGTERM handler")?;
     let telemetry = telemetry::init()?;
     let result = async {
-        selfless::start(settings)
+        selfless::start(settings, send_email)
             .await?
             .serve(async move {
                 tokio::select! {

@@ -1,6 +1,7 @@
 use api::Availability;
 use application::BuildInfo;
 use application::DbContext;
+use application::ports::SendEmail;
 use infrastructure::AppState;
 use infrastructure::persistence;
 use infrastructure::telemetry;
@@ -21,7 +22,7 @@ pub struct Server {
     availability: Availability,
 }
 
-pub async fn start(settings: AppSettings) -> Result<Server, AppError> {
+pub async fn start(settings: AppSettings, send_email: SendEmail) -> Result<Server, AppError> {
     let db = persistence::connect(&settings.database).await?;
     persistence::migrate(&db).await?;
     let state = AppState::builder()
@@ -34,6 +35,7 @@ pub async fn start(settings: AppSettings) -> Result<Server, AppError> {
         })
         .db_context(|_| DbContext::new(db.clone(), settings.database.location()))
         .export_telemetry_try(|_| telemetry::export_telemetry(&settings.otlp))?
+        .send_email(|_| send_email.clone())
         .build();
     let availability = Availability::default();
     let router = api::router(
