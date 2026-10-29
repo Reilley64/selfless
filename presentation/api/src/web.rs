@@ -34,6 +34,11 @@ pub(crate) async fn settings() -> topcoat::Result<Response> {
     app()
 }
 
+#[route(GET "/(web)/invite")]
+pub(crate) async fn invite() -> topcoat::Result<Response> {
+    app()
+}
+
 fn app() -> topcoat::Result<Response> {
     Err(rewrite("/index.html", Body::empty()).into())
 }

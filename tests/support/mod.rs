@@ -88,6 +88,15 @@ impl TestDatabase {
         client.query(sql, &[]).await.unwrap()
     }
 
+    pub async fn admin_id(&self, name: &str) -> Uuid {
+        let rows = self
+            .query(&format!(
+                "SELECT id::text FROM admins WHERE name = '{name}'"
+            ))
+            .await;
+        rows[0].get::<_, &str>(0).parse().unwrap()
+    }
+
     pub async fn drop(self) {
         execute(&format!(r#"DROP DATABASE "{}" WITH (FORCE)"#, self.name)).await;
     }
@@ -248,6 +257,7 @@ impl TestServer {
             },
             name.to_owned(),
             password.to_owned(),
+            format!("{}@example.com", name.to_lowercase()),
         )
         .await
         .map(|x| x.id)

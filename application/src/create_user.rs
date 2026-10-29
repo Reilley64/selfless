@@ -29,6 +29,7 @@ pub async fn call(
     dependencies: impl Into<Dependencies>,
     name: String,
     password: String,
+    email: String,
 ) -> Result<User, Error> {
     let mut db_context = dependencies.into().db_context;
     if User::filter_by_name(name.clone())
@@ -51,6 +52,7 @@ pub async fn call(
     let password_hash = passwords::hash(password).await.map_err(Error::caused_by)?;
     toasty::create!(User {
         name,
+        email,
         password_hash,
         colour,
         symbol,

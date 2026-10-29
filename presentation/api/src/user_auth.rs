@@ -16,7 +16,10 @@ use topcoat::router::try_endpoint;
 use tracing::Span;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
-const PUBLIC: [(Method, &str); 1] = [(Method::POST, "/api/sessions/v1")];
+const PUBLIC: [(Method, &str); 2] = [
+    (Method::POST, "/api/sessions/v1"),
+    (Method::POST, "/api/invites/accept/v1"),
+];
 
 pub(crate) struct CurrentSession {
     pub(crate) token: String,

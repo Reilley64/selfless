@@ -138,6 +138,33 @@ paths:
               example: {"id":"01890a5d-ac96-774b-bcce-b302099a8057","name":"Noor","colour":"amber","symbol":"ring"}
         "401":
           $ref: "#/components/responses/Unauthenticated"
+  /api/invites/accept/v1:
+    post:
+      operationId: acceptInvite
+      summary: Accept an invite and become a user
+      description: The invite token authorizes the call, so it needs no session token. It creates the user with the invite's email address and ends the invite. Sign the new user in with POST /api/sessions/v1.
+      tags: [invites]
+      security: []
+      requestBody:
+        description: The token from the invite link, and the name and password the person chose.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AcceptInviteRequest"
+            example: {"token":"Zp3R0vYk8eN1xW5qT7uH2mC4bJ6sL9aF0dG3iK7oP1Q","name":"Noor","password":"a long passphrase about tea"}
+      responses:
+        "201":
+          description: The person is now a user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+              example: {"id":"01890a5d-ac96-774b-bcce-b302099a8057","name":"Noor","colour":"amber","symbol":"ring"}
+        "404":
+          $ref: "#/components/responses/InviteNotFound"
+        "409":
+          $ref: "#/components/responses/NameTaken"
   /api/telemetry/traces/v1:
     post:
       operationId: relayTraces
@@ -235,6 +262,8 @@ tags:
     description: Signing users in and out of the web and TV apps.
   - name: users
     description: The users of the household.
+  - name: invites
+    description: The invites that add users to the household.
   - name: telemetry
     description: The relay that forwards OTLP from the web and TV apps to the server's collector.
 components:
@@ -274,6 +303,32 @@ components:
                   status:
                     const: 401
           example: {"type":"urn:selfless:problem:wrong-name-or-password","title":"The name or password is wrong.","status":401}
+    NameTaken:
+      description: A user already has this name, in any capitals. The invite stays usable with another name.
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Problem"
+              - properties:
+                  type:
+                    const: urn:selfless:problem:name-taken
+                  status:
+                    const: 409
+          example: {"type":"urn:selfless:problem:name-taken","title":"A user already has this name.","status":409}
+    InviteNotFound:
+      description: No pending invite has this token. The token is unknown, the invite was already accepted or cancelled, or it expired.
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Problem"
+              - properties:
+                  type:
+                    const: urn:selfless:problem:invite-not-found
+                  status:
+                    const: 404
+          example: {"type":"urn:selfless:problem:invite-not-found","title":"The invite link no longer works.","status":404}
   schemas:
     Problem:
       description: An RFC 9457 problem details object. The type is stable and identifies the problem.
@@ -359,6 +414,24 @@ components:
           examples: [q2Xz8kQ0mJ3Hc1yF5bR7tVw9nL4pA6sD0eG2iK8uO1M]
         user:
           $ref: "#/components/schemas/User"
+      additionalProperties: false
+    AcceptInviteRequest:
+      description: The token from an invite link, and the name and password the invited person chose.
+      type: object
+      required: [token, name, password]
+      properties:
+        token:
+          description: The invite token from the fragment of the invite link.
+          type: string
+          examples: [Zp3R0vYk8eN1xW5qT7uH2mC4bJ6sL9aF0dG3iK7oP1Q]
+        name:
+          description: The name the person chose. It must be unique ignoring case.
+          type: string
+          examples: [Noor]
+        password:
+          description: The password the person chose.
+          type: string
+          examples: [a long passphrase about tea]
       additionalProperties: false
     HealthStatus:
       description: The status of a health group or component, as in Spring Boot Actuator.

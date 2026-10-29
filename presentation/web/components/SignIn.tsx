@@ -1,13 +1,8 @@
 import { useMutation } from "@tanstack/react-query";
-import { getParser } from "bowser";
 import { useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native-css/components";
+import { deviceName } from "../deviceName";
 import { session } from "../session";
-
-function deviceName() {
-  const userAgent = getParser(navigator.userAgent);
-  return [userAgent.getBrowserName(), userAgent.getOSName()].filter(Boolean).join(" on ") || "Web browser";
-}
 
 export function SignIn() {
   const [name, setName] = useState("");

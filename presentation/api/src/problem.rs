@@ -23,6 +23,18 @@ pub(crate) const UNAUTHENTICATED: Problem = Problem {
     status: StatusCode::UNAUTHORIZED,
 };
 
+pub(crate) const INVITE_NOT_FOUND: Problem = Problem {
+    problem_type: "urn:selfless:problem:invite-not-found",
+    title: "The invite link no longer works.",
+    status: StatusCode::NOT_FOUND,
+};
+
+pub(crate) const NAME_TAKEN: Problem = Problem {
+    problem_type: "urn:selfless:problem:name-taken",
+    title: "A user already has this name.",
+    status: StatusCode::CONFLICT,
+};
+
 impl IntoResponse for Problem {
     fn into_response(self, cx: &Cx) -> topcoat::Result<Response> {
         (

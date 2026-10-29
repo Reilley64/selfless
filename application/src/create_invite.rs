@@ -1,0 +1,78 @@
+use crate::DbContext;
+use crate::ports::Clock;
+use crate::ports::SendEmail;
+use crate::session_tokens;
+use domain::Invite;
+use domain::User;
+use std::fmt;
+use uuid::Uuid;
+
+#[fundle::deps]
+pub struct Dependencies {
+    pub db_context: DbContext,
+    pub clock: Clock,
+    pub send_email: SendEmail,
+}
+
+#[ohno::error]
+#[display("failed to create an invite")]
+pub struct Error;
+
+#[derive(Debug)]
+pub struct AddressTaken;
+
+impl fmt::Display for AddressTaken {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("a user or a pending invite already has this email address")
+    }
+}
+
+impl std::error::Error for AddressTaken {}
+
+pub async fn call(
+    dependencies: impl Into<Dependencies>,
+    admin_id: Uuid,
+    email: String,
+    origin: String,
+) -> Result<(), Error> {
+    let Dependencies {
+        mut db_context,
+        clock,
+        send_email,
+    } = dependencies.into();
+    let user = User::filter_by_email(email.clone())
+        .first()
+        .exec(db_context.executor_mut())
+        .await
+        .map_err(Error::caused_by)?;
+    let invite = Invite::filter_by_email(email.clone())
+        .first()
+        .exec(db_context.executor_mut())
+        .await
+        .map_err(Error::caused_by)?;
+    if user.is_some() || invite.is_some() {
+        return Err(Error::caused_by(AddressTaken));
+    }
+    let token = session_tokens::generate();
+    let sent_at = clock.call();
+    toasty::create!(Invite {
+        email: email.clone(),
+        token_hash: session_tokens::hash(&token),
+        admin_id,
+        sent_at,
+        expires_at: sent_at + Invite::VALID_FOR,
+    })
+    .exec(db_context.executor_mut())
+    .await
+    .map_err(Error::caused_by)?;
+    send_email
+        .call(
+            email,
+            "You're invited to selfless".to_owned(),
+            format!(
+                "You're invited to selfless.\n\nOpen this link to choose your name and password:\n{origin}/invite#{token}\n\nThe link works once and expires in 7 days.\n"
+            ),
+        )
+        .await
+        .map_err(Error::caused_by)
+}

@@ -42,15 +42,6 @@ async fn delete_admin(
     .await
 }
 
-async fn admin_id(database: &TestDatabase, name: &str) -> Uuid {
-    let rows = database
-        .query(&format!(
-            "SELECT id::text FROM admins WHERE name = '{name}'"
-        ))
-        .await;
-    rows[0].get::<_, &str>(0).parse().unwrap()
-}
-
 async fn signs_in(browser: &mut Browser, name: &str, password: &str) -> bool {
     browser.sign_in(name, password).await.status == StatusCode::SEE_OTHER
 }
@@ -134,7 +125,7 @@ async fn deleting_the_last_admin_fails() {
     let ravi = create_admin(&server, "Ravi", "another password")
         .await
         .unwrap();
-    let maya = admin_id(&database, ADMIN_NAME).await;
+    let maya = database.admin_id(ADMIN_NAME).await;
     delete_admin(&server, ravi).await.unwrap();
     let mut browser = server.browser();
     signs_in(&mut browser, ADMIN_NAME, ADMIN_PASSWORD).await;
@@ -156,7 +147,7 @@ async fn changing_an_admins_password_ends_their_sessions() {
     create_admin(&server, "Ravi", "another password")
         .await
         .unwrap();
-    let maya = admin_id(&database, ADMIN_NAME).await;
+    let maya = database.admin_id(ADMIN_NAME).await;
     let mut first = server.browser();
     signs_in(&mut first, ADMIN_NAME, ADMIN_PASSWORD).await;
     let mut second = server.browser();

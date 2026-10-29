@@ -1,9 +1,11 @@
+pub mod accept_invite;
 pub mod admin_sign_in;
 pub mod admin_sign_out;
 pub mod bootstrap_first_admin;
 pub mod change_admin_password;
 pub mod check_database;
 pub mod create_admin;
+pub mod create_invite;
 pub mod create_user;
 pub mod delete_admin;
 pub mod delete_expired_sessions;
