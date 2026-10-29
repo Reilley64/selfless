@@ -13,9 +13,12 @@ name = "admin"
 version = "0.1.0"
 dependencies = [
  "application",
+ "domain",
  "infrastructure",
  "jiff",
+ "ohno",
  "serde",
+ "serde_json",
  "topcoat",
  "tracing",
  "tracing-opentelemetry",

@@ -30,7 +30,7 @@ pub async fn call(
     admin_id: Uuid,
     email: String,
     origin: String,
-) -> Result<(), Error> {
+) -> Result<Uuid, Error> {
     let Dependencies {
         mut db_context,
         clock,
@@ -46,7 +46,7 @@ pub async fn call(
     }
     let token = tokens::generate();
     let sent_at = clock.call();
-    toasty::create!(Invite {
+    let invite = toasty::create!(Invite {
         email: email.clone(),
         token_hash: tokens::hash(&token),
         admin_id,
@@ -61,5 +61,6 @@ pub async fn call(
     })?;
     invite_email::send(&send_email, email, &origin, &token)
         .await
-        .map_err(Error::caused_by)
+        .map_err(Error::caused_by)?;
+    Ok(invite.id)
 }

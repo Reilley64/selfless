@@ -27,7 +27,7 @@ async fn invite(
     server: &TestServer,
     database: &TestDatabase,
     email: &str,
-) -> Result<(), application::create_invite::Error> {
+) -> Result<Uuid, application::create_invite::Error> {
     application::create_invite::call(
         application::create_invite::Dependencies {
             db_context: server.db_context().await,

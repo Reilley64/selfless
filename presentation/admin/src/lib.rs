@@ -1,5 +1,6 @@
 pub mod components;
 pub mod local_time;
+mod users;
 
 use application::attributes::SELFLESS_ADMIN_ACTION;
 use application::attributes::SELFLESS_ADMIN_ID;
@@ -69,7 +70,7 @@ const CSRF_COOKIE: &str = "csrf";
 const CSRF_HEADER: &str = "x-csrf-token";
 const SIDEBAR_ID: &str = "sidebar";
 const ACCOUNT_MENU_ID: &str = "account-menu";
-const SECTIONS: [(&str, &str); 1] = [(SYNC_PATH, "Sync status")];
+const SECTIONS: [(&str, &str); 2] = [(SYNC_PATH, "Sync status"), (users::USERS_PATH, "Users")];
 const STYLES: Asset = asset!("../dist/styles.css");
 const HTMX: Asset = asset!(
     "https://cdn.jsdelivr.net/npm/htmx.org@2.0.11/dist/htmx.min.js",
@@ -80,7 +81,7 @@ const HTMX_CONFIG: &str =
     r#"{"includeIndicatorStyles":false,"allowEval":false,"allowScriptTags":false}"#;
 
 pub fn register(router: RouterBuilder, assets: AssetBundle) -> RouterBuilder {
-    router
+    users::register(router)
         .route(home)
         .page(sync)
         .page(sign_in_form)
