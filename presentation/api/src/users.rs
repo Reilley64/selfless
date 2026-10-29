@@ -53,7 +53,7 @@ pub(crate) async fn change_password(
     Json(request): Json<ChangePassword>,
 ) -> topcoat::Result<Response> {
     let session = request_context::<CurrentSession>(cx);
-    match application::change_password::call(
+    match application::users::change_password::call(
         app_context::<AppState>(cx),
         session.user.id,
         &session.token,
@@ -62,7 +62,7 @@ pub(crate) async fn change_password(
     )
     .await
     {
-        Ok(()) => StatusCode::NO_CONTENT.into_response(cx),
+        Ok(_) => StatusCode::NO_CONTENT.into_response(cx),
         Err(error) => problem::from_error(cx, error),
     }
 }

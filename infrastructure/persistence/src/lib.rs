@@ -1,4 +1,4 @@
-use application::DbLocation;
+use application::ports::persistence::DbLocation;
 use serde::Deserialize;
 use std::time::Duration;
 use url::Url;
@@ -33,7 +33,7 @@ pub struct MigrateError;
 pub async fn connect(settings: &DatabaseSettings) -> Result<toasty::Db, ConnectError> {
     let driver = toasty_driver_postgresql::PostgreSQL::new(settings.url.as_str())?;
     Ok(toasty::Db::builder()
-        .models(application::models())
+        .models(application::ports::persistence::models())
         .pool_create_timeout(Some(POOL_TIMEOUT))
         .pool_wait_timeout(Some(POOL_TIMEOUT))
         .build(driver)

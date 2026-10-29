@@ -1,7 +1,7 @@
 mod support;
 
 use application::EmptyPassword;
-use application::create_user::NameTaken;
+use application::users::create_user::NameTaken;
 use ohno::ErrorExt;
 use reqwest::StatusCode;
 use support::TestDatabase;

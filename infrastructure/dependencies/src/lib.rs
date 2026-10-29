@@ -1,8 +1,8 @@
 use application::BuildInfo;
-use application::DbContext;
 use application::ports::Clock;
 use application::ports::ExportTelemetry;
 use application::ports::SendEmail;
+use application::ports::persistence::DbContext;
 use jiff::Timestamp;
 
 pub use email;

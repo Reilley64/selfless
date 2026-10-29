@@ -22,7 +22,7 @@ pub(crate) async fn accept(
     cx: &Cx,
     Json(request): Json<AcceptInvite>,
 ) -> topcoat::Result<Response> {
-    match application::accept_invite::call(
+    match application::invites::accept_invite::call(
         app_context::<AppState>(cx),
         &request.token,
         request.name,
@@ -30,7 +30,7 @@ pub(crate) async fn accept(
     )
     .await
     {
-        Ok(user) => (StatusCode::CREATED, Json(UserBody::from(&user))).into_response(cx),
+        Ok(output) => (StatusCode::CREATED, Json(UserBody::from(&output.user))).into_response(cx),
         Err(error) => problem::from_error(cx, error),
     }
 }

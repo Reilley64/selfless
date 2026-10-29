@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 
-use application::DbContext;
 use application::ports::Clock;
 use application::ports::SendEmail;
+use application::ports::persistence::DbContext;
 use infrastructure::persistence;
 use jiff::SignedDuration;
 use jiff::Timestamp;
@@ -250,9 +250,9 @@ impl TestServer {
         &self,
         name: &str,
         password: &str,
-    ) -> Result<Uuid, application::create_user::Error> {
-        application::create_user::call(
-            application::create_user::Dependencies {
+    ) -> Result<Uuid, application::users::create_user::Error> {
+        application::users::create_user::call(
+            application::users::create_user::Dependencies {
                 db_context: self.db_context().await,
             },
             name.to_owned(),
@@ -260,7 +260,7 @@ impl TestServer {
             format!("{}@example.com", name.to_lowercase()),
         )
         .await
-        .map(|x| x.id)
+        .map(|x| x.user.id)
     }
 
     pub async fn sign_in(

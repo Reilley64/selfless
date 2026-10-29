@@ -1,5 +1,6 @@
 use application::ports::MalformedTelemetry;
 use application::ports::TelemetrySignal;
+use application::telemetry::relay_telemetry;
 use infrastructure::AppState;
 use ohno::ErrorExt;
 use std::error::Error;
@@ -28,11 +29,11 @@ pub(crate) async fn logs(cx: &Cx, request: Bytes) -> topcoat::Result<Response> {
 }
 
 async fn relay(cx: &Cx, signal: TelemetrySignal, request: Bytes) -> topcoat::Result<Response> {
-    match application::relay_telemetry::call(app_context::<AppState>(cx), signal, request).await {
-        Ok(response) => (
+    match relay_telemetry::call(app_context::<AppState>(cx), signal, request).await {
+        Ok(output) => (
             StatusCode::OK,
             [(CONTENT_TYPE, "application/x-protobuf")],
-            response,
+            output.response,
         )
             .into_response(cx),
         Err(error) if error.find_source::<MalformedTelemetry>().is_some() => {

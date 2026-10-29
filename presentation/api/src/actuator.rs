@@ -102,8 +102,8 @@ pub(crate) async fn info(cx: &Cx) -> topcoat::Result<Response> {
 }
 
 async fn database_status(cx: &Cx) -> Status {
-    match application::check_database::call(app_context::<AppState>(cx)).await {
-        Ok(()) => Status::Up,
+    match application::actuator::check_database::call(app_context::<AppState>(cx)).await {
+        Ok(_) => Status::Up,
         Err(error) => {
             tracing::warn!(error = &error as &dyn Error, "database check failed");
             Status::Down

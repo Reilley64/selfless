@@ -1,4 +1,7 @@
 use application::attributes::SELFLESS_ADMIN_ID;
+use application::sessions::admin_sign_in;
+use application::sessions::admin_sign_out;
+use application::sessions::get_current_admin;
 use infrastructure::AppState;
 use serde::Deserialize;
 use topcoat::context::Cx;
@@ -72,10 +75,9 @@ struct SignIn {
 #[page(POST "/admin/sign-in")]
 async fn sign_in(cx: &Cx, Form(form): Form<SignIn>) -> topcoat::Result<impl View> {
     verify_csrf(cx, &form.csrf)?;
-    let token =
-        application::admin_sign_in::call(app_context::<AppState>(cx), form.name, form.password)
-            .await?;
-    let Some(token) = token else {
+    let admin_sign_in::Output::SignedIn { token } =
+        admin_sign_in::call(app_context::<AppState>(cx), form.name, form.password).await?
+    else {
         return Ok(view! { sign_in_page(failed: true) });
     };
     cookies(cx).add(admin_cookie(SESSION_COOKIE, token));
@@ -92,7 +94,7 @@ struct SignOut {
 async fn sign_out(cx: &Cx, Form(form): Form<SignOut>) -> topcoat::Result<SeeOther> {
     verify_csrf(cx, &form.csrf)?;
     if let Some(session) = cookies(cx).get(SESSION_COOKIE) {
-        application::admin_sign_out::call(app_context::<AppState>(cx), session.value()).await?;
+        admin_sign_out::call(app_context::<AppState>(cx), session.value()).await?;
         cookies(cx).remove(admin_cookie(SESSION_COOKIE, String::new()));
     }
     Ok(see_other(SIGN_IN_PATH))
@@ -166,14 +168,13 @@ fn verify_csrf(cx: &Cx, submitted: &str) -> topcoat::Result<()> {
 }
 
 async fn require_admin(cx: &Cx) -> topcoat::Result<()> {
-    let admin_id = match cookies(cx).get(SESSION_COOKIE) {
+    let current_admin = match cookies(cx).get(SESSION_COOKIE) {
         Some(session) => {
-            application::get_current_admin::call(app_context::<AppState>(cx), session.value())
-                .await?
+            get_current_admin::call(app_context::<AppState>(cx), session.value()).await?
         }
-        None => None,
+        None => get_current_admin::Output::NotSignedIn,
     };
-    let Some(admin_id) = admin_id else {
+    let get_current_admin::Output::SignedIn { admin_id } = current_admin else {
         return Err(see_other(SIGN_IN_PATH).into());
     };
     Span::current().set_attribute(SELFLESS_ADMIN_ID, admin_id.to_string());

@@ -1,3 +1,4 @@
+use crate::errors::EmptyPassword;
 use argon2::Argon2;
 use argon2::password_hash::Error as HashError;
 use argon2::password_hash::PasswordHasher;
@@ -10,10 +11,6 @@ const DUMMY_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$RcmBi3W1jo5bbjttQ9AnKQ$
 #[ohno::error]
 #[display("failed to hash a password")]
 pub(crate) struct PasswordError;
-
-#[ohno::error]
-#[display("the password is empty")]
-pub struct EmptyPassword;
 
 pub(crate) async fn hash(password: String) -> Result<String, PasswordError> {
     if password.is_empty() {

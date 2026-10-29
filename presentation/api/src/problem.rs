@@ -1,7 +1,7 @@
 use application::EmptyPassword;
-use application::accept_invite::InviteNotFound;
-use application::change_password::WrongCurrentPassword;
-use application::create_user::NameTaken;
+use application::invites::accept_invite::InviteNotFound;
+use application::users::change_password::WrongCurrentPassword;
+use application::users::create_user::NameTaken;
 use ohno::ErrorExt;
 use serde_json::json;
 use topcoat::context::Cx;

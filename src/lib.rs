@@ -1,9 +1,9 @@
 use api::Availability;
 use application::BuildInfo;
-use application::DbContext;
-use application::bootstrap_first_admin::MissingFirstAdmin;
+use application::admins::bootstrap_first_admin::MissingFirstAdmin;
 use application::ports::Clock;
 use application::ports::SendEmail;
+use application::ports::persistence::DbContext;
 use infrastructure::AppState;
 use infrastructure::persistence;
 use infrastructure::telemetry;
@@ -48,7 +48,7 @@ pub async fn start(
         .export_telemetry_try(|_| telemetry::export_telemetry(&settings.otlp))?
         .send_email(|_| send_email.clone())
         .build();
-    application::bootstrap_first_admin::call(
+    application::admins::bootstrap_first_admin::call(
         &state,
         settings.admin.username,
         settings.admin.password,

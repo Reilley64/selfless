@@ -1,8 +1,8 @@
 mod support;
 
 use application::EmptyPassword;
-use application::create_admin::NameTaken;
-use application::delete_admin::LastAdmin;
+use application::admins::create_admin::NameTaken;
+use application::admins::delete_admin::LastAdmin;
 use ohno::ErrorExt;
 use reqwest::StatusCode;
 use support::ADMIN_NAME;
@@ -18,24 +18,24 @@ async fn create_admin(
     server: &TestServer,
     name: &str,
     password: &str,
-) -> Result<Uuid, application::create_admin::Error> {
-    application::create_admin::call(
-        application::create_admin::Dependencies {
+) -> Result<Uuid, application::admins::create_admin::Error> {
+    application::admins::create_admin::call(
+        application::admins::create_admin::Dependencies {
             db_context: server.db_context().await,
         },
         name.to_owned(),
         password.to_owned(),
     )
     .await
-    .map(|x| x.id)
+    .map(|x| x.admin.id)
 }
 
 async fn delete_admin(
     server: &TestServer,
     id: Uuid,
-) -> Result<(), application::delete_admin::Error> {
-    application::delete_admin::call(
-        application::delete_admin::Dependencies {
+) -> Result<application::admins::delete_admin::Output, application::admins::delete_admin::Error> {
+    application::admins::delete_admin::call(
+        application::admins::delete_admin::Dependencies {
             db_context: server.db_context().await,
         },
         id,
@@ -191,8 +191,8 @@ async fn changing_an_admins_password_ends_their_sessions() {
     let mut ravi = server.browser();
     signs_in(&mut ravi, "Ravi", "another password").await;
 
-    application::change_admin_password::call(
-        application::change_admin_password::Dependencies {
+    application::admins::change_admin_password::call(
+        application::admins::change_admin_password::Dependencies {
             db_context: server.db_context().await,
         },
         maya,
@@ -222,8 +222,8 @@ async fn admin_passwords_cannot_be_empty() {
     let created = create_admin(&server, "Ravi", "")
         .await
         .expect_err("the password is empty");
-    let changed = application::change_admin_password::call(
-        application::change_admin_password::Dependencies {
+    let changed = application::admins::change_admin_password::call(
+        application::admins::change_admin_password::Dependencies {
             db_context: server.db_context().await,
         },
         maya,

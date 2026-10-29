@@ -31,22 +31,23 @@ struct SignedIn {
 
 #[route(POST "/api/(public)/sessions/v1")]
 pub(crate) async fn sign_in(cx: &Cx, Json(request): Json<SignIn>) -> topcoat::Result<Response> {
-    let signed_in = application::sign_in::call(
-        app_context::<AppState>(cx),
-        request.name,
-        request.password,
-        request.client_kind,
-        request.device_name,
-    )
-    .await?;
-    let Some(signed_in) = signed_in else {
+    let application::sessions::sign_in::Output::SignedIn { token, user } =
+        application::sessions::sign_in::call(
+            app_context::<AppState>(cx),
+            request.name,
+            request.password,
+            request.client_kind,
+            request.device_name,
+        )
+        .await?
+    else {
         return WRONG_NAME_OR_PASSWORD.into_response(cx);
     };
     (
         StatusCode::CREATED,
         Json(SignedIn {
-            token: signed_in.token,
-            user: UserBody::from(&signed_in.user),
+            token,
+            user: UserBody::from(&user),
         }),
     )
         .into_response(cx)
@@ -55,6 +56,6 @@ pub(crate) async fn sign_in(cx: &Cx, Json(request): Json<SignIn>) -> topcoat::Re
 #[route(DELETE "/api/(user)/sessions/current/v1")]
 pub(crate) async fn sign_out(cx: &Cx) -> topcoat::Result<Response> {
     let token = &request_context::<CurrentSession>(cx).token;
-    application::sign_out::call(app_context::<AppState>(cx), token).await?;
+    application::sessions::sign_out::call(app_context::<AppState>(cx), token).await?;
     StatusCode::NO_CONTENT.into_response(cx)
 }

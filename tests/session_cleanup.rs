@@ -66,8 +66,8 @@ async fn the_daily_cleanup_deletes_only_expired_web_and_admin_sessions() {
     let mut admin = sign_in_admin(&server).await;
     server.clock.advance(SignedDuration::from_hours(11));
 
-    application::delete_expired_sessions::call(
-        application::delete_expired_sessions::Dependencies {
+    application::sessions::delete_expired_sessions::call(
+        application::sessions::delete_expired_sessions::Dependencies {
             db_context: server.db_context().await,
             clock: server.clock.port(),
         },

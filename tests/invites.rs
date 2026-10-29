@@ -1,6 +1,6 @@
 mod support;
 
-use application::create_invite::AddressTaken;
+use application::invites::create_invite::AddressTaken;
 use application::ports::SendEmail;
 use application::ports::SendEmailError;
 use base64::Engine;
@@ -29,7 +29,8 @@ async fn invite(
     server: &TestServer,
     database: &TestDatabase,
     email: &str,
-) -> Result<(), application::create_invite::Error> {
+) -> Result<application::invites::create_invite::Output, application::invites::create_invite::Error>
+{
     invite_with(server, database, email, server.mailer.send_email()).await
 }
 
@@ -38,9 +39,10 @@ async fn invite_with(
     database: &TestDatabase,
     email: &str,
     send_email: SendEmail,
-) -> Result<(), application::create_invite::Error> {
-    application::create_invite::call(
-        application::create_invite::Dependencies {
+) -> Result<application::invites::create_invite::Output, application::invites::create_invite::Error>
+{
+    application::invites::create_invite::call(
+        application::invites::create_invite::Dependencies {
             db_context: server.db_context().await,
             clock: server.clock.port(),
             send_email,
@@ -65,22 +67,28 @@ fn token_from(body: &str) -> String {
 }
 
 async fn pending_invites(server: &TestServer) -> Vec<(String, Timestamp, Timestamp)> {
-    application::list_pending_invites::call(application::list_pending_invites::Dependencies {
-        db_context: server.db_context().await,
-    })
+    application::invites::list_pending_invites::call(
+        application::invites::list_pending_invites::Dependencies {
+            db_context: server.db_context().await,
+        },
+    )
     .await
     .unwrap()
+    .invites
     .into_iter()
     .map(|x| (x.email, x.sent_at, x.expires_at))
     .collect()
 }
 
 async fn invite_id(server: &TestServer, email: &str) -> Uuid {
-    application::list_pending_invites::call(application::list_pending_invites::Dependencies {
-        db_context: server.db_context().await,
-    })
+    application::invites::list_pending_invites::call(
+        application::invites::list_pending_invites::Dependencies {
+            db_context: server.db_context().await,
+        },
+    )
     .await
     .unwrap()
+    .invites
     .into_iter()
     .find(|x| x.email == email)
     .unwrap()
@@ -97,9 +105,10 @@ async fn resend_with(
     server: &TestServer,
     id: Uuid,
     send_email: SendEmail,
-) -> Result<(), application::resend_invite::Error> {
-    application::resend_invite::call(
-        application::resend_invite::Dependencies {
+) -> Result<application::invites::resend_invite::Output, application::invites::resend_invite::Error>
+{
+    application::invites::resend_invite::call(
+        application::invites::resend_invite::Dependencies {
             db_context: server.db_context().await,
             clock: server.clock.port(),
             send_email,
@@ -117,8 +126,8 @@ fn failing_mailer() -> SendEmail {
 }
 
 async fn cancel(server: &TestServer, id: Uuid) {
-    application::cancel_invite::call(
-        application::cancel_invite::Dependencies {
+    application::invites::cancel_invite::call(
+        application::invites::cancel_invite::Dependencies {
             db_context: server.db_context().await,
         },
         id,
@@ -498,7 +507,7 @@ async fn resending_an_invite_that_is_no_longer_pending_fails_with_invite_not_fou
 
     assert!(
         resent.as_ref().is_err_and(|x| x
-            .find_source::<application::resend_invite::InviteNotFound>()
+            .find_source::<application::invites::resend_invite::InviteNotFound>()
             .is_some()),
         "{resent:?}"
     );

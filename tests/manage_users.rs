@@ -39,8 +39,8 @@ async fn sign_in(server: &TestServer, client_kind: &str, device_name: &str) -> S
 }
 
 async fn list_sessions(server: &TestServer, user_id: Uuid) -> Vec<Value> {
-    application::list_user_sessions::call(
-        application::list_user_sessions::Dependencies {
+    application::sessions::list_user_sessions::call(
+        application::sessions::list_user_sessions::Dependencies {
             db_context: server.db_context().await,
             clock: server.clock.port(),
         },
@@ -48,6 +48,7 @@ async fn list_sessions(server: &TestServer, user_id: Uuid) -> Vec<Value> {
     )
     .await
     .unwrap()
+    .sessions
     .into_iter()
     .map(|x| {
         json!({
@@ -131,8 +132,8 @@ async fn deleting_a_user_ends_their_sessions() {
     let web = sign_in(&server, "web", "Firefox on macOS").await;
     let tv = sign_in(&server, "appleTv", "Living Room").await;
 
-    application::delete_user::call(
-        application::delete_user::Dependencies {
+    application::users::delete_user::call(
+        application::users::delete_user::Dependencies {
             db_context: server.db_context().await,
         },
         id,
@@ -156,8 +157,8 @@ async fn ending_one_session_signs_out_only_that_session() {
     let id = server.create_user(NAME, PASSWORD).await;
     let web = sign_in(&server, "web", "Firefox on macOS").await;
     let tv = sign_in(&server, "appleTv", "Living Room").await;
-    let web_session = application::list_user_sessions::call(
-        application::list_user_sessions::Dependencies {
+    let web_session = application::sessions::list_user_sessions::call(
+        application::sessions::list_user_sessions::Dependencies {
             db_context: server.db_context().await,
             clock: server.clock.port(),
         },
@@ -165,12 +166,13 @@ async fn ending_one_session_signs_out_only_that_session() {
     )
     .await
     .unwrap()
+    .sessions
     .into_iter()
     .find(|x| x.device_name == "Firefox on macOS")
     .unwrap();
 
-    application::end_session::call(
-        application::end_session::Dependencies {
+    application::sessions::end_session::call(
+        application::sessions::end_session::Dependencies {
             db_context: server.db_context().await,
         },
         web_session.id,
@@ -194,8 +196,8 @@ async fn ending_all_of_a_users_sessions_leaves_other_users_signed_in() {
     let tv = sign_in(&server, "googleTv", "Bedroom").await;
     let (_, other) = server.sign_in("Ravi", "another password", "web").await;
 
-    application::end_user_sessions::call(
-        application::end_user_sessions::Dependencies {
+    application::sessions::end_user_sessions::call(
+        application::sessions::end_user_sessions::Dependencies {
             db_context: server.db_context().await,
         },
         id,
@@ -223,8 +225,8 @@ async fn resetting_a_users_password_ends_all_their_sessions() {
     let tv = sign_in(&server, "googleTv", "Bedroom").await;
     let (_, other) = server.sign_in("Ravi", "another password", "web").await;
 
-    application::reset_user_password::call(
-        application::reset_user_password::Dependencies {
+    application::users::reset_user_password::call(
+        application::users::reset_user_password::Dependencies {
             db_context: server.db_context().await,
         },
         id,
@@ -254,8 +256,8 @@ async fn resetting_a_password_to_an_empty_one_fails_and_changes_nothing() {
     let id = server.create_user(NAME, PASSWORD).await;
     let web = sign_in(&server, "web", "Firefox on macOS").await;
 
-    let error = application::reset_user_password::call(
-        application::reset_user_password::Dependencies {
+    let error = application::users::reset_user_password::call(
+        application::users::reset_user_password::Dependencies {
             db_context: server.db_context().await,
         },
         id,

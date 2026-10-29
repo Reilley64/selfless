@@ -1,4 +1,5 @@
 use crate::problem::UNAUTHENTICATED;
+use application::sessions::get_current_user;
 use infrastructure::AppState;
 use topcoat::context::Cx;
 use topcoat::context::app_context;
@@ -34,8 +35,8 @@ impl Layer for UserAuthLayer {
             else {
                 return UNAUTHENTICATED.into_response(cx);
             };
-            let Some(user) =
-                application::get_current_user::call(app_context::<AppState>(cx), token).await?
+            let get_current_user::Output::SignedIn { user } =
+                get_current_user::call(app_context::<AppState>(cx), token).await?
             else {
                 return UNAUTHENTICATED.into_response(cx);
             };
