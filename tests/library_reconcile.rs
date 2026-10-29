@@ -346,6 +346,52 @@ async fn a_removal_of_more_than_half_the_movies_is_held_until_an_admin_confirms_
 }
 
 #[tokio::test]
+async fn a_radarr_that_lists_as_many_other_movies_holds_the_removal_of_every_stored_movie() {
+    let fixture = Fixture::start(&ALL_MOVIES, &[]).await;
+    fixture.reconciled(Source::Radarr).await;
+
+    let other_movies = fixture
+        .arrs
+        .listed_movies(&ALL_MOVIES)
+        .into_iter()
+        .map(|mut movie| {
+            movie["id"] = (movie["id"].as_i64().unwrap() + 100).into();
+            movie["tmdbId"] = (movie["tmdbId"].as_i64().unwrap() + 1_000_000).into();
+            movie["title"] = format!("Other {}", movie["title"].as_str().unwrap()).into();
+            let path = movie["movieFile"]["path"]
+                .as_str()
+                .unwrap()
+                .replace("/Movies/", "/Other Movies/");
+            fixture.arrs.media.create_absolute(&path);
+            movie["movieFile"]["path"] = path.into();
+            movie
+        })
+        .collect();
+    fixture
+        .arrs
+        .radarr
+        .serve_movies(StatusCode::OK, &Value::Array(other_movies).to_string())
+        .await;
+    let status = fixture.sync_now(Source::Radarr).await;
+
+    assert_eq!(status.held_removal, Some(HeldRemoval { count: 4 }));
+    assert_eq!(
+        fixture.movie_titles().await,
+        [
+            "Arrival",
+            "Blade Runner 2049",
+            "Dune",
+            "Other Arrival",
+            "Other Blade Runner 2049",
+            "Other Dune",
+            "Other Sicario",
+            "Sicario"
+        ]
+    );
+    fixture.stop().await;
+}
+
+#[tokio::test]
 async fn a_later_reconcile_with_a_smaller_removal_replaces_the_held_one() {
     let fixture = Fixture::start(&ALL_MOVIES, &[]).await;
     fixture.reconciled(Source::Radarr).await;

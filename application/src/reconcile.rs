@@ -244,6 +244,16 @@ async fn reconcile_movies(
         .iter()
         .map(|x| x.radarr_id)
         .collect::<HashSet<_>>();
+    let stored_movies = Movie::all()
+        .exec(db_context.executor_mut())
+        .await
+        .map_err(Error::caused_by)?;
+    let total = stored_movies.len();
+    let removed = stored_movies
+        .into_iter()
+        .filter(|x| !listed.contains(&x.tmdb_id))
+        .map(|x| x.id)
+        .collect();
     let stored = MediaFile::all()
         .exec(db_context.executor_mut())
         .await
@@ -286,16 +296,6 @@ async fn reconcile_movies(
             "{failed_calls} calls to Radarr failed, so nothing was removed"
         )));
     }
-    let movies = Movie::all()
-        .exec(db_context.executor_mut())
-        .await
-        .map_err(Error::caused_by)?;
-    let total = movies.len();
-    let removed = movies
-        .into_iter()
-        .filter(|x| !listed.contains(&x.tmdb_id))
-        .map(|x| x.id)
-        .collect();
     remove_or_hold(db_context, Source::Radarr, total, removed).await
 }
 
@@ -314,6 +314,16 @@ async fn reconcile_shows(
         .map_err(Error::caused_by)?;
     let listed = series.iter().map(|x| x.tvdb_id).collect::<HashSet<_>>();
     set_total(progress, series.len());
+    let stored_shows = Show::all()
+        .exec(db_context.executor_mut())
+        .await
+        .map_err(Error::caused_by)?;
+    let total = stored_shows.len();
+    let removed = stored_shows
+        .into_iter()
+        .filter(|x| !listed.contains(&x.tvdb_id))
+        .map(|x| x.id)
+        .collect();
     let mut synced = HashSet::new();
     for series in series {
         let span = sync_show::span();
@@ -352,16 +362,6 @@ async fn reconcile_shows(
             "{failed_calls} calls to Sonarr failed, so nothing was removed"
         )));
     }
-    let shows = Show::all()
-        .exec(db_context.executor_mut())
-        .await
-        .map_err(Error::caused_by)?;
-    let total = shows.len();
-    let removed = shows
-        .into_iter()
-        .filter(|x| !listed.contains(&x.tvdb_id))
-        .map(|x| x.id)
-        .collect();
     remove_or_hold(db_context, Source::Sonarr, total, removed).await
 }
 
