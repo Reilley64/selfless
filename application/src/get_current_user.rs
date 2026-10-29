@@ -2,7 +2,6 @@ use crate::DbContext;
 use crate::DbScope;
 use crate::ports::Clock;
 use crate::tokens;
-use domain::LAST_USED_PRECISION;
 use domain::Session;
 use domain::User;
 
@@ -36,7 +35,7 @@ pub async fn call(
     else {
         return Ok(None);
     };
-    if now.duration_since(session.last_used_at) >= LAST_USED_PRECISION {
+    if now.duration_since(session.last_used_at) >= Session::LAST_USED_PRECISION {
         session
             .update()
             .last_used_at(now)

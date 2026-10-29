@@ -3,8 +3,6 @@ use jiff::Timestamp;
 use toasty::Deferred;
 use uuid::Uuid;
 
-pub const LAST_USED_PRECISION: SignedDuration = SignedDuration::from_hours(1);
-
 #[derive(Debug, toasty::Model)]
 pub struct Admin {
     #[key]
@@ -32,6 +30,7 @@ pub struct AdminSession {
 
 impl AdminSession {
     pub const IDLE_TIMEOUT: SignedDuration = SignedDuration::from_hours(12);
+    pub const LAST_USED_PRECISION: SignedDuration = SignedDuration::from_hours(1);
 }
 
 #[derive(
@@ -110,6 +109,7 @@ pub struct Session {
 
 impl Session {
     pub const WEB_IDLE_TIMEOUT: SignedDuration = SignedDuration::from_hours(30 * 24);
+    pub const LAST_USED_PRECISION: SignedDuration = SignedDuration::from_hours(1);
 
     pub fn expired(&self, now: Timestamp) -> bool {
         self.client_kind == ClientKind::Web

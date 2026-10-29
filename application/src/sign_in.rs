@@ -2,7 +2,7 @@ use crate::DbContext;
 use crate::DbScope;
 use crate::attributes::selfless_auth_client_kind;
 use crate::ports::Clock;
-use crate::sign_ins;
+use crate::sign_in_attempts;
 use crate::tokens;
 use domain::ClientKind;
 use domain::User;
@@ -40,7 +40,7 @@ pub async fn call(
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?;
-    let matches = sign_ins::verify(
+    let matches = sign_in_attempts::check_and_count(
         password,
         user.as_ref().map(|x| x.password_hash.clone()),
         match client_kind {

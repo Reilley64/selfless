@@ -26,7 +26,7 @@ pub mod relay_telemetry;
 pub mod resend_invite;
 pub mod reset_user_password;
 pub mod sign_in;
-mod sign_ins;
+mod sign_in_attempts;
 pub mod sign_out;
 mod tokens;
 mod unique_index;

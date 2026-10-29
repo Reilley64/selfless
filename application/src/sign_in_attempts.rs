@@ -16,7 +16,7 @@ static SIGN_INS: LazyLock<Counter<u64>> = LazyLock::new(|| {
         .build()
 });
 
-pub(crate) async fn verify(
+pub(crate) async fn check_and_count(
     password: String,
     hash: Option<String>,
     client_kind: &'static str,

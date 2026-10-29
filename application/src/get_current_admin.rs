@@ -3,7 +3,6 @@ use crate::DbScope;
 use crate::ports::Clock;
 use crate::tokens;
 use domain::AdminSession;
-use domain::LAST_USED_PRECISION;
 use uuid::Uuid;
 
 #[fundle::deps]
@@ -36,7 +35,7 @@ pub async fn call(
     else {
         return Ok(None);
     };
-    if now.duration_since(session.last_used_at) >= LAST_USED_PRECISION {
+    if now.duration_since(session.last_used_at) >= AdminSession::LAST_USED_PRECISION {
         session
             .update()
             .last_used_at(now)
