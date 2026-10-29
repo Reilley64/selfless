@@ -78,3 +78,19 @@ _Avoid_: Active sessions, streams, activity
 **Featured title**:
 The one movie or show shown large at the top of Home: the top of Popular now, or the latest released title when nobody has played anything.
 _Avoid_: Hero, billboard, spotlight
+
+**Playback**:
+One device playing one movie or episode, from pressing play until it stops.
+_Avoid_: Session, stream, play
+
+**Direct play**:
+A playback where the device plays the file as it is on disk.
+_Avoid_: Direct stream
+
+**Remux**:
+A playback where selfless copies the file's video and audio into a format the device can open, without changing them.
+_Avoid_: Direct stream, repackage
+
+**Transcode**:
+A playback where selfless converts the video or audio into a format the device can play.
+_Avoid_: Convert, encode
