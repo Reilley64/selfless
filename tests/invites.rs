@@ -487,6 +487,27 @@ async fn a_resend_whose_email_fails_changes_nothing_and_the_old_link_keeps_worki
 }
 
 #[tokio::test]
+async fn resending_an_invite_that_is_no_longer_pending_fails_with_invite_not_found() {
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+    invite(&server, &database, EMAIL).await.unwrap();
+    let id = invite_id(&server, EMAIL).await;
+    cancel(&server, id).await;
+
+    let resent = resend_with(&server, id, server.mailer.send_email()).await;
+
+    assert!(
+        resent.as_ref().is_err_and(|x| x
+            .find_source::<application::resend_invite::InviteNotFound>()
+            .is_some()),
+        "{resent:?}"
+    );
+    assert_eq!(server.mailer.sent().len(), 1);
+    drop(server);
+    database.drop().await;
+}
+
+#[tokio::test]
 async fn a_cancelled_invite_is_no_longer_pending_and_its_link_stops_working() {
     let database = TestDatabase::create().await;
     let server = TestServer::start(database.url()).await;

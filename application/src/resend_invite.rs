@@ -18,6 +18,10 @@ pub struct Dependencies {
 #[display("failed to resend an invite")]
 pub struct Error;
 
+#[ohno::error]
+#[display("no pending invite has this ID")]
+pub struct InviteNotFound;
+
 pub async fn call(
     dependencies: impl Into<Dependencies>,
     id: Uuid,
@@ -36,7 +40,7 @@ pub async fn call(
         .await
         .map_err(Error::caused_by)?
     else {
-        return Ok(());
+        return Err(Error::caused_by(InviteNotFound::new()));
     };
     let token = tokens::generate();
     let sent_at = clock.call();
