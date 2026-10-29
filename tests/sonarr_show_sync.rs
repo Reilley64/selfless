@@ -45,13 +45,11 @@ impl Fixture {
         self.sonarr
             .serve_series(
                 SONARR_ID,
-                &self.media.sonarr_fixture("sonarr/api/series.json"),
+                &self.media.fixture("sonarr/api/series.json"),
+                &self.media.fixture(&format!("sonarr/api/{episodes}.json")),
                 &self
                     .media
-                    .sonarr_fixture(&format!("sonarr/api/{episodes}.json")),
-                &self
-                    .media
-                    .sonarr_fixture(&format!("sonarr/api/{episode_files}.json")),
+                    .fixture(&format!("sonarr/api/{episode_files}.json")),
             )
             .await;
     }

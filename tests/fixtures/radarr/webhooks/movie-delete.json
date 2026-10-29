@@ -1,0 +1,34 @@
+{
+  "movie": {
+    "id": 42,
+    "title": "Arrival",
+    "year": 2016,
+    "releaseDate": "2017-02-14",
+    "folderPath": "/mnt/media/Movies/Arrival (2016)",
+    "tmdbId": 329865,
+    "imdbId": "tt2543164",
+    "overview": "Taking place after alien crafts land around the world, an expert linguist is recruited by the military to determine whether they come in peace or are a threat.",
+    "genres": [
+      "Drama",
+      "Science Fiction",
+      "Mystery"
+    ],
+    "images": [
+      {
+        "coverType": "poster",
+        "url": "/MediaCover/42/poster.jpg?lastWrite=638663000000000000",
+        "remoteUrl": "https://image.tmdb.org/t/p/original/x2FJsf1ElAgr63Y3PNPtJrcmpoe.jpg"
+      }
+    ],
+    "tags": [],
+    "originalLanguage": {
+      "id": 1,
+      "name": "English"
+    }
+  },
+  "deletedFiles": true,
+  "movieFolderSize": 9876543210,
+  "eventType": "MovieDelete",
+  "instanceName": "Radarr",
+  "applicationUrl": ""
+}

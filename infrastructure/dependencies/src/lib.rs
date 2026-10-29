@@ -4,10 +4,12 @@ use application::InboxWakeup;
 use application::WebhookPasswords;
 use application::ports::Clock;
 use application::ports::ExportTelemetry;
+use application::ports::GetRadarrMovie;
 use application::ports::GetSonarrShow;
 use jiff::Timestamp;
 
 pub use persistence;
+pub use radarr;
 pub use sonarr;
 pub use telemetry;
 
@@ -18,6 +20,7 @@ pub struct AppState {
     pub clock: Clock,
     pub db_context: DbContext,
     pub export_telemetry: ExportTelemetry,
+    pub get_radarr_movie: GetRadarrMovie,
     pub get_sonarr_show: GetSonarrShow,
     pub inbox_wakeup: InboxWakeup,
     pub webhook_passwords: WebhookPasswords,

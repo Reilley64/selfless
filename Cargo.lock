@@ -2170,6 +2170,7 @@ dependencies = [
  "fundle",
  "jiff",
  "persistence",
+ "radarr",
  "sonarr",
  "telemetry",
 ]
@@ -3395,7 +3396,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3429,8 +3430,13 @@ checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 name = "radarr"
 version = "0.1.0"
 dependencies = [
+ "application",
+ "jiff",
  "ohno",
+ "reqwest",
  "serde",
+ "tracing",
+ "url",
 ]
 
 [[package]]

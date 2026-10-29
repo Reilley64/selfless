@@ -10,5 +10,6 @@ application = { workspace = true }
 fundle = { workspace = true }
 jiff = { workspace = true }
 persistence = { workspace = true }
+radarr = { workspace = true }
 sonarr = { workspace = true }
 telemetry = { workspace = true }

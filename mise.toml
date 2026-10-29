@@ -10,6 +10,8 @@ yq = "4.54.1"
 [env]
 DATABASE__URL = "postgres://selfless:selfless@localhost:5432/selfless"
 OTEL_SERVICE_NAME = "selfless"
+RADARR__URL = "http://localhost:7878"
+RADARR__API_KEY = "radarr"
 RADARR__WEBHOOK_PASSWORD = "radarr"
 SONARR__URL = "http://localhost:8989"
 SONARR__API_KEY = "sonarr"

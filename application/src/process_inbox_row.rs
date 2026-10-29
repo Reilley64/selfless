@@ -1,5 +1,7 @@
 use crate::DbContext;
+use crate::ports::GetRadarrMovie;
 use crate::ports::GetSonarrShow;
+use crate::sync_movie;
 use crate::sync_show;
 use crate::unsampled;
 use crate::webhook_deliveries;
@@ -20,6 +22,7 @@ use uuid::Uuid;
 #[fundle::deps]
 pub struct Dependencies {
     pub db_context: DbContext,
+    pub get_radarr_movie: GetRadarrMovie,
     pub get_sonarr_show: GetSonarrShow,
 }
 
@@ -30,6 +33,21 @@ pub struct Error;
 #[derive(Deserialize)]
 #[serde(tag = "eventType")]
 enum RadarrEvent {
+    Download {
+        movie: RadarrMovieRef,
+    },
+    Rename {
+        movie: RadarrMovieRef,
+    },
+    MovieAdded {
+        movie: RadarrMovieRef,
+    },
+    MovieDelete {
+        movie: RadarrMovieRef,
+    },
+    MovieFileDelete {
+        movie: RadarrMovieRef,
+    },
     Test,
     Grab,
     Health,
@@ -69,6 +87,11 @@ enum SonarrEvent {
 }
 
 #[derive(Deserialize)]
+struct RadarrMovieRef {
+    id: i64,
+}
+
+#[derive(Deserialize)]
 struct SonarrSeries {
     id: i64,
 }
@@ -76,6 +99,7 @@ struct SonarrSeries {
 pub async fn call(dependencies: impl Into<Dependencies>) -> Result<bool, Error> {
     let Dependencies {
         mut db_context,
+        get_radarr_movie,
         get_sonarr_show,
     } = dependencies.into();
     let Some(claimed) = toasty::sql::query(
@@ -123,11 +147,15 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<bool, Error> 
         );
         span.record("selfless.webhook.source", row.source.name());
         span.record("selfless.webhook.event_type", row.event_type.as_deref());
+        let sync_movie = sync_movie::Dependencies {
+            db_context: db_context.clone(),
+            get_radarr_movie,
+        };
         let sync_show = sync_show::Dependencies {
             db_context: db_context.clone(),
             get_sonarr_show,
         };
-        let (status, outcome) = dispatch(row.source, &row.body, sync_show)
+        let (status, outcome) = dispatch(row.source, &row.body, sync_movie, sync_show)
             .await
             .unwrap_or_else(|error| {
                 tracing::warn!(
@@ -153,11 +181,21 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<bool, Error> 
 async fn dispatch(
     source: Source,
     body: &[u8],
+    sync_movie: sync_movie::Dependencies,
     sync_show: sync_show::Dependencies,
 ) -> Result<(InboxRowStatus, &'static str), Box<dyn std::error::Error + Send + Sync>> {
+    let processed = (InboxRowStatus::Processed, "processed");
     let ignored = (InboxRowStatus::Ignored, "ignored");
     match source {
         Source::Radarr => match serde_json::from_slice(body)? {
+            RadarrEvent::Download { movie }
+            | RadarrEvent::Rename { movie }
+            | RadarrEvent::MovieAdded { movie }
+            | RadarrEvent::MovieDelete { movie }
+            | RadarrEvent::MovieFileDelete { movie } => {
+                sync_movie::call(sync_movie, movie.id).await?;
+                Ok(processed)
+            }
             RadarrEvent::Test
             | RadarrEvent::Grab
             | RadarrEvent::Health
@@ -173,7 +211,7 @@ async fn dispatch(
             | SonarrEvent::SeriesDelete { series }
             | SonarrEvent::EpisodeFileDelete { series } => {
                 sync_show::call(sync_show, series.id).await?;
-                Ok((InboxRowStatus::Processed, "processed"))
+                Ok(processed)
             }
             SonarrEvent::Test
             | SonarrEvent::Grab

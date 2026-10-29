@@ -3,6 +3,7 @@ use jiff::Timestamp;
 use jiff::civil::Date;
 use std::error::Error;
 use std::fmt;
+use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
 
@@ -78,6 +79,55 @@ impl Clock {
 
     pub fn call(&self) -> Timestamp {
         (self.0)()
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct RadarrMovie {
+    pub tmdb_id: i64,
+    pub title: String,
+    pub year: i64,
+    pub overview: Option<String>,
+    pub genres: Vec<String>,
+    pub movie_file: Option<RadarrMovieFile>,
+}
+
+#[derive(Clone, Debug)]
+pub struct RadarrMovieFile {
+    pub path: PathBuf,
+    pub date_added: Timestamp,
+}
+
+type GetRadarrMovieFn =
+    dyn Fn(i64) -> PortFuture<Result<Option<RadarrMovie>, RadarrError>> + Send + Sync;
+
+#[derive(Clone)]
+pub struct GetRadarrMovie(Arc<GetRadarrMovieFn>);
+
+impl GetRadarrMovie {
+    pub fn new(
+        f: impl Fn(i64) -> PortFuture<Result<Option<RadarrMovie>, RadarrError>> + Send + Sync + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self, radarr_id: i64) -> PortFuture<Result<Option<RadarrMovie>, RadarrError>> {
+        (self.0)(radarr_id)
+    }
+}
+
+#[derive(ohno::Error, Default)]
+#[no_constructors]
+#[display("failed to call the Radarr API")]
+pub struct RadarrError {
+    core: ohno::OhnoCore,
+}
+
+impl RadarrError {
+    pub fn caused_by(source: impl Into<Box<dyn Error + Send + Sync>>) -> Self {
+        Self {
+            core: ohno::OhnoCore::from(source),
+        }
     }
 }
 

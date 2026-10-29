@@ -23,6 +23,8 @@ done
 
 docker run --detach --name "$name" --network "$name" --publish 127.0.0.1::8080 \
   --env DATABASE__URL="postgres://selfless:selfless@$name-postgres:5432/selfless" \
+  --env RADARR__URL=http://radarr:7878 \
+  --env RADARR__API_KEY=smoke-test \
   --env RADARR__WEBHOOK_PASSWORD=smoke-test \
   --env SONARR__URL=http://127.0.0.1:8989 \
   --env SONARR__API_KEY=smoke-test \

@@ -60,9 +60,9 @@ async fn deliveries_are_counted_as_stored_rejected_processed_and_ignored_by_sour
     sonarr
         .serve_series(
             7,
-            &media.sonarr_fixture("sonarr/api/series.json"),
-            &media.sonarr_fixture("sonarr/api/episodes.json"),
-            &media.sonarr_fixture("sonarr/api/episode-files.json"),
+            &media.fixture("sonarr/api/series.json"),
+            &media.fixture("sonarr/api/episodes.json"),
+            &media.fixture("sonarr/api/episode-files.json"),
         )
         .await;
     for (_, name) in IGNORED_EVENTS.iter().chain([&("Download", "download")]) {

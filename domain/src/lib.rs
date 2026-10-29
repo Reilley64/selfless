@@ -51,6 +51,23 @@ pub struct SourceState {
 }
 
 #[derive(Debug, toasty::Model)]
+pub struct Movie {
+    #[key]
+    #[auto]
+    pub id: Uuid,
+    #[unique]
+    pub tmdb_id: i64,
+    #[index]
+    pub radarr_id: i64,
+    pub title: String,
+    pub year: i64,
+    pub overview: Option<String>,
+    pub genres: Vec<String>,
+    pub added_at: Option<Timestamp>,
+    pub visible: bool,
+}
+
+#[derive(Debug, toasty::Model)]
 pub struct Show {
     #[key]
     #[auto]
