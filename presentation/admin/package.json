@@ -3,11 +3,12 @@
   "private": true,
   "license": "MIT OR Apache-2.0",
   "scripts": {
-    "generate": "tailwindcss --input styles.css --output dist/styles.css --minify"
+    "generate": "tailwindcss --input styles.css --output dist/styles.css --minify && cp ../../node_modules/htmx.org/dist/htmx.min.js dist/htmx.min.js"
   },
   "devDependencies": {
     "@selfless/ui": "workspace:*",
     "@tailwindcss/cli": "catalog:",
+    "htmx.org": "2.0.11",
     "tailwindcss": "catalog:"
   }
 }

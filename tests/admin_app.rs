@@ -22,16 +22,31 @@ async fn the_first_admin_signs_in_and_sees_the_admin_app() {
 
     let signed_in = browser.sign_in(ADMIN_NAME, ADMIN_PASSWORD).await;
     let home = browser.get("/admin").await;
+    let sync = browser.get("/admin/sync").await;
 
     assert_eq!(signed_in.status, StatusCode::SEE_OTHER);
     assert_eq!(signed_in.location.as_deref(), Some("/admin"));
-    assert_eq!(home.status, StatusCode::OK);
-    assert!(home.body.contains(">selfless<"), "{}", home.body);
+    assert_eq!(home.status, StatusCode::SEE_OTHER);
+    assert_eq!(home.location.as_deref(), Some("/admin/sync"));
+    assert_eq!(sync.status, StatusCode::OK);
+    assert!(sync.body.contains(">Sync status<"), "{}", sync.body);
+}
+
+#[tokio::test]
+async fn every_admin_page_shows_the_server_name_and_version() {
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+    let mut browser = server.browser();
+    browser.sign_in(ADMIN_NAME, ADMIN_PASSWORD).await;
+
+    let sync = browser.get("/admin/sync").await;
+
+    assert!(sync.body.contains(">selfless<"), "{}", sync.body);
     assert!(
-        home.body
+        sync.body
             .contains(&format!(">{}<", env!("CARGO_PKG_VERSION"))),
         "{}",
-        home.body
+        sync.body
     );
     drop(server);
     database.drop().await;
@@ -43,9 +58,9 @@ async fn admin_pages_redirect_to_sign_in_without_an_admin_session() {
     let server = TestServer::start(database.url()).await;
     let mut browser = server.browser();
 
-    let without_cookie = browser.get("/admin").await;
+    let without_cookie = browser.get("/admin/sync").await;
     browser.set_cookie("session", "not-a-session");
-    let with_unknown_cookie = browser.get("/admin").await;
+    let with_unknown_cookie = browser.get("/admin/sync").await;
 
     for page in [without_cookie, with_unknown_cookie] {
         assert_eq!(page.status, StatusCode::SEE_OTHER);
@@ -56,17 +71,23 @@ async fn admin_pages_redirect_to_sign_in_without_an_admin_session() {
 }
 
 #[tokio::test]
-async fn signing_out_ends_the_admin_session() {
+async fn signing_out_from_the_account_menu_ends_the_admin_session() {
     let database = TestDatabase::create().await;
     let server = TestServer::start(database.url()).await;
     let mut browser = server.browser();
     browser.sign_in(ADMIN_NAME, ADMIN_PASSWORD).await;
     let token = browser.cookie("session").unwrap().to_owned();
 
-    let signed_out = browser.sign_out().await;
-    let home = browser.get("/admin").await;
+    let sync = browser.get("/admin/sync").await;
+    let signed_out = browser
+        .post_form(
+            &sync.form_action("Sign out"),
+            &[("csrf", &sync.csrf_token())],
+        )
+        .await;
+    let home = browser.get("/admin/sync").await;
     browser.set_cookie("session", &token);
-    let home_with_old_token = browser.get("/admin").await;
+    let home_with_old_token = browser.get("/admin/sync").await;
 
     assert_eq!(signed_out.status, StatusCode::SEE_OTHER);
     assert_eq!(signed_out.location.as_deref(), Some("/admin/sign-in"));
@@ -143,7 +164,7 @@ async fn admin_forms_without_the_csrf_token_are_rejected() {
         .await;
     browser.sign_in(ADMIN_NAME, ADMIN_PASSWORD).await;
     let sign_out_without_token = browser.post_form("/admin/sign-out", &[]).await;
-    let home = browser.get("/admin").await;
+    let home = browser.get("/admin/sync").await;
 
     for page in [
         sign_in_without_token,
@@ -169,7 +190,7 @@ async fn a_wrong_name_and_a_wrong_password_return_the_same_error() {
     assert_eq!(wrong_name.status, StatusCode::OK);
     assert!(wrong_name.body.contains("Wrong name or password."));
     assert_eq!(wrong_name.status, wrong_password.status);
-    assert_eq!(wrong_name.body, wrong_password.body);
+    assert_eq!(wrong_name.text(), wrong_password.text());
     assert_eq!(browser.cookie("session"), None);
     drop(server);
     database.drop().await;
@@ -199,11 +220,11 @@ async fn an_admin_session_ends_after_12_hours_without_use() {
     browser.sign_in(ADMIN_NAME, ADMIN_PASSWORD).await;
 
     server.clock.advance(SignedDuration::from_hours(11));
-    let after_11_hours = browser.get("/admin").await;
+    let after_11_hours = browser.get("/admin/sync").await;
     server.clock.advance(SignedDuration::from_hours(11));
-    let after_11_more_hours = browser.get("/admin").await;
+    let after_11_more_hours = browser.get("/admin/sync").await;
     server.clock.advance(SignedDuration::from_hours(12));
-    let after_12_idle_hours = browser.get("/admin").await;
+    let after_12_idle_hours = browser.get("/admin/sync").await;
 
     assert_eq!(after_11_hours.status, StatusCode::OK);
     assert_eq!(after_11_more_hours.status, StatusCode::OK);
@@ -299,6 +320,62 @@ async fn an_unknown_name_takes_as_long_as_a_wrong_password() {
         unknown_name * 2 > wrong_password,
         "unknown name {unknown_name:?}, wrong password {wrong_password:?}"
     );
+    drop(server);
+    database.drop().await;
+}
+
+#[tokio::test]
+async fn htmx_requests_without_the_csrf_token_are_rejected() {
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+    let mut browser = server.browser();
+    browser.sign_in(ADMIN_NAME, ADMIN_PASSWORD).await;
+    let sync = browser.get("/admin/sync").await;
+
+    let without_token = browser.htmx_post("/admin/sign-out", None).await;
+    let with_wrong_token = browser.htmx_post("/admin/sign-out", Some("wrong")).await;
+    let still_signed_in = browser.get("/admin/sync").await;
+    let with_token = browser
+        .htmx_post("/admin/sign-out", Some(&sync.htmx_csrf_token()))
+        .await;
+
+    assert_eq!(without_token.status, StatusCode::FORBIDDEN);
+    assert_eq!(with_wrong_token.status, StatusCode::FORBIDDEN);
+    assert_eq!(still_signed_in.status, StatusCode::OK);
+    assert_eq!(with_token.status, StatusCode::SEE_OTHER);
+    assert_eq!(with_token.location.as_deref(), Some("/admin/sign-in"));
+    drop(server);
+    database.drop().await;
+}
+
+#[tokio::test]
+async fn admin_pages_send_a_strict_content_security_policy_and_need_no_inline_script() {
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+    let mut browser = server.browser();
+    let sign_in = browser.get("/admin/sign-in").await;
+    browser.sign_in(ADMIN_NAME, ADMIN_PASSWORD).await;
+    let home = browser.get("/admin").await;
+    let sync = browser.get("/admin/sync").await;
+
+    for page in [&sign_in, &home, &sync] {
+        let policy = page
+            .header("content-security-policy")
+            .expect("a Content-Security-Policy");
+        assert!(policy.contains("script-src 'self'"), "{policy}");
+        assert!(policy.contains("object-src 'none'"), "{policy}");
+        assert!(!policy.contains("'unsafe-inline'"), "{policy}");
+        assert!(!policy.contains("'unsafe-eval'"), "{policy}");
+    }
+    for page in [&sign_in, &sync] {
+        for script in page.body.split("<script").skip(1) {
+            let tag = &script[..script.find('>').unwrap()];
+            assert!(
+                tag.contains(" src=\"/admin/"),
+                "inline script: <script{tag}>"
+            );
+        }
+    }
     drop(server);
     database.drop().await;
 }

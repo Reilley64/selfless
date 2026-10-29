@@ -8,6 +8,8 @@ const namespaces = {
   "font.size": "text",
 };
 
+const isAdmin = (token) => token.path[0] === "admin";
+
 export default {
   source: ["../../tokens/*.tokens.json"],
   hooks: {
@@ -20,6 +22,10 @@ export default {
             ? [namespaces[prefix], ...path.slice(prefix.split(".").length)].join("-")
             : ["spacing", ...path].join("-");
         },
+      },
+      "name/admin": {
+        type: "name",
+        transform: ({ path }) => path.slice(1).join("-"),
       },
       "fontFamily/first": {
         type: "value",
@@ -36,7 +42,14 @@ export default {
       transformGroup: "css",
       transforms: ["name/tailwind"],
       buildPath: "theme/",
-      files: [{ destination: "theme.css", format: "css/variables", options: { selector: "@theme" } }],
+      files: [
+        {
+          destination: "theme.css",
+          format: "css/variables",
+          filter: (token) => !isAdmin(token),
+          options: { selector: "@theme" },
+        },
+      ],
     },
     fonts: {
       transforms: ["name/tailwind", "fontFamily/first"],
@@ -49,6 +62,12 @@ export default {
           options: { selector: ["@media (display-mode: native)", ":root"] },
         },
       ],
+    },
+    admin: {
+      transformGroup: "css",
+      transforms: ["name/admin"],
+      buildPath: "theme/",
+      files: [{ destination: "admin.css", format: "css/variables", filter: isAdmin }],
     },
   },
 };

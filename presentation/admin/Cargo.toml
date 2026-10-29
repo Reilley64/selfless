@@ -8,6 +8,7 @@ publish.workspace = true
 [dependencies]
 application = { workspace = true }
 infrastructure = { workspace = true }
+jiff = { workspace = true }
 serde = { workspace = true }
 topcoat = { workspace = true }
 tracing = { workspace = true }

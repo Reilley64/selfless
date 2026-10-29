@@ -33,14 +33,14 @@ async fn admin_request_spans_carry_the_admin_id() {
     let mut browser = server.browser();
     browser.sign_in(ADMIN_NAME, ADMIN_PASSWORD).await;
 
-    browser.get("/admin").await;
+    browser.get("/admin/sync").await;
 
     let spans = exporter.get_finished_spans().unwrap();
-    let home = spans
+    let sync = spans
         .iter()
-        .find(|x| x.name == "GET /admin")
-        .expect("a span for the admin home page");
-    let admin_id = home
+        .find(|x| x.name == "GET /admin/sync")
+        .expect("a span for the sync status page");
+    let admin_id = sync
         .attributes
         .iter()
         .find(|x| x.key.as_str() == "selfless.admin.id")

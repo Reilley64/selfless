@@ -1,0 +1,69 @@
+{
+  "admin": {
+    "$type": "color",
+    "$description": "The admin app's topcoat-ui variables, named after them. Each points at a shared colour.",
+    "background": {
+      "$value": "{color.background}"
+    },
+    "foreground": {
+      "$value": "{color.text.primary}"
+    },
+    "card": {
+      "$value": "{color.surface}"
+    },
+    "card-foreground": {
+      "$value": "{color.text.primary}"
+    },
+    "popover": {
+      "$value": "{color.surface}"
+    },
+    "popover-foreground": {
+      "$value": "{color.text.primary}"
+    },
+    "muted-foreground": {
+      "$value": "{color.text.muted}"
+    },
+    "primary": {
+      "$value": "{color.accent}"
+    },
+    "primary-foreground": {
+      "$value": "{color.text.primary}"
+    },
+    "destructive": {
+      "$value": "{color.accent}"
+    },
+    "destructive-foreground": {
+      "$value": "{color.text.primary}"
+    },
+    "border": {
+      "$value": "{color.surface-raised}"
+    },
+    "ring": {
+      "$value": "{color.focus-ring}"
+    },
+    "sidebar": {
+      "$value": "{color.background}"
+    },
+    "sidebar-foreground": {
+      "$value": "{color.text.primary}"
+    },
+    "sidebar-primary": {
+      "$value": "{color.accent}"
+    },
+    "sidebar-primary-foreground": {
+      "$value": "{color.text.primary}"
+    },
+    "sidebar-accent": {
+      "$value": "{color.surface-raised}"
+    },
+    "sidebar-accent-foreground": {
+      "$value": "{color.text.primary}"
+    },
+    "sidebar-border": {
+      "$value": "{color.surface-raised}"
+    },
+    "sidebar-ring": {
+      "$value": "{color.focus-ring}"
+    }
+  }
+}

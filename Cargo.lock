@@ -14,6 +14,7 @@ version = "0.1.0"
 dependencies = [
  "application",
  "infrastructure",
+ "jiff",
  "serde",
  "topcoat",
  "tracing",

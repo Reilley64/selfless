@@ -1,14 +1,4 @@
 groups:
-  - id: registry.selfless.admin
-    type: attribute_group
-    display_name: Admin attributes
-    brief: Attributes of the admin app.
-    attributes:
-      - id: selfless.admin.id
-        type: string
-        stability: development
-        brief: The ID of the admin who made the request.
-        examples: ["01890a5d-ac96-774b-bcce-b302099a8057"]
   - id: registry.selfless.auth
     type: attribute_group
     display_name: Sign-in attributes

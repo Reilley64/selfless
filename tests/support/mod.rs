@@ -9,6 +9,7 @@ use reqwest::RequestBuilder;
 use reqwest::StatusCode;
 use reqwest::header::CONTENT_TYPE;
 use reqwest::header::COOKIE;
+use reqwest::header::HeaderMap;
 use reqwest::header::LOCATION;
 use reqwest::header::SET_COOKIE;
 use reqwest::redirect::Policy;
@@ -367,10 +368,56 @@ pub struct Page {
     pub status: StatusCode,
     pub location: Option<String>,
     pub set_cookies: Vec<String>,
+    pub headers: HeaderMap,
     pub body: String,
 }
 
 impl Page {
+    pub fn text(&self) -> String {
+        let mut text = String::new();
+        let mut in_tag = false;
+        for char in self.body.chars() {
+            match char {
+                '<' => in_tag = true,
+                '>' => in_tag = false,
+                _ if !in_tag => text.push(char),
+                _ => {}
+            }
+        }
+        text
+    }
+
+    pub fn header(&self, name: &str) -> Option<&str> {
+        self.headers.get(name).map(|x| x.to_str().unwrap())
+    }
+
+    pub fn form_action(&self, button: &str) -> String {
+        let button_at = self
+            .body
+            .find(&format!(">{button}<"))
+            .unwrap_or_else(|| panic!("the page has no {button:?} button\n{}", self.body));
+        let form_at = self.body[..button_at]
+            .rfind("<form")
+            .unwrap_or_else(|| panic!("{button:?} is not in a form\n{}", self.body));
+        let start =
+            form_at + self.body[form_at..].find(r#"action=""#).unwrap() + r#"action=""#.len();
+        let length = self.body[start..].find('"').unwrap();
+        self.body[start..start + length].to_owned()
+    }
+
+    pub fn htmx_csrf_token(&self) -> String {
+        let start = self
+            .body
+            .find(r#"hx-headers=""#)
+            .unwrap_or_else(|| panic!("the page sets no htmx headers\n{}", self.body))
+            + r#"hx-headers=""#.len();
+        let length = self.body[start..].find('"').unwrap();
+        let headers: Value =
+            serde_json::from_str(&self.body[start..start + length].replace("&quot;", "\""))
+                .unwrap();
+        headers["X-CSRF-Token"].as_str().unwrap().to_owned()
+    }
+
     pub fn csrf_token(&self) -> String {
         let start = self
             .body
@@ -413,10 +460,17 @@ impl Browser {
         .await
     }
 
-    pub async fn sign_out(&mut self) -> Page {
-        let home = self.get("/admin").await;
-        self.post_form("/admin/sign-out", &[("csrf", &home.csrf_token())])
-            .await
+    pub async fn htmx_post(&mut self, path: &str, csrf: Option<&str>) -> Page {
+        let mut request = self
+            .client
+            .post(format!("{}{path}", self.base))
+            .header("HX-Request", "true")
+            .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .body("");
+        if let Some(csrf) = csrf {
+            request = request.header("X-CSRF-Token", csrf);
+        }
+        self.send(request).await
     }
 
     pub fn cookie(&self, name: &str) -> Option<&str> {
@@ -460,6 +514,7 @@ impl Browser {
                 .get(LOCATION)
                 .map(|x| x.to_str().unwrap().to_owned()),
             set_cookies,
+            headers: response.headers().clone(),
             body: response.text().await.unwrap(),
         }
     }

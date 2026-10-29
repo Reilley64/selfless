@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
+use topcoat::router::LayerFn;
 use topcoat::router::Router;
 use topcoat::router::RouterBuilder;
 use topcoat::router::RouterBuilderDirectoryExt;
@@ -49,6 +50,10 @@ pub fn router(
         .route(telemetry::logs)
         .route(web::index)
         .public_dir(web_dir)
+        .layer(LayerFn::new(
+            Some("/admin"),
+            web::strict_content_security_policy,
+        ))
         .layer(http_server::HttpServerLayer::new())
         .build()
 }

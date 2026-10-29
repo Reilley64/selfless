@@ -1,0 +1,81 @@
+groups:
+  - id: registry.selfless.admin
+    type: attribute_group
+    display_name: Admin attributes
+    brief: Attributes of the admin app.
+    attributes:
+      - id: selfless.admin.id
+        type: string
+        stability: development
+        brief: The ID of the admin who made the request.
+        examples: ["01890a5d-ac96-774b-bcce-b302099a8057"]
+      - id: selfless.admin.action
+        type:
+          members:
+            - id: invite_create
+              value: invite.create
+              brief: Invited a user by email.
+              stability: development
+            - id: invite_resend
+              value: invite.resend
+              brief: Sent a new link for a pending invite.
+              stability: development
+            - id: invite_cancel
+              value: invite.cancel
+              brief: Cancelled a pending invite.
+              stability: development
+            - id: user_rename
+              value: user.rename
+              brief: Renamed a user.
+              stability: development
+            - id: user_reset_password
+              value: user.reset_password
+              brief: Reset a user's password.
+              stability: development
+            - id: user_delete
+              value: user.delete
+              brief: Deleted a user.
+              stability: development
+            - id: session_end
+              value: session.end
+              brief: Signed a user out of one device.
+              stability: development
+            - id: session_end_all
+              value: session.end_all
+              brief: Signed a user out everywhere.
+              stability: development
+            - id: admin_create
+              value: admin.create
+              brief: Created an admin.
+              stability: development
+            - id: admin_set_password
+              value: admin.set_password
+              brief: Set another admin's password.
+              stability: development
+            - id: admin_delete
+              value: admin.delete
+              brief: Deleted an admin.
+              stability: development
+            - id: account_change_password
+              value: account.change_password
+              brief: Changed the admin's own password.
+              stability: development
+            - id: sync_start
+              value: sync.start
+              brief: Started a reconcile with Sync now.
+              stability: development
+            - id: sync_retry
+              value: sync.retry
+              brief: Retried a failed webhook delivery.
+              stability: development
+            - id: sync_confirm_removal
+              value: sync.confirm_removal
+              brief: Confirmed a held removal.
+              stability: development
+        stability: development
+        brief: The action an admin took in the admin app.
+      - id: selfless.admin.target.id
+        type: string
+        stability: development
+        brief: The ID of the user, invite, session, admin or webhook delivery an admin action changed.
+        examples: ["01890a5d-ac96-774b-bcce-b302099a8057"]
