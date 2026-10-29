@@ -10,7 +10,8 @@ import {
 
 export async function tracedFetch<T>(url: string, options: RequestInit): Promise<T> {
   const method = options.method ?? "GET";
-  const target = new URL(url, globalThis.location?.href);
+  const href = `${process.env.EXPO_PUBLIC_SERVER_URL ?? ""}${url}`;
+  const target = new URL(href, globalThis.location?.href);
   const span = trace.getTracer("@selfless/api-client").startSpan(method, {
     kind: SpanKind.CLIENT,
     attributes: {
@@ -25,7 +26,7 @@ export async function tracedFetch<T>(url: string, options: RequestInit): Promise
     set: (carrier, key, value) => carrier.set(key, value),
   });
   try {
-    const response = await fetch(url, { ...options, headers });
+    const response = await fetch(href, { ...options, headers });
     span.setAttribute(ATTR_HTTP_RESPONSE_STATUS_CODE, response.status);
     if (response.status >= 400) {
       span.setAttribute(ATTR_ERROR_TYPE, String(response.status));
