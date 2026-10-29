@@ -1,0 +1,19 @@
+[bans]
+multiple-versions = "allow"
+wildcards = "allow"
+deny = [
+    { name = "native-tls" },
+
+    { name = "domain", wrappers = ["application"] },
+    { name = "application", wrappers = ["selfless", "infrastructure", "api"] },
+
+    { name = "persistence", wrappers = ["infrastructure", "settings"] },
+    { name = "telemetry", wrappers = ["infrastructure"] },
+    { name = "settings", wrappers = ["selfless"] },
+    { name = "infrastructure", wrappers = ["selfless", "api"] },
+
+    { name = "admin", wrappers = ["selfless"] },
+    { name = "api", wrappers = ["selfless"] },
+    { name = "webhooks", wrappers = ["selfless"] },
+    { name = "workers", wrappers = ["selfless"] },
+]

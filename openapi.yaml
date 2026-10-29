@@ -1,0 +1,143 @@
+openapi: 3.1.1
+info:
+  title: selfless
+  description: The HTTP API of the selfless media server, used by its web and TV apps.
+  version: 0.0.0
+  license:
+    name: MIT OR Apache-2.0
+    identifier: MIT OR Apache-2.0
+servers:
+  - url: /
+security: []
+paths:
+  /actuator/health/v1:
+    get:
+      operationId: getHealth
+      summary: Overall health with every component
+      tags: [actuator]
+      responses:
+        "200":
+          description: Every component is up.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+              example: {"status":"UP","components":{"db":{"status":"UP"},"livenessState":{"status":"UP"},"readinessState":{"status":"UP"}}}
+        "503":
+          description: A component is down or out of service.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+              example: {"status":"DOWN","components":{"db":{"status":"DOWN"},"livenessState":{"status":"UP"},"readinessState":{"status":"UP"}}}
+  /actuator/health/liveness/v1:
+    get:
+      operationId: getLiveness
+      summary: Liveness group, which reports only the process's own state
+      tags: [actuator]
+      responses:
+        "200":
+          description: The process is live.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LivenessHealth"
+              example: {"status":"UP","components":{"livenessState":{"status":"UP"}}}
+        "503":
+          description: The process is broken.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LivenessHealth"
+              example: {"status":"DOWN","components":{"livenessState":{"status":"DOWN"}}}
+  /actuator/health/readiness/v1:
+    get:
+      operationId: getReadiness
+      summary: Readiness group, which also checks PostgreSQL
+      tags: [actuator]
+      responses:
+        "200":
+          description: The server accepts traffic.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessHealth"
+              example: {"status":"UP","components":{"db":{"status":"UP"},"readinessState":{"status":"UP"}}}
+        "503":
+          description: PostgreSQL is down or the server is shutting down.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessHealth"
+              example: {"status":"OUT_OF_SERVICE","components":{"db":{"status":"UP"},"readinessState":{"status":"OUT_OF_SERVICE"}}}
+tags:
+  - name: actuator
+    description: Health endpoints in the shape of Spring Boot Actuator.
+components:
+  schemas:
+    HealthStatus:
+      description: The status of a health group or component, as in Spring Boot Actuator.
+      type: string
+      enum: [UP, DOWN, OUT_OF_SERVICE, UNKNOWN]
+      examples: [UP]
+    HealthComponent:
+      description: One health component, shown without details.
+      type: object
+      required: [status]
+      examples:
+        - status: UP
+      properties:
+        status:
+          $ref: "#/components/schemas/HealthStatus"
+      additionalProperties: false
+    Health:
+      description: Overall health with the db, livenessState and readinessState components.
+      type: object
+      required: [status, components]
+      properties:
+        status:
+          $ref: "#/components/schemas/HealthStatus"
+        components:
+          type: object
+          required: [db, livenessState, readinessState]
+          properties:
+            db:
+              $ref: "#/components/schemas/HealthComponent"
+            livenessState:
+              $ref: "#/components/schemas/HealthComponent"
+            readinessState:
+              $ref: "#/components/schemas/HealthComponent"
+          additionalProperties: false
+      additionalProperties: false
+    LivenessHealth:
+      description: The liveness group. It reports only the process's own state.
+      type: object
+      required: [status, components]
+      properties:
+        status:
+          $ref: "#/components/schemas/HealthStatus"
+        components:
+          type: object
+          required: [livenessState]
+          properties:
+            livenessState:
+              $ref: "#/components/schemas/HealthComponent"
+          additionalProperties: false
+      additionalProperties: false
+    ReadinessHealth:
+      description: The readiness group. It reports whether the server accepts traffic and reaches PostgreSQL.
+      type: object
+      required: [status, components]
+      properties:
+        status:
+          $ref: "#/components/schemas/HealthStatus"
+        components:
+          type: object
+          required: [db, readinessState]
+          properties:
+            db:
+              $ref: "#/components/schemas/HealthComponent"
+            readinessState:
+              $ref: "#/components/schemas/HealthComponent"
+          additionalProperties: false
+      additionalProperties: false

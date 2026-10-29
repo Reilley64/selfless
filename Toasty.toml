@@ -1,0 +1,5 @@
+[migration]
+path = "infrastructure/persistence/toasty"
+prefix_style = "Timestamp"
+checksums = false
+statement_breakpoints = true
