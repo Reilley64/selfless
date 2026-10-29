@@ -18,7 +18,7 @@ function Screen() {
     return <ServerAddress />;
   }
   if (users.length === 0) {
-    return <SignIn />;
+    return <SignIn onChangeServer={() => session.forgetServer()} />;
   }
   if (signingIn !== undefined) {
     return <SignIn name={signingIn} onDone={() => setSigningIn(undefined)} />;

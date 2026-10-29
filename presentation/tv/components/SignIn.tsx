@@ -5,7 +5,15 @@ import { useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native-css/components";
 import { session } from "../session";
 
-export function SignIn({ name: filledIn = "", onDone }: { name?: string; onDone?: () => void }) {
+export function SignIn({
+  name: filledIn = "",
+  onDone,
+  onChangeServer,
+}: {
+  name?: string;
+  onDone?: () => void;
+  onChangeServer?: () => void;
+}) {
   const [name, setName] = useState(filledIn);
   const [password, setPassword] = useState("");
   const signIn = useMutation({
@@ -57,6 +65,11 @@ export function SignIn({ name: filledIn = "", onDone }: { name?: string; onDone?
         {onDone && (
           <Pressable className={button} onPress={onDone}>
             {({ focused }) => <Text className={buttonText(focused)}>Cancel</Text>}
+          </Pressable>
+        )}
+        {onChangeServer && (
+          <Pressable className={button} onPress={onChangeServer}>
+            {({ focused }) => <Text className={buttonText(focused)}>Change server</Text>}
           </Pressable>
         )}
       </View>

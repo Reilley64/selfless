@@ -270,6 +270,17 @@ test("removing the last user forgets the server address", async () => {
   expect(startTvSession(storage, "appleTv").state()).toEqual(session.state());
 });
 
+test("a TV with no users can forget the server address, to connect to another server", async () => {
+  mockServer();
+  const storage = fakeStorage();
+  const session = await connectedTv(storage);
+
+  session.forgetServer();
+
+  expect(session.state()).toEqual({ serverUrl: undefined, users: [], currentUserId: undefined });
+  expect(startTvSession(storage, "appleTv").state()).toEqual(session.state());
+});
+
 test("a 401 during use returns to the picker with that user dimmed", async () => {
   mockServer({ ended: [theo.token] });
   const storage = fakeStorage();

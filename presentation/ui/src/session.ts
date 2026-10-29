@@ -115,6 +115,10 @@ export function startTvSession(storage: SessionStorage, clientKind: "appleTv" | 
       update({ serverUrl });
       return true;
     },
+    forgetServer() {
+      storage.removeItem(serverUrlKey);
+      update({ serverUrl: undefined });
+    },
     async signIn(name: string, password: string, deviceName: string) {
       const response = await signIn({ name, password, clientKind, deviceName });
       if (response.status === 201) {
@@ -151,10 +155,10 @@ export function startTvSession(storage: SessionStorage, clientKind: "appleTv" | 
         await signOut({ headers: authorizationHeaders(removed.token) });
       } finally {
         const users = state.users.filter(({ id }) => id !== userId);
+        updateUsers(users);
         if (users.length === 0) {
-          storage.removeItem(serverUrlKey);
+          session.forgetServer();
         }
-        updateUsers(users, users.length === 0 ? { serverUrl: undefined } : {});
       }
     },
   };
