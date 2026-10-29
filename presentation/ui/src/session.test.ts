@@ -141,7 +141,7 @@ test("the TV doesn't remember an address where no selfless server answers", asyn
   expect(startTvSession(storage, "appleTv").state().serverUrl).toBeUndefined();
 });
 
-async function connectedTv(storage = fakeStorage(), clientKind: "appleTv" | "googleTv" = "appleTv") {
+async function connectedTv(storage = fakeStorage(), clientKind: Parameters<typeof startTvSession>[1] = "appleTv") {
   const session = startTvSession(storage, clientKind);
   await session.connect(serverUrl);
   return session;

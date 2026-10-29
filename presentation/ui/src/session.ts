@@ -1,5 +1,6 @@
 import {
   authorizationHeaders,
+  ClientKind,
   getGetInfoUrl,
   getMe,
   provideSession,
@@ -49,7 +50,7 @@ export function startWebSession(storage: SessionStorage) {
     },
     subscribe,
     async signIn(name: string, password: string, deviceName: string) {
-      const response = await signIn({ name, password, clientKind: "web", deviceName });
+      const response = await signIn({ name, password, clientKind: ClientKind.web, deviceName });
       if (response.status === 201) {
         storage.setItem(tokenKey, response.data.token);
         changed();
@@ -71,7 +72,7 @@ export function startWebSession(storage: SessionStorage) {
   return session;
 }
 
-export function startTvSession(storage: SessionStorage, clientKind: "appleTv" | "googleTv") {
+export function startTvSession(storage: SessionStorage, clientKind: Exclude<ClientKind, typeof ClientKind.web>) {
   const { changed, subscribe } = changes();
   let state = {
     serverUrl: storage.getItem(serverUrlKey) ?? undefined,
