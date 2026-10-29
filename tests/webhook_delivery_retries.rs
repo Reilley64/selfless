@@ -16,6 +16,7 @@ use support::eventually;
 use support::fixture;
 
 const RADARR_ID: i64 = 42;
+const DUNE_TMDB_ID: i64 = 438631;
 const FILE: &str = "Movies/Arrival (2016)/Arrival (2016) Bluray-1080p.mkv";
 
 struct Fixture {
@@ -237,6 +238,7 @@ async fn a_reconcile_that_syncs_the_movie_resolves_its_failed_deliveries() {
     let mut other_movie: Value =
         serde_json::from_str(&support::fixture("radarr/webhooks/download.json")).unwrap();
     other_movie["movie"]["id"] = 43.into();
+    other_movie["movie"]["tmdbId"] = DUNE_TMDB_ID.into();
     fixture.send_body(&other_movie.to_string()).await;
     fixture.until_failed(2).await;
 
@@ -248,6 +250,22 @@ async fn a_reconcile_that_syncs_the_movie_resolves_its_failed_deliveries() {
 }
 
 #[tokio::test]
+async fn a_reconcile_that_syncs_the_movie_under_a_new_radarr_id_resolves_its_failed_deliveries() {
+    let fixture = Fixture::start().await;
+    fixture.radarr.fail_movie(99).await;
+    let mut download: Value =
+        serde_json::from_str(&support::fixture("radarr/webhooks/download.json")).unwrap();
+    download["movie"]["id"] = 99.into();
+    fixture.send_body(&download.to_string()).await;
+    fixture.until_failed(1).await;
+
+    fixture.reconcile_lists(&[RADARR_ID]).await;
+
+    assert!(fixture.failed_rows().await.is_empty());
+    fixture.stop().await;
+}
+
+#[tokio::test]
 async fn a_reconcile_that_removes_the_movie_resolves_its_failed_delete_deliveries() {
     let fixture = Fixture::start().await;
     fixture.reconcile_lists(&[RADARR_ID, 43]).await;
@@ -255,6 +273,7 @@ async fn a_reconcile_that_removes_the_movie_resolves_its_failed_delete_deliverie
     let mut movie_delete: Value =
         serde_json::from_str(&support::fixture("radarr/webhooks/movie-delete.json")).unwrap();
     movie_delete["movie"]["id"] = 43.into();
+    movie_delete["movie"]["tmdbId"] = DUNE_TMDB_ID.into();
     fixture.send_body(&movie_delete.to_string()).await;
     fixture.until_failed(1).await;
 

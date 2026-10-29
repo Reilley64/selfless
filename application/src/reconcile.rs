@@ -223,10 +223,7 @@ async fn sync_movies(
         .map(|x| x.tmdb_id)
         .collect::<HashSet<_>>();
     set_total(progress, radarr_movies.len());
-    let synced = radarr_movies
-        .iter()
-        .map(|x| x.radarr_id)
-        .collect::<HashSet<_>>();
+    let synced = listed.clone();
     let stored_movies = Movie::all()
         .exec(db_context.executor_mut())
         .await
@@ -309,7 +306,7 @@ async fn sync_shows(
             .await;
         match source_health.api_call(Source::Sonarr, episodes) {
             Ok(episodes) => {
-                synced.insert(series.sonarr_id);
+                synced.insert(series.tvdb_id);
                 sync_show::save(db_context, media_folder, SonarrShow { series, episodes })
                     .instrument(span)
                     .await
@@ -356,14 +353,14 @@ async fn resolve_failed_rows(
             .await
             .map_err(Error::caused_by)?
             .into_iter()
-            .map(|x| x.radarr_id)
+            .map(|x| x.tmdb_id)
             .collect::<HashSet<_>>(),
         Source::Sonarr => Show::all()
             .exec(db_context.executor_mut())
             .await
             .map_err(Error::caused_by)?
             .into_iter()
-            .map(|x| x.sonarr_id)
+            .map(|x| x.tvdb_id)
             .collect(),
     };
     for mut row in failed_rows {
