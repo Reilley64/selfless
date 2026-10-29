@@ -1,13 +1,9 @@
-use crate::problem::EMPTY_PASSWORD;
-use crate::problem::WRONG_CURRENT_PASSWORD;
+use crate::problem;
 use crate::user_auth::CurrentSession;
-use application::EmptyPassword;
-use application::change_password::WrongCurrentPassword;
 use domain::Colour;
 use domain::Symbol;
 use domain::User;
 use infrastructure::AppState;
-use ohno::ErrorExt;
 use serde::Deserialize;
 use serde::Serialize;
 use topcoat::context::Cx;
@@ -67,12 +63,6 @@ pub(crate) async fn change_password(
     .await
     {
         Ok(()) => StatusCode::NO_CONTENT.into_response(cx),
-        Err(error) if error.find_source::<WrongCurrentPassword>().is_some() => {
-            WRONG_CURRENT_PASSWORD.into_response(cx)
-        }
-        Err(error) if error.find_source::<EmptyPassword>().is_some() => {
-            EMPTY_PASSWORD.into_response(cx)
-        }
-        Err(error) => Err(error.into()),
+        Err(error) => problem::from_error(cx, error),
     }
 }

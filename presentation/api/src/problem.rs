@@ -1,3 +1,8 @@
+use application::EmptyPassword;
+use application::accept_invite::InviteNotFound;
+use application::change_password::WrongCurrentPassword;
+use application::create_user::NameTaken;
+use ohno::ErrorExt;
 use serde_json::json;
 use topcoat::context::Cx;
 use topcoat::router::Body;
@@ -15,6 +20,23 @@ pub(crate) struct Problem {
     problem_type: &'static str,
     title: &'static str,
     status: StatusCode,
+}
+
+pub(crate) fn from_error<E>(cx: &Cx, error: E) -> topcoat::Result<Response>
+where
+    E: ErrorExt + Into<topcoat::Error>,
+{
+    if error.find_source::<WrongCurrentPassword>().is_some() {
+        WRONG_CURRENT_PASSWORD.into_response(cx)
+    } else if error.find_source::<EmptyPassword>().is_some() {
+        EMPTY_PASSWORD.into_response(cx)
+    } else if error.find_source::<InviteNotFound>().is_some() {
+        INVITE_NOT_FOUND.into_response(cx)
+    } else if error.find_source::<NameTaken>().is_some() {
+        NAME_TAKEN.into_response(cx)
+    } else {
+        Err(error.into())
+    }
 }
 
 pub(crate) const BAD_REQUEST: Problem = Problem {
@@ -35,25 +57,25 @@ pub(crate) const UNAUTHENTICATED: Problem = Problem {
     status: StatusCode::UNAUTHORIZED,
 };
 
-pub(crate) const WRONG_CURRENT_PASSWORD: Problem = Problem {
+const WRONG_CURRENT_PASSWORD: Problem = Problem {
     problem_type: "urn:selfless:problem:wrong-current-password",
     title: "The current password is wrong.",
     status: StatusCode::FORBIDDEN,
 };
 
-pub(crate) const EMPTY_PASSWORD: Problem = Problem {
+const EMPTY_PASSWORD: Problem = Problem {
     problem_type: "urn:selfless:problem:empty-password",
     title: "The password is empty.",
     status: StatusCode::UNPROCESSABLE_ENTITY,
 };
 
-pub(crate) const INVITE_NOT_FOUND: Problem = Problem {
+const INVITE_NOT_FOUND: Problem = Problem {
     problem_type: "urn:selfless:problem:invite-not-found",
     title: "The invite link no longer works.",
     status: StatusCode::NOT_FOUND,
 };
 
-pub(crate) const NAME_TAKEN: Problem = Problem {
+const NAME_TAKEN: Problem = Problem {
     problem_type: "urn:selfless:problem:name-taken",
     title: "A user already has this name.",
     status: StatusCode::CONFLICT,
