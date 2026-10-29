@@ -206,14 +206,14 @@ pub(crate) async fn save(
     media_folder: &MediaFolder,
     sonarr_show: SonarrShow,
 ) -> Result<(), Error> {
-    let mut files = HashMap::new();
+    let mut episode_folders = HashMap::new();
     for file in sonarr_show
         .episodes
         .iter()
         .filter_map(|x| x.episode_file.as_ref())
     {
-        if !files.contains_key(&file.path) {
-            files.insert(
+        if !episode_folders.contains_key(&file.path) {
+            episode_folders.insert(
                 file.path.clone(),
                 media_folder.read_episode_folder.call(&file.path).await,
             );
@@ -231,13 +231,13 @@ pub(crate) async fn save(
             season_numbers.into_iter().collect(),
         )
         .await;
-    let stored = if files.is_empty() {
+    let stored = if episode_folders.is_empty() {
         HashMap::new()
     } else {
         MediaFile::filter(
             MediaFile::fields()
                 .path()
-                .in_list(files.keys().cloned().collect::<Vec<_>>()),
+                .in_list(episode_folders.keys().cloned().collect::<Vec<_>>()),
         )
         .exec(db_context.executor_mut())
         .await
@@ -246,7 +246,7 @@ pub(crate) async fn save(
         .map(|x| (x.path.clone(), x))
         .collect::<HashMap<_, _>>()
     };
-    let inspected = try_join_all(files.keys().map(async |path| {
+    let inspected = try_join_all(episode_folders.keys().map(async |path| {
         let inspected = media_folder.inspect(stored.get(path), path).await?;
         Ok::<_, media_files::Error>((path.clone(), inspected))
     }))
@@ -258,7 +258,7 @@ pub(crate) async fn save(
     let change = write(
         transaction.executor_mut(),
         sonarr_show,
-        &files,
+        &episode_folders,
         inspected,
         folder,
         media_folder,
@@ -299,7 +299,7 @@ pub(crate) async fn remove(db_context: &mut DbContext, show: Show) -> Result<(),
 async fn write(
     db: &mut dyn toasty::Executor,
     sonarr_show: SonarrShow,
-    files: &HashMap<String, EpisodeFolder>,
+    episode_folders: &HashMap<String, EpisodeFolder>,
     mut inspected: HashMap<String, Inspected>,
     folder: ShowFolder,
     media_folder: &MediaFolder,
@@ -406,15 +406,15 @@ async fn write(
         .map(|x| x.sonarr_id)
         .collect::<HashSet<_>>();
     for sonarr_episode in sonarr_show.episodes {
-        let file = sonarr_episode
+        let episode_folder = sonarr_episode
             .episode_file
             .as_ref()
-            .and_then(|x| files.get(&x.path));
+            .and_then(|x| episode_folders.get(&x.path));
         let stored = episodes.remove(&sonarr_episode.tvdb_id).map(|x| {
             let metadata = EpisodeMetadata::stored(&x);
             (x, metadata)
         });
-        let nfo = match file.and_then(|x| x.nfo.as_ref()) {
+        let nfo = match episode_folder.and_then(|x| x.nfo.as_ref()) {
             None => Nfo::Missing,
             Some(nfo_file)
                 if stored
@@ -540,7 +540,7 @@ async fn write(
                 .id
             }
         };
-        if let Some(thumb) = file.and_then(|x| x.thumb.clone()) {
+        if let Some(thumb) = episode_folder.and_then(|x| x.thumb.clone()) {
             artwork.push(FoundArtwork {
                 season_id: None,
                 episode_id: Some(episode_id),

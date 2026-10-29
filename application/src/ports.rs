@@ -576,22 +576,23 @@ impl ProbeError {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct SubtitleFile {
+pub struct FoundSubtitleFile {
     pub path: String,
     pub language: Option<String>,
     pub hearing_impaired: bool,
     pub forced: bool,
 }
 
-type ListSubtitleFilesFn =
-    dyn Fn(String) -> PortFuture<Result<Vec<SubtitleFile>, ListSubtitleFilesError>> + Send + Sync;
+type ListSubtitleFilesFn = dyn Fn(String) -> PortFuture<Result<Vec<FoundSubtitleFile>, ListSubtitleFilesError>>
+    + Send
+    + Sync;
 
 #[derive(Clone)]
 pub struct ListSubtitleFiles(Arc<ListSubtitleFilesFn>);
 
 impl ListSubtitleFiles {
     pub fn new(
-        f: impl Fn(String) -> PortFuture<Result<Vec<SubtitleFile>, ListSubtitleFilesError>>
+        f: impl Fn(String) -> PortFuture<Result<Vec<FoundSubtitleFile>, ListSubtitleFilesError>>
         + Send
         + Sync
         + 'static,
@@ -602,7 +603,7 @@ impl ListSubtitleFiles {
     pub fn call(
         &self,
         media_file_path: &str,
-    ) -> PortFuture<Result<Vec<SubtitleFile>, ListSubtitleFilesError>> {
+    ) -> PortFuture<Result<Vec<FoundSubtitleFile>, ListSubtitleFilesError>> {
         (self.0)(media_file_path.to_owned())
     }
 }

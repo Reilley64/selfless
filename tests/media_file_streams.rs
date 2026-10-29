@@ -1,10 +1,10 @@
 mod support;
 
-use application::get_media_file::MediaFile;
+use application::get_media_file::MediaFileDetails;
 use application::ports::AudioStream;
+use application::ports::FoundSubtitleFile;
 use application::ports::HdrType;
 use application::ports::Probe;
-use application::ports::SubtitleFile;
 use application::ports::SubtitleStream;
 use application::ports::VideoStream;
 use application::sync_status::SyncStatus;
@@ -143,7 +143,7 @@ impl Fixture {
         self.reconciled(Source::Sonarr).await;
     }
 
-    async fn movie_file(&self) -> MediaFile {
+    async fn movie_file(&self) -> MediaFileDetails {
         let movie = application::list_movies::call(&self.server.state)
             .await
             .unwrap()
@@ -241,8 +241,8 @@ fn subtitle_file(
     language: Option<&str>,
     hearing_impaired: bool,
     forced: bool,
-) -> SubtitleFile {
-    SubtitleFile {
+) -> FoundSubtitleFile {
+    FoundSubtitleFile {
         path,
         language: language.map(str::to_owned),
         hearing_impaired,

@@ -13,7 +13,7 @@ use uuid::Uuid;
 pub(crate) struct Inspected {
     found: Option<FoundMediaFile>,
     probed: Probed,
-    subtitle_files: Vec<crate::ports::SubtitleFile>,
+    subtitle_files: Vec<crate::ports::FoundSubtitleFile>,
 }
 
 enum Probed {
@@ -219,14 +219,14 @@ async fn save_probe(
 async fn save_subtitle_files(
     db: &mut dyn toasty::Executor,
     media_file_id: Uuid,
-    mut subtitle_files: Vec<crate::ports::SubtitleFile>,
+    mut subtitle_files: Vec<crate::ports::FoundSubtitleFile>,
 ) -> toasty::Result<bool> {
     subtitle_files.sort();
     let mut stored = SubtitleFile::filter_by_media_file_id(media_file_id)
         .exec(db)
         .await?
         .into_iter()
-        .map(|x| crate::ports::SubtitleFile {
+        .map(|x| crate::ports::FoundSubtitleFile {
             path: x.path,
             language: x.language,
             hearing_impaired: x.hearing_impaired,

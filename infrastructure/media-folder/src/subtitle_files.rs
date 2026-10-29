@@ -1,6 +1,6 @@
+use application::ports::FoundSubtitleFile;
 use application::ports::ListSubtitleFiles;
 use application::ports::ListSubtitleFilesError;
-use application::ports::SubtitleFile;
 use std::path::Path;
 
 const EXTENSIONS: [&str; 2] = ["srt", "ass"];
@@ -9,7 +9,7 @@ pub(crate) fn list_subtitle_files() -> ListSubtitleFiles {
     ListSubtitleFiles::new(|media_file_path| Box::pin(list(media_file_path)))
 }
 
-async fn list(media_file_path: String) -> Result<Vec<SubtitleFile>, ListSubtitleFilesError> {
+async fn list(media_file_path: String) -> Result<Vec<FoundSubtitleFile>, ListSubtitleFilesError> {
     let media_file_path = Path::new(&media_file_path);
     let (Some(folder), Some(stem)) = (
         media_file_path.parent(),
@@ -36,7 +36,7 @@ async fn list(media_file_path: String) -> Result<Vec<SubtitleFile>, ListSubtitle
     Ok(subtitle_files)
 }
 
-fn subtitle_file(folder: &Path, stem: &str, name: &str) -> Option<SubtitleFile> {
+fn subtitle_file(folder: &Path, stem: &str, name: &str) -> Option<FoundSubtitleFile> {
     let mut parts = name
         .strip_prefix(stem)?
         .strip_prefix('.')?
@@ -46,7 +46,7 @@ fn subtitle_file(folder: &Path, stem: &str, name: &str) -> Option<SubtitleFile> 
     if !EXTENSIONS.contains(&extension.as_str()) {
         return None;
     }
-    let mut subtitle_file = SubtitleFile {
+    let mut subtitle_file = FoundSubtitleFile {
         path: folder.join(name).to_str()?.to_owned(),
         language: None,
         hearing_impaired: false,
