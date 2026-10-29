@@ -21,7 +21,7 @@ async fn home(cx: &Cx) -> topcoat::Result<impl View> {
                 <meta charset="utf-8" />
                 <meta name="viewport" content="width=device-width, initial-scale=1" />
                 <title>"selfless admin"</title>
-                <style>(Unescaped::new_unchecked(include_str!(concat!(env!("OUT_DIR"), "/tailwind.css"))))</style>
+                <style>(Unescaped::new_unchecked(include_str!("../dist/styles.css")))</style>
             </head>
             <body class="bg-background p-web-inset">
                 <main class="flex flex-col gap-1">

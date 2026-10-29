@@ -4,6 +4,7 @@
   "license": "MIT OR Apache-2.0",
   "workspaces": {
     "packages": [
+      "presentation/admin",
       "presentation/api-client",
       "presentation/ui",
       "presentation/web",
@@ -16,6 +17,7 @@
       "react-native": "npm:react-native-tvos@0.88.0-0",
       "react-native-css": "3.1.0-rc.0",
       "tailwindcss": "4.3.3",
+      "@tailwindcss/cli": "4.3.3",
       "@tailwindcss/postcss": "4.3.3"
     }
   },

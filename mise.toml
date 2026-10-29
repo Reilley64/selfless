@@ -16,7 +16,7 @@ description = "Start PostgreSQL and grafana/otel-lgtm for local development"
 run = "docker compose up --detach --wait"
 
 [tasks.generate]
-description = "Generate the API client, the TypeScript telemetry constants and the theme"
+description = "Generate the API client, the TypeScript telemetry constants, the theme and the admin stylesheet"
 run = "bun run generate"
 
 [tasks.dev]

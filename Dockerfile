@@ -26,7 +26,7 @@ FROM chef AS build
 COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --locked --release --recipe-path recipe.json --bin selfless
 COPY . .
-COPY --from=web /app/presentation/ui/theme presentation/ui/theme
+COPY --from=web /app/presentation/admin/dist presentation/admin/dist
 ARG GIT_BRANCH GIT_COMMIT GIT_COMMIT_TIME
 RUN --mount=from=tools,source=/mise,target=/mise \
     --mount=from=tools,source=/usr/local/bin/mise,target=/usr/local/bin/mise \

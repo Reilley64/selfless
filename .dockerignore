@@ -4,6 +4,7 @@
 docs
 target
 **/node_modules
+presentation/admin/dist
 presentation/api-client/src/generated
 presentation/ui/src/telemetry/attributes.ts
 presentation/ui/theme

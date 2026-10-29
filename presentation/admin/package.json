@@ -1,0 +1,13 @@
+{
+  "name": "@selfless/admin",
+  "private": true,
+  "license": "MIT OR Apache-2.0",
+  "scripts": {
+    "generate": "tailwindcss --input styles.css --output dist/styles.css --minify"
+  },
+  "devDependencies": {
+    "@selfless/ui": "workspace:*",
+    "@tailwindcss/cli": "catalog:",
+    "tailwindcss": "catalog:"
+  }
+}

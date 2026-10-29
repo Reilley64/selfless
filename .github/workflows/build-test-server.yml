@@ -63,7 +63,7 @@ jobs:
       - name: "Setup: Install the workspace dependencies"
         run: bun install --frozen-lockfile
 
-      - name: "Build: Generate the theme for the admin app"
+      - name: "Build: Generate the admin stylesheet"
         run: bun run generate
 
       - name: "Scan: Check Rust formatting"
