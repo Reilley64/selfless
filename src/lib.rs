@@ -61,6 +61,7 @@ pub async fn start(
             AppError::new(error)
         }
     })?;
+    application::delete_expired_sessions::call(&state).await?;
     let availability = Availability::default();
     let router = api::router(
         admin::register(Router::builder()),
