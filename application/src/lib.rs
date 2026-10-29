@@ -2,6 +2,7 @@ pub mod admin_sign_in;
 pub mod admin_sign_out;
 pub mod bootstrap_first_admin;
 pub mod change_admin_password;
+pub mod change_password;
 pub mod check_database;
 pub mod create_admin;
 pub mod create_user;
@@ -16,9 +17,12 @@ pub mod list_user_sessions;
 mod passwords;
 pub mod ports;
 pub mod relay_telemetry;
+pub mod reset_user_password;
 mod session_tokens;
 pub mod sign_in;
 pub mod sign_out;
+
+pub use passwords::EmptyPassword;
 
 pub mod attributes {
     include!(concat!(env!("OUT_DIR"), "/attributes.rs"));

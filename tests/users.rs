@@ -1,5 +1,6 @@
 mod support;
 
+use application::EmptyPassword;
 use application::create_user::NameTaken;
 use ohno::ErrorExt;
 use reqwest::StatusCode;
@@ -54,6 +55,23 @@ async fn user_names_are_unique_ignoring_case_and_shown_as_typed() {
 
     assert!(error.find_source::<NameTaken>().is_some(), "{error}");
     assert_eq!(body["user"]["name"], "Noor");
+    drop(server);
+    database.drop().await;
+}
+
+#[tokio::test]
+async fn a_user_password_cannot_be_empty() {
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+
+    let error = server
+        .try_create_user("Noor", "")
+        .await
+        .expect_err("the password is empty");
+
+    assert!(error.find_source::<EmptyPassword>().is_some(), "{error}");
+    let (status, _) = server.sign_in("Noor", "", "web").await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
     drop(server);
     database.drop().await;
 }

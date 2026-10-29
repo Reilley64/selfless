@@ -1,10 +1,19 @@
+use crate::problem::EMPTY_PASSWORD;
+use crate::problem::WRONG_CURRENT_PASSWORD;
 use crate::user_auth::CurrentSession;
+use application::EmptyPassword;
+use application::change_password::WrongCurrentPassword;
 use domain::Colour;
 use domain::Symbol;
 use domain::User;
+use infrastructure::AppState;
+use ohno::ErrorExt;
+use serde::Deserialize;
 use serde::Serialize;
 use topcoat::context::Cx;
+use topcoat::context::app_context;
 use topcoat::context::request_context;
+use topcoat::router::StatusCode;
 use topcoat::router::content::Json;
 use topcoat::router::response::IntoResponse;
 use topcoat::router::response::Response;
@@ -33,4 +42,37 @@ impl From<&User> for UserBody {
 #[route(GET "/api/me/v1")]
 pub(crate) async fn me(cx: &Cx) -> topcoat::Result<Response> {
     Json(UserBody::from(&request_context::<CurrentSession>(cx).user)).into_response(cx)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ChangePassword {
+    current_password: String,
+    new_password: String,
+}
+
+#[route(PUT "/api/me/password/v1")]
+pub(crate) async fn change_password(
+    cx: &Cx,
+    Json(request): Json<ChangePassword>,
+) -> topcoat::Result<Response> {
+    let session = request_context::<CurrentSession>(cx);
+    match application::change_password::call(
+        app_context::<AppState>(cx),
+        session.user.id,
+        &session.token,
+        request.current_password,
+        request.new_password,
+    )
+    .await
+    {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(cx),
+        Err(error) if error.find_source::<WrongCurrentPassword>().is_some() => {
+            WRONG_CURRENT_PASSWORD.into_response(cx)
+        }
+        Err(error) if error.find_source::<EmptyPassword>().is_some() => {
+            EMPTY_PASSWORD.into_response(cx)
+        }
+        Err(error) => Err(error.into()),
+    }
 }
