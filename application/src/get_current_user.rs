@@ -2,11 +2,9 @@ use crate::DbContext;
 use crate::ports::Clock;
 use crate::tokens;
 use domain::ClientKind;
+use domain::LAST_USED_PRECISION;
 use domain::Session;
 use domain::User;
-use jiff::SignedDuration;
-
-const LAST_USED_PRECISION: SignedDuration = SignedDuration::from_hours(1);
 
 #[fundle::deps]
 pub struct Dependencies {

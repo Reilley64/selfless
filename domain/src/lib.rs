@@ -3,6 +3,8 @@ use jiff::Timestamp;
 use toasty::Deferred;
 use uuid::Uuid;
 
+pub const LAST_USED_PRECISION: SignedDuration = SignedDuration::from_hours(1);
+
 #[derive(Debug, toasty::Model)]
 pub struct Admin {
     #[key]
