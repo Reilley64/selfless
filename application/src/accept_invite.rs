@@ -4,7 +4,6 @@ use crate::ports::Clock;
 use crate::session_tokens;
 use domain::Invite;
 use domain::User;
-use std::fmt;
 
 #[fundle::deps]
 pub struct Dependencies {
@@ -16,16 +15,9 @@ pub struct Dependencies {
 #[display("failed to accept an invite")]
 pub struct Error;
 
-#[derive(Debug)]
+#[ohno::error]
+#[display("no pending invite has this token, or it has expired")]
 pub struct InviteNotFound;
-
-impl fmt::Display for InviteNotFound {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("no pending invite has this token, or it has expired")
-    }
-}
-
-impl std::error::Error for InviteNotFound {}
 
 pub async fn call(
     dependencies: impl Into<Dependencies>,
@@ -45,7 +37,7 @@ pub async fn call(
         .map_err(Error::caused_by)?
         .filter(|x| now < x.expires_at)
     else {
-        return Err(Error::caused_by(InviteNotFound));
+        return Err(Error::caused_by(InviteNotFound::new()));
     };
     let user = match create_user::call(
         create_user::Dependencies {
@@ -66,7 +58,7 @@ pub async fn call(
                 .map_err(Error::caused_by)?
                 .is_some();
             return Err(if accepted {
-                Error::caused_by(InviteNotFound)
+                Error::caused_by(InviteNotFound::new())
             } else {
                 Error::caused_by(error)
             });

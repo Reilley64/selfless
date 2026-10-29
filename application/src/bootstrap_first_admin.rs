@@ -1,7 +1,6 @@
 use crate::DbContext;
 use crate::passwords;
 use domain::Admin;
-use std::fmt;
 
 #[fundle::deps]
 pub struct Dependencies {
@@ -12,16 +11,9 @@ pub struct Dependencies {
 #[display("failed to create the first admin")]
 pub struct Error;
 
-#[derive(Debug)]
+#[ohno::error]
+#[display("no admin exists, and the first admin's name or password is missing")]
 pub struct MissingFirstAdmin;
-
-impl fmt::Display for MissingFirstAdmin {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("no admin exists, and the first admin's name or password is missing")
-    }
-}
-
-impl std::error::Error for MissingFirstAdmin {}
 
 pub async fn call(
     dependencies: impl Into<Dependencies>,
@@ -42,7 +34,7 @@ pub async fn call(
         name.filter(|x| !x.is_empty()),
         password.filter(|x| !x.is_empty()),
     ) else {
-        return Err(Error::caused_by(MissingFirstAdmin));
+        return Err(Error::caused_by(MissingFirstAdmin::new()));
     };
     let password_hash = passwords::hash(password).await.map_err(Error::caused_by)?;
     toasty::create!(Admin {

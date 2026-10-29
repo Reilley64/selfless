@@ -2,7 +2,6 @@ use crate::DbContext;
 use crate::passwords;
 use crate::unique_index;
 use domain::Admin;
-use std::fmt;
 
 const NAME_INDEX: &str = "index_admins_by_name";
 
@@ -15,16 +14,9 @@ pub struct Dependencies {
 #[display("failed to create an admin")]
 pub struct Error;
 
-#[derive(Debug)]
+#[ohno::error]
+#[display("an admin with this name already exists")]
 pub struct NameTaken;
-
-impl fmt::Display for NameTaken {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("an admin with this name already exists")
-    }
-}
-
-impl std::error::Error for NameTaken {}
 
 pub async fn call(
     dependencies: impl Into<Dependencies>,
@@ -40,7 +32,7 @@ pub async fn call(
     .exec(db_context.executor_mut())
     .await
     .map_err(|error| match unique_index::violated(&error) {
-        Some(NAME_INDEX) => Error::caused_by(NameTaken),
+        Some(NAME_INDEX) => Error::caused_by(NameTaken::new()),
         _ => Error::caused_by(error),
     })
 }

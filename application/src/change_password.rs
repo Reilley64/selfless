@@ -3,7 +3,6 @@ use crate::passwords;
 use crate::session_tokens;
 use domain::Session;
 use domain::User;
-use std::fmt;
 use uuid::Uuid;
 
 #[fundle::deps]
@@ -15,16 +14,9 @@ pub struct Dependencies {
 #[display("failed to change a user's password")]
 pub struct Error;
 
-#[derive(Debug)]
+#[ohno::error]
+#[display("the current password is wrong")]
 pub struct WrongCurrentPassword;
-
-impl fmt::Display for WrongCurrentPassword {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("the current password is wrong")
-    }
-}
-
-impl std::error::Error for WrongCurrentPassword {}
 
 pub async fn call(
     dependencies: impl Into<Dependencies>,
@@ -43,7 +35,7 @@ pub async fn call(
         .await
         .map_err(Error::caused_by)?
     {
-        return Err(Error::caused_by(WrongCurrentPassword));
+        return Err(Error::caused_by(WrongCurrentPassword::new()));
     }
     let password_hash = passwords::hash(new_password)
         .await

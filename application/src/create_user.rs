@@ -4,7 +4,6 @@ use crate::unique_index;
 use domain::Colour;
 use domain::Symbol;
 use domain::User;
-use std::fmt;
 
 const NAME_INDEX: &str = "index_users_by_name";
 
@@ -17,16 +16,9 @@ pub struct Dependencies {
 #[display("failed to create a user")]
 pub struct Error;
 
-#[derive(Debug)]
+#[ohno::error]
+#[display("a user with this name already exists")]
 pub struct NameTaken;
-
-impl fmt::Display for NameTaken {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("a user with this name already exists")
-    }
-}
-
-impl std::error::Error for NameTaken {}
 
 pub async fn call(
     dependencies: impl Into<Dependencies>,
@@ -54,7 +46,7 @@ pub async fn call(
     .exec(db_context.executor_mut())
     .await
     .map_err(|error| match unique_index::violated(&error) {
-        Some(NAME_INDEX) => Error::caused_by(NameTaken),
+        Some(NAME_INDEX) => Error::caused_by(NameTaken::new()),
         _ => Error::caused_by(error),
     })
 }

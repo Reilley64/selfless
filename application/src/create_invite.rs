@@ -6,7 +6,6 @@ use crate::session_tokens;
 use crate::unique_index;
 use domain::Invite;
 use domain::User;
-use std::fmt;
 use uuid::Uuid;
 
 const EMAIL_INDEX: &str = "index_invites_by_email";
@@ -22,16 +21,9 @@ pub struct Dependencies {
 #[display("failed to create an invite")]
 pub struct Error;
 
-#[derive(Debug)]
+#[ohno::error]
+#[display("a user or a pending invite already has this email address")]
 pub struct AddressTaken;
-
-impl fmt::Display for AddressTaken {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("a user or a pending invite already has this email address")
-    }
-}
-
-impl std::error::Error for AddressTaken {}
 
 pub async fn call(
     dependencies: impl Into<Dependencies>,
@@ -50,7 +42,7 @@ pub async fn call(
         .await
         .map_err(Error::caused_by)?;
     if user.is_some() {
-        return Err(Error::caused_by(AddressTaken));
+        return Err(Error::caused_by(AddressTaken::new()));
     }
     let token = session_tokens::generate();
     let sent_at = clock.call();
@@ -64,7 +56,7 @@ pub async fn call(
     .exec(db_context.executor_mut())
     .await
     .map_err(|error| match unique_index::violated(&error) {
-        Some(EMAIL_INDEX) => Error::caused_by(AddressTaken),
+        Some(EMAIL_INDEX) => Error::caused_by(AddressTaken::new()),
         _ => Error::caused_by(error),
     })?;
     invite_email::send(&send_email, email, &origin, &token)

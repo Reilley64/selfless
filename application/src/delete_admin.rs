@@ -1,7 +1,6 @@
 use crate::DbContext;
 use domain::Admin;
 use domain::AdminSession;
-use std::fmt;
 use uuid::Uuid;
 
 #[fundle::deps]
@@ -13,16 +12,9 @@ pub struct Dependencies {
 #[display("failed to delete an admin")]
 pub struct Error;
 
-#[derive(Debug)]
+#[ohno::error]
+#[display("the last admin cannot be deleted")]
 pub struct LastAdmin;
-
-impl fmt::Display for LastAdmin {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("the last admin cannot be deleted")
-    }
-}
-
-impl std::error::Error for LastAdmin {}
 
 pub async fn call(dependencies: impl Into<Dependencies>, id: Uuid) -> Result<(), Error> {
     let mut db_context = dependencies.into().db_context;
@@ -42,7 +34,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, id: Uuid) -> Result<(),
             .map_err(Error::caused_by)?
             .is_some()
     {
-        return Err(Error::caused_by(LastAdmin));
+        return Err(Error::caused_by(LastAdmin::new()));
     }
     AdminSession::filter_by_admin_id(id)
         .delete()
