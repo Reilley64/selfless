@@ -6,6 +6,7 @@ use application::ports::SendEmail;
 use infrastructure::persistence;
 use jiff::SignedDuration;
 use jiff::Timestamp;
+use jiff::Unit;
 use jsonschema::Registry;
 use reqwest::Method;
 use reqwest::RequestBuilder;
@@ -42,6 +43,7 @@ use tokio_postgres::NoTls;
 use tokio_postgres::Row;
 use tokio_util::sync::CancellationToken;
 use url::Url;
+use uuid::Uuid;
 
 static OPENAPI: LazyLock<Value> =
     LazyLock::new(|| serde_saphyr::from_str(include_str!("../../openapi.yaml")).unwrap());
@@ -165,7 +167,13 @@ pub struct FakeClock(Arc<Mutex<Timestamp>>);
 
 impl FakeClock {
     pub fn new() -> Self {
-        Self(Arc::new(Mutex::new(Timestamp::now())))
+        Self(Arc::new(Mutex::new(
+            Timestamp::now().round(Unit::Second).unwrap(),
+        )))
+    }
+
+    pub fn now(&self) -> Timestamp {
+        *self.0.lock().unwrap()
     }
 
     pub fn advance(&self, duration: SignedDuration) {
@@ -218,27 +226,31 @@ impl TestServer {
         }
     }
 
-    pub async fn create_user(&self, name: &str, password: &str) {
-        self.try_create_user(name, password).await.unwrap();
+    pub async fn db_context(&self) -> DbContext {
+        DbContext::new(
+            persistence::connect(&self.database).await.unwrap(),
+            self.database.location(),
+        )
+    }
+
+    pub async fn create_user(&self, name: &str, password: &str) -> Uuid {
+        self.try_create_user(name, password).await.unwrap()
     }
 
     pub async fn try_create_user(
         &self,
         name: &str,
         password: &str,
-    ) -> Result<(), application::create_user::Error> {
+    ) -> Result<Uuid, application::create_user::Error> {
         application::create_user::call(
             application::create_user::Dependencies {
-                db_context: DbContext::new(
-                    persistence::connect(&self.database).await.unwrap(),
-                    self.database.location(),
-                ),
+                db_context: self.db_context().await,
             },
             name.to_owned(),
             password.to_owned(),
         )
         .await
-        .map(drop)
+        .map(|x| x.id)
     }
 
     pub async fn sign_in(
