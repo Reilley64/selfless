@@ -296,7 +296,7 @@ async fn reconcile_movies(
             "{failed_calls} calls to Radarr failed, so nothing was removed"
         )));
     }
-    remove_or_hold(db_context, Source::Radarr, total, removed).await
+    remove_or_hold(db_context, Source::Radarr, total, removed, &listed).await
 }
 
 async fn reconcile_shows(
@@ -362,7 +362,7 @@ async fn reconcile_shows(
             "{failed_calls} calls to Sonarr failed, so nothing was removed"
         )));
     }
-    remove_or_hold(db_context, Source::Sonarr, total, removed).await
+    remove_or_hold(db_context, Source::Sonarr, total, removed, &listed).await
 }
 
 async fn resolve_failed_rows(
@@ -409,6 +409,7 @@ async fn remove_or_hold(
     source: Source,
     total: usize,
     removed: Vec<Uuid>,
+    listed: &HashSet<i64>,
 ) -> Result<(), Error> {
     HeldRemoval::filter_by_source(source)
         .delete()
@@ -429,13 +430,14 @@ async fn remove_or_hold(
         .map_err(Error::caused_by)?;
         return Ok(());
     }
-    remove(db_context, source, removed).await
+    remove(db_context, source, removed, listed).await
 }
 
 pub(crate) async fn remove(
     db_context: &mut DbContext,
     source: Source,
     ids: Vec<Uuid>,
+    listed: &HashSet<i64>,
 ) -> Result<(), Error> {
     if ids.is_empty() {
         return Ok(());
@@ -445,7 +447,10 @@ pub(crate) async fn remove(
             let movies = Movie::filter(Movie::fields().id().in_list(ids))
                 .exec(db_context.executor_mut())
                 .await
-                .map_err(Error::caused_by)?;
+                .map_err(Error::caused_by)?
+                .into_iter()
+                .filter(|x| !listed.contains(&x.tmdb_id))
+                .collect();
             sync_movie::remove(db_context, movies)
                 .await
                 .map_err(Error::caused_by)
@@ -455,7 +460,7 @@ pub(crate) async fn remove(
                 .exec(db_context.executor_mut())
                 .await
                 .map_err(Error::caused_by)?;
-            for show in shows {
+            for show in shows.into_iter().filter(|x| !listed.contains(&x.tvdb_id)) {
                 sync_show::remove(db_context, show)
                     .await
                     .map_err(Error::caused_by)?;

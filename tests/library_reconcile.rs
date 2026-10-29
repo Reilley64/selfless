@@ -346,6 +346,22 @@ async fn a_removal_of_more_than_half_the_movies_is_held_until_an_admin_confirms_
 }
 
 #[tokio::test]
+async fn confirming_a_held_removal_keeps_the_movies_radarr_lists_again() {
+    let fixture = Fixture::start(&ALL_MOVIES, &[]).await;
+    fixture.reconciled(Source::Radarr).await;
+    fixture.arrs.radarr_lists(&[42]).await;
+    let held = fixture.sync_now(Source::Radarr).await;
+    assert_eq!(held.held_removal, Some(HeldRemoval { count: 3 }));
+
+    fixture.arrs.radarr_lists(&[42, 43]).await;
+    fixture.confirm_held_removal(Source::Radarr).await;
+
+    assert_eq!(fixture.movie_titles().await, ["Arrival", "Dune"]);
+    assert_eq!(fixture.status().await.radarr.held_removal, None);
+    fixture.stop().await;
+}
+
+#[tokio::test]
 async fn a_radarr_that_lists_as_many_other_movies_holds_the_removal_of_every_stored_movie() {
     let fixture = Fixture::start(&ALL_MOVIES, &[]).await;
     fixture.reconciled(Source::Radarr).await;
