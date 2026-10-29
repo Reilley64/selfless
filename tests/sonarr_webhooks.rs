@@ -24,7 +24,9 @@ async fn an_accepted_test_webhook_is_the_last_sonarr_webhook_in_the_sync_status(
         .await;
 
     assert_eq!(status, StatusCode::OK);
-    let sync_status = application::sync_status::call(&server.state).await.unwrap();
+    let sync_status = application::sync_status::call(&server.state, None, 1)
+        .await
+        .unwrap();
     assert_eq!(sync_status.sonarr.last_webhook_at, Some(server.clock.now()));
     assert_eq!(sync_status.sonarr.rejected_webhooks, 0);
     assert_eq!(sync_status.radarr.last_webhook_at, None);
@@ -45,7 +47,9 @@ async fn a_wrong_or_missing_sonarr_password_is_rejected_and_counted_in_the_sync_
 
     assert_eq!(wrong, StatusCode::UNAUTHORIZED);
     assert_eq!(missing, StatusCode::UNAUTHORIZED);
-    let sync_status = application::sync_status::call(&server.state).await.unwrap();
+    let sync_status = application::sync_status::call(&server.state, None, 1)
+        .await
+        .unwrap();
     assert_eq!(sync_status.sonarr.rejected_webhooks, 2);
     assert_eq!(sync_status.sonarr.last_webhook_at, None);
     assert_eq!(sync_status.radarr.rejected_webhooks, 0);

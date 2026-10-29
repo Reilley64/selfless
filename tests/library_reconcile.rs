@@ -63,7 +63,7 @@ impl Fixture {
     }
 
     async fn status(&self) -> SyncStatus {
-        application::sync_status::call(&self.server.state)
+        application::sync_status::call(&self.server.state, None, 1)
             .await
             .unwrap()
     }

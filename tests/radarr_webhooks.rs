@@ -22,7 +22,9 @@ async fn an_accepted_test_webhook_is_the_last_radarr_webhook_in_the_sync_status(
         .await;
 
     assert_eq!(status, StatusCode::OK);
-    let sync_status = application::sync_status::call(&server.state).await.unwrap();
+    let sync_status = application::sync_status::call(&server.state, None, 1)
+        .await
+        .unwrap();
     assert_eq!(sync_status.radarr.last_webhook_at, Some(server.clock.now()));
     assert_eq!(sync_status.radarr.rejected_webhooks, 0);
     drop(server);
@@ -42,7 +44,9 @@ async fn a_wrong_or_missing_password_is_rejected_and_counted_in_the_sync_status(
 
     assert_eq!(wrong, StatusCode::UNAUTHORIZED);
     assert_eq!(missing, StatusCode::UNAUTHORIZED);
-    let sync_status = application::sync_status::call(&server.state).await.unwrap();
+    let sync_status = application::sync_status::call(&server.state, None, 1)
+        .await
+        .unwrap();
     assert_eq!(sync_status.radarr.rejected_webhooks, 2);
     assert_eq!(sync_status.radarr.last_webhook_at, None);
     drop(server);
@@ -68,7 +72,9 @@ async fn post_and_put_accept_the_right_password_with_any_username() {
 
     assert_eq!(post, StatusCode::OK);
     assert_eq!(put, StatusCode::OK);
-    let sync_status = application::sync_status::call(&server.state).await.unwrap();
+    let sync_status = application::sync_status::call(&server.state, None, 1)
+        .await
+        .unwrap();
     assert_eq!(sync_status.radarr.rejected_webhooks, 0);
     drop(server);
     database.drop().await;

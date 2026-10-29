@@ -1,11 +1,10 @@
 use topcoat::{
     Result,
-    context::Cx,
-    icon::{IconData, icon},
+    icon::icon,
     view::{Attributes, Child, StaticClass, View, attributes, class, component, view},
 };
 
-use super::icons::{CHECK, CHEVRON_DOWN};
+use super::icons::CHEVRON_DOWN;
 
 /// Classes for the select control, with space for a custom dropdown arrow.
 const SELECT: StaticClass = class!(
@@ -40,32 +39,6 @@ const PICKER: StaticClass = class!(
     "[&_option::checkmark]:[mask-image:var(--select-checkmark)]",
 );
 
-/// The icon marking the picker's checked option.
-const CHECKMARK: IconData = CHECK;
-
-/// Supplies the checkmark icon as a data URI in `--select-checkmark` so CSS can use it
-/// as a mask.
-fn checkmark_style(cx: &Cx) -> String {
-    let svg = format!(
-        r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="{}">{}</svg>"#,
-        CHECKMARK.view_box(),
-        CHECKMARK.into_body().render(cx),
-    );
-    let mut style = String::from(r#"--select-checkmark: url("data:image/svg+xml,"#);
-    // Percent-encode the characters that cannot appear in a double-quoted
-    // CSS url().
-    for char in svg.chars() {
-        match char {
-            '%' => style.push_str("%25"),
-            '"' => style.push_str("%22"),
-            '#' => style.push_str("%23"),
-            _ => style.push(char),
-        }
-    }
-    style.push_str(r#"")"#);
-    style
-}
-
 /// A styled native select control.
 ///
 /// Pass `<option>` or `<optgroup>` elements as children. Classes in `attrs` apply to
@@ -88,7 +61,6 @@ fn checkmark_style(cx: &Cx) -> String {
 /// ```
 #[component]
 pub async fn select(
-    cx: &Cx,
     #[default] mut attrs: Attributes,
     #[default] child: Child<'_>,
 ) -> Result<impl View> {
@@ -105,7 +77,6 @@ pub async fn select(
                 "[&:has(select:open)>svg]:rotate-180",
                 attrs.remove("class"),
             ))
-            style=(checkmark_style(cx))
         >
             <select class=(class!(SELECT, PICKER)) (attrs)>(child)</select>
             icon(

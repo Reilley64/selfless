@@ -790,7 +790,7 @@ impl Page {
             .unwrap_or_else(|| panic!("{text:?} is not in a link\n{}", self.body));
         let start = link_at + self.body[link_at..].find(r#"href=""#).unwrap() + r#"href=""#.len();
         let length = self.body[start..].find('"').unwrap();
-        self.body[start..start + length].to_owned()
+        self.body[start..start + length].replace("&amp;", "&")
     }
 
     pub fn header(&self, name: &str) -> Option<&str> {
@@ -845,30 +845,14 @@ impl Page {
     }
 
     pub fn hx_post(&self, button: &str) -> String {
-        let button_at = self
-            .body
-            .find(&format!(">{button}<"))
-            .unwrap_or_else(|| panic!("the page has no {button:?} button\n{}", self.body));
-        let tag = &self.body[self.body[..button_at].rfind("<button").unwrap()..button_at];
-        let start = tag
-            .find(r#"hx-post=""#)
-            .unwrap_or_else(|| panic!("{button:?} posts nothing: {tag}"))
-            + r#"hx-post=""#.len();
-        let length = tag[start..].find('"').unwrap();
-        tag[start..start + length].to_owned()
+        let tag = self.opening_tag("button", button);
+        attribute(tag, "hx-post").unwrap_or_else(|| panic!("{button:?} posts nothing: {tag}"))
     }
 
     pub fn dialog_text(&self, button: &str) -> String {
-        let button_at = self
-            .body
-            .find(&format!(">{button}<"))
-            .unwrap_or_else(|| panic!("the page has no {button:?} button\n{}", self.body));
-        let tag = &self.body[self.body[..button_at].rfind("<button").unwrap()..button_at];
-        let start = tag
-            .find(r#"commandfor=""#)
-            .unwrap_or_else(|| panic!("{button:?} opens no dialog: {tag}"))
-            + r#"commandfor=""#.len();
-        let id = &tag[start..start + tag[start..].find('"').unwrap()];
+        let button_tag = self.opening_tag("button", button);
+        let id = attribute(button_tag, "commandfor")
+            .unwrap_or_else(|| panic!("{button:?} opens no dialog: {button_tag}"));
         let id_at = self
             .body
             .find(&format!(r#" id="{id}""#))
@@ -877,6 +861,50 @@ impl Page {
         let end = start + self.body[start..].find("</dialog>").unwrap();
         visible_text(&self.body[start..end])
     }
+
+    pub fn hx_get_on_choosing(&self, option: &str) -> String {
+        let option_tag = self.opening_tag("option", option);
+        let option_at = self.body.find(option_tag).unwrap();
+        let select_at = self.body[..option_at].rfind("<select").unwrap();
+        let select_tag = &self.body[select_at..select_at + tag_length(&self.body[select_at..])];
+        let path = attribute(select_tag, "hx-get")
+            .unwrap_or_else(|| panic!("choosing {option:?} gets nothing: {select_tag}"));
+        let query = url::form_urlencoded::Serializer::new(String::new())
+            .append_pair(
+                &attribute(select_tag, "name").unwrap(),
+                &attribute(option_tag, "value").unwrap(),
+            )
+            .finish();
+        format!("{path}?{query}")
+    }
+
+    fn opening_tag(&self, element: &str, label: &str) -> &str {
+        let label_at = self
+            .body
+            .find(&format!(">{label}<"))
+            .unwrap_or_else(|| panic!("the page has no {label:?} {element}\n{}", self.body));
+        let start = self.body[..label_at]
+            .rfind(&format!("<{element} "))
+            .unwrap_or_else(|| panic!("{label:?} is not in a {element}\n{}", self.body));
+        &self.body[start..label_at]
+    }
+}
+
+fn tag_length(html: &str) -> usize {
+    let mut quoted = false;
+    html.find(|x| {
+        if x == '"' {
+            quoted = !quoted;
+        }
+        x == '>' && !quoted
+    })
+    .unwrap()
+}
+
+fn attribute(tag: &str, name: &str) -> Option<String> {
+    let start = tag.find(&format!(r#" {name}=""#))? + name.len() + 3;
+    let length = tag[start..].find('"').unwrap();
+    Some(tag[start..start + length].replace("&amp;", "&"))
 }
 
 fn visible_text(html: &str) -> String {

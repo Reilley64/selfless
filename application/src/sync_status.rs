@@ -28,11 +28,15 @@ pub struct Dependencies {
 #[display("failed to read the sync status")]
 pub struct Error;
 
+pub const PROBLEMS_PER_PAGE: usize = 50;
+
 pub struct SyncStatus {
     pub radarr: SourceStatus,
     pub sonarr: SourceStatus,
     pub failed_rows: Vec<FailedRow>,
     pub problems: Vec<Problem>,
+    pub problem_page: usize,
+    pub problem_pages: usize,
 }
 
 pub struct FailedRow {
@@ -119,7 +123,11 @@ pub enum VisibleCounts {
     Shows { shows: u64, episodes: u64 },
 }
 
-pub async fn call(dependencies: impl Into<Dependencies>) -> Result<SyncStatus, Error> {
+pub async fn call(
+    dependencies: impl Into<Dependencies>,
+    problem_kind: Option<SyncProblemKind>,
+    problem_page: usize,
+) -> Result<SyncStatus, Error> {
     let Dependencies {
         mut db_context,
         reconciles,
@@ -176,7 +184,8 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<SyncStatus, E
             }
         })
         .collect();
-    let problems = problems(&mut db_context).await?;
+    let (problems, problem_page, problem_pages) =
+        problems(&mut db_context, problem_kind, problem_page).await?;
     Ok(SyncStatus {
         radarr: source_status(
             &mut db_context,
@@ -196,6 +205,8 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<SyncStatus, E
         .await?,
         failed_rows,
         problems,
+        problem_page,
+        problem_pages,
     })
 }
 
@@ -237,8 +248,31 @@ async fn source_status(
     })
 }
 
-async fn problems(db_context: &mut DbContext) -> Result<Vec<Problem>, Error> {
-    let stored = SyncProblem::all()
+async fn problems(
+    db_context: &mut DbContext,
+    kind: Option<SyncProblemKind>,
+    page: usize,
+) -> Result<(Vec<Problem>, usize, usize), Error> {
+    let mut stored = SyncProblem::all();
+    if let Some(kind) = kind {
+        stored = stored.filter(SyncProblem::fields().kind().eq(kind));
+    }
+    let count = stored
+        .clone()
+        .count()
+        .exec(db_context.executor_mut())
+        .await
+        .map_err(Error::caused_by)?;
+    let pages = usize::try_from(count)
+        .map_err(Error::caused_by)?
+        .div_ceil(PROBLEMS_PER_PAGE)
+        .max(1);
+    let page = page.clamp(1, pages);
+    let stored = stored
+        .order_by(SyncProblem::fields().path().asc())
+        .order_by(SyncProblem::fields().id().asc())
+        .limit(PROBLEMS_PER_PAGE)
+        .offset((page - 1) * PROBLEMS_PER_PAGE)
         .include(SyncProblem::fields().movie())
         .include(SyncProblem::fields().show())
         .include(SyncProblem::fields().media_file().movies())
@@ -281,7 +315,9 @@ async fn problems(db_context: &mut DbContext) -> Result<Vec<Problem>, Error> {
                     id: x.id,
                 }
             });
-        for item in movies.chain(shows).chain(episodes).collect::<Vec<_>>() {
+        let mut items = movies.chain(shows).chain(episodes).collect::<Vec<_>>();
+        items.sort();
+        for item in items {
             problems.push(Problem {
                 kind: problem.kind,
                 item,
@@ -289,6 +325,5 @@ async fn problems(db_context: &mut DbContext) -> Result<Vec<Problem>, Error> {
             });
         }
     }
-    problems.sort_by(|a, b| (&a.path, &a.item).cmp(&(&b.path, &b.item)));
-    Ok(problems)
+    Ok((problems, page, pages))
 }

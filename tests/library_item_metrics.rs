@@ -53,7 +53,7 @@ async fn reconciles_count_movies_added_changed_and_removed_by_source() {
     let reconciled = async || {
         let started_at = server.clock.now();
         eventually(async || {
-            application::sync_status::call(&server.state)
+            application::sync_status::call(&server.state, None, 1)
                 .await
                 .unwrap()
                 .radarr
