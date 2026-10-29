@@ -1,4 +1,5 @@
 use bytes::Bytes;
+pub use domain::HdrType;
 use jiff::Timestamp;
 use jiff::civil::Date;
 use std::error::Error;
@@ -284,6 +285,29 @@ impl SonarrError {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FoundMediaFile {
+    pub size: i64,
+    pub modified_at: Timestamp,
+}
+
+type FindMediaFileFn = dyn Fn(String) -> PortFuture<Option<FoundMediaFile>> + Send + Sync;
+
+#[derive(Clone)]
+pub struct FindMediaFile(Arc<FindMediaFileFn>);
+
+impl FindMediaFile {
+    pub fn new(
+        f: impl Fn(String) -> PortFuture<Option<FoundMediaFile>> + Send + Sync + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self, path: &str) -> PortFuture<Option<FoundMediaFile>> {
+        (self.0)(path.to_owned())
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FoundFile {
     pub path: String,
@@ -495,14 +519,6 @@ pub struct VideoStream {
     pub height: i64,
     pub frame_rate: Option<f64>,
     pub hdr_type: HdrType,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum HdrType {
-    Sdr,
-    Hdr10,
-    Hlg,
-    DolbyVision,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

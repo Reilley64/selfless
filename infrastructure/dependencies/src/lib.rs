@@ -1,7 +1,7 @@
 use application::BuildInfo;
 use application::DbContext;
 use application::InboxWakeup;
-use application::Prober;
+use application::MediaFolder;
 use application::Reconciles;
 use application::SourceHealth;
 use application::WebhookPasswords;
@@ -14,17 +14,10 @@ use application::ports::GetSonarrEpisodes;
 use application::ports::GetSonarrShow;
 use application::ports::ListRadarrMovies;
 use application::ports::ListSonarrSeries;
-use application::ports::ListSubtitleFiles;
-use application::ports::ReadEpisodeFolder;
-use application::ports::ReadEpisodeNfo;
-use application::ports::ReadMovieFolder;
-use application::ports::ReadMovieNfo;
-use application::ports::ReadShowFolder;
-use application::ports::ReadShowNfo;
 use jiff::Timestamp;
 
 pub use ffmpeg;
-pub use media_files;
+pub use media_folder;
 pub use persistence;
 pub use radarr;
 pub use sonarr;
@@ -45,14 +38,7 @@ pub struct AppState {
     pub inbox_wakeup: InboxWakeup,
     pub list_radarr_movies: ListRadarrMovies,
     pub list_sonarr_series: ListSonarrSeries,
-    pub list_subtitle_files: ListSubtitleFiles,
-    pub prober: Prober,
-    pub read_movie_folder: ReadMovieFolder,
-    pub read_movie_nfo: ReadMovieNfo,
-    pub read_show_folder: ReadShowFolder,
-    pub read_show_nfo: ReadShowNfo,
-    pub read_episode_folder: ReadEpisodeFolder,
-    pub read_episode_nfo: ReadEpisodeNfo,
+    pub media_folder: MediaFolder,
     pub reconciles: Reconciles,
     pub source_health: SourceHealth,
     pub webhook_passwords: WebhookPasswords,

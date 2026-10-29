@@ -1,6 +1,5 @@
 use crate::DbContext;
 use crate::ports::AudioStream;
-use crate::ports::HdrType;
 use crate::ports::SubtitleFile;
 use crate::ports::SubtitleStream;
 use crate::ports::VideoStream;
@@ -55,12 +54,7 @@ pub async fn call(
             width: x.width,
             height: x.height,
             frame_rate: x.frame_rate,
-            hdr_type: match x.hdr_type {
-                domain::HdrType::Sdr => HdrType::Sdr,
-                domain::HdrType::Hdr10 => HdrType::Hdr10,
-                domain::HdrType::Hlg => HdrType::Hlg,
-                domain::HdrType::DolbyVision => HdrType::DolbyVision,
-            },
+            hdr_type: x.hdr_type,
         })
         .collect();
     let audio_streams = domain::AudioStream::filter_by_media_file_id(media_file_id)

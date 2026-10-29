@@ -1,5 +1,5 @@
-use crate::Prober;
-use crate::ports::ListSubtitleFiles;
+use crate::MediaFolder;
+use crate::ports::FoundMediaFile;
 use crate::ports::Probe;
 use domain::AudioStream;
 use domain::MediaFile;
@@ -8,30 +8,23 @@ use domain::SubtitleStream;
 use domain::SyncProblem;
 use domain::SyncProblemKind;
 use domain::VideoStream;
-use jiff::Timestamp;
 use uuid::Uuid;
 
-#[derive(Clone, Copy)]
-struct OnDisk {
-    size: i64,
-    modified_at: Timestamp,
-}
-
-#[derive(Clone)]
-pub(crate) struct Inspector {
-    pub(crate) prober: Prober,
-    pub(crate) list_subtitle_files: ListSubtitleFiles,
-}
-
 pub(crate) struct Inspected {
-    on_disk: Option<OnDisk>,
-    probe: Option<Option<Probe>>,
+    found: Option<FoundMediaFile>,
+    probed: Probed,
     subtitle_files: Vec<crate::ports::SubtitleFile>,
+}
+
+enum Probed {
+    Unchanged,
+    Failed,
+    Read(Probe),
 }
 
 impl Inspected {
     pub(crate) fn on_disk(&self) -> bool {
-        self.on_disk.is_some()
+        self.found.is_some()
     }
 }
 
@@ -39,36 +32,34 @@ impl Inspected {
 #[display("failed to inspect a media file")]
 pub(crate) struct Error;
 
-impl Inspector {
+impl MediaFolder {
     pub(crate) async fn inspect(
         &self,
         stored: Option<&MediaFile>,
         path: &str,
     ) -> Result<Inspected, Error> {
-        let Some(on_disk) = on_disk(path).await else {
+        let Some(found) = self.find_media_file.call(path).await else {
             return Ok(Inspected {
-                on_disk: None,
-                probe: None,
+                found: None,
+                probed: Probed::Unchanged,
                 subtitle_files: Vec::new(),
             });
         };
-        let probe = match stored {
-            Some(x)
-                if x.size == Some(on_disk.size) && x.modified_at == Some(on_disk.modified_at) =>
-            {
-                None
+        let probed = match stored {
+            Some(x) if x.size == Some(found.size) && x.modified_at == Some(found.modified_at) => {
+                Probed::Unchanged
             }
-            _ => Some(match self.prober.probe(path).await {
-                Ok(probe) => Some(probe),
+            _ => match self.prober.probe(path).await {
+                Ok(probe) => Probed::Read(probe),
                 Err(error) => {
                     tracing::warn!(
                         error = &error as &dyn std::error::Error,
                         file.path = path,
                         "ffprobe failed to read a media file"
                     );
-                    None
+                    Probed::Failed
                 }
-            }),
+            },
         };
         let subtitle_files = self
             .list_subtitle_files
@@ -76,23 +67,11 @@ impl Inspector {
             .await
             .map_err(Error::caused_by)?;
         Ok(Inspected {
-            on_disk: Some(on_disk),
-            probe,
+            found: Some(found),
+            probed,
             subtitle_files,
         })
     }
-}
-
-async fn on_disk(path: &str) -> Option<OnDisk> {
-    let metadata = tokio::fs::metadata(path)
-        .await
-        .ok()
-        .filter(|x| x.is_file())?;
-    let modified_at = Timestamp::try_from(metadata.modified().ok()?).ok()?;
-    Some(OnDisk {
-        size: i64::try_from(metadata.len()).ok()?,
-        modified_at: Timestamp::from_microsecond(modified_at.as_microsecond()).ok()?,
-    })
 }
 
 pub(crate) async fn save(
@@ -100,23 +79,24 @@ pub(crate) async fn save(
     path: &str,
     inspected: Inspected,
 ) -> toasty::Result<(Uuid, bool)> {
-    let size = inspected.on_disk.map(|x| x.size);
-    let modified_at = inspected.on_disk.map(|x| x.modified_at);
-    let container = inspected
-        .probe
-        .as_ref()
-        .map(|x| x.as_ref().map(|x| x.container.clone()));
-    let duration_ms = inspected.probe.as_ref().map(|x| {
-        x.as_ref()
-            .and_then(|x| x.duration)
-            .and_then(|x| i64::try_from(x.as_millis()).ok())
-    });
+    let size = inspected.found.map(|x| x.size);
+    let modified_at = inspected.found.map(|x| x.modified_at);
+    let probed = match &inspected.probed {
+        Probed::Unchanged => None,
+        Probed::Failed => Some((None, None)),
+        Probed::Read(probe) => Some((
+            Some(probe.container.clone()),
+            probe
+                .duration
+                .and_then(|x| i64::try_from(x.as_millis()).ok()),
+        )),
+    };
     let (id, mut changed) = match MediaFile::filter_by_path(path).first().exec(db).await? {
         Some(mut media_file) => {
             let changed = media_file.size != size || media_file.modified_at != modified_at;
-            if changed || container.is_some() {
-                let container = container.unwrap_or_else(|| media_file.container.clone());
-                let duration_ms = duration_ms.unwrap_or(media_file.duration_ms);
+            if changed || probed.is_some() {
+                let (container, duration_ms) = probed
+                    .unwrap_or_else(|| (media_file.container.clone(), media_file.duration_ms));
                 media_file
                     .update()
                     .size(size)
@@ -129,12 +109,13 @@ pub(crate) async fn save(
             (media_file.id, changed)
         }
         None => {
+            let (container, duration_ms) = probed.unwrap_or_default();
             let media_file = toasty::create!(MediaFile {
                 path: path.to_owned(),
                 size,
                 modified_at,
-                container: container.flatten(),
-                duration_ms: duration_ms.flatten(),
+                container,
+                duration_ms,
             })
             .exec(db)
             .await?;
@@ -142,10 +123,12 @@ pub(crate) async fn save(
         }
     };
     if changed {
-        save_file_not_found(db, id, path, inspected.on_disk).await?;
+        save_file_not_found(db, id, path, inspected.found.is_some()).await?;
     }
-    if let Some(probe) = inspected.probe {
-        save_probe(db, id, path, probe).await?;
+    match inspected.probed {
+        Probed::Unchanged => {}
+        Probed::Failed => save_probe(db, id, path, None).await?,
+        Probed::Read(probe) => save_probe(db, id, path, Some(probe)).await?,
     }
     changed |= save_subtitle_files(db, id, inspected.subtitle_files).await?;
     Ok((id, changed))
@@ -180,7 +163,6 @@ async fn save_probe(
         .await?;
     let Some(probe) = probe else {
         toasty::create!(SyncProblem {
-            movie_id: None,
             media_file_id: Some(media_file_id),
             kind: SyncProblemKind::FfprobeFailed,
             path: path.to_owned(),
@@ -198,12 +180,7 @@ async fn save_probe(
             width: stream.width,
             height: stream.height,
             frame_rate: stream.frame_rate,
-            hdr_type: match stream.hdr_type {
-                crate::ports::HdrType::Sdr => domain::HdrType::Sdr,
-                crate::ports::HdrType::Hdr10 => domain::HdrType::Hdr10,
-                crate::ports::HdrType::Hlg => domain::HdrType::Hlg,
-                crate::ports::HdrType::DolbyVision => domain::HdrType::DolbyVision,
-            },
+            hdr_type: stream.hdr_type,
         })
         .exec(db)
         .await?;
@@ -282,7 +259,7 @@ async fn save_file_not_found(
     db: &mut dyn toasty::Executor,
     media_file_id: Uuid,
     path: &str,
-    on_disk: Option<OnDisk>,
+    found: bool,
 ) -> toasty::Result<()> {
     SyncProblem::filter(
         SyncProblem::fields().media_file_id().eq(media_file_id).and(
@@ -294,11 +271,9 @@ async fn save_file_not_found(
     .delete()
     .exec(db)
     .await?;
-    if on_disk.is_none() {
+    if !found {
         toasty::create!(SyncProblem {
-            movie_id: None,
             media_file_id: Some(media_file_id),
-            show_id: None,
             kind: SyncProblemKind::FileNotFound,
             path: path.to_owned(),
         })

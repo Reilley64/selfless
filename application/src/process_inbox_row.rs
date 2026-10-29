@@ -1,5 +1,5 @@
 use crate::DbContext;
-use crate::Prober;
+use crate::MediaFolder;
 use crate::SourceHealth;
 use crate::attributes::SELFLESS_WEBHOOK_EVENT_TYPE;
 use crate::attributes::SELFLESS_WEBHOOK_OUTCOME;
@@ -7,13 +7,6 @@ use crate::attributes::SELFLESS_WEBHOOK_SOURCE;
 use crate::ports::Clock;
 use crate::ports::GetRadarrMovie;
 use crate::ports::GetSonarrShow;
-use crate::ports::ListSubtitleFiles;
-use crate::ports::ReadEpisodeFolder;
-use crate::ports::ReadEpisodeNfo;
-use crate::ports::ReadMovieFolder;
-use crate::ports::ReadMovieNfo;
-use crate::ports::ReadShowFolder;
-use crate::ports::ReadShowNfo;
 use crate::sync_movie;
 use crate::sync_show;
 use crate::unsampled;
@@ -39,14 +32,7 @@ pub struct Dependencies {
     pub db_context: DbContext,
     pub get_radarr_movie: GetRadarrMovie,
     pub get_sonarr_show: GetSonarrShow,
-    pub list_subtitle_files: ListSubtitleFiles,
-    pub prober: Prober,
-    pub read_movie_folder: ReadMovieFolder,
-    pub read_movie_nfo: ReadMovieNfo,
-    pub read_show_folder: ReadShowFolder,
-    pub read_show_nfo: ReadShowNfo,
-    pub read_episode_folder: ReadEpisodeFolder,
-    pub read_episode_nfo: ReadEpisodeNfo,
+    pub media_folder: MediaFolder,
     pub source_health: SourceHealth,
 }
 
@@ -139,14 +125,7 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<bool, Error> 
         mut db_context,
         get_radarr_movie,
         get_sonarr_show,
-        list_subtitle_files,
-        prober,
-        read_movie_folder,
-        read_movie_nfo,
-        read_show_folder,
-        read_show_nfo,
-        read_episode_folder,
-        read_episode_nfo,
+        media_folder,
         source_health,
     } = dependencies.into();
     let claimed_at = clock.call();
@@ -206,10 +185,7 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<bool, Error> 
                 sync_movie::Dependencies {
                     db_context: db_context.clone(),
                     get_radarr_movie,
-                    list_subtitle_files,
-                    prober,
-                    read_movie_folder,
-                    read_movie_nfo,
+                    media_folder,
                     source_health,
                 },
                 radarr_id,
@@ -221,13 +197,8 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<bool, Error> 
                 sync_show::Dependencies {
                     db_context: db_context.clone(),
                     get_sonarr_show,
-                    read_episode_folder,
-                    read_episode_nfo,
-                    read_show_folder,
-                    read_show_nfo,
+                    media_folder,
                     source_health,
-                    list_subtitle_files,
-                    prober,
                 },
                 sonarr_id,
             )

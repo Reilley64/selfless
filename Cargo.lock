@@ -2182,7 +2182,7 @@ dependencies = [
  "ffmpeg",
  "fundle",
  "jiff",
- "media-files",
+ "media-folder",
  "persistence",
  "radarr",
  "sonarr",
@@ -2625,7 +2625,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "media-files"
+name = "media-folder"
 version = "0.1.0"
 dependencies = [
  "application",

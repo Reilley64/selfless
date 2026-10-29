@@ -5,7 +5,7 @@ use std::path::Path;
 
 const EXTENSIONS: [&str; 2] = ["srt", "ass"];
 
-pub fn list_subtitle_files() -> ListSubtitleFiles {
+pub(crate) fn list_subtitle_files() -> ListSubtitleFiles {
     ListSubtitleFiles::new(|media_file_path| Box::pin(list(media_file_path)))
 }
 

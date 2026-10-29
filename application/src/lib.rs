@@ -36,9 +36,17 @@ use domain::Source;
 use opentelemetry::KeyValue;
 use opentelemetry::global;
 use opentelemetry::metrics::Histogram;
+use ports::FindMediaFile;
+use ports::ListSubtitleFiles;
 use ports::Probe;
 use ports::ProbeError;
 use ports::ProbeMediaFile;
+use ports::ReadEpisodeFolder;
+use ports::ReadEpisodeNfo;
+use ports::ReadMovieFolder;
+use ports::ReadMovieNfo;
+use ports::ReadShowFolder;
+use ports::ReadShowNfo;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::Instant;
@@ -160,6 +168,19 @@ impl SourceHealth {
 }
 
 pub(crate) const CONCURRENT_PROBES: usize = 4;
+
+#[derive(Clone)]
+pub struct MediaFolder {
+    pub find_media_file: FindMediaFile,
+    pub list_subtitle_files: ListSubtitleFiles,
+    pub prober: Prober,
+    pub read_episode_folder: ReadEpisodeFolder,
+    pub read_episode_nfo: ReadEpisodeNfo,
+    pub read_movie_folder: ReadMovieFolder,
+    pub read_movie_nfo: ReadMovieNfo,
+    pub read_show_folder: ReadShowFolder,
+    pub read_show_nfo: ReadShowNfo,
+}
 
 #[derive(Clone)]
 pub struct Prober {

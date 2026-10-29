@@ -1,11 +1,10 @@
 use crate::CONCURRENT_PROBES;
 use crate::DbContext;
-use crate::Prober;
+use crate::MediaFolder;
 use crate::Reconciles;
 use crate::SourceHealth;
 use crate::attributes::SELFLESS_LIBRARY_SOURCE;
 use crate::attributes::SELFLESS_RECONCILE_RESULT;
-use crate::media_files::Inspector;
 use crate::metrics::SELFLESS_RECONCILE_DURATION;
 use crate::ports::CheckRadarrKodiMetadata;
 use crate::ports::CheckSonarrKodiMetadata;
@@ -13,13 +12,6 @@ use crate::ports::Clock;
 use crate::ports::GetSonarrEpisodes;
 use crate::ports::ListRadarrMovies;
 use crate::ports::ListSonarrSeries;
-use crate::ports::ListSubtitleFiles;
-use crate::ports::ReadEpisodeFolder;
-use crate::ports::ReadEpisodeNfo;
-use crate::ports::ReadMovieFolder;
-use crate::ports::ReadMovieNfo;
-use crate::ports::ReadShowFolder;
-use crate::ports::ReadShowNfo;
 use crate::ports::SonarrShow;
 use crate::process_inbox_row;
 use crate::sync_movie;
@@ -54,14 +46,7 @@ pub struct Dependencies {
     pub get_sonarr_episodes: GetSonarrEpisodes,
     pub list_radarr_movies: ListRadarrMovies,
     pub list_sonarr_series: ListSonarrSeries,
-    pub list_subtitle_files: ListSubtitleFiles,
-    pub prober: Prober,
-    pub read_movie_folder: ReadMovieFolder,
-    pub read_movie_nfo: ReadMovieNfo,
-    pub read_show_folder: ReadShowFolder,
-    pub read_show_nfo: ReadShowNfo,
-    pub read_episode_folder: ReadEpisodeFolder,
-    pub read_episode_nfo: ReadEpisodeNfo,
+    pub media_folder: MediaFolder,
     pub reconciles: Reconciles,
     pub source_health: SourceHealth,
 }
@@ -79,21 +64,10 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
         get_sonarr_episodes,
         list_radarr_movies,
         list_sonarr_series,
-        list_subtitle_files,
-        prober,
-        read_movie_folder,
-        read_movie_nfo,
-        read_show_folder,
-        read_show_nfo,
-        read_episode_folder,
-        read_episode_nfo,
+        media_folder,
         reconciles,
         source_health,
     } = dependencies.into();
-    let inspector = Inspector {
-        prober,
-        list_subtitle_files,
-    };
     let reconcile = reconciles.source(source);
     let Ok(_running) = reconcile.running.clone().try_lock_owned() else {
         return Ok(());
@@ -128,10 +102,8 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
             Source::Radarr => {
                 sync_movies(
                     &mut db_context,
-                    &inspector,
+                    &media_folder,
                     &list_radarr_movies,
-                    &read_movie_folder,
-                    &read_movie_nfo,
                     &source_health,
                     progress,
                 )
@@ -140,15 +112,9 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
             Source::Sonarr => {
                 sync_shows(
                     &mut db_context,
-                    &inspector,
+                    &media_folder,
                     &list_sonarr_series,
                     &get_sonarr_episodes,
-                    sync_show::Readers {
-                        read_show_folder: &read_show_folder,
-                        read_show_nfo: &read_show_nfo,
-                        read_episode_folder: &read_episode_folder,
-                        read_episode_nfo: &read_episode_nfo,
-                    },
                     &source_health,
                     progress,
                 )
@@ -247,10 +213,8 @@ struct Listing {
 
 async fn sync_movies(
     db_context: &mut DbContext,
-    inspector: &Inspector,
+    media_folder: &MediaFolder,
     list_radarr_movies: &ListRadarrMovies,
-    read_movie_folder: &ReadMovieFolder,
-    read_movie_nfo: &ReadMovieNfo,
     source_health: &SourceHealth,
     progress: &Mutex<Option<ReconcileProgress>>,
 ) -> Result<Listing, Error> {
@@ -291,7 +255,7 @@ async fn sync_movies(
                 .as_ref()
                 .and_then(|x| stored.get(&x.path));
             async move {
-                let inspected = sync_movie::inspect(inspector, stored, &radarr_movie)
+                let inspected = sync_movie::inspect(media_folder, stored, &radarr_movie)
                     .instrument(span.clone())
                     .await;
                 (radarr_movie, inspected, span)
@@ -300,16 +264,10 @@ async fn sync_movies(
         .buffered(CONCURRENT_PROBES);
     while let Some((radarr_movie, inspected, span)) = inspections.next().await {
         let inspected = inspected.map_err(Error::caused_by)?;
-        sync_movie::save(
-            db_context,
-            read_movie_folder,
-            read_movie_nfo,
-            radarr_movie,
-            inspected,
-        )
-        .instrument(span)
-        .await
-        .map_err(Error::caused_by)?;
+        sync_movie::save(db_context, media_folder, radarr_movie, inspected)
+            .instrument(span)
+            .await
+            .map_err(Error::caused_by)?;
         imported(progress);
     }
     Ok(Listing {
@@ -323,10 +281,9 @@ async fn sync_movies(
 
 async fn sync_shows(
     db_context: &mut DbContext,
-    inspector: &Inspector,
+    media_folder: &MediaFolder,
     list_sonarr_series: &ListSonarrSeries,
     get_sonarr_episodes: &GetSonarrEpisodes,
-    readers: sync_show::Readers<'_>,
     source_health: &SourceHealth,
     progress: &Mutex<Option<ReconcileProgress>>,
 ) -> Result<Listing, Error> {
@@ -356,15 +313,10 @@ async fn sync_shows(
         match source_health.api_call(Source::Sonarr, episodes) {
             Ok(episodes) => {
                 synced.insert(series.sonarr_id);
-                sync_show::save(
-                    db_context,
-                    inspector,
-                    readers,
-                    SonarrShow { series, episodes },
-                )
-                .instrument(span)
-                .await
-                .map_err(Error::caused_by)?;
+                sync_show::save(db_context, media_folder, SonarrShow { series, episodes })
+                    .instrument(span)
+                    .await
+                    .map_err(Error::caused_by)?;
             }
             Err(error) => {
                 span.in_scope(|| {

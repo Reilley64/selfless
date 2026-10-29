@@ -10,7 +10,7 @@ application = { workspace = true }
 ffmpeg = { workspace = true }
 fundle = { workspace = true }
 jiff = { workspace = true }
-media-files = { workspace = true }
+media-folder = { workspace = true }
 persistence = { workspace = true }
 radarr = { workspace = true }
 sonarr = { workspace = true }

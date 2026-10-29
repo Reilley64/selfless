@@ -2,14 +2,13 @@ use api::Availability;
 use application::BuildInfo;
 use application::DbContext;
 use application::InboxWakeup;
-use application::Prober;
 use application::Reconciles;
 use application::SourceHealth;
 use application::WebhookPasswords;
 use application::ports::Clock;
 use application::ports::ProbeMediaFile;
 use infrastructure::AppState;
-use infrastructure::media_files;
+use infrastructure::media_folder;
 use infrastructure::persistence;
 use infrastructure::telemetry;
 use ohno::AppError;
@@ -68,14 +67,7 @@ pub async fn start(
         .inbox_wakeup(|_| InboxWakeup::default())
         .list_radarr_movies(|_| list_radarr_movies.clone())
         .list_sonarr_series(|_| list_sonarr_series.clone())
-        .list_subtitle_files(|_| media_files::list_subtitle_files())
-        .prober(|_| Prober::new(probe_media_file.clone()))
-        .read_movie_folder(|_| media_files::read_movie_folder())
-        .read_movie_nfo(|_| media_files::read_movie_nfo())
-        .read_show_folder(|_| media_files::read_show_folder())
-        .read_show_nfo(|_| media_files::read_show_nfo())
-        .read_episode_folder(|_| media_files::read_episode_folder())
-        .read_episode_nfo(|_| media_files::read_episode_nfo())
+        .media_folder(|_| media_folder::media_folder(probe_media_file.clone()))
         .reconciles(|_| Reconciles::default())
         .source_health(|_| SourceHealth::default())
         .webhook_passwords(|_| webhook_passwords.clone())

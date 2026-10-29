@@ -1,11 +1,16 @@
 mod subtitle_files;
 
+use application::MediaFolder;
+use application::Prober;
 use application::ports::EpisodeFolder;
 use application::ports::EpisodeNfo;
+use application::ports::FindMediaFile;
 use application::ports::FoundFile;
+use application::ports::FoundMediaFile;
 use application::ports::MovieFolder;
 use application::ports::MovieNfo;
 use application::ports::NfoActor;
+use application::ports::ProbeMediaFile;
 use application::ports::ReadEpisodeFolder;
 use application::ports::ReadEpisodeNfo;
 use application::ports::ReadMovieFolder;
@@ -20,9 +25,33 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use std::path::Path;
 
-pub use subtitle_files::list_subtitle_files;
+pub fn media_folder(probe_media_file: ProbeMediaFile) -> MediaFolder {
+    MediaFolder {
+        find_media_file: find_media_file(),
+        list_subtitle_files: subtitle_files::list_subtitle_files(),
+        prober: Prober::new(probe_media_file),
+        read_episode_folder: read_episode_folder(),
+        read_episode_nfo: read_episode_nfo(),
+        read_movie_folder: read_movie_folder(),
+        read_movie_nfo: read_movie_nfo(),
+        read_show_folder: read_show_folder(),
+        read_show_nfo: read_show_nfo(),
+    }
+}
 
-pub fn read_movie_folder() -> ReadMovieFolder {
+fn find_media_file() -> FindMediaFile {
+    FindMediaFile::new(|path| {
+        Box::pin(async move {
+            let (size, modified_at) = stat(Path::new(&path)).await?;
+            Some(FoundMediaFile {
+                size: i64::try_from(size).ok()?,
+                modified_at,
+            })
+        })
+    })
+}
+
+fn read_movie_folder() -> ReadMovieFolder {
     ReadMovieFolder::new(|media_file_path| {
         Box::pin(async move {
             let media_file = Path::new(&media_file_path);
@@ -38,18 +67,26 @@ pub fn read_movie_folder() -> ReadMovieFolder {
 }
 
 async fn found(path: &Path) -> Option<FoundFile> {
+    let (_, modified_at) = stat(path).await?;
+    Some(FoundFile {
+        path: path.to_str()?.to_owned(),
+        modified_at,
+    })
+}
+
+async fn stat(path: &Path) -> Option<(u64, Timestamp)> {
     let metadata = tokio::fs::metadata(path)
         .await
         .ok()
         .filter(|x| x.is_file())?;
     let modified_at = Timestamp::try_from(metadata.modified().ok()?).ok()?;
-    Some(FoundFile {
-        path: path.to_str()?.to_owned(),
-        modified_at: Timestamp::from_microsecond(modified_at.as_microsecond()).ok()?,
-    })
+    Some((
+        metadata.len(),
+        Timestamp::from_microsecond(modified_at.as_microsecond()).ok()?,
+    ))
 }
 
-pub fn read_show_folder() -> ReadShowFolder {
+fn read_show_folder() -> ReadShowFolder {
     ReadShowFolder::new(|show_path, season_numbers| {
         Box::pin(async move {
             let folder = Path::new(&show_path);
@@ -74,7 +111,7 @@ pub fn read_show_folder() -> ReadShowFolder {
     })
 }
 
-pub fn read_episode_folder() -> ReadEpisodeFolder {
+fn read_episode_folder() -> ReadEpisodeFolder {
     ReadEpisodeFolder::new(|media_file_path| {
         Box::pin(async move {
             let media_file = Path::new(&media_file_path);
@@ -87,7 +124,7 @@ pub fn read_episode_folder() -> ReadEpisodeFolder {
     })
 }
 
-pub fn read_movie_nfo() -> ReadMovieNfo {
+fn read_movie_nfo() -> ReadMovieNfo {
     ReadMovieNfo::new(|path| {
         Box::pin(async move {
             let document: MovieDocument = read_nfo(&path).await?;
@@ -96,7 +133,7 @@ pub fn read_movie_nfo() -> ReadMovieNfo {
     })
 }
 
-pub fn read_show_nfo() -> ReadShowNfo {
+fn read_show_nfo() -> ReadShowNfo {
     ReadShowNfo::new(|path| {
         Box::pin(async move {
             let document: ShowDocument = read_nfo(&path).await?;
@@ -105,7 +142,7 @@ pub fn read_show_nfo() -> ReadShowNfo {
     })
 }
 
-pub fn read_episode_nfo() -> ReadEpisodeNfo {
+fn read_episode_nfo() -> ReadEpisodeNfo {
     ReadEpisodeNfo::new(|path| {
         Box::pin(async move {
             let document: EpisodeDocument = read_nfo(&path).await?;
