@@ -57,7 +57,7 @@ The state of a movie or episode a user has finished or marked as finished.
 _Avoid_: Played, seen, completed
 
 **Continue watching**:
-The movies and episodes a user has a resume position in.
+The movies and episodes a user has a resume position in, plus the next up episode of each show they are part way through. A show appears once.
 
 **Next up**:
 For each show a user is part way through, the first episode after the last one they watched.
@@ -74,3 +74,7 @@ _Avoid_: Trending
 **Now playing**:
 The movies and episodes users are playing at this moment, and the device each one plays on.
 _Avoid_: Active sessions, streams, activity
+
+**Featured title**:
+The one movie or show shown large at the top of Home: the top of Popular now, or the latest released title when nobody has played anything.
+_Avoid_: Hero, billboard, spotlight
