@@ -1,10 +1,13 @@
 mod actuator;
+mod web;
 
 use infrastructure::AppState;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use topcoat::router::Router;
+use topcoat::router::RouterBuilderDirectoryExt;
 
 #[derive(Clone, Default)]
 pub struct Availability {
@@ -25,7 +28,7 @@ impl Availability {
     }
 }
 
-pub fn router(state: AppState, availability: Availability) -> Router {
+pub fn router(state: AppState, availability: Availability, web_dir: PathBuf) -> Router {
     Router::builder()
         .app_context(state)
         .app_context(availability)
@@ -33,5 +36,7 @@ pub fn router(state: AppState, availability: Availability) -> Router {
         .route(actuator::liveness)
         .route(actuator::readiness)
         .route(actuator::info)
+        .route(web::index)
+        .public_dir(web_dir)
         .build()
 }

@@ -9,4 +9,4 @@ publish.workspace = true
 application = { workspace = true }
 infrastructure = { workspace = true }
 serde = { workspace = true }
-topcoat = { workspace = true }
+topcoat = { workspace = true, features = ["fs"] }

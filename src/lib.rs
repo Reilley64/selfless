@@ -34,7 +34,11 @@ pub async fn start(settings: AppSettings) -> Result<Server, AppError> {
         .db_context(|_| DbContext::new(db.clone()))
         .build();
     let availability = Availability::default();
-    let router = api::router(state, availability.clone());
+    let router = api::router(
+        state,
+        availability.clone(),
+        std::path::absolute(&settings.web.dir)?,
+    );
     let listener = TcpListener::bind(("0.0.0.0", settings.http.port)).await?;
     Ok(Server {
         listener,
