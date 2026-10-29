@@ -8,5 +8,6 @@ publish.workspace = true
 [dependencies]
 config = { workspace = true }
 persistence = { workspace = true }
+radarr = { workspace = true }
 serde = { workspace = true }
 telemetry = { workspace = true }

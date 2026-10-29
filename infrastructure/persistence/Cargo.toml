@@ -10,5 +10,5 @@ application = { workspace = true }
 ohno = { workspace = true }
 serde = { workspace = true }
 toasty = { workspace = true }
-toasty-driver-postgresql = { workspace = true }
+toasty-driver-postgresql = { workspace = true, features = ["jiff"] }
 url = { workspace = true, features = ["serde"] }

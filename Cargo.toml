@@ -5,6 +5,7 @@ members = [
     "domain",
     "infrastructure/dependencies",
     "infrastructure/persistence",
+    "infrastructure/radarr",
     "infrastructure/settings",
     "infrastructure/telemetry",
     "presentation/admin",
@@ -20,10 +21,12 @@ publish = false
 
 [workspace.dependencies]
 async-trait = "0.1.92"
+base64 = "0.22.1"
 bytes = "1.12.1"
 config = { version = "0.15.27", default-features = false }
 fundle = "0.4.1"
 http = "1.5.0"
+jiff = "0.2.38"
 jsonschema = { version = "0.60.2", default-features = false }
 ohno = "0.5.3"
 opentelemetry = "0.33.1"
@@ -56,6 +59,7 @@ application = { path = "application" }
 domain = { path = "domain" }
 infrastructure = { path = "infrastructure/dependencies" }
 persistence = { path = "infrastructure/persistence" }
+radarr = { path = "infrastructure/radarr" }
 settings = { path = "infrastructure/settings" }
 telemetry = { path = "infrastructure/telemetry" }
 admin = { path = "presentation/admin" }
@@ -94,6 +98,7 @@ webhooks = { workspace = true }
 workers = { workspace = true }
 
 [dev-dependencies]
+jiff = { workspace = true }
 jsonschema = { workspace = true }
 opentelemetry = { workspace = true }
 opentelemetry-proto = { workspace = true }

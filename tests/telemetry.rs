@@ -7,8 +7,11 @@ use opentelemetry::trace::TraceId;
 use opentelemetry::trace::TracerProvider;
 use opentelemetry_sdk::trace::InMemorySpanExporter;
 use opentelemetry_sdk::trace::SdkTracerProvider;
+use support::RADARR_WEBHOOK_PASSWORD;
 use support::TestDatabase;
 use support::TestServer;
+use support::eventually;
+use support::fixture;
 use tracing::level_filters::LevelFilter;
 use tracing::subscriber::DefaultGuard;
 use tracing_subscriber::layer::SubscriberExt;
@@ -81,6 +84,60 @@ async fn readiness_probe_without_a_traceparent_exports_no_span() {
     server.get("/actuator/health/readiness/v1").await;
 
     assert!(exporter.get_finished_spans().unwrap().is_empty());
+    drop(server);
+    database.drop().await;
+}
+
+#[tokio::test]
+async fn the_inbox_worker_links_its_span_to_the_webhook_request() {
+    let exporter = InMemorySpanExporter::default();
+    let _tracing = trace_into(&exporter);
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+
+    reqwest::Client::new()
+        .post(format!("{}/webhooks/radarr/v1", server.base_url()))
+        .basic_auth("radarr", Some(RADARR_WEBHOOK_PASSWORD))
+        .header("traceparent", format!("00-{TRACE_ID}-{PARENT_SPAN_ID}-01"))
+        .body(fixture("radarr/webhooks/test.json"))
+        .send()
+        .await
+        .unwrap();
+
+    let worker = eventually(async || {
+        exporter
+            .get_finished_spans()
+            .unwrap()
+            .into_iter()
+            .find(|x| x.span_kind == SpanKind::Consumer)
+    })
+    .await;
+    let spans = exporter.get_finished_spans().unwrap();
+    let webhook = spans
+        .iter()
+        .find(|x| x.span_kind == SpanKind::Server)
+        .expect("an HTTP server span");
+    assert_eq!(webhook.name, "POST /webhooks/radarr/v1");
+    assert_ne!(
+        worker.span_context.trace_id(),
+        webhook.span_context.trace_id()
+    );
+    assert_eq!(
+        worker
+            .links
+            .iter()
+            .map(|x| (x.span_context.trace_id(), x.span_context.span_id()))
+            .collect::<Vec<_>>(),
+        vec![(
+            TraceId::from_hex(TRACE_ID).unwrap(),
+            webhook.span_context.span_id()
+        )]
+    );
+    assert!(
+        worker
+            .attributes
+            .contains(&KeyValue::new("selfless.webhook.outcome", "ignored"))
+    );
     drop(server);
     database.drop().await;
 }

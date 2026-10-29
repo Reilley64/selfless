@@ -1,6 +1,9 @@
 use api::Availability;
 use application::BuildInfo;
 use application::DbContext;
+use application::InboxWakeup;
+use application::WebhookPasswords;
+use application::ports::Clock;
 use infrastructure::AppState;
 use infrastructure::persistence;
 use infrastructure::telemetry;
@@ -19,9 +22,13 @@ pub struct Server {
     listener: TcpListener,
     router: Router,
     availability: Availability,
+    state: AppState,
 }
 
-pub async fn start(settings: AppSettings) -> Result<Server, AppError> {
+pub async fn start(settings: AppSettings, clock: Clock) -> Result<Server, AppError> {
+    let webhook_passwords = WebhookPasswords {
+        radarr: settings.radarr.webhook_password()?,
+    };
     let db = persistence::connect(&settings.database).await?;
     persistence::migrate(&db).await?;
     let state = AppState::builder()
@@ -32,13 +39,16 @@ pub async fn start(settings: AppSettings) -> Result<Server, AppError> {
             git_commit_id: env!("GIT_COMMIT"),
             git_commit_time: env!("GIT_COMMIT_TIME"),
         })
+        .clock(|_| clock.clone())
         .db_context(|_| DbContext::new(db.clone(), settings.database.location()))
         .export_telemetry_try(|_| telemetry::export_telemetry(&settings.otlp))?
+        .inbox_wakeup(|_| InboxWakeup::default())
+        .webhook_passwords(|_| webhook_passwords.clone())
         .build();
     let availability = Availability::default();
     let router = api::router(
-        admin::register(Router::builder()),
-        state,
+        webhooks::register(admin::register(Router::builder())),
+        state.clone(),
         availability.clone(),
         std::path::absolute(&settings.web.dir)?,
     );
@@ -47,6 +57,7 @@ pub async fn start(settings: AppSettings) -> Result<Server, AppError> {
         listener,
         router,
         availability,
+        state,
     })
 }
 
@@ -55,20 +66,26 @@ impl Server {
         self.listener.local_addr()
     }
 
+    pub fn state(&self) -> &AppState {
+        &self.state
+    }
+
     pub async fn serve(self, shutdown: impl Future<Output = ()>) -> Result<(), AppError> {
         let availability = self.availability;
+        let inbox = tokio::spawn(workers::inbox(self.state));
         availability.accept_traffic();
         tracing::info!(
             server.port = self.listener.local_addr()?.port(),
             "accepting traffic"
         );
-        topcoat::serve_until(self.listener, self.router, async {
+        let served = topcoat::serve_until(self.listener, self.router, async {
             shutdown.await;
             tracing::info!("shutdown started, refusing traffic");
             availability.refuse_traffic();
             tokio::time::sleep(DRAIN_PERIOD).await;
         })
-        .await?;
-        Ok(())
+        .await;
+        inbox.abort();
+        Ok(served?)
     }
 }

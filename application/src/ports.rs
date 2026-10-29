@@ -1,4 +1,5 @@
 use bytes::Bytes;
+use jiff::Timestamp;
 use std::error::Error;
 use std::fmt;
 use std::pin::Pin;
@@ -63,3 +64,18 @@ impl fmt::Display for MalformedTelemetry {
 }
 
 impl Error for MalformedTelemetry {}
+
+type ClockFn = dyn Fn() -> Timestamp + Send + Sync;
+
+#[derive(Clone)]
+pub struct Clock(Arc<ClockFn>);
+
+impl Clock {
+    pub fn new(f: impl Fn() -> Timestamp + Send + Sync + 'static) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self) -> Timestamp {
+        (self.0)()
+    }
+}

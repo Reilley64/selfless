@@ -1,9 +1,19 @@
 pub mod check_database;
 pub mod ports;
+pub mod process_inbox_row;
 pub mod relay_telemetry;
+pub mod release_inbox_rows;
+pub mod store_webhook_delivery;
+pub mod sync_status;
+mod unsampled;
+mod webhook_deliveries;
 
 pub mod attributes {
     include!(concat!(env!("OUT_DIR"), "/attributes.rs"));
+}
+
+pub mod metrics {
+    include!(concat!(env!("OUT_DIR"), "/metrics.rs"));
 }
 
 use async_trait::async_trait;
@@ -20,8 +30,13 @@ use toasty_core::stmt::ExprSet;
 use toasty_core::stmt::InsertTarget;
 use toasty_core::stmt::Statement;
 use toasty_core::stmt::UpdateTarget;
+use tokio::sync::Notify;
 use tracing::Instrument;
 use tracing::field;
+
+pub fn models() -> toasty::ModelSet {
+    toasty::models!(domain::*)
+}
 
 #[derive(Clone)]
 pub struct DbLocation {
@@ -37,6 +52,24 @@ pub struct BuildInfo {
     pub git_branch: &'static str,
     pub git_commit_id: &'static str,
     pub git_commit_time: &'static str,
+}
+
+#[derive(Clone)]
+pub struct WebhookPasswords {
+    pub radarr: String,
+}
+
+#[derive(Clone, Default)]
+pub struct InboxWakeup(Arc<Notify>);
+
+impl InboxWakeup {
+    pub async fn notified(&self) {
+        self.0.notified().await;
+    }
+
+    fn wake(&self) {
+        self.0.notify_one();
+    }
 }
 
 #[derive(Clone)]

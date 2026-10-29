@@ -1,6 +1,11 @@
 #![allow(dead_code)]
 
+use application::ports::Clock;
+use infrastructure::AppState;
+use jiff::Timestamp;
+use jiff::Unit;
 use jsonschema::Registry;
+use reqwest::Method;
 use reqwest::RequestBuilder;
 use reqwest::StatusCode;
 use reqwest::header::CONTENT_TYPE;
@@ -10,9 +15,12 @@ use settings::AppSettings;
 use settings::DatabaseSettings;
 use settings::HttpSettings;
 use settings::OtlpSettings;
+use settings::RadarrSettings;
 use settings::WebSettings;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::sync::LazyLock;
+use std::sync::Mutex;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 use std::time::SystemTime;
@@ -28,6 +36,7 @@ static OPENAPI: LazyLock<Value> =
     LazyLock::new(|| serde_saphyr::from_str(include_str!("../../openapi.yaml")).unwrap());
 const OPENAPI_URI: &str = "urn:selfless:openapi";
 const PROTOBUF: &str = "application/x-protobuf";
+pub const RADARR_WEBHOOK_PASSWORD: &str = "radarr webhook password";
 
 pub struct TestDatabase {
     url: Url,
@@ -80,37 +89,65 @@ async fn execute(sql: &str) {
 pub struct TestServer {
     address: SocketAddr,
     shutdown: CancellationToken,
+    pub state: AppState,
+    pub clock: FakeClock,
+}
+
+pub fn settings(database_url: Url) -> AppSettings {
+    AppSettings {
+        http: HttpSettings { port: 0 },
+        database: DatabaseSettings { url: database_url },
+        web: WebSettings::default(),
+        otlp: OtlpSettings::default(),
+        radarr: RadarrSettings {
+            webhook_password: Some(RADARR_WEBHOOK_PASSWORD.to_owned()),
+        },
+    }
+}
+
+#[derive(Clone)]
+pub struct FakeClock(Arc<Mutex<Timestamp>>);
+
+impl FakeClock {
+    pub fn new() -> Self {
+        Self(Arc::new(Mutex::new(
+            Timestamp::now().round(Unit::Second).unwrap(),
+        )))
+    }
+
+    pub fn now(&self) -> Timestamp {
+        *self.0.lock().unwrap()
+    }
+
+    pub fn port(&self) -> Clock {
+        let now = self.0.clone();
+        Clock::new(move || *now.lock().unwrap())
+    }
 }
 
 impl TestServer {
     pub async fn start(database_url: Url) -> Self {
-        Self::start_with_otlp(database_url, OtlpSettings::default()).await
+        Self::start_with(settings(database_url), FakeClock::new()).await
     }
 
     pub async fn start_with_collector(database_url: Url, collector_url: &str) -> Self {
-        Self::start_with_otlp(
-            database_url,
-            OtlpSettings {
-                endpoint: Some(collector_url.to_owned()),
-                ..OtlpSettings::default()
-            },
-        )
-        .await
+        let mut settings = settings(database_url);
+        settings.otlp.endpoint = Some(collector_url.to_owned());
+        Self::start_with(settings, FakeClock::new()).await
     }
 
-    async fn start_with_otlp(database_url: Url, otlp: OtlpSettings) -> Self {
-        let server = selfless::start(AppSettings {
-            http: HttpSettings { port: 0 },
-            database: DatabaseSettings { url: database_url },
-            web: WebSettings::default(),
-            otlp,
-        })
-        .await
-        .unwrap();
+    pub async fn start_with(settings: AppSettings, clock: FakeClock) -> Self {
+        let server = selfless::start(settings, clock.port()).await.unwrap();
         let address = server.local_addr().unwrap();
+        let state = server.state().clone();
         let shutdown = CancellationToken::new();
         tokio::spawn(server.serve(shutdown.clone().cancelled_owned()));
-        Self { address, shutdown }
+        Self {
+            address,
+            shutdown,
+            state,
+            clock,
+        }
     }
 
     pub fn shut_down(&self) {
@@ -167,6 +204,37 @@ impl TestServer {
         (status, body)
     }
 
+    pub fn base_url(&self) -> String {
+        format!("http://{}", self.address)
+    }
+
+    pub async fn send_radarr_webhook(
+        &self,
+        method: Method,
+        credentials: Option<(&str, &str)>,
+        body: &str,
+    ) -> StatusCode {
+        self.send_webhook(method, "/webhooks/radarr/v1", credentials, body)
+            .await
+    }
+
+    pub async fn send_webhook(
+        &self,
+        method: Method,
+        path: &str,
+        credentials: Option<(&str, &str)>,
+        body: &str,
+    ) -> StatusCode {
+        let mut request = reqwest::Client::new()
+            .request(method, self.url(path))
+            .header(CONTENT_TYPE, "application/json")
+            .body(body.to_owned());
+        if let Some((username, password)) = credentials {
+            request = request.basic_auth(username, Some(password));
+        }
+        request.send().await.unwrap().status()
+    }
+
     fn url(&self, path: &str) -> String {
         format!("http://{}{path}", self.address)
     }
@@ -220,6 +288,24 @@ fn assert_matches_openapi(path: &str, status: StatusCode, body: &Value) {
         errors.is_empty(),
         "GET {path} {status} does not match openapi.yaml: {errors:?}\n{body}"
     );
+}
+
+pub fn fixture(path: &str) -> String {
+    std::fs::read_to_string(format!(
+        "{}/tests/fixtures/{path}",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .unwrap()
+}
+
+pub async fn eventually<T>(mut check: impl AsyncFnMut() -> Option<T>) -> T {
+    for _ in 0..100 {
+        if let Some(value) = check().await {
+            return value;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    panic!("the condition did not hold within 5 seconds");
 }
 
 pub struct Proxy {

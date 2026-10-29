@@ -1,2 +1,6 @@
 version = 1
-migrations = []
+
+[[migrations]]
+id = 7970161901788024549
+name = "20261029_111528_inbox.sql"
+snapshot_name = "20261029_111528_snapshot.toml"

@@ -5,6 +5,7 @@ use serde::Deserialize;
 use std::path::PathBuf;
 
 pub use persistence::DatabaseSettings;
+pub use radarr::RadarrSettings;
 pub use telemetry::OtlpSettings;
 
 #[derive(Clone, Deserialize)]
@@ -16,6 +17,8 @@ pub struct AppSettings {
     pub web: WebSettings,
     #[serde(flatten)]
     pub otlp: OtlpSettings,
+    #[serde(default)]
+    pub radarr: RadarrSettings,
 }
 
 impl AppSettings {
