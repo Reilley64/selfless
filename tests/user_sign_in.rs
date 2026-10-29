@@ -317,8 +317,8 @@ async fn the_actuator_endpoints_and_the_web_app_stay_public() {
 
     let (info, _) = server.get("/actuator/info/v1").await;
     let (health, _) = server.get("/actuator/health/v1").await;
-    let (index, html) = server.get_text("/").await;
-    let (script, _) = server.get_text("/app.js").await;
+    let (index, _, html) = server.get_text("/").await;
+    let (script, _, _) = server.get_text("/app.js").await;
 
     assert_eq!(info, StatusCode::OK);
     assert_eq!(health, StatusCode::OK);
