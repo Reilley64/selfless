@@ -71,6 +71,20 @@ async fn liveness_probe_exports_no_span() {
     database.drop().await;
 }
 
+#[tokio::test]
+async fn readiness_probe_without_a_traceparent_exports_no_span() {
+    let exporter = InMemorySpanExporter::default();
+    let _tracing = trace_into(&exporter);
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+
+    server.get("/actuator/health/readiness/v1").await;
+
+    assert!(exporter.get_finished_spans().unwrap().is_empty());
+    drop(server);
+    database.drop().await;
+}
+
 fn trace_into(exporter: &InMemorySpanExporter) -> DefaultGuard {
     let provider = SdkTracerProvider::builder()
         .with_simple_exporter(exporter.clone())

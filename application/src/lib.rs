@@ -21,7 +21,6 @@ use toasty_core::stmt::InsertTarget;
 use toasty_core::stmt::Statement;
 use toasty_core::stmt::UpdateTarget;
 use tracing::Instrument;
-use tracing::Span;
 use tracing::field;
 
 #[derive(Clone)]
@@ -136,24 +135,20 @@ impl InstrumentedDb {
     ) -> toasty::Result<ExecResponse> {
         let start = Instant::now();
         let target = collection.as_deref().unwrap_or(&self.location.database);
-        let span = if Span::current().is_none() {
-            Span::none()
-        } else {
-            tracing::info_span!(
-                "db_operation",
-                otel.name = %operation.map_or_else(|| target.to_owned(), |x| format!("{x} {target}")),
-                otel.kind = "client",
-                otel.status_code = field::Empty,
-                db.system.name = "postgresql",
-                db.namespace = self.location.database,
-                db.operation.name = operation,
-                db.collection.name = collection,
-                db.query.text = query_text,
-                server.address = self.location.address,
-                server.port = self.location.port,
-                error.type = field::Empty,
-            )
-        };
+        let span = tracing::info_span!(
+            "db_operation",
+            otel.name = %operation.map_or_else(|| target.to_owned(), |x| format!("{x} {target}")),
+            otel.kind = "client",
+            otel.status_code = field::Empty,
+            db.system.name = "postgresql",
+            db.namespace = self.location.database,
+            db.operation.name = operation,
+            db.collection.name = collection,
+            db.query.text = query_text,
+            server.address = self.location.address,
+            server.port = self.location.port,
+            error.type = field::Empty,
+        );
         let result = execute(&mut self.db).instrument(span.clone()).await;
         let mut attributes = vec![
             KeyValue::new("db.system.name", "postgresql"),

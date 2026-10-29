@@ -4,8 +4,13 @@ use opentelemetry::global;
 use opentelemetry::metrics::Histogram;
 use opentelemetry::propagation::Extractor;
 use opentelemetry::propagation::TextMapPropagator;
+use opentelemetry::trace::SpanContext;
 use opentelemetry::trace::TraceContextExt;
+use opentelemetry::trace::TraceFlags;
+use opentelemetry::trace::TraceState;
 use opentelemetry_sdk::propagation::TraceContextPropagator;
+use opentelemetry_sdk::trace::IdGenerator;
+use opentelemetry_sdk::trace::RandomIdGenerator;
 use std::time::Instant;
 use topcoat::context::Cx;
 use topcoat::context::try_request_context;
@@ -82,12 +87,22 @@ impl Layer for HttpServerLayer {
         };
         let parent = TraceContextPropagator::new()
             .extract_with_context(&Context::new(), &Traceparent(headers(cx)));
-        let span = if let Some(rewritten) = rewritten {
-            rewritten.span.clone()
-        } else if uri(cx).path().starts_with("/actuator/health")
+        let parent = if uri(cx).path().starts_with("/actuator/health")
             && !parent.span().span_context().is_sampled()
         {
-            Span::none()
+            let ids = RandomIdGenerator::default();
+            Context::new().with_remote_span_context(SpanContext::new(
+                ids.new_trace_id(),
+                ids.new_span_id(),
+                TraceFlags::NOT_SAMPLED,
+                true,
+                TraceState::NONE,
+            ))
+        } else {
+            parent
+        };
+        let span = if let Some(rewritten) = rewritten {
+            rewritten.span.clone()
         } else {
             let span_method = if request_method == OTHER_METHOD {
                 "HTTP"
