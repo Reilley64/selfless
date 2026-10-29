@@ -48,6 +48,23 @@ jobs:
       - name: "Scan: Check the Weaver registry"
         run: weaver registry check --future --diagnostic-format gh_workflow_command --registry telemetry/registry
 
+  test-versions:
+    name: "Test: Crate versions"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: "Source: Check out the repository"
+        uses: actions/checkout@v7
+
+      - name: "Setup: Install the tools from mise.toml"
+        uses: jdx/mise-action@v5
+        with:
+          install_args: yq
+
+      - name: "Scan: Check the crate versions"
+        run: mise run lint:versions
+
   test-workflows:
     name: "Test: GitHub workflows"
     runs-on: ubuntu-latest

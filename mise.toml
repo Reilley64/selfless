@@ -72,6 +72,21 @@ run = "vacuum lint --details openapi.yaml"
 description = "Check the Weaver registry"
 run = "weaver registry check --future --registry telemetry/registry"
 
+[tasks."lint:versions"]
+description = "Check that every crate has the release-please version"
+run = '''
+expected=$(yq --input-format json --output-format yaml '.["."]' .release-please-manifest.json)
+status=0
+for manifest in $(git ls-files '*Cargo.toml'); do
+  version=$(yq --input-format toml --output-format yaml '.package.version' "$manifest")
+  if [ "$version" != "$expected" ]; then
+    echo "$manifest: package.version is $version, expected $expected from .release-please-manifest.json"
+    status=1
+  fi
+done
+exit $status
+'''
+
 [tasks."lint:workflows"]
 description = "Lint the GitHub workflows"
 run = "actionlint"
