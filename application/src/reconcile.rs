@@ -185,7 +185,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
             ("failed", ReconcileResult::Failed)
         }
     };
-    span.record("selfless.reconcile.result", result.0);
+    span.record(SELFLESS_RECONCILE_RESULT, result.0);
     global::meter("selfless")
         .f64_histogram(SELFLESS_RECONCILE_DURATION)
         .with_unit("s")

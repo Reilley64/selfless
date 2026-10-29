@@ -1,6 +1,9 @@
 use crate::DbContext;
 use crate::Prober;
 use crate::SourceHealth;
+use crate::attributes::SELFLESS_WEBHOOK_EVENT_TYPE;
+use crate::attributes::SELFLESS_WEBHOOK_OUTCOME;
+use crate::attributes::SELFLESS_WEBHOOK_SOURCE;
 use crate::ports::Clock;
 use crate::ports::GetRadarrMovie;
 use crate::ports::GetSonarrShow;
@@ -191,8 +194,8 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<bool, Error> 
             "otel.name",
             format!("process {} webhook", row.source.name()),
         );
-        span.record("selfless.webhook.source", row.source.name());
-        span.record("selfless.webhook.event_type", row.event_type.as_deref());
+        span.record(SELFLESS_WEBHOOK_SOURCE, row.source.name());
+        span.record(SELFLESS_WEBHOOK_EVENT_TYPE, row.event_type.as_deref());
         let target = target(row.source, &row.body);
         let source_item_id = match target {
             Ok(Target::Movie(id) | Target::Show(id)) => Some(id),
@@ -251,7 +254,7 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<bool, Error> 
                 (status, next_attempt_at, Some(error.to_string()), "failed")
             }
         };
-        span.record("selfless.webhook.outcome", outcome);
+        span.record(SELFLESS_WEBHOOK_OUTCOME, outcome);
         let (source, event_type) = (row.source, row.event_type.clone());
         row.update()
             .status(status)

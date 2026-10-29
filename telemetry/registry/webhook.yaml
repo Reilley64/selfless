@@ -47,6 +47,11 @@ groups:
               stability: development
         stability: development
         brief: What happened to a webhook delivery.
+      - id: selfless.webhook.deleted_deliveries
+        type: int
+        stability: development
+        brief: How many processed, ignored and resolved deliveries one cleanup deleted.
+        examples: [12]
   - id: metric.selfless.webhook.deliveries
     type: metric
     metric_name: selfless.webhook.deliveries

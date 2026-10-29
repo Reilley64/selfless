@@ -55,7 +55,10 @@ pub async fn inbox_cleanup(state: AppState) {
         ticks.tick().await;
         match application::delete_old_inbox_rows::call(&state).await {
             Ok(0) => {}
-            Ok(deleted) => tracing::info!(deleted, "deleted old inbox rows"),
+            Ok(deleted) => tracing::info!(
+                selfless.webhook.deleted_deliveries = deleted,
+                "deleted old inbox rows"
+            ),
             Err(error) => {
                 tracing::error!(
                     error = &error as &dyn Error,
