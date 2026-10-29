@@ -1,5 +1,6 @@
 pub mod components;
 pub mod local_time;
+mod sync;
 
 use application::attributes::SELFLESS_ADMIN_ACTION;
 use application::attributes::SELFLESS_ADMIN_ID;
@@ -80,9 +81,8 @@ const HTMX_CONFIG: &str =
     r#"{"includeIndicatorStyles":false,"allowEval":false,"allowScriptTags":false}"#;
 
 pub fn register(router: RouterBuilder, assets: AssetBundle) -> RouterBuilder {
-    router
+    sync::register(router)
         .route(home)
-        .page(sync)
         .page(sign_in_form)
         .page(sign_in)
         .route(sign_out)
@@ -142,12 +142,6 @@ pub fn log_admin_action(action: AdminAction, target_id: Uuid) {
 #[route(GET "/admin")]
 async fn home() -> topcoat::Result<SeeOther> {
     Ok(see_other(SYNC_PATH))
-}
-
-#[page("/admin/sync")]
-async fn sync(cx: &Cx) -> topcoat::Result<impl View> {
-    require_admin(cx).await?;
-    Ok(view! { admin_page(path: SYNC_PATH, title: "Sync status") })
 }
 
 #[page("/admin/sign-in")]

@@ -7,6 +7,7 @@ publish.workspace = true
 
 [dependencies]
 application = { workspace = true }
+domain = { workspace = true }
 infrastructure = { workspace = true }
 jiff = { workspace = true }
 serde = { workspace = true }
