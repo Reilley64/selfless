@@ -8,6 +8,17 @@ import {
   ATTR_URL_FULL,
 } from "@opentelemetry/semantic-conventions";
 
+let sessionToken: () => string | undefined = () => undefined;
+
+export function provideSessionToken(token: () => string | undefined) {
+  sessionToken = token;
+}
+
+export function authorizationHeaders(): Record<string, string> {
+  const token = sessionToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 export async function tracedFetch<T>(url: string, options: RequestInit): Promise<T> {
   const method = options.method ?? "GET";
   const href = `${process.env.EXPO_PUBLIC_SERVER_URL ?? ""}${url}`;
@@ -22,6 +33,9 @@ export async function tracedFetch<T>(url: string, options: RequestInit): Promise
     },
   });
   const headers = new Headers(options.headers);
+  for (const [name, value] of Object.entries(authorizationHeaders())) {
+    headers.set(name, value);
+  }
   propagation.inject(trace.setSpan(context.active(), span), headers, {
     set: (carrier, key, value) => carrier.set(key, value),
   });

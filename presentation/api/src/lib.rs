@@ -1,6 +1,10 @@
 mod actuator;
 mod http_server;
+mod problem;
+mod sessions;
 mod telemetry;
+mod user_auth;
+mod users;
 mod web;
 
 use infrastructure::AppState;
@@ -44,11 +48,15 @@ pub fn router(
         .route(actuator::liveness)
         .route(actuator::readiness)
         .route(actuator::info)
+        .route(sessions::sign_in)
+        .route(sessions::sign_out)
+        .route(users::me)
         .route(telemetry::traces)
         .route(telemetry::metrics)
         .route(telemetry::logs)
         .route(web::index)
         .public_dir(web_dir)
+        .layer(user_auth::UserAuthLayer)
         .layer(http_server::HttpServerLayer::new())
         .build()
 }

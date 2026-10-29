@@ -219,15 +219,18 @@ name = "api"
 version = "0.1.0"
 dependencies = [
  "application",
+ "domain",
  "http",
  "infrastructure",
  "ohno",
  "opentelemetry",
  "opentelemetry_sdk",
  "serde",
+ "serde_json",
  "topcoat",
  "tracing",
  "tracing-opentelemetry",
+ "uuid",
 ]
 
 [[package]]
@@ -1175,6 +1178,7 @@ name = "domain"
 version = "0.1.0"
 dependencies = [
  "jiff",
+ "serde",
  "toasty",
  "uuid",
 ]
@@ -3797,6 +3801,7 @@ dependencies = [
  "admin",
  "api",
  "application",
+ "base64 0.22.1",
  "infrastructure",
  "jiff",
  "jsonschema",
@@ -5747,6 +5752,7 @@ dependencies = [
  "getrandom 0.4.3",
  "js-sys",
  "rand 0.10.3",
+ "serde_core",
  "sha1_smol",
  "wasm-bindgen",
 ]

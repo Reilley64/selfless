@@ -8,6 +8,9 @@ import { BatchLogRecordProcessor, LoggerProvider } from "@opentelemetry/sdk-logs
 import { MeterProvider, PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
 import { BatchSpanProcessor, TracerProvider } from "@opentelemetry/sdk-trace";
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
+import { authorizationHeaders } from "@selfless/api-client";
+
+const headers = async () => authorizationHeaders();
 
 export function startTelemetry(serviceName: string, serverUrl = "") {
   const resource = defaultResource().merge(resourceFromAttributes({ [ATTR_SERVICE_NAME]: serviceName }));
@@ -17,7 +20,7 @@ export function startTelemetry(serviceName: string, serverUrl = "") {
       resource,
       spanProcessors: [
         new BatchSpanProcessor({
-          exporter: new OTLPTraceExporter({ url: `${serverUrl}/api/telemetry/traces/v1` }),
+          exporter: new OTLPTraceExporter({ url: `${serverUrl}/api/telemetry/traces/v1`, headers }),
         }),
       ],
     }),
@@ -27,7 +30,7 @@ export function startTelemetry(serviceName: string, serverUrl = "") {
       resource,
       readers: [
         new PeriodicExportingMetricReader({
-          exporter: new OTLPMetricExporter({ url: `${serverUrl}/api/telemetry/metrics/v1` }),
+          exporter: new OTLPMetricExporter({ url: `${serverUrl}/api/telemetry/metrics/v1`, headers }),
         }),
       ],
     }),
@@ -37,7 +40,7 @@ export function startTelemetry(serviceName: string, serverUrl = "") {
       resource,
       processors: [
         new BatchLogRecordProcessor({
-          exporter: new OTLPLogExporter({ url: `${serverUrl}/api/telemetry/logs/v1` }),
+          exporter: new OTLPLogExporter({ url: `${serverUrl}/api/telemetry/logs/v1`, headers }),
         }),
       ],
     }),

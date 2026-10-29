@@ -2,11 +2,15 @@ pub mod admin_sign_in;
 pub mod admin_sign_out;
 pub mod bootstrap_first_admin;
 pub mod check_database;
+pub mod create_user;
 pub mod get_current_admin;
+pub mod get_current_user;
 mod passwords;
 pub mod ports;
 pub mod relay_telemetry;
 mod session_tokens;
+pub mod sign_in;
+pub mod sign_out;
 
 pub mod attributes {
     include!(concat!(env!("OUT_DIR"), "/attributes.rs"));

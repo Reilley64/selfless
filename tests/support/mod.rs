@@ -1,12 +1,16 @@
 #![allow(dead_code)]
 
+use application::DbContext;
 use application::ports::Clock;
 use application::ports::SendEmail;
+use infrastructure::persistence;
 use jiff::SignedDuration;
 use jiff::Timestamp;
 use jsonschema::Registry;
+use reqwest::Method;
 use reqwest::RequestBuilder;
 use reqwest::StatusCode;
+use reqwest::header::AUTHORIZATION;
 use reqwest::header::CONTENT_TYPE;
 use reqwest::header::COOKIE;
 use reqwest::header::LOCATION;
@@ -44,6 +48,8 @@ const OPENAPI_URI: &str = "urn:selfless:openapi";
 const PROTOBUF: &str = "application/x-protobuf";
 pub const ADMIN_NAME: &str = "Maya";
 pub const ADMIN_PASSWORD: &str = "correct horse battery staple";
+pub const USER_NAME: &str = "Noor";
+pub const USER_PASSWORD: &str = "a long passphrase about tea";
 
 pub struct TestDatabase {
     url: Url,
@@ -134,6 +140,7 @@ impl FakeMailer {
 pub struct TestServer {
     address: SocketAddr,
     shutdown: CancellationToken,
+    database: DatabaseSettings,
     pub mailer: FakeMailer,
     pub clock: FakeClock,
 }
@@ -183,6 +190,7 @@ impl TestServer {
 
     pub async fn start_with(settings: AppSettings, clock: FakeClock) -> Self {
         let mailer = FakeMailer::default();
+        let database = settings.database.clone();
         let server = selfless::start(settings, clock.port(), mailer.send_email())
             .await
             .unwrap();
@@ -192,6 +200,7 @@ impl TestServer {
         Self {
             address,
             shutdown,
+            database,
             mailer,
             clock,
         }
@@ -206,6 +215,111 @@ impl TestServer {
             base: format!("http://{}", self.address),
             cookies: BTreeMap::new(),
         }
+    }
+
+    pub async fn create_user(&self, name: &str, password: &str) {
+        self.try_create_user(name, password).await.unwrap();
+    }
+
+    pub async fn try_create_user(
+        &self,
+        name: &str,
+        password: &str,
+    ) -> Result<(), application::create_user::Error> {
+        application::create_user::call(
+            application::create_user::Dependencies {
+                db_context: DbContext::new(
+                    persistence::connect(&self.database).await.unwrap(),
+                    self.database.location(),
+                ),
+            },
+            name.to_owned(),
+            password.to_owned(),
+        )
+        .await
+        .map(drop)
+    }
+
+    pub async fn sign_in(
+        &self,
+        name: &str,
+        password: &str,
+        client_kind: &str,
+    ) -> (StatusCode, Value) {
+        self.request(
+            Method::POST,
+            "/api/sessions/v1",
+            None,
+            Some(json!({
+                "name": name,
+                "password": password,
+                "clientKind": client_kind,
+                "deviceName": "Living Room",
+            })),
+        )
+        .await
+    }
+
+    pub async fn signed_in_user(&self) -> String {
+        self.create_user(USER_NAME, USER_PASSWORD).await;
+        let (status, body) = self.sign_in(USER_NAME, USER_PASSWORD, "web").await;
+        assert_eq!(status, StatusCode::CREATED);
+        body["token"].as_str().unwrap().to_owned()
+    }
+
+    pub async fn request(
+        &self,
+        method: Method,
+        path: &str,
+        token: Option<&str>,
+        body: Option<Value>,
+    ) -> (StatusCode, Value) {
+        let mut request = reqwest::Client::new().request(method.clone(), self.url(path));
+        if let Some(token) = token {
+            request = request.header(AUTHORIZATION, format!("Bearer {token}"));
+        }
+        if let Some(body) = body {
+            request = request.json(&body);
+        }
+        let response = request.send().await.unwrap();
+        let status = response.status();
+        let content_type = response.headers().get(CONTENT_TYPE).map(|x| {
+            x.to_str()
+                .unwrap()
+                .split(';')
+                .next()
+                .unwrap()
+                .trim()
+                .to_owned()
+        });
+        let text = response.text().await.unwrap();
+        let operation = operation_pointer(path, &method.as_str().to_lowercase());
+        let response_pointer = format!("{operation}/responses/{}", status.as_u16());
+        let response_pointer = match OPENAPI.pointer(&response_pointer) {
+            Some(response) => response["$ref"]
+                .as_str()
+                .map_or(response_pointer, |x| x.trim_start_matches('#').to_owned()),
+            None => panic!("openapi.yaml has nothing at {response_pointer}"),
+        };
+        let Some(content_type) = content_type.filter(|_| !text.is_empty()) else {
+            assert!(
+                OPENAPI
+                    .pointer(&format!("{response_pointer}/content"))
+                    .is_none(),
+                "{method} {path} {status} has no body, but openapi.yaml describes one"
+            );
+            return (status, Value::Null);
+        };
+        let body = serde_json::from_str::<Value>(&text).unwrap();
+        assert_matches_schema(
+            &format!(
+                "{response_pointer}/content/{}/schema",
+                content_type.replace('~', "~0").replace('/', "~1")
+            ),
+            &format!("{method} {path} {status}"),
+            &body,
+        );
+        (status, body)
     }
 
     pub fn shut_down(&self) {
@@ -231,9 +345,15 @@ impl TestServer {
         (response.status(), response.text().await.unwrap())
     }
 
-    pub async fn post_protobuf(&self, path: &str, body: Vec<u8>) -> (StatusCode, Vec<u8>) {
+    pub async fn post_protobuf(
+        &self,
+        path: &str,
+        token: &str,
+        body: Vec<u8>,
+    ) -> (StatusCode, Vec<u8>) {
         let response = reqwest::Client::new()
             .post(self.url(path))
+            .header(AUTHORIZATION, format!("Bearer {token}"))
             .header(CONTENT_TYPE, PROTOBUF)
             .body(body)
             .send()
@@ -289,13 +409,20 @@ fn operation_pointer(path: &str, method: &str) -> String {
 }
 
 fn assert_matches_openapi(path: &str, status: StatusCode, body: &Value) {
-    let pointer = format!(
-        "{}/responses/{}/content/application~1json/schema",
-        operation_pointer(path, "get"),
-        status.as_u16()
+    assert_matches_schema(
+        &format!(
+            "{}/responses/{}/content/application~1json/schema",
+            operation_pointer(path, "get"),
+            status.as_u16()
+        ),
+        &format!("GET {path} {status}"),
+        body,
     );
+}
+
+fn assert_matches_schema(pointer: &str, response: &str, body: &Value) {
     assert!(
-        OPENAPI.pointer(&pointer).is_some(),
+        OPENAPI.pointer(pointer).is_some(),
         "openapi.yaml has no schema at {pointer}"
     );
     let registry = Registry::new()
@@ -313,7 +440,7 @@ fn assert_matches_openapi(path: &str, status: StatusCode, body: &Value) {
         .collect::<Vec<_>>();
     assert!(
         errors.is_empty(),
-        "GET {path} {status} does not match openapi.yaml: {errors:?}\n{body}"
+        "{response} does not match openapi.yaml: {errors:?}\n{body}"
     );
 }
 

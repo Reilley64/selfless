@@ -8,13 +8,15 @@ info:
     identifier: MIT OR Apache-2.0
 servers:
   - url: /
-security: []
+security:
+  - sessionToken: []
 paths:
   /actuator/health/v1:
     get:
       operationId: getHealth
       summary: Overall health with every component
       tags: [actuator]
+      security: []
       responses:
         "200":
           description: Every component is up.
@@ -35,6 +37,7 @@ paths:
       operationId: getLiveness
       summary: Liveness group, which reports only the process's own state
       tags: [actuator]
+      security: []
       responses:
         "200":
           description: The process is live.
@@ -55,6 +58,7 @@ paths:
       operationId: getReadiness
       summary: Readiness group, which also checks PostgreSQL
       tags: [actuator]
+      security: []
       responses:
         "200":
           description: The server accepts traffic.
@@ -75,6 +79,7 @@ paths:
       operationId: getInfo
       summary: Build and git information of the running server
       tags: [actuator]
+      security: []
       responses:
         "200":
           description: The build and git information.
@@ -83,11 +88,61 @@ paths:
               schema:
                 $ref: "#/components/schemas/Info"
               example: {"build":{"name":"selfless","version":"0.1.0"},"git":{"branch":"main","commit":{"id":"56ad9034","time":"2026-10-29T06:12:00Z"}}}
+  /api/sessions/v1:
+    post:
+      operationId: signIn
+      summary: Sign a user in with their name and password
+      description: Starts a session on the client and returns its token. Names ignore case.
+      tags: [sessions]
+      security: []
+      requestBody:
+        description: The user's name and password, and the client they sign in on.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignInRequest"
+            example: {"name":"Noor","password":"a long passphrase about tea","clientKind":"web","deviceName":"Firefox on macOS"}
+      responses:
+        "201":
+          description: The user is signed in.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SignedIn"
+              example: {"token":"q2Xz8kQ0mJ3Hc1yF5bR7tVw9nL4pA6sD0eG2iK8uO1M","user":{"id":"01890a5d-ac96-774b-bcce-b302099a8057","name":"Noor","colour":"amber","symbol":"ring"}}
+        "401":
+          $ref: "#/components/responses/WrongNameOrPassword"
+  /api/sessions/current/v1:
+    delete:
+      operationId: signOut
+      summary: Sign out the session whose token made the call
+      tags: [sessions]
+      responses:
+        "204":
+          description: The session has ended, and its token no longer works.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+  /api/me/v1:
+    get:
+      operationId: getMe
+      summary: The signed-in user
+      tags: [users]
+      responses:
+        "200":
+          description: The user whose token made the call.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+              example: {"id":"01890a5d-ac96-774b-bcce-b302099a8057","name":"Noor","colour":"amber","symbol":"ring"}
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
   /api/telemetry/traces/v1:
     post:
       operationId: relayTraces
       summary: Relay OTLP traces from an app to the server's collector
-      description: Takes OTLP/HTTP protobuf traces and forwards them to the server's own OTLP endpoint over gRPC. It checks no token yet.
+      description: Takes OTLP/HTTP protobuf traces and forwards them to the server's own OTLP endpoint over gRPC. It needs a signed-in user's session token.
       tags: [telemetry]
       requestBody:
         description: The traces the app exports.
@@ -109,13 +164,15 @@ paths:
                 contentMediaType: application/x-protobuf
         "400":
           $ref: "#/components/responses/MalformedTelemetry"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
         "502":
           $ref: "#/components/responses/CollectorFailed"
   /api/telemetry/metrics/v1:
     post:
       operationId: relayMetrics
       summary: Relay OTLP metrics from an app to the server's collector
-      description: Takes OTLP/HTTP protobuf metrics and forwards them to the server's own OTLP endpoint over gRPC. It checks no token yet.
+      description: Takes OTLP/HTTP protobuf metrics and forwards them to the server's own OTLP endpoint over gRPC. It needs a signed-in user's session token.
       tags: [telemetry]
       requestBody:
         description: The metrics the app exports.
@@ -137,13 +194,15 @@ paths:
                 contentMediaType: application/x-protobuf
         "400":
           $ref: "#/components/responses/MalformedTelemetry"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
         "502":
           $ref: "#/components/responses/CollectorFailed"
   /api/telemetry/logs/v1:
     post:
       operationId: relayLogs
       summary: Relay OTLP logs from an app to the server's collector
-      description: Takes OTLP/HTTP protobuf logs and forwards them to the server's own OTLP endpoint over gRPC. It checks no token yet.
+      description: Takes OTLP/HTTP protobuf logs and forwards them to the server's own OTLP endpoint over gRPC. It needs a signed-in user's session token.
       tags: [telemetry]
       requestBody:
         description: The logs the app exports.
@@ -165,20 +224,142 @@ paths:
                 contentMediaType: application/x-protobuf
         "400":
           $ref: "#/components/responses/MalformedTelemetry"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
         "502":
           $ref: "#/components/responses/CollectorFailed"
 tags:
   - name: actuator
     description: Health and info endpoints in the shape of Spring Boot Actuator.
+  - name: sessions
+    description: Signing users in and out of the web and TV apps.
+  - name: users
+    description: The users of the household.
   - name: telemetry
     description: The relay that forwards OTLP from the web and TV apps to the server's collector.
 components:
+  securitySchemes:
+    sessionToken:
+      description: A session token from POST /api/sessions/v1, sent as Authorization Bearer.
+      type: http
+      scheme: bearer
   responses:
     MalformedTelemetry:
       description: The body is not a valid OTLP protobuf request for this signal.
     CollectorFailed:
       description: The collector did not accept the request. The app may retry.
+    Unauthenticated:
+      description: The request has no Authorization header with a Bearer token, or the token is unknown or its session has ended.
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Problem"
+              - properties:
+                  type:
+                    const: urn:selfless:problem:unauthenticated
+                  status:
+                    const: 401
+          example: {"type":"urn:selfless:problem:unauthenticated","title":"The request has no valid session token.","status":401}
+    WrongNameOrPassword:
+      description: No user has this name, or the password is wrong. Both give the same problem.
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Problem"
+              - properties:
+                  type:
+                    const: urn:selfless:problem:wrong-name-or-password
+                  status:
+                    const: 401
+          example: {"type":"urn:selfless:problem:wrong-name-or-password","title":"The name or password is wrong.","status":401}
   schemas:
+    Problem:
+      description: An RFC 9457 problem details object. The type is stable and identifies the problem.
+      type: object
+      required: [type, title, status]
+      properties:
+        type:
+          description: A URI that identifies the problem type.
+          type: string
+          format: uri
+          examples: ["urn:selfless:problem:unauthenticated"]
+        title:
+          description: A short summary of the problem type, in English.
+          type: string
+          examples: ["The request has no valid session token."]
+        status:
+          description: The HTTP status code.
+          type: integer
+          examples: [401]
+    ClientKind:
+      description: The app a session was started on.
+      type: string
+      enum: [web, appleTv, googleTv]
+      examples: [web]
+    UserColour:
+      description: The user's colour, a design token name from the user picker.
+      type: string
+      enum: [amber, blue, pink, emerald]
+      examples: [amber]
+    UserSymbol:
+      description: The user's symbol, a design token name from the user picker.
+      type: string
+      enum: [ring, triangle, star, waves]
+      examples: [ring]
+    User:
+      description: A household member who watches.
+      type: object
+      required: [id, name, colour, symbol]
+      properties:
+        id:
+          description: The user's ID, a UUID v7.
+          type: string
+          format: uuid
+          examples: ["01890a5d-ac96-774b-bcce-b302099a8057"]
+        name:
+          description: The user's name as they typed it. It is unique ignoring case.
+          type: string
+          examples: [Noor]
+        colour:
+          $ref: "#/components/schemas/UserColour"
+        symbol:
+          $ref: "#/components/schemas/UserSymbol"
+      additionalProperties: false
+    SignInRequest:
+      description: A user's name and password, and the client they sign in on.
+      type: object
+      required: [name, password, clientKind, deviceName]
+      properties:
+        name:
+          description: The user's name, in any capitals.
+          type: string
+          examples: [Noor]
+        password:
+          description: The user's password.
+          type: string
+          examples: [a long passphrase about tea]
+        clientKind:
+          $ref: "#/components/schemas/ClientKind"
+        deviceName:
+          description: A name for the device, shown to admins in the user's sessions.
+          type: string
+          examples: [Firefox on macOS]
+      additionalProperties: false
+    SignedIn:
+      description: A new session's token and the user it belongs to.
+      type: object
+      required: [token, user]
+      properties:
+        token:
+          description: The session token, 32 random bytes in base64url without padding. Send it as a Bearer token.
+          type: string
+          pattern: "^[A-Za-z0-9_-]{43}$"
+          examples: [q2Xz8kQ0mJ3Hc1yF5bR7tVw9nL4pA6sD0eG2iK8uO1M]
+        user:
+          $ref: "#/components/schemas/User"
+      additionalProperties: false
     HealthStatus:
       description: The status of a health group or component, as in Spring Boot Actuator.
       type: string
