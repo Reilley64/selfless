@@ -8,8 +8,9 @@ Created in [T3 Code](https://t3.codes).
 
 Install [mise](https://mise.jdx.dev) and Docker, then run `mise install` in the repository root.
 
-- `mise run services` starts PostgreSQL from `compose.yaml`.
-- `cargo run` starts the server. It reads `DATABASE__URL` (set in `mise.toml`) and `HTTP__PORT` (default 8080).
+- `mise run services` starts PostgreSQL and grafana/otel-lgtm from `compose.yaml`. Grafana runs at http://localhost:3000.
+- `cargo run` starts the server. It reads `DATABASE__URL` (set in `mise.toml`) and `HTTP__PORT` (default 8080). It sends traces, metrics and logs over OTLP gRPC to `localhost:4317`. The standard `OTEL_*` variables change this, and `mise.toml` sets `OTEL_SERVICE_NAME`.
+- A cargo build runs Weaver to generate Rust constants from `telemetry/registry`. `mise run generate:telemetry` writes the TypeScript constants. `mise run lint:telemetry` checks the registry.
 - `mise run test` runs the server tests against that PostgreSQL. Each test creates its own database.
 - `mise run check` checks formatting, Clippy lints and crate direction.
 - `mise run lint:openapi` lints `openapi.yaml`.
