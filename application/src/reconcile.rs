@@ -1,8 +1,11 @@
 use crate::DbContext;
 use crate::Reconciles;
+use crate::SourceHealth;
 use crate::attributes::SELFLESS_LIBRARY_SOURCE;
 use crate::attributes::SELFLESS_RECONCILE_RESULT;
 use crate::metrics::SELFLESS_RECONCILE_DURATION;
+use crate::ports::CheckRadarrKodiMetadata;
+use crate::ports::CheckSonarrKodiMetadata;
 use crate::ports::Clock;
 use crate::ports::GetSonarrEpisodes;
 use crate::ports::ListRadarrMovies;
@@ -31,6 +34,8 @@ use uuid::Uuid;
 
 #[fundle::deps]
 pub struct Dependencies {
+    pub check_radarr_kodi_metadata: CheckRadarrKodiMetadata,
+    pub check_sonarr_kodi_metadata: CheckSonarrKodiMetadata,
     pub clock: Clock,
     pub db_context: DbContext,
     pub get_sonarr_episodes: GetSonarrEpisodes,
@@ -39,6 +44,7 @@ pub struct Dependencies {
     pub read_movie_folder: ReadMovieFolder,
     pub read_movie_nfo: ReadMovieNfo,
     pub reconciles: Reconciles,
+    pub source_health: SourceHealth,
 }
 
 #[ohno::error]
@@ -47,6 +53,8 @@ pub struct Error;
 
 pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Result<(), Error> {
     let Dependencies {
+        check_radarr_kodi_metadata,
+        check_sonarr_kodi_metadata,
         clock,
         mut db_context,
         get_sonarr_episodes,
@@ -55,6 +63,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
         read_movie_folder,
         read_movie_nfo,
         reconciles,
+        source_health,
     } = dependencies.into();
     let reconcile = reconciles.source(source);
     let Ok(_running) = reconcile.running.clone().try_lock_owned() else {
@@ -75,23 +84,35 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
     );
     let reconciled = match source {
         Source::Radarr => {
-            reconcile_movies(
-                &mut db_context,
-                &list_radarr_movies,
-                &read_movie_folder,
-                &read_movie_nfo,
-                progress,
-            )
+            async {
+                let kodi_metadata = check_radarr_kodi_metadata.call().await;
+                record_kodi_metadata(&source_health, source, kodi_metadata);
+                reconcile_movies(
+                    &mut db_context,
+                    &list_radarr_movies,
+                    &read_movie_folder,
+                    &read_movie_nfo,
+                    &source_health,
+                    progress,
+                )
+                .await
+            }
             .instrument(span.clone())
             .await
         }
         Source::Sonarr => {
-            reconcile_shows(
-                &mut db_context,
-                &list_sonarr_series,
-                &get_sonarr_episodes,
-                progress,
-            )
+            async {
+                let kodi_metadata = check_sonarr_kodi_metadata.call().await;
+                record_kodi_metadata(&source_health, source, kodi_metadata);
+                reconcile_shows(
+                    &mut db_context,
+                    &list_sonarr_series,
+                    &get_sonarr_episodes,
+                    &source_health,
+                    progress,
+                )
+                .await
+            }
             .instrument(span.clone())
             .await
         }
@@ -142,14 +163,32 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
     Ok(())
 }
 
+fn record_kodi_metadata(
+    source_health: &SourceHealth,
+    source: Source,
+    kodi_metadata: Result<bool, impl std::error::Error + 'static>,
+) {
+    match source_health.api_call(source, kodi_metadata) {
+        Ok(enabled) => source_health.source(source).lock().unwrap().kodi_metadata = Some(enabled),
+        Err(error) => tracing::warn!(
+            error = &error as &dyn std::error::Error,
+            selfless.library.source = source.name(),
+            "failed to read the metadata settings"
+        ),
+    }
+}
+
 async fn reconcile_movies(
     db_context: &mut DbContext,
     list_radarr_movies: &ListRadarrMovies,
     read_movie_folder: &ReadMovieFolder,
     read_movie_nfo: &ReadMovieNfo,
+    source_health: &SourceHealth,
     progress: &Mutex<Option<ReconcileProgress>>,
 ) -> Result<(), Error> {
-    let radarr_movies = list_radarr_movies.call().await.map_err(Error::caused_by)?;
+    let radarr_movies = source_health
+        .api_call(Source::Radarr, list_radarr_movies.call().await)
+        .map_err(Error::caused_by)?;
     let listed = radarr_movies
         .iter()
         .map(|x| x.tmdb_id)
@@ -182,20 +221,23 @@ async fn reconcile_shows(
     db_context: &mut DbContext,
     list_sonarr_series: &ListSonarrSeries,
     get_sonarr_episodes: &GetSonarrEpisodes,
+    source_health: &SourceHealth,
     progress: &Mutex<Option<ReconcileProgress>>,
 ) -> Result<(), Error> {
-    let series = list_sonarr_series.call().await.map_err(Error::caused_by)?;
+    let series = source_health
+        .api_call(Source::Sonarr, list_sonarr_series.call().await)
+        .map_err(Error::caused_by)?;
     let listed = series.iter().map(|x| x.tvdb_id).collect::<HashSet<_>>();
     set_total(progress, series.len());
     let mut failed_calls = 0;
     let mut synced = HashSet::new();
     for series in series {
         let span = sync_show::span();
-        match get_sonarr_episodes
+        let episodes = get_sonarr_episodes
             .call(series.sonarr_id)
             .instrument(span.clone())
-            .await
-        {
+            .await;
+        match source_health.api_call(Source::Sonarr, episodes) {
             Ok(episodes) => {
                 synced.insert(series.sonarr_id);
                 sync_show::save(db_context, SonarrShow { series, episodes })

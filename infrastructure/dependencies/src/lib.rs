@@ -2,7 +2,10 @@ use application::BuildInfo;
 use application::DbContext;
 use application::InboxWakeup;
 use application::Reconciles;
+use application::SourceHealth;
 use application::WebhookPasswords;
+use application::ports::CheckRadarrKodiMetadata;
+use application::ports::CheckSonarrKodiMetadata;
 use application::ports::Clock;
 use application::ports::ExportTelemetry;
 use application::ports::GetRadarrMovie;
@@ -24,6 +27,8 @@ pub use telemetry;
 #[derive(Clone)]
 pub struct AppState {
     pub build_info: BuildInfo,
+    pub check_radarr_kodi_metadata: CheckRadarrKodiMetadata,
+    pub check_sonarr_kodi_metadata: CheckSonarrKodiMetadata,
     pub clock: Clock,
     pub db_context: DbContext,
     pub export_telemetry: ExportTelemetry,
@@ -36,6 +41,7 @@ pub struct AppState {
     pub read_movie_folder: ReadMovieFolder,
     pub read_movie_nfo: ReadMovieNfo,
     pub reconciles: Reconciles,
+    pub source_health: SourceHealth,
     pub webhook_passwords: WebhookPasswords,
 }
 

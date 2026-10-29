@@ -38,6 +38,7 @@ use opentelemetry::metrics::Histogram;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::Instant;
+use sync_status::ApiCall;
 use sync_status::ReconcileProgress;
 use toasty_core::Schema;
 use toasty_core::driver::Capability;
@@ -113,6 +114,39 @@ impl Reconciles {
     }
 
     fn source(&self, source: Source) -> &SourceReconcile {
+        match source {
+            Source::Radarr => &self.radarr,
+            Source::Sonarr => &self.sonarr,
+        }
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct SourceHealth {
+    radarr: Arc<Mutex<Health>>,
+    sonarr: Arc<Mutex<Health>>,
+}
+
+#[derive(Clone, Default)]
+struct Health {
+    last_api_call: Option<ApiCall>,
+    kodi_metadata: Option<bool>,
+}
+
+impl SourceHealth {
+    fn api_call<T, E: std::error::Error>(
+        &self,
+        source: Source,
+        result: Result<T, E>,
+    ) -> Result<T, E> {
+        self.source(source).lock().unwrap().last_api_call = Some(match &result {
+            Ok(_) => ApiCall::Succeeded,
+            Err(error) => ApiCall::Failed(error.to_string()),
+        });
+        result
+    }
+
+    fn source(&self, source: Source) -> &Mutex<Health> {
         match source {
             Source::Radarr => &self.radarr,
             Source::Sonarr => &self.sonarr,

@@ -1,3 +1,4 @@
+use application::ports::CheckSonarrKodiMetadata;
 use application::ports::GetSonarrEpisodes;
 use application::ports::GetSonarrShow;
 use application::ports::ListSonarrSeries;
@@ -73,6 +74,21 @@ impl SonarrSettings {
         }))
     }
 
+    pub fn check_kodi_metadata(&self) -> Result<CheckSonarrKodiMetadata, MissingSetting> {
+        let api = self.api()?;
+        Ok(CheckSonarrKodiMetadata::new(move || {
+            let api = api.clone();
+            Box::pin(async move {
+                Ok(api
+                    .get::<Vec<MetadataConsumer>>("/api/v3/metadata", &["metadata"], None)
+                    .await
+                    .map_err(SonarrError::caused_by)?
+                    .iter()
+                    .any(|x| x.implementation == "XbmcMetadata" && x.enable))
+            })
+        }))
+    }
+
     fn api(&self) -> Result<Api, MissingSetting> {
         Ok(Api {
             client: reqwest::Client::new(),
@@ -93,6 +109,12 @@ struct Api {
     client: reqwest::Client,
     url: Url,
     api_key: String,
+}
+
+#[derive(Deserialize)]
+struct MetadataConsumer {
+    implementation: String,
+    enable: bool,
 }
 
 #[derive(Deserialize)]

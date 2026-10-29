@@ -1,4 +1,6 @@
 use domain::MediaFile;
+use domain::SyncProblem;
+use domain::SyncProblemKind;
 use jiff::Timestamp;
 use uuid::Uuid;
 
@@ -37,6 +39,7 @@ pub(crate) async fn save(
                     .modified_at(modified_at)
                     .exec(db)
                     .await?;
+                save_file_not_found(db, media_file.id, path, on_disk).await?;
             }
             Ok((media_file.id, changed))
         }
@@ -48,7 +51,51 @@ pub(crate) async fn save(
             })
             .exec(db)
             .await?;
+            save_file_not_found(db, media_file.id, path, on_disk).await?;
             Ok((media_file.id, true))
         }
     }
+}
+
+async fn save_file_not_found(
+    db: &mut dyn toasty::Executor,
+    media_file_id: Uuid,
+    path: &str,
+    on_disk: Option<OnDisk>,
+) -> toasty::Result<()> {
+    SyncProblem::filter(
+        SyncProblem::fields().media_file_id().eq(media_file_id).and(
+            SyncProblem::fields()
+                .kind()
+                .eq(SyncProblemKind::FileNotFound),
+        ),
+    )
+    .delete()
+    .exec(db)
+    .await?;
+    if on_disk.is_none() {
+        toasty::create!(SyncProblem {
+            movie_id: None,
+            media_file_id: Some(media_file_id),
+            kind: SyncProblemKind::FileNotFound,
+            path: path.to_owned(),
+        })
+        .exec(db)
+        .await?;
+    }
+    Ok(())
+}
+
+pub(crate) async fn delete(db: &mut dyn toasty::Executor, ids: Vec<Uuid>) -> toasty::Result<()> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    SyncProblem::filter(SyncProblem::fields().media_file_id().in_list(ids.clone()))
+        .delete()
+        .exec(db)
+        .await?;
+    MediaFile::filter(MediaFile::fields().id().in_list(ids))
+        .delete()
+        .exec(db)
+        .await
 }

@@ -1,4 +1,5 @@
 use crate::DbContext;
+use crate::SourceHealth;
 use crate::ports::Clock;
 use crate::ports::GetRadarrMovie;
 use crate::ports::GetSonarrShow;
@@ -31,6 +32,7 @@ pub struct Dependencies {
     pub get_sonarr_show: GetSonarrShow,
     pub read_movie_folder: ReadMovieFolder,
     pub read_movie_nfo: ReadMovieNfo,
+    pub source_health: SourceHealth,
 }
 
 #[ohno::error]
@@ -124,6 +126,7 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<bool, Error> 
         get_sonarr_show,
         read_movie_folder,
         read_movie_nfo,
+        source_health,
     } = dependencies.into();
     let claimed_at = clock.call();
     let Some(claimed) = toasty::sql::query(
@@ -184,6 +187,7 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<bool, Error> 
                     get_radarr_movie,
                     read_movie_folder,
                     read_movie_nfo,
+                    source_health,
                 },
                 radarr_id,
             )
@@ -194,6 +198,7 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<bool, Error> 
                 sync_show::Dependencies {
                     db_context: db_context.clone(),
                     get_sonarr_show,
+                    source_health,
                 },
                 sonarr_id,
             )

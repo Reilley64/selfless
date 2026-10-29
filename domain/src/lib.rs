@@ -138,6 +138,7 @@ pub struct Artwork {
 #[column(type = text)]
 pub enum SyncProblemKind {
     UnreadableNfo,
+    FileNotFound,
 }
 
 #[derive(Debug, toasty::Model)]
@@ -146,7 +147,9 @@ pub struct SyncProblem {
     #[auto]
     pub id: Uuid,
     #[index]
-    pub movie_id: Uuid,
+    pub movie_id: Option<Uuid>,
+    #[index]
+    pub media_file_id: Option<Uuid>,
     pub kind: SyncProblemKind,
     pub path: String,
 }

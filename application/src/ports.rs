@@ -134,6 +134,23 @@ impl ListRadarrMovies {
     }
 }
 
+type CheckRadarrKodiMetadataFn = dyn Fn() -> PortFuture<Result<bool, RadarrError>> + Send + Sync;
+
+#[derive(Clone)]
+pub struct CheckRadarrKodiMetadata(Arc<CheckRadarrKodiMetadataFn>);
+
+impl CheckRadarrKodiMetadata {
+    pub fn new(
+        f: impl Fn() -> PortFuture<Result<bool, RadarrError>> + Send + Sync + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self) -> PortFuture<Result<bool, RadarrError>> {
+        (self.0)()
+    }
+}
+
 #[derive(ohno::Error, Default)]
 #[no_constructors]
 #[display("failed to call the Radarr API")]
@@ -229,6 +246,23 @@ impl GetSonarrEpisodes {
 
     pub fn call(&self, sonarr_id: i64) -> PortFuture<Result<Vec<SonarrEpisode>, SonarrError>> {
         (self.0)(sonarr_id)
+    }
+}
+
+type CheckSonarrKodiMetadataFn = dyn Fn() -> PortFuture<Result<bool, SonarrError>> + Send + Sync;
+
+#[derive(Clone)]
+pub struct CheckSonarrKodiMetadata(Arc<CheckSonarrKodiMetadataFn>);
+
+impl CheckSonarrKodiMetadata {
+    pub fn new(
+        f: impl Fn() -> PortFuture<Result<bool, SonarrError>> + Send + Sync + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self) -> PortFuture<Result<bool, SonarrError>> {
+        (self.0)()
     }
 }
 

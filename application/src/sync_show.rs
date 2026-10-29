@@ -1,4 +1,5 @@
 use crate::DbContext;
+use crate::SourceHealth;
 use crate::library_items;
 use crate::library_items::Change;
 use crate::media_files;
@@ -6,7 +7,6 @@ use crate::media_files::OnDisk;
 use crate::ports::GetSonarrShow;
 use crate::ports::SonarrShow;
 use domain::Episode;
-use domain::MediaFile;
 use domain::Season;
 use domain::Show;
 use domain::Source;
@@ -20,6 +20,7 @@ use uuid::Uuid;
 pub struct Dependencies {
     pub db_context: DbContext,
     pub get_sonarr_show: GetSonarrShow,
+    pub source_health: SourceHealth,
 }
 
 #[ohno::error]
@@ -30,11 +31,12 @@ pub async fn call(dependencies: impl Into<Dependencies>, sonarr_id: i64) -> Resu
     let Dependencies {
         mut db_context,
         get_sonarr_show,
+        source_health,
     } = dependencies.into();
     async {
-        match get_sonarr_show
-            .call(sonarr_id)
-            .await
+        let sonarr_show = get_sonarr_show.call(sonarr_id).await;
+        match source_health
+            .api_call(Source::Sonarr, sonarr_show)
             .map_err(Error::caused_by)?
         {
             Some(sonarr_show) => save(&mut db_context, sonarr_show).await,
@@ -303,12 +305,5 @@ async fn delete_seasons(db: &mut dyn toasty::Executor, ids: Vec<Uuid>) -> Result
 }
 
 async fn delete_media_files(db: &mut dyn toasty::Executor, ids: Vec<Uuid>) -> Result<(), Error> {
-    if ids.is_empty() {
-        return Ok(());
-    }
-    MediaFile::filter(MediaFile::fields().id().in_list(ids))
-        .delete()
-        .exec(db)
-        .await
-        .map_err(Error::caused_by)
+    media_files::delete(db, ids).await.map_err(Error::caused_by)
 }

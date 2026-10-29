@@ -1,4 +1,5 @@
 use crate::DbContext;
+use crate::SourceHealth;
 use crate::library_items;
 use crate::library_items::Change;
 use crate::media_files;
@@ -12,7 +13,6 @@ use crate::ports::ReadMovieNfo;
 use domain::Actor;
 use domain::Artwork;
 use domain::ArtworkKind;
-use domain::MediaFile;
 use domain::Movie;
 use domain::Source;
 use domain::SyncProblem;
@@ -29,6 +29,7 @@ pub struct Dependencies {
     pub get_radarr_movie: GetRadarrMovie,
     pub read_movie_folder: ReadMovieFolder,
     pub read_movie_nfo: ReadMovieNfo,
+    pub source_health: SourceHealth,
 }
 
 #[ohno::error]
@@ -41,11 +42,12 @@ pub async fn call(dependencies: impl Into<Dependencies>, radarr_id: i64) -> Resu
         get_radarr_movie,
         read_movie_folder,
         read_movie_nfo,
+        source_health,
     } = dependencies.into();
     async {
-        match get_radarr_movie
-            .call(radarr_id)
-            .await
+        let radarr_movie = get_radarr_movie.call(radarr_id).await;
+        match source_health
+            .api_call(Source::Radarr, radarr_movie)
             .map_err(Error::caused_by)?
         {
             Some(radarr_movie) => {
@@ -259,9 +261,7 @@ pub(crate) async fn save(
             if let Some(old_media_file_id) = old_media_file_id
                 && Some(old_media_file_id) != media_file_id
             {
-                MediaFile::filter_by_id(old_media_file_id)
-                    .delete()
-                    .exec(db)
+                media_files::delete(db, vec![old_media_file_id])
                     .await
                     .map_err(Error::caused_by)?;
             }
@@ -388,7 +388,8 @@ async fn save_unreadable_nfo(
     }
     if let Some(path) = path {
         toasty::create!(SyncProblem {
-            movie_id,
+            movie_id: Some(movie_id),
+            media_file_id: None,
             kind: SyncProblemKind::UnreadableNfo,
             path: path.to_owned(),
         })
@@ -417,9 +418,7 @@ pub(crate) async fn remove(db_context: &mut DbContext, movies: Vec<Movie>) -> Re
             .map_err(Error::caused_by)?;
         movie.delete().exec(db).await.map_err(Error::caused_by)?;
         if let Some(media_file_id) = media_file_id {
-            MediaFile::filter_by_id(media_file_id)
-                .delete()
-                .exec(db)
+            media_files::delete(db, vec![media_file_id])
                 .await
                 .map_err(Error::caused_by)?;
         }

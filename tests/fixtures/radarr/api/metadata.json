@@ -1,0 +1,160 @@
+[
+  {
+    "enable": false,
+    "name": "Emby (Legacy)",
+    "fields": [
+      {
+        "order": 0,
+        "name": "movieMetadata",
+        "label": "Movie Metadata",
+        "value": true,
+        "type": "checkbox",
+        "advanced": false,
+        "privacy": "normal",
+        "isFloat": false
+      }
+    ],
+    "implementationName": "Emby (Legacy)",
+    "implementation": "MediaBrowserMetadata",
+    "configContract": "MediaBrowserMetadataSettings",
+    "infoLink": "https://wiki.servarr.com/radarr/supported#mediabrowsermetadata",
+    "tags": [],
+    "id": 3
+  },
+  {
+    "enable": true,
+    "name": "Kodi (XBMC) / Emby",
+    "fields": [
+      {
+        "order": 0,
+        "name": "movieMetadata",
+        "label": "Movie Metadata",
+        "value": true,
+        "type": "checkbox",
+        "advanced": false,
+        "privacy": "normal",
+        "isFloat": false
+      },
+      {
+        "order": 1,
+        "name": "movieMetadataURL",
+        "label": "Movie Metadata URL",
+        "value": false,
+        "type": "checkbox",
+        "advanced": false,
+        "privacy": "normal",
+        "isFloat": false
+      },
+      {
+        "order": 2,
+        "name": "movieMetadataLanguage",
+        "label": "Metadata Language",
+        "value": 1,
+        "type": "select",
+        "advanced": false,
+        "privacy": "normal",
+        "isFloat": false
+      },
+      {
+        "order": 3,
+        "name": "movieImages",
+        "label": "Movie Images",
+        "value": true,
+        "type": "checkbox",
+        "advanced": false,
+        "privacy": "normal",
+        "isFloat": false
+      },
+      {
+        "order": 4,
+        "name": "useMovieNfo",
+        "label": "Use Movie.nfo",
+        "value": false,
+        "type": "checkbox",
+        "advanced": false,
+        "privacy": "normal",
+        "isFloat": false
+      },
+      {
+        "order": 5,
+        "name": "addCollectionName",
+        "label": "Collection Name",
+        "value": true,
+        "type": "checkbox",
+        "advanced": false,
+        "privacy": "normal",
+        "isFloat": false
+      }
+    ],
+    "implementationName": "Kodi (XBMC) / Emby",
+    "implementation": "XbmcMetadata",
+    "configContract": "XbmcMetadataSettings",
+    "infoLink": "https://wiki.servarr.com/radarr/supported#xbmcmetadata",
+    "tags": [],
+    "id": 1
+  },
+  {
+    "enable": false,
+    "name": "Roksbox",
+    "fields": [
+      {
+        "order": 0,
+        "name": "movieMetadata",
+        "label": "Movie Metadata",
+        "value": true,
+        "type": "checkbox",
+        "advanced": false,
+        "privacy": "normal",
+        "isFloat": false
+      },
+      {
+        "order": 1,
+        "name": "movieImages",
+        "label": "Movie Images",
+        "value": true,
+        "type": "checkbox",
+        "advanced": false,
+        "privacy": "normal",
+        "isFloat": false
+      }
+    ],
+    "implementationName": "Roksbox",
+    "implementation": "RoksboxMetadata",
+    "configContract": "RoksboxMetadataSettings",
+    "infoLink": "https://wiki.servarr.com/radarr/supported#roksboxmetadata",
+    "tags": [],
+    "id": 4
+  },
+  {
+    "enable": false,
+    "name": "WDTV",
+    "fields": [
+      {
+        "order": 0,
+        "name": "movieMetadata",
+        "label": "Movie Metadata",
+        "value": true,
+        "type": "checkbox",
+        "advanced": false,
+        "privacy": "normal",
+        "isFloat": false
+      },
+      {
+        "order": 1,
+        "name": "movieImages",
+        "label": "Movie Images",
+        "value": true,
+        "type": "checkbox",
+        "advanced": false,
+        "privacy": "normal",
+        "isFloat": false
+      }
+    ],
+    "implementationName": "WDTV",
+    "implementation": "WdtvMetadata",
+    "configContract": "WdtvMetadataSettings",
+    "infoLink": "https://wiki.servarr.com/radarr/supported#wdtvmetadata",
+    "tags": [],
+    "id": 2
+  }
+]

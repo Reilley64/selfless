@@ -445,6 +445,18 @@ impl StubRadarr {
             .count()
     }
 
+    pub async fn serve_metadata(&self, body: &str) {
+        Mock::given(method("GET"))
+            .and(path("/api/v3/metadata"))
+            .and(header("X-Api-Key", RADARR_API_KEY))
+            .respond_with(
+                ResponseTemplate::new(StatusCode::OK.as_u16())
+                    .set_body_raw(body.to_owned(), "application/json"),
+            )
+            .mount(&self.0)
+            .await;
+    }
+
     pub async fn serve_movies(&self, status: StatusCode, body: &str) {
         self.0.reset().await;
         Mock::given(method("GET"))
@@ -530,6 +542,18 @@ impl StubSonarr {
                 .mount(&self.0)
                 .await;
         }
+    }
+
+    pub async fn serve_metadata(&self, body: &str) {
+        Mock::given(method("GET"))
+            .and(path("/api/v3/metadata"))
+            .and(header("X-Api-Key", SONARR_API_KEY))
+            .respond_with(
+                ResponseTemplate::new(StatusCode::OK.as_u16())
+                    .set_body_raw(body.to_owned(), "application/json"),
+            )
+            .mount(&self.0)
+            .await;
     }
 
     pub async fn fail_episodes(&self, series_id: i64) {

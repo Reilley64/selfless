@@ -1,3 +1,4 @@
+use application::ports::CheckRadarrKodiMetadata;
 use application::ports::GetRadarrMovie;
 use application::ports::ListRadarrMovies;
 use application::ports::RadarrError;
@@ -60,6 +61,21 @@ impl RadarrSettings {
                     .into_iter()
                     .map(RadarrMovie::from)
                     .collect())
+            })
+        }))
+    }
+
+    pub fn check_kodi_metadata(&self) -> Result<CheckRadarrKodiMetadata, MissingSetting> {
+        let api = self.api()?;
+        Ok(CheckRadarrKodiMetadata::new(move || {
+            let api = api.clone();
+            Box::pin(async move {
+                Ok(api
+                    .get::<Vec<MetadataConsumer>>("/api/v3/metadata", &["metadata"])
+                    .await
+                    .map_err(RadarrError::caused_by)?
+                    .iter()
+                    .any(|x| x.implementation == "XbmcMetadata" && x.enable))
             })
         }))
     }
@@ -133,6 +149,12 @@ impl Api {
             );
         })
     }
+}
+
+#[derive(Deserialize)]
+struct MetadataConsumer {
+    implementation: String,
+    enable: bool,
 }
 
 #[derive(Deserialize)]

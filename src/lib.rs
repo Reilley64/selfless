@@ -3,6 +3,7 @@ use application::BuildInfo;
 use application::DbContext;
 use application::InboxWakeup;
 use application::Reconciles;
+use application::SourceHealth;
 use application::WebhookPasswords;
 use application::ports::Clock;
 use infrastructure::AppState;
@@ -38,6 +39,8 @@ pub async fn start(settings: AppSettings, clock: Clock) -> Result<Server, AppErr
     let list_radarr_movies = settings.radarr.list_movies()?;
     let list_sonarr_series = settings.sonarr.list_series()?;
     let get_sonarr_episodes = settings.sonarr.get_episodes()?;
+    let check_radarr_kodi_metadata = settings.radarr.check_kodi_metadata()?;
+    let check_sonarr_kodi_metadata = settings.sonarr.check_kodi_metadata()?;
     let db = persistence::connect(&settings.database).await?;
     persistence::migrate(&db).await?;
     let state = AppState::builder()
@@ -48,6 +51,8 @@ pub async fn start(settings: AppSettings, clock: Clock) -> Result<Server, AppErr
             git_commit_id: env!("GIT_COMMIT"),
             git_commit_time: env!("GIT_COMMIT_TIME"),
         })
+        .check_radarr_kodi_metadata(|_| check_radarr_kodi_metadata.clone())
+        .check_sonarr_kodi_metadata(|_| check_sonarr_kodi_metadata.clone())
         .clock(|_| clock.clone())
         .db_context(|_| DbContext::new(db.clone(), settings.database.location()))
         .export_telemetry_try(|_| telemetry::export_telemetry(&settings.otlp))?
@@ -60,6 +65,7 @@ pub async fn start(settings: AppSettings, clock: Clock) -> Result<Server, AppErr
         .read_movie_folder(|_| media_files::read_movie_folder())
         .read_movie_nfo(|_| media_files::read_movie_nfo())
         .reconciles(|_| Reconciles::default())
+        .source_health(|_| SourceHealth::default())
         .webhook_passwords(|_| webhook_passwords.clone())
         .build();
     let availability = Availability::default();

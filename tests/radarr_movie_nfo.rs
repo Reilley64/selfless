@@ -3,6 +3,7 @@ mod support;
 use application::list_movies::Actor;
 use application::list_movies::Movie;
 use application::sync_status::Problem;
+use application::sync_status::ProblemItem;
 use domain::ArtworkKind;
 use domain::SyncProblemKind;
 use jiff::SignedDuration;
@@ -187,6 +188,10 @@ async fn an_unreadable_nfo_falls_back_to_radarr_and_records_a_problem() {
         fixture.problems().await,
         [Problem {
             kind: SyncProblemKind::UnreadableNfo,
+            item: ProblemItem::Movie {
+                title: "Arrival".to_owned(),
+                id: movie.id,
+            },
             path: fixture.media.path(NFO),
         }]
     );
