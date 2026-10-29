@@ -15,6 +15,11 @@
           "type": "json",
           "path": "presentation/tv/app.json",
           "jsonpath": "$.expo.version"
+        },
+        {
+          "type": "yaml",
+          "path": "openapi.yaml",
+          "jsonpath": "$.info.version"
         }
       ]
     }
