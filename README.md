@@ -6,10 +6,13 @@ Created in [T3 Code](https://t3.codes).
 
 ## Development
 
-Install [mise](https://mise.jdx.dev) and Docker, then run `mise install` in the repository root.
+Install [mise](https://mise.jdx.dev) and Docker, then run `mise install` and `bun install` in the repository root.
 
 - `mise run services` starts PostgreSQL from `compose.yaml`.
-- `cargo run` starts the server. It reads `DATABASE__URL` (set in `mise.toml`) and `HTTP__PORT` (default 8080).
+- `cargo run` starts the server. It reads `DATABASE__URL` (set in `mise.toml`) and `HTTP__PORT` (default 8080). It serves the web export from `WEB__DIR` (default `presentation/web/dist`) at `/`.
+- `mise run dev` starts PostgreSQL, the server and the web app's dev server on port 8081. The dev server sends `/actuator` and `/api` requests to the server.
+- `bun run generate` writes the API client from `openapi.yaml`. Run it after changing that file. `bun run typecheck`, `bun run lint` and `bun run test` check the apps, and `bun run export` writes the web export to `presentation/web/dist`.
+- The server build reads the branch, commit and commit time for `/actuator/info/v1` from git. `GIT_BRANCH`, `GIT_COMMIT` and `GIT_COMMIT_TIME` override them, for builds outside a git checkout.
 - `mise run test` runs the server tests against that PostgreSQL. Each test creates its own database.
 - `mise run check` checks formatting, Clippy lints and crate direction.
 - `mise run lint:openapi` lints `openapi.yaml`.
