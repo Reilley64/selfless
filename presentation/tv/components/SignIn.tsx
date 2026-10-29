@@ -4,6 +4,7 @@ import { deviceName } from "expo-device";
 import { useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native-css/components";
 import { session } from "../session";
+import { buttonText } from "./buttonText";
 
 export function SignIn({
   name: filledIn = "",
@@ -26,8 +27,6 @@ export function SignIn({
     "h-button-tv-height rounded-small bg-surface-raised px-6 font-sans text-tv-body text-text-primary focus:bg-button-primary";
   const button =
     "h-button-tv-height items-center justify-center rounded-small bg-button-background focus:bg-button-focus";
-  const buttonText = (focused: boolean) =>
-    `font-sans font-semibold text-tv-body ${focused ? "text-text-inverse" : "text-text-primary"}`;
 
   return (
     <FocusGuide autoFocus className="flex-1 justify-center bg-background p-tv-inset">

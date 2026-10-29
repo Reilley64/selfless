@@ -3,6 +3,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native-css/components";
+import { input, primaryButton, ServerUnreachable } from "../components/form";
 import { deviceName } from "../deviceName";
 import { session } from "../session";
 
@@ -23,7 +24,6 @@ export default function Invite() {
   });
   const canAccept = name !== "" && password !== "" && !accept.isPending;
   const submit = () => canAccept && accept.mutate();
-  const input = "h-button-web-height rounded-small bg-surface-raised px-3 font-sans text-web-body text-text-primary";
 
   if (token === "" || accept.data?.status === 404) {
     return (
@@ -65,14 +65,8 @@ export default function Invite() {
           onChangeText={setPassword}
           onSubmitEditing={submit}
         />
-        {accept.isError && (
-          <Text className="font-sans text-web-body text-accent">The server can&apos;t be reached. Try again.</Text>
-        )}
-        <Pressable
-          className={`h-button-web-height items-center justify-center rounded-small bg-button-focus ${canAccept ? "" : "opacity-50"}`}
-          disabled={!canAccept}
-          onPress={submit}
-        >
+        {accept.isError && <ServerUnreachable />}
+        <Pressable className={primaryButton(canAccept)} disabled={!canAccept} onPress={submit}>
           <Text className="font-sans font-semibold text-web-body text-text-inverse">Join</Text>
         </Pressable>
       </View>

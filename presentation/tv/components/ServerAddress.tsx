@@ -3,6 +3,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native-css/components";
 import { session } from "../session";
+import { buttonText } from "./buttonText";
 
 export function ServerAddress() {
   const [address, setAddress] = useState("");
@@ -36,13 +37,7 @@ export function ServerAddress() {
           disabled={!canConnect}
           onPress={submit}
         >
-          {({ focused }) => (
-            <Text
-              className={`font-sans font-semibold text-tv-body ${focused ? "text-text-inverse" : "text-text-primary"}`}
-            >
-              Connect
-            </Text>
-          )}
+          {({ focused }) => <Text className={buttonText(focused)}>Connect</Text>}
         </Pressable>
       </View>
     </FocusGuide>

@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native-css/components";
 import { deviceName } from "../deviceName";
 import { session } from "../session";
+import { input, primaryButton, ServerUnreachable } from "./form";
 
 export function SignIn() {
   const [name, setName] = useState("");
@@ -10,7 +11,6 @@ export function SignIn() {
   const signIn = useMutation({ mutationFn: () => session.signIn(name, password, deviceName()) });
   const canSignIn = name !== "" && password !== "" && !signIn.isPending;
   const submit = () => canSignIn && signIn.mutate();
-  const input = "h-button-web-height rounded-small bg-surface-raised px-3 font-sans text-web-body text-text-primary";
 
   return (
     <View className="flex-1 items-center justify-center bg-background p-web-inset">
@@ -38,14 +38,8 @@ export function SignIn() {
         {signIn.data?.status === 401 && (
           <Text className="font-sans text-web-body text-accent">Wrong name or password.</Text>
         )}
-        {signIn.isError && (
-          <Text className="font-sans text-web-body text-accent">The server can&apos;t be reached. Try again.</Text>
-        )}
-        <Pressable
-          className={`h-button-web-height items-center justify-center rounded-small bg-button-focus ${canSignIn ? "" : "opacity-50"}`}
-          disabled={!canSignIn}
-          onPress={submit}
-        >
+        {signIn.isError && <ServerUnreachable />}
+        <Pressable className={primaryButton(canSignIn)} disabled={!canSignIn} onPress={submit}>
           <Text className="font-sans font-semibold text-web-body text-text-inverse">Sign in</Text>
         </Pressable>
       </View>

@@ -2,6 +2,7 @@ import { useChangePassword, useGetMe } from "@selfless/api-client";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native-css/components";
+import { input, primaryButton, ServerUnreachable } from "../components/form";
 import { session } from "../session";
 
 export default function Settings() {
@@ -25,7 +26,6 @@ export default function Settings() {
     router.replace("/");
     void session.signOut();
   };
-  const input = "h-button-web-height rounded-small bg-surface-raised px-3 font-sans text-web-body text-text-primary";
 
   return (
     <View className="flex-1 items-start gap-6 bg-background p-web-inset">
@@ -61,14 +61,8 @@ export default function Settings() {
         {changePassword.data?.status === 403 && (
           <Text className="font-sans text-web-body text-accent">The current password is wrong.</Text>
         )}
-        {changePassword.isError && (
-          <Text className="font-sans text-web-body text-accent">The server can&apos;t be reached. Try again.</Text>
-        )}
-        <Pressable
-          className={`h-button-web-height items-center justify-center rounded-small bg-button-focus ${canChangePassword ? "" : "opacity-50"}`}
-          disabled={!canChangePassword}
-          onPress={submitPassword}
-        >
+        {changePassword.isError && <ServerUnreachable />}
+        <Pressable className={primaryButton(canChangePassword)} disabled={!canChangePassword} onPress={submitPassword}>
           <Text className="font-sans font-semibold text-web-body text-text-inverse">Change password</Text>
         </Pressable>
       </View>

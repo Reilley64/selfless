@@ -1,5 +1,6 @@
 import { FocusGuide, ServerInfo } from "@selfless/ui";
 import { Pressable, Text } from "react-native-css/components";
+import { buttonText } from "../components/buttonText";
 import { session } from "../session";
 
 export default function Home() {
@@ -10,13 +11,7 @@ export default function Home() {
         className="h-button-tv-height justify-center rounded-small bg-button-background px-8 focus:bg-button-focus"
         onPress={() => session.switchUser()}
       >
-        {({ focused }) => (
-          <Text
-            className={`font-sans font-semibold text-tv-body ${focused ? "text-text-inverse" : "text-text-primary"}`}
-          >
-            Switch user
-          </Text>
-        )}
+        {({ focused }) => <Text className={buttonText(focused)}>Switch user</Text>}
       </Pressable>
     </FocusGuide>
   );
