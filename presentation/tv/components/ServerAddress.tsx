@@ -3,7 +3,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native-css/components";
 import { session } from "../session";
-import { buttonText } from "./buttonText";
+import { button, buttonText, input } from "./form";
 
 export function ServerAddress() {
   const [address, setAddress] = useState("");
@@ -19,7 +19,7 @@ export function ServerAddress() {
           Enter the address of your selfless server, such as 192.168.1.20:8080.
         </Text>
         <TextInput
-          className="h-button-tv-height rounded-small bg-surface-raised px-6 font-sans text-tv-body text-text-primary focus:bg-button-primary"
+          className={input}
           placeholder="Server address"
           keyboardType="url"
           textContentType="URL"
@@ -32,11 +32,7 @@ export function ServerAddress() {
         {connect.data === false && (
           <Text className="font-sans text-tv-body text-accent">No selfless server answers at that address.</Text>
         )}
-        <Pressable
-          className="h-button-tv-height items-center justify-center rounded-small bg-button-background focus:bg-button-focus"
-          disabled={!canConnect}
-          onPress={submit}
-        >
+        <Pressable className={button} disabled={!canConnect} onPress={submit}>
           {({ focused }) => <Text className={buttonText(focused)}>Connect</Text>}
         </Pressable>
       </View>

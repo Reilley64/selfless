@@ -1,5 +1,5 @@
 import type { UserColour } from "@selfless/api-client";
-import { FocusGuide, type PickerUser } from "@selfless/ui";
+import { FocusGuide, type PickerUser, serverUnreachable } from "@selfless/ui";
 import symbols from "@selfless/ui/theme/symbols.json";
 import type { ReactNode } from "react";
 import { useEffect, useSyncExternalStore } from "react";
@@ -48,7 +48,7 @@ function PickerButton({
 
 async function remove(user: PickerUser) {
   if (!(await session.remove(user.id))) {
-    Alert.alert(`${user.name} wasn't removed`, "The server can't be reached. Try again.");
+    Alert.alert(`${user.name} wasn't removed`, serverUnreachable);
   }
 }
 

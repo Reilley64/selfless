@@ -1,6 +1,6 @@
 import { FocusGuide, ServerInfo } from "@selfless/ui";
 import { Pressable, Text } from "react-native-css/components";
-import { buttonText } from "../components/buttonText";
+import { buttonText } from "../components/form";
 import { session } from "../session";
 
 export default function Home() {
