@@ -21,19 +21,21 @@ pub async fn call(
 ) -> Result<(), Error> {
     let mut db_context = dependencies.into().db_context;
     let password_hash = passwords::hash(password).await.map_err(Error::caused_by)?;
-    db_context
+    let mut transaction = db_context.transaction().await.map_err(Error::caused_by)?;
+    transaction
         .users()
         .filter(User::fields().id().eq(user_id))
         .update()
         .password_hash(password_hash)
-        .exec(db_context.executor_mut())
+        .exec(transaction.executor_mut())
         .await
         .map_err(Error::caused_by)?;
-    db_context
+    transaction
         .sessions()
         .filter(Session::fields().user_id().eq(user_id))
         .delete()
-        .exec(db_context.executor_mut())
+        .exec(transaction.executor_mut())
         .await
-        .map_err(Error::caused_by)
+        .map_err(Error::caused_by)?;
+    transaction.commit().await.map_err(Error::caused_by)
 }

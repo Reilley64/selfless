@@ -11,8 +11,11 @@ use opentelemetry_sdk::logs::SdkLoggerProvider;
 use opentelemetry_sdk::trace::InMemorySpanExporter;
 use opentelemetry_sdk::trace::SdkTracerProvider;
 use reqwest::Method;
+use reqwest::StatusCode;
+use serde_json::json;
 use support::TestDatabase;
 use support::TestServer;
+use support::USER_PASSWORD;
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::layer::SubscriberExt;
 
@@ -49,6 +52,53 @@ async fn authenticated_request_spans_carry_the_user_id() {
         "{:?}",
         http.attributes
     );
+    drop(server);
+    database.drop().await;
+}
+
+#[tokio::test]
+async fn statements_inside_a_transaction_export_database_spans_under_the_request_span() {
+    let exporter = InMemorySpanExporter::default();
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+    let token = server.signed_in_user().await;
+    let provider = SdkTracerProvider::builder()
+        .with_simple_exporter(exporter.clone())
+        .build();
+    let _tracing = tracing::subscriber::set_default(
+        tracing_subscriber::registry()
+            .with(LevelFilter::INFO)
+            .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("selfless"))),
+    );
+
+    let (status, _) = server
+        .request(
+            Method::PUT,
+            "/api/me/password/v1",
+            Some(&token),
+            Some(json!({
+                "currentPassword": USER_PASSWORD,
+                "newPassword": "a longer passphrase about coffee",
+            })),
+        )
+        .await;
+
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let spans = exporter.get_finished_spans().unwrap();
+    let http = spans
+        .iter()
+        .find(|x| x.span_kind == SpanKind::Server)
+        .expect("an HTTP server span");
+    let database_spans = spans
+        .iter()
+        .filter(|x| {
+            x.span_kind == SpanKind::Client && x.parent_span_id == http.span_context.span_id()
+        })
+        .map(|x| x.name.as_ref())
+        .collect::<Vec<_>>();
+    for name in ["UPDATE users", "DELETE sessions"] {
+        assert!(database_spans.contains(&name), "{database_spans:?}");
+    }
     drop(server);
     database.drop().await;
 }

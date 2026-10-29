@@ -28,26 +28,33 @@ pub async fn call(
     email: String,
 ) -> Result<User, Error> {
     let mut db_context = dependencies.into().db_context;
-    let users = db_context
+    create(&mut db_context, name, password, email).await
+}
+
+pub(crate) async fn create(
+    scope: &mut impl DbScope,
+    name: String,
+    password: String,
+    email: String,
+) -> Result<User, Error> {
+    let password_hash = passwords::hash(password).await.map_err(Error::caused_by)?;
+    let users = scope
         .users()
         .all()
-        .exec(db_context.executor_mut())
+        .exec(scope.executor_mut())
         .await
         .map_err(Error::caused_by)?;
     let colours = users.iter().map(|x| x.colour).collect::<Vec<_>>();
     let symbols = users.iter().map(|x| x.symbol).collect::<Vec<_>>();
-    let colour = least_used(&Colour::ALL, &colours);
-    let symbol = least_used(&Symbol::ALL, &symbols);
-    let password_hash = passwords::hash(password).await.map_err(Error::caused_by)?;
-    db_context
+    scope
         .users()
         .create()
         .name(name)
         .email(email)
         .password_hash(password_hash)
-        .colour(colour)
-        .symbol(symbol)
-        .exec(db_context.executor_mut())
+        .colour(least_used(&Colour::ALL, &colours))
+        .symbol(least_used(&Symbol::ALL, &symbols))
+        .exec(scope.executor_mut())
         .await
         .map_err(|error| match unique_index::violated(&error) {
             Some(NAME_INDEX) => Error::caused_by(NameTaken::new()),

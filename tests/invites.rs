@@ -1,6 +1,8 @@
 mod support;
 
 use application::create_invite::AddressTaken;
+use application::ports::SendEmail;
+use application::ports::SendEmailError;
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use jiff::SignedDuration;
@@ -28,11 +30,20 @@ async fn invite(
     database: &TestDatabase,
     email: &str,
 ) -> Result<(), application::create_invite::Error> {
+    invite_with(server, database, email, server.mailer.send_email()).await
+}
+
+async fn invite_with(
+    server: &TestServer,
+    database: &TestDatabase,
+    email: &str,
+    send_email: SendEmail,
+) -> Result<(), application::create_invite::Error> {
     application::create_invite::call(
         application::create_invite::Dependencies {
             db_context: server.db_context().await,
             clock: server.clock.port(),
-            send_email: server.mailer.send_email(),
+            send_email,
         },
         database.admin_id(ADMIN_NAME).await,
         email.to_owned(),
@@ -77,17 +88,32 @@ async fn invite_id(server: &TestServer, email: &str) -> Uuid {
 }
 
 async fn resend(server: &TestServer, id: Uuid) {
+    resend_with(server, id, server.mailer.send_email())
+        .await
+        .unwrap();
+}
+
+async fn resend_with(
+    server: &TestServer,
+    id: Uuid,
+    send_email: SendEmail,
+) -> Result<(), application::resend_invite::Error> {
     application::resend_invite::call(
         application::resend_invite::Dependencies {
             db_context: server.db_context().await,
             clock: server.clock.port(),
-            send_email: server.mailer.send_email(),
+            send_email,
         },
         id,
         ORIGIN.to_owned(),
     )
     .await
-    .unwrap();
+}
+
+fn failing_mailer() -> SendEmail {
+    SendEmail::new(|_, _, _| {
+        Box::pin(async { Err(SendEmailError::caused_by("the SMTP server is down")) })
+    })
 }
 
 async fn cancel(server: &TestServer, id: Uuid) {
@@ -420,6 +446,42 @@ async fn a_resent_invite_has_a_new_link_and_a_new_7_day_expiry_and_the_old_link_
     assert_eq!(with_old.0, StatusCode::NOT_FOUND);
     assert_eq!(with_old.1["type"], INVITE_NOT_FOUND);
     assert_eq!(with_new.0, StatusCode::CREATED);
+    drop(server);
+    database.drop().await;
+}
+
+#[tokio::test]
+async fn an_invite_whose_email_fails_is_not_stored_so_inviting_again_works() {
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+
+    let failed = invite_with(&server, &database, EMAIL, failing_mailer()).await;
+    let pending_after_failure = pending_invites(&server).await;
+    let retried = invite(&server, &database, EMAIL).await;
+
+    assert!(failed.is_err());
+    assert_eq!(pending_after_failure, []);
+    assert!(retried.is_ok(), "{retried:?}");
+    let accepted = accept(&server, &token_from_last_email(&server), NAME).await;
+    assert_eq!(accepted.0, StatusCode::CREATED);
+    drop(server);
+    database.drop().await;
+}
+
+#[tokio::test]
+async fn a_resend_whose_email_fails_changes_nothing_and_the_old_link_keeps_working() {
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+    invite(&server, &database, EMAIL).await.unwrap();
+    let old = token_from_last_email(&server);
+    let before = pending_invites(&server).await;
+    server.clock.advance(SignedDuration::from_hours(24));
+
+    let resent = resend_with(&server, invite_id(&server, EMAIL).await, failing_mailer()).await;
+
+    assert!(resent.is_err());
+    assert_eq!(pending_invites(&server).await, before);
+    assert_eq!(accept(&server, &old, NAME).await.0, StatusCode::CREATED);
     drop(server);
     database.drop().await;
 }

@@ -28,10 +28,11 @@ pub async fn call(
         clock,
         send_email,
     } = dependencies.into();
-    let Some(mut invite) = db_context
+    let mut transaction = db_context.transaction().await.map_err(Error::caused_by)?;
+    let Some(mut invite) = transaction
         .invites()
         .find(id)
-        .exec(db_context.executor_mut())
+        .exec(transaction.executor_mut())
         .await
         .map_err(Error::caused_by)?
     else {
@@ -44,10 +45,11 @@ pub async fn call(
         .token_hash(tokens::hash(&token))
         .sent_at(sent_at)
         .expires_at(sent_at + Invite::VALID_FOR)
-        .exec(db_context.executor_mut())
+        .exec(transaction.executor_mut())
         .await
         .map_err(Error::caused_by)?;
     invite_email::send(&send_email, invite.email, &origin, &token)
         .await
-        .map_err(Error::caused_by)
+        .map_err(Error::caused_by)?;
+    transaction.commit().await.map_err(Error::caused_by)
 }

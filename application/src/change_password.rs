@@ -42,15 +42,16 @@ pub async fn call(
     let password_hash = passwords::hash(new_password)
         .await
         .map_err(Error::caused_by)?;
-    db_context
+    let mut transaction = db_context.transaction().await.map_err(Error::caused_by)?;
+    transaction
         .users()
         .filter(User::fields().id().eq(user_id))
         .update()
         .password_hash(password_hash)
-        .exec(db_context.executor_mut())
+        .exec(transaction.executor_mut())
         .await
         .map_err(Error::caused_by)?;
-    db_context
+    transaction
         .sessions()
         .filter(
             Session::fields()
@@ -59,7 +60,8 @@ pub async fn call(
                 .and(Session::fields().token_hash().ne(tokens::hash(token))),
         )
         .delete()
-        .exec(db_context.executor_mut())
+        .exec(transaction.executor_mut())
         .await
-        .map_err(Error::caused_by)
+        .map_err(Error::caused_by)?;
+    transaction.commit().await.map_err(Error::caused_by)
 }

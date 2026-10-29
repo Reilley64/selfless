@@ -19,7 +19,6 @@ use toasty_core::driver::operation::RawSql;
 use toasty_core::stmt::ExprSet;
 use toasty_core::stmt::InsertTarget;
 use toasty_core::stmt::Statement;
-use toasty_core::stmt::UpdateTarget;
 use tracing::Instrument;
 use tracing::field;
 
@@ -169,13 +168,7 @@ impl<E: toasty::Executor> toasty::Executor for Instrumented<E> {
                     _ => None,
                 },
             ),
-            Statement::Update(x) => (
-                "UPDATE",
-                match x.target {
-                    UpdateTarget::Model(x) => Some(x),
-                    _ => None,
-                },
-            ),
+            Statement::Update(x) => ("UPDATE", x.target.model_id()),
             Statement::Delete(x) => ("DELETE", x.from.as_model().map(|x| x.id)),
         };
         let collection = model.map(|x| self.inner.schema().table_for(x).name.clone());
