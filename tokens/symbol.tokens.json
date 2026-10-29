@@ -1,0 +1,17 @@
+{
+  "symbol": {
+    "$description": "User picker symbols, as SVG markup drawn in white on a 200 by 200 canvas over the user's colour. The server gives each new user the one the fewest users have.",
+    "ring": {
+      "$value": "<circle cx=\"100\" cy=\"100\" r=\"46\" fill=\"none\" stroke=\"#fff\" stroke-width=\"14\"/><circle cx=\"100\" cy=\"100\" r=\"12\" fill=\"#fff\"/>"
+    },
+    "triangle": {
+      "$value": "<path d=\"M50 140 L100 55 L150 140 Z\" fill=\"none\" stroke=\"#fff\" stroke-width=\"14\" stroke-linejoin=\"round\"/>"
+    },
+    "star": {
+      "$value": "<path d=\"M100 48 L113 86 L152 86 L120 110 L132 150 L100 126 L68 150 L80 110 L48 86 L87 86 Z\" fill=\"#fff\"/>"
+    },
+    "waves": {
+      "$value": "<path d=\"M45 100 Q72 55 100 100 T155 100\" fill=\"none\" stroke=\"#fff\" stroke-width=\"14\" stroke-linecap=\"round\"/><path d=\"M45 135 Q72 90 100 135 T155 135\" fill=\"none\" stroke=\"#fff\" stroke-opacity=\"0.5\" stroke-width=\"10\" stroke-linecap=\"round\"/>"
+    }
+  }
+}

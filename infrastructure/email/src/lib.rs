@@ -1,7 +1,9 @@
 use application::attributes::SELFLESS_EMAIL_OUTCOME;
 use application::attributes::SELFLESS_EMAIL_SMTP_REPLY_CODE;
+use application::attributes::selfless_email_outcome;
 use application::ports::SendEmail;
 use application::ports::SendEmailError;
+use application::spans::SELFLESS_EMAIL_SEND;
 use lettre::AsyncSmtpTransport;
 use lettre::AsyncTransport;
 use lettre::Message;
@@ -79,7 +81,7 @@ where
         Box::pin(async move {
             let span = tracing::info_span!(
                 "email_send",
-                otel.name = "selfless.email.send",
+                otel.name = SELFLESS_EMAIL_SEND,
                 otel.kind = "client",
                 otel.status_code = field::Empty,
                 { SELFLESS_EMAIL_OUTCOME } = field::Empty,
@@ -111,9 +113,9 @@ where
             .instrument(span.clone())
             .await;
             if result.is_ok() {
-                span.record(SELFLESS_EMAIL_OUTCOME, "sent");
+                span.record(SELFLESS_EMAIL_OUTCOME, selfless_email_outcome::SENT);
             } else {
-                span.record(SELFLESS_EMAIL_OUTCOME, "failed");
+                span.record(SELFLESS_EMAIL_OUTCOME, selfless_email_outcome::FAILED);
                 span.record("otel.status_code", "ERROR");
             }
             result

@@ -1,12 +1,9 @@
 use crate::DbContext;
 use crate::ports::Clock;
-use crate::session_tokens;
+use crate::tokens;
 use domain::AdminSession;
-use jiff::SignedDuration;
+use domain::LAST_USED_PRECISION;
 use uuid::Uuid;
-
-const IDLE_TIMEOUT: SignedDuration = SignedDuration::from_hours(12);
-const LAST_USED_PRECISION: SignedDuration = SignedDuration::from_hours(1);
 
 #[fundle::deps]
 pub struct Dependencies {
@@ -27,12 +24,12 @@ pub async fn call(
         clock,
     } = dependencies.into();
     let now = clock.call();
-    let Some(mut session) = AdminSession::filter_by_token_hash(session_tokens::hash(token))
+    let Some(mut session) = AdminSession::filter_by_token_hash(tokens::hash(token))
         .first()
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?
-        .filter(|x| now.duration_since(x.last_used_at) < IDLE_TIMEOUT)
+        .filter(|x| now.duration_since(x.last_used_at) < AdminSession::IDLE_TIMEOUT)
     else {
         return Ok(None);
     };

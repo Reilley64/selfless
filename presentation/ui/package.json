@@ -41,6 +41,7 @@
     "react-native": "catalog:"
   },
   "jest": {
-    "preset": "jest-expo"
+    "preset": "jest-expo",
+    "resolver": "<rootDir>/jest.resolver.js"
   }
 }

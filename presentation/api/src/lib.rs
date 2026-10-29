@@ -1,6 +1,11 @@
 mod actuator;
 mod http_server;
+mod invites;
+mod problem;
+mod sessions;
 mod telemetry;
+mod user_auth;
+mod users;
 mod web;
 
 use infrastructure::AppState;
@@ -45,15 +50,26 @@ pub fn router(
         .route(actuator::liveness)
         .route(actuator::readiness)
         .route(actuator::info)
+        .route(sessions::sign_in)
+        .route(sessions::sign_out)
+        .route(users::me)
+        .route(users::change_password)
+        .route(invites::accept)
         .route(telemetry::traces)
         .route(telemetry::metrics)
         .route(telemetry::logs)
         .route(web::index)
-        .public_dir(web_dir)
+        .route(web::settings)
+        .route(web::invite)
+        .serve_dir(web::FILES, web_dir)
+        .layer(web::ContentSecurityPolicyLayer)
         .layer(LayerFn::new(
             Some("/admin"),
             web::strict_content_security_policy,
         ))
+        .layer(problem::BadRequestProblemLayer("/api"))
+        .layer(problem::BadRequestProblemLayer("/(public)/api"))
+        .layer(user_auth::UserAuthLayer)
         .layer(http_server::HttpServerLayer::new())
         .build()
 }

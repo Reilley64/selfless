@@ -1,5 +1,5 @@
 use crate::DbContext;
-use crate::session_tokens;
+use crate::tokens;
 use domain::AdminSession;
 
 #[fundle::deps]
@@ -13,7 +13,7 @@ pub struct Error;
 
 pub async fn call(dependencies: impl Into<Dependencies>, token: &str) -> Result<(), Error> {
     let mut db_context = dependencies.into().db_context;
-    AdminSession::filter_by_token_hash(session_tokens::hash(token))
+    AdminSession::filter_by_token_hash(tokens::hash(token))
         .delete()
         .exec(db_context.executor_mut())
         .await

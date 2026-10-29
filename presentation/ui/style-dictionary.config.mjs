@@ -46,8 +46,18 @@ export default {
         {
           destination: "theme.css",
           format: "css/variables",
-          filter: (token) => !isAdmin(token),
+          filter: (token) => !isAdmin(token) && token.path[0] !== "symbol",
           options: { selector: "@theme" },
+        },
+      ],
+    },
+    symbols: {
+      buildPath: "theme/",
+      files: [
+        {
+          destination: "symbols.json",
+          format: "json/nested",
+          filter: (token) => token.path[0] === "symbol",
         },
       ],
     },

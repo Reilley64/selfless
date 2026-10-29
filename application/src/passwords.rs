@@ -11,7 +11,14 @@ const DUMMY_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$RcmBi3W1jo5bbjttQ9AnKQ$
 #[display("failed to hash a password")]
 pub(crate) struct PasswordError;
 
+#[ohno::error]
+#[display("the password is empty")]
+pub struct EmptyPassword;
+
 pub(crate) async fn hash(password: String) -> Result<String, PasswordError> {
+    if password.is_empty() {
+        return Err(PasswordError::caused_by(EmptyPassword::new()));
+    }
     task::spawn_blocking(move || {
         Argon2::default()
             .hash_password(password.as_bytes())

@@ -220,15 +220,18 @@ name = "api"
 version = "0.1.0"
 dependencies = [
  "application",
+ "domain",
  "http",
  "infrastructure",
  "ohno",
  "opentelemetry",
  "opentelemetry_sdk",
  "serde",
+ "serde_json",
  "topcoat",
  "tracing",
  "tracing-opentelemetry",
+ "uuid",
 ]
 
 [[package]]
@@ -249,6 +252,7 @@ dependencies = [
  "toasty",
  "toasty-core",
  "tokio",
+ "tokio-postgres",
  "tracing",
  "uuid",
 ]
@@ -1176,6 +1180,7 @@ name = "domain"
 version = "0.1.0"
 dependencies = [
  "jiff",
+ "serde",
  "toasty",
  "uuid",
 ]
@@ -3798,6 +3803,7 @@ dependencies = [
  "admin",
  "api",
  "application",
+ "base64 0.22.1",
  "infrastructure",
  "jiff",
  "jsonschema",
@@ -5748,6 +5754,7 @@ dependencies = [
  "getrandom 0.4.3",
  "js-sys",
  "rand 0.10.3",
+ "serde_core",
  "sha1_smol",
  "wasm-bindgen",
 ]
@@ -6129,6 +6136,13 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 [[package]]
 name = "workers"
 version = "0.1.0"
+dependencies = [
+ "application",
+ "infrastructure",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
 
 [[package]]
 name = "write16"

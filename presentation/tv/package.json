@@ -19,14 +19,17 @@
     "expo-build-properties": "~58.0.11",
     "expo-constants": "~58.0.14",
     "expo-dev-client": "~58.0.17",
+    "expo-device": "~58.0.5",
     "expo-linking": "~58.0.15",
     "expo-router": "~58.0.28",
+    "expo-secure-store": "~58.0.2",
     "nativewind": "catalog:",
     "react": "catalog:",
     "react-native": "catalog:",
     "react-native-css": "catalog:",
     "react-native-safe-area-context": "~5.10.1",
-    "react-native-screens": "~4.30.0"
+    "react-native-screens": "~4.30.0",
+    "react-native-svg": "15.16.0"
   },
   "devDependencies": {
     "@react-native-tvos/config-tv": "^0.1.7",
