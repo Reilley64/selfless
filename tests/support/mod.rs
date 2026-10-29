@@ -232,6 +232,7 @@ impl TestServer {
                 .unwrap(),
             base: format!("http://{}", self.address),
             cookies: BTreeMap::new(),
+            headers: HeaderMap::new(),
         }
     }
 
@@ -515,6 +516,7 @@ pub struct Browser {
     client: reqwest::Client,
     base: String,
     cookies: BTreeMap<String, String>,
+    headers: HeaderMap,
 }
 
 pub struct Page {
@@ -581,7 +583,13 @@ impl Browser {
         self.cookies.insert(name.to_owned(), value.to_owned());
     }
 
+    pub fn set_header(&mut self, name: &'static str, value: &'static str) {
+        self.headers
+            .insert(name, reqwest::header::HeaderValue::from_static(value));
+    }
+
     async fn send(&mut self, mut request: RequestBuilder) -> Page {
+        request = request.headers(self.headers.clone());
         if !self.cookies.is_empty() {
             let header = self
                 .cookies

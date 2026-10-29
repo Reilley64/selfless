@@ -14,7 +14,7 @@ pub(crate) async fn csrf_field(cx: &Cx) -> topcoat::Result<impl View> {
         Some(cookie) => cookie.value().to_owned(),
         None => {
             let token = Token::random().encode();
-            cookies(cx).add(admin_cookie(CSRF_COOKIE, token.clone()));
+            cookies(cx).add(admin_cookie(cx, CSRF_COOKIE, token.clone()));
             token
         }
     };

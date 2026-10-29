@@ -19,6 +19,7 @@ use topcoat::cookie::cookies;
 use topcoat::router::RouterBuilder;
 use topcoat::router::error::forbidden;
 use topcoat::router::error::see_other;
+use topcoat::router::request::headers;
 use tracing::Span;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
@@ -26,6 +27,7 @@ pub(crate) const HOME_PATH: &str = "/admin";
 pub(crate) const SIGN_IN_PATH: &str = "/admin/sign-in";
 pub(crate) const SESSION_COOKIE: &str = "session";
 pub(crate) const CSRF_COOKIE: &str = "csrf";
+const X_FORWARDED_PROTO: &str = "x-forwarded-proto";
 
 pub fn register(router: RouterBuilder) -> RouterBuilder {
     router
@@ -61,11 +63,17 @@ pub(crate) async fn require_admin(cx: &Cx) -> topcoat::Result<()> {
     Ok(())
 }
 
-pub(crate) fn admin_cookie(name: &'static str, value: String) -> Cookie<'static> {
+pub(crate) fn admin_cookie(cx: &Cx, name: &'static str, value: String) -> Cookie<'static> {
     Cookie::build((name, value))
         .path(HOME_PATH)
         .http_only(true)
-        .secure(true)
+        .secure(reached_traefik_over_https(cx))
         .same_site(SameSite::Strict)
         .build()
+}
+
+fn reached_traefik_over_https(cx: &Cx) -> bool {
+    headers(cx)
+        .get(X_FORWARDED_PROTO)
+        .is_some_and(|x| x == "https")
 }

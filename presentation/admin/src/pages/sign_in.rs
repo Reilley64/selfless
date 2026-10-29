@@ -37,6 +37,6 @@ pub(crate) async fn sign_in(cx: &Cx, Form(form): Form<SignIn>) -> topcoat::Resul
     else {
         return Ok(view! { sign_in_template(failed: true) });
     };
-    cookies(cx).add(admin_cookie(SESSION_COOKIE, token));
+    cookies(cx).add(admin_cookie(cx, SESSION_COOKIE, token));
     Err(see_other(HOME_PATH).into())
 }

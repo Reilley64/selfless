@@ -79,24 +79,47 @@ async fn signing_out_ends_the_admin_session() {
 }
 
 #[tokio::test]
-async fn the_admin_session_cookie_is_http_only_secure_strict_and_scoped_to_admin() {
+async fn the_admin_session_cookie_is_http_only_strict_and_scoped_to_admin() {
     let database = TestDatabase::create().await;
     let server = TestServer::start(database.url()).await;
     let mut browser = server.browser();
 
     let signed_in = browser.sign_in(ADMIN_NAME, ADMIN_PASSWORD).await;
 
-    let session = signed_in
-        .set_cookies
-        .iter()
-        .find(|x| x.starts_with("session="))
-        .expect("a session cookie");
-    let attributes = session.split("; ").skip(1).collect::<Vec<_>>();
-    for attribute in ["HttpOnly", "Secure", "SameSite=Strict", "Path=/admin"] {
-        assert!(attributes.contains(&attribute), "{session}");
+    let attributes = cookie_attributes(&signed_in, "session");
+    for attribute in ["HttpOnly", "SameSite=Strict", "Path=/admin"] {
+        assert!(attributes.contains(&attribute.to_owned()), "{attributes:?}");
     }
     drop(server);
     database.drop().await;
+}
+
+#[tokio::test]
+async fn admin_cookies_are_secure_only_when_traefik_received_the_request_over_https() {
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+    let mut over_http = server.browser();
+    let mut over_https = server.browser();
+    over_https.set_header("x-forwarded-proto", "https");
+
+    let signed_in_over_http = over_http.sign_in(ADMIN_NAME, ADMIN_PASSWORD).await;
+    let form_over_https = over_https.get("/admin/sign-in").await;
+    let signed_in_over_https = over_https.sign_in(ADMIN_NAME, ADMIN_PASSWORD).await;
+
+    assert!(!cookie_attributes(&signed_in_over_http, "session").contains(&"Secure".to_owned()));
+    assert!(cookie_attributes(&signed_in_over_https, "session").contains(&"Secure".to_owned()));
+    assert!(cookie_attributes(&form_over_https, "csrf").contains(&"Secure".to_owned()));
+    drop(server);
+    database.drop().await;
+}
+
+fn cookie_attributes(page: &support::Page, name: &str) -> Vec<String> {
+    let cookie = page
+        .set_cookies
+        .iter()
+        .find(|x| x.starts_with(&format!("{name}=")))
+        .unwrap_or_else(|| panic!("no {name} cookie in {:?}", page.set_cookies));
+    cookie.split("; ").skip(1).map(str::to_owned).collect()
 }
 
 #[tokio::test]

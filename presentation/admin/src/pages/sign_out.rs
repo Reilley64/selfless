@@ -25,7 +25,7 @@ pub(crate) async fn sign_out(cx: &Cx, Form(form): Form<SignOut>) -> topcoat::Res
     verify_csrf(cx, &form.csrf)?;
     if let Some(session) = cookies(cx).get(SESSION_COOKIE) {
         admin_sign_out::call(app_context::<AppState>(cx), session.value()).await?;
-        cookies(cx).remove(admin_cookie(SESSION_COOKIE, String::new()));
+        cookies(cx).remove(admin_cookie(cx, SESSION_COOKIE, String::new()));
     }
     Ok(see_other(SIGN_IN_PATH))
 }
