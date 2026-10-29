@@ -1,0 +1,257 @@
+{
+  "space": {
+    "$type": "dimension",
+    "$description": "Spacing scale shared by both platforms, plus each platform's page inset.",
+    "1": {
+      "$value": {
+        "value": 4,
+        "unit": "px"
+      }
+    },
+    "2": {
+      "$value": {
+        "value": 8,
+        "unit": "px"
+      }
+    },
+    "3": {
+      "$value": {
+        "value": 12,
+        "unit": "px"
+      }
+    },
+    "4": {
+      "$value": {
+        "value": 16,
+        "unit": "px"
+      }
+    },
+    "5": {
+      "$value": {
+        "value": 20,
+        "unit": "px"
+      }
+    },
+    "6": {
+      "$value": {
+        "value": 24,
+        "unit": "px"
+      }
+    },
+    "8": {
+      "$value": {
+        "value": 32,
+        "unit": "px"
+      }
+    },
+    "10": {
+      "$value": {
+        "value": 40,
+        "unit": "px"
+      }
+    },
+    "12": {
+      "$value": {
+        "value": 48,
+        "unit": "px"
+      }
+    },
+    "16": {
+      "$value": {
+        "value": 64,
+        "unit": "px"
+      }
+    },
+    "tv": {
+      "inset": {
+        "$value": {
+          "value": 150,
+          "unit": "px"
+        },
+        "$description": "TV safe-area inset from the left edge, clear of the menu."
+      }
+    },
+    "web": {
+      "inset": {
+        "$value": {
+          "value": 48,
+          "unit": "px"
+        },
+        "$description": "Page gutter on the web."
+      }
+    }
+  },
+  "radius": {
+    "$type": "dimension",
+    "small": {
+      "$value": {
+        "value": 6,
+        "unit": "px"
+      }
+    },
+    "medium": {
+      "$value": {
+        "value": 10,
+        "unit": "px"
+      }
+    },
+    "large": {
+      "$value": {
+        "value": 12,
+        "unit": "px"
+      }
+    },
+    "pill": {
+      "$value": {
+        "value": 999,
+        "unit": "px"
+      }
+    }
+  },
+  "focus-ring": {
+    "$type": "dimension",
+    "tv": {
+      "width": {
+        "$value": {
+          "value": 5,
+          "unit": "px"
+        }
+      }
+    },
+    "web": {
+      "width": {
+        "$value": {
+          "value": 3,
+          "unit": "px"
+        }
+      }
+    }
+  },
+  "tile": {
+    "$type": "dimension",
+    "$description": "Landscape 16:9 tiles. Expanded is the card a focused (TV) or hovered (web) tile grows into.",
+    "tv": {
+      "width": {
+        "$value": {
+          "value": 300,
+          "unit": "px"
+        }
+      },
+      "height": {
+        "$value": {
+          "value": 169,
+          "unit": "px"
+        }
+      },
+      "expanded-width": {
+        "$value": {
+          "value": 760,
+          "unit": "px"
+        }
+      },
+      "expanded-height": {
+        "$value": {
+          "value": 340,
+          "unit": "px"
+        }
+      },
+      "gap": {
+        "$value": {
+          "value": 20,
+          "unit": "px"
+        }
+      }
+    },
+    "web": {
+      "width": {
+        "$value": {
+          "value": 240,
+          "unit": "px"
+        }
+      },
+      "height": {
+        "$value": {
+          "value": 135,
+          "unit": "px"
+        }
+      },
+      "expanded-width": {
+        "$value": {
+          "value": 520,
+          "unit": "px"
+        }
+      },
+      "expanded-height": {
+        "$value": {
+          "value": 292,
+          "unit": "px"
+        }
+      },
+      "gap": {
+        "$value": {
+          "value": 8,
+          "unit": "px"
+        }
+      }
+    }
+  },
+  "billboard": {
+    "$type": "dimension",
+    "tv": {
+      "height": {
+        "$value": {
+          "value": 900,
+          "unit": "px"
+        }
+      }
+    },
+    "web": {
+      "height": {
+        "$value": {
+          "value": 680,
+          "unit": "px"
+        }
+      }
+    }
+  },
+  "button": {
+    "$type": "dimension",
+    "tv": {
+      "height": {
+        "$value": {
+          "value": 72,
+          "unit": "px"
+        }
+      }
+    },
+    "web": {
+      "height": {
+        "$value": {
+          "value": 40,
+          "unit": "px"
+        }
+      }
+    }
+  },
+  "nav": {
+    "$type": "dimension",
+    "tv": {
+      "width": {
+        "$value": {
+          "value": 120,
+          "unit": "px"
+        },
+        "$description": "Collapsed left menu."
+      }
+    },
+    "web": {
+      "height": {
+        "$value": {
+          "value": 64,
+          "unit": "px"
+        },
+        "$description": "Top navigation bar."
+      }
+    }
+  }
+}
