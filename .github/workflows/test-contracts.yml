@@ -1,0 +1,32 @@
+name: "Test: Contracts"
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-contracts-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test-openapi:
+    name: "Test: OpenAPI contract"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: "Source: Check out the repository"
+        uses: actions/checkout@v7
+
+      - name: "Setup: Install the tools from mise.toml"
+        uses: jdx/mise-action@v5
+        with:
+          install_args: vacuum
+
+      - name: "Scan: Lint the OpenAPI file"
+        run: vacuum lint --details openapi.yaml
