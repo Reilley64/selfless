@@ -44,15 +44,12 @@ async fn readiness_with_a_traceparent_exports_an_http_span_with_a_child_database
         http.parent_span_id,
         SpanId::from_hex(PARENT_SPAN_ID).unwrap()
     );
-    let db = spans
-        .iter()
-        .find(|x| x.span_kind == SpanKind::Client)
-        .expect("a database client span");
-    assert_eq!(db.parent_span_id, http.span_context.span_id());
-    assert!(
-        db.attributes
-            .contains(&KeyValue::new("db.system.name", "postgresql"))
-    );
+    assert!(spans.iter().any(|x| {
+        x.span_kind == SpanKind::Client
+            && x.parent_span_id == http.span_context.span_id()
+            && x.attributes
+                .contains(&KeyValue::new("db.system.name", "postgresql"))
+    }));
     drop(server);
     database.drop().await;
 }
