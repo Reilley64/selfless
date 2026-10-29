@@ -15,6 +15,13 @@ The `code-review` step applies these rules to each diff. Each rule is a judgemen
 - Every database call goes through the `DbContext`, including hand-written SQL through `toasty::sql`. Hand-written SQL runs on PostgreSQL 14, the homelab's version.
 - Rustls is the only TLS stack. A dependency with a choice of TLS backend sets `default-features = false` and picks Rustls by name.
 
+## Files
+
+- Application groups use cases by capability. Each use case is `<use_case>.rs` with `call`, and its `Dependencies`, `Output` and `Error` sit in `<use_case>/dependencies.rs`, `output.rs` and `error.rs`. A marker error that only one use case returns goes in its `error.rs`. See `application/src/users/create_user.rs`.
+- Ports live in `application/src/ports/`. `persistence.rs` holds the `DbContext`, and `mod.rs` holds the callable ports in alphabetical order.
+- Domain has one file per type, re-exported from `lib.rs`.
+- API routes live in `presentation/api/src/routes/`, one file per resource and version, such as `routes/api/sessions/v1.rs`. The admin app splits its views into `pages/`, `templates/` and `atoms/`.
+
 ## Logging and telemetry
 
 - Log an error once, where it is handled, as `error = &error as &dyn Error` with a constant message.
