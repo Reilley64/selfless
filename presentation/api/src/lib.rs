@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use topcoat::router::Router;
+use topcoat::router::RouterBuilder;
 use topcoat::router::RouterBuilderDirectoryExt;
 
 #[derive(Clone, Default)]
@@ -29,8 +30,13 @@ impl Availability {
     }
 }
 
-pub fn router(state: AppState, availability: Availability, web_dir: PathBuf) -> Router {
-    Router::builder()
+pub fn router(
+    router: RouterBuilder,
+    state: AppState,
+    availability: Availability,
+    web_dir: PathBuf,
+) -> Router {
+    router
         .app_context(state)
         .app_context(availability)
         .route(actuator::health)
