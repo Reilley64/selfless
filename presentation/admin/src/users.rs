@@ -33,7 +33,9 @@ use super::require_admin;
 use super::verify_csrf;
 use application::EmptyPassword;
 use application::create_invite::AddressTaken;
+use domain::ClientKind;
 use domain::Colour;
+use domain::Session;
 use domain::Symbol;
 use domain::User;
 use infrastructure::AppState;
@@ -74,10 +76,12 @@ const RESET_PASSWORD_DIALOG_ID: &str = "reset-password-dialog";
 const RESET_PASSWORD_FORM_ID: &str = "reset-password-form";
 const DELETE_DIALOG_ID: &str = "delete-user-dialog";
 const DELETE_FORM_ID: &str = "delete-user-form";
+const SIGN_OUT_EVERYWHERE_DIALOG_ID: &str = "sign-out-everywhere-dialog";
 const SWAP: &str = "outerHTML";
 
 path_param!(invite_id: Uuid, error = not_found);
 path_param!(user_id: Uuid, error = not_found);
+path_param!(session_id: Uuid, error = not_found);
 
 static SYMBOLS: LazyLock<Symbols> = LazyLock::new(|| {
     serde_json::from_str(include_str!("../../ui/theme/symbols.json"))
@@ -106,6 +110,8 @@ pub(crate) fn register(router: RouterBuilder) -> RouterBuilder {
         .page(user_page)
         .route(reset_password)
         .route(delete_user)
+        .route(sign_out_device)
+        .route(sign_out_everywhere)
 }
 
 enum Notice {
@@ -280,6 +286,48 @@ async fn delete_user(cx: &Cx, Form(form): Form<DeleteForm>) -> topcoat::Result<V
     .await
 }
 
+#[route(POST "/admin/users/{user_id}/sessions/{session_id}/sign-out")]
+async fn sign_out_device(cx: &Cx, Form(form): Form<ActionForm>) -> topcoat::Result<ViewHandle> {
+    require_admin(cx).await?;
+    verify_csrf(cx, &form.csrf)?;
+    let user = find_user(cx).await?;
+    let session_id = *path_param::<SessionId>(cx)?;
+    let state = app_context::<AppState>(cx);
+    let session = signed_in_sessions(state, user.id)
+        .await?
+        .into_iter()
+        .find(|x| x.id == session_id);
+    let notice = match session {
+        Some(session) => {
+            application::end_session::call(state, session.id).await?;
+            log_admin_action(AdminAction::SessionEnd, session.id);
+            Notice::Done(format!(
+                "Signed {} out of {}, {}.",
+                user.name,
+                client_kind_label(session.client_kind),
+                session.device_name
+            ))
+        }
+        None => Notice::Failed("This device is already signed out."),
+    };
+    view! { cx => user_section(user: &user, notice: Some(notice)) }
+        .single()
+        .await
+}
+
+#[route(POST "/admin/users/{user_id}/sign-out")]
+async fn sign_out_everywhere(cx: &Cx, Form(form): Form<ActionForm>) -> topcoat::Result<ViewHandle> {
+    require_admin(cx).await?;
+    verify_csrf(cx, &form.csrf)?;
+    let user = find_user(cx).await?;
+    application::end_user_sessions::call(app_context::<AppState>(cx), user.id).await?;
+    log_admin_action(AdminAction::SessionEndAll, user.id);
+    let notice = Notice::Done(format!("Signed {} out everywhere.", user.name));
+    view! { cx => user_section(user: &user, notice: Some(notice)) }
+        .single()
+        .await
+}
+
 async fn find_user(cx: &Cx) -> topcoat::Result<User> {
     let user_id = *path_param::<UserId>(cx)?;
     application::get_user::call(app_context::<AppState>(cx), user_id)
@@ -296,6 +344,23 @@ async fn pending_invite_email(
         .into_iter()
         .find(|x| x.id == invite_id)
         .map(|x| x.email))
+}
+
+async fn signed_in_sessions(state: &AppState, user_id: Uuid) -> topcoat::Result<Vec<Session>> {
+    let now = state.clock.call();
+    Ok(application::list_user_sessions::call(state, user_id)
+        .await?
+        .into_iter()
+        .filter(|x| !x.expired(now))
+        .collect())
+}
+
+fn client_kind_label(client_kind: ClientKind) -> &'static str {
+    match client_kind {
+        ClientKind::Web => "Web",
+        ClientKind::AppleTv => "Apple TV",
+        ClientKind::GoogleTv => "Google TV",
+    }
 }
 
 fn origin(cx: &Cx) -> topcoat::Result<String> {
@@ -587,12 +652,14 @@ async fn invite_form(email: &str, error: Option<&'static str>) -> topcoat::Resul
 }
 
 #[component]
-async fn user_section(user: &User, notice: Option<Notice>) -> topcoat::Result<impl View> {
+async fn user_section(cx: &Cx, user: &User, notice: Option<Notice>) -> topcoat::Result<impl View> {
+    let sessions = signed_in_sessions(app_context::<AppState>(cx), user.id).await?;
     Ok(view! {
         <div id=(USER_ID) class="flex flex-col gap-6">
             if let Some(notice) = notice {
                 notice_alert(notice: notice)
             }
+            signed_in_on(user: user, sessions: &sessions)
             <section class="flex flex-col items-start gap-2">
                 <p class="text-sm text-muted-foreground">
                     "Set a new password when they forget theirs. This signs them out everywhere."
@@ -646,6 +713,141 @@ async fn user_section(user: &User, notice: Option<Notice>) -> topcoat::Result<im
                 )
             )
         </div>
+    })
+}
+
+#[component]
+async fn signed_in_on(user: &User, sessions: &[Session]) -> topcoat::Result<impl View> {
+    Ok(view! {
+        <section class="flex flex-col gap-4">
+            <div class="flex items-center justify-between gap-4">
+                <h2 class="text-base font-semibold">"Signed in on"</h2>
+                if !sessions.is_empty() {
+                    button(
+                        variant: ButtonVariant::Outline,
+                        attrs: attributes! {
+                            type="button"
+                            commandfor=(SIGN_OUT_EVERYWHERE_DIALOG_ID)
+                            command="show-modal"
+                        },
+                        "Sign out everywhere"
+                    )
+                }
+            </div>
+            if sessions.is_empty() {
+                <p class="text-sm text-muted-foreground">"Not signed in on any device."</p>
+            } else {
+                table(
+                    table_header(
+                        table_row(
+                            table_head("Client")
+                            table_head("Device")
+                            table_head("Signed in")
+                            table_head("Last used")
+                            table_head(<span class="sr-only">"Actions"</span>)
+                        )
+                    )
+                    table_body(
+                        for session in sessions {
+                            table_row(
+                                table_cell((client_kind_label(session.client_kind)))
+                                table_cell((&session.device_name))
+                                table_cell(local_time(at: session.signed_in_at, format: TimeFormat::Absolute))
+                                table_cell(
+                                    local_time(
+                                        at: session.last_used_at,
+                                        format: TimeFormat::Relative,
+                                        hour_precision: true,
+                                    )
+                                )
+                                table_cell(
+                                    <div class="flex justify-end">
+                                        button(
+                                            variant: ButtonVariant::Ghost,
+                                            size: ButtonSize::Sm,
+                                            attrs: attributes! {
+                                                type="button"
+                                                commandfor=(format!("sign-out-{}", session.id))
+                                                command="show-modal"
+                                            },
+                                            "Sign out"
+                                        )
+                                    </div>
+                                )
+                            )
+                        }
+                    )
+                )
+            }
+            for session in sessions {
+                alert_dialog(
+                    open: false,
+                    attrs: attributes! { id=(format!("sign-out-{}", session.id)) },
+                    dialog_content(
+                        dialog_header(
+                            dialog_title((format!(
+                                "Sign {} out of {}, {}?",
+                                user.name,
+                                client_kind_label(session.client_kind),
+                                session.device_name,
+                            )))
+                            dialog_description("They need their password to sign in on this device again.")
+                        )
+                        sign_out_form(
+                            action: format!("{USERS_PATH}/{}/sessions/{}/sign-out", user.id, session.id),
+                            dialog_id: format!("sign-out-{}", session.id),
+                            label: "Sign out",
+                        )
+                    )
+                )
+            }
+            alert_dialog(
+                open: false,
+                attrs: attributes! { id=(SIGN_OUT_EVERYWHERE_DIALOG_ID) },
+                dialog_content(
+                    dialog_header(
+                        dialog_title((format!("Sign {} out everywhere?", user.name)))
+                        dialog_description("They need their password to sign in on each device again.")
+                    )
+                    sign_out_form(
+                        action: format!("{USERS_PATH}/{}/sign-out", user.id),
+                        dialog_id: SIGN_OUT_EVERYWHERE_DIALOG_ID.to_owned(),
+                        label: "Sign out everywhere",
+                    )
+                )
+            )
+        </section>
+    })
+}
+
+#[component]
+async fn sign_out_form(
+    action: String,
+    dialog_id: String,
+    label: &'static str,
+) -> topcoat::Result<impl View> {
+    Ok(view! {
+        <form
+            method="post"
+            action=(&action)
+            hx-post=(&action)
+            hx-target=(format!("#{USER_ID}"))
+            hx-swap=(SWAP)
+        >
+            csrf_field()
+            dialog_footer(
+                button(
+                    variant: ButtonVariant::Outline,
+                    attrs: attributes! { type="button" commandfor=(&dialog_id) command="close" },
+                    "Cancel"
+                )
+                button(
+                    variant: ButtonVariant::Destructive,
+                    attrs: attributes! { type="submit" },
+                    (label)
+                )
+            )
+        </form>
     })
 }
 

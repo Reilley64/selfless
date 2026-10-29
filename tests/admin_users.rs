@@ -87,6 +87,37 @@ async fn sign_in(server: &TestServer, password: &str, client_kind: &str) -> Stri
     body["token"].as_str().unwrap().to_owned()
 }
 
+async fn sign_in_on(server: &TestServer, client_kind: &str, device_name: &str) -> String {
+    let (status, body) = server
+        .request(
+            Method::POST,
+            "/api/sessions/v1",
+            None,
+            Some(json!({
+                "name": NAME,
+                "password": PASSWORD,
+                "clientKind": client_kind,
+                "deviceName": device_name,
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    body["token"].as_str().unwrap().to_owned()
+}
+
+async fn confirm(browser: &mut Browser, page: &Page, dialog_title: &str) -> Page {
+    let title_at = page
+        .body
+        .find(&format!(">{dialog_title}<"))
+        .unwrap_or_else(|| panic!("the page has no {dialog_title:?} dialog\n{}", page.body));
+    let start = title_at + page.body[title_at..].find(r#"action=""#).unwrap() + r#"action=""#.len();
+    let length = page.body[start..].find('"').unwrap();
+    let action = page.body[start..start + length].to_owned();
+    browser
+        .post_form(&action, &[("csrf", &page.csrf_token())])
+        .await
+}
+
 #[tokio::test]
 async fn users_lists_each_user_with_their_created_time_signed_in_devices_and_last_use() {
     let database = TestDatabase::create().await;
@@ -350,6 +381,140 @@ async fn a_user_is_deleted_only_when_the_typed_name_matches_in_any_capitals() {
     );
     assert_eq!(rows_with(&users, NAME), Vec::<Vec<String>>::new());
     assert_eq!(me(&server, &token).await, StatusCode::UNAUTHORIZED);
+    drop(server);
+    database.drop().await;
+}
+
+#[tokio::test]
+async fn a_users_page_lists_the_devices_they_are_signed_in_on() {
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+    server.create_user(NAME, PASSWORD).await;
+    sign_in_on(&server, "web", "Firefox on macOS").await;
+    server.clock.advance(SignedDuration::from_hours(31 * 24));
+    let tv_signed_in_at = server.clock.now();
+    let tv = sign_in_on(&server, "appleTv", "Living Room").await;
+    server.clock.advance(SignedDuration::from_hours(2));
+    let google_tv_signed_in_at = server.clock.now();
+    sign_in_on(&server, "googleTv", "Bedroom").await;
+    server.clock.advance(SignedDuration::from_hours(3));
+    let tv_used_at = server.clock.now();
+    me(&server, &tv).await;
+    let mut browser = admin(&server).await;
+
+    let user = user_page(&mut browser, NAME).await;
+
+    assert_eq!(
+        user.table_rows(),
+        [
+            vec![
+                "Apple TV".to_owned(),
+                "Living Room".to_owned(),
+                utc(tv_signed_in_at),
+                utc(tv_used_at),
+                "Sign out".to_owned(),
+            ],
+            vec![
+                "Google TV".to_owned(),
+                "Bedroom".to_owned(),
+                utc(google_tv_signed_in_at),
+                utc(google_tv_signed_in_at),
+                "Sign out".to_owned(),
+            ],
+        ]
+    );
+    let text = user.text();
+    for expected in ["Signed in on", "Sign out everywhere"] {
+        assert!(
+            text.contains(expected),
+            "{expected:?} is missing\n{}",
+            user.body
+        );
+    }
+    assert!(!text.to_lowercase().contains("session"), "{text}");
+    drop(server);
+    database.drop().await;
+}
+
+#[tokio::test]
+async fn signing_out_one_device_ends_only_that_sign_in() {
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+    server.create_user(NAME, PASSWORD).await;
+    let living_room = sign_in_on(&server, "appleTv", "Living Room").await;
+    let bedroom = sign_in_on(&server, "googleTv", "Bedroom").await;
+    let mut browser = admin(&server).await;
+    let user = user_page(&mut browser, NAME).await;
+
+    let signed_out = confirm(
+        &mut browser,
+        &user,
+        &format!("Sign {NAME} out of Apple TV, Living Room?"),
+    )
+    .await;
+    let again = confirm(
+        &mut browser,
+        &user,
+        &format!("Sign {NAME} out of Apple TV, Living Room?"),
+    )
+    .await;
+
+    assert_eq!(signed_out.status, StatusCode::OK);
+    assert!(
+        signed_out
+            .text()
+            .contains(&format!("Signed {NAME} out of Apple TV, Living Room.")),
+        "{}",
+        signed_out.body
+    );
+    assert_eq!(
+        signed_out
+            .table_rows()
+            .into_iter()
+            .map(|x| x[1].clone())
+            .collect::<Vec<_>>(),
+        ["Bedroom"]
+    );
+    assert!(
+        again.text().contains("This device is already signed out."),
+        "{}",
+        again.body
+    );
+    assert_eq!(me(&server, &living_room).await, StatusCode::UNAUTHORIZED);
+    assert_eq!(me(&server, &bedroom).await, StatusCode::OK);
+    drop(server);
+    database.drop().await;
+}
+
+#[tokio::test]
+async fn signing_out_everywhere_ends_every_sign_in_of_that_user_only() {
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+    server.create_user(NAME, PASSWORD).await;
+    server.create_user("Ravi", PASSWORD).await;
+    let web = sign_in_on(&server, "web", "Firefox on macOS").await;
+    let tv = sign_in_on(&server, "appleTv", "Living Room").await;
+    let (_, ravi) = server.sign_in("Ravi", PASSWORD, "appleTv").await;
+    let mut browser = admin(&server).await;
+    let user = user_page(&mut browser, NAME).await;
+
+    let signed_out = confirm(&mut browser, &user, &format!("Sign {NAME} out everywhere?")).await;
+
+    assert_eq!(signed_out.status, StatusCode::OK);
+    assert!(
+        signed_out
+            .text()
+            .contains(&format!("Signed {NAME} out everywhere.")),
+        "{}",
+        signed_out.body
+    );
+    assert_eq!(signed_out.table_rows(), Vec::<Vec<String>>::new());
+    assert_eq!(me(&server, &web).await, StatusCode::UNAUTHORIZED);
+    assert_eq!(me(&server, &tv).await, StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        me(&server, ravi["token"].as_str().unwrap()).await,
+        StatusCode::OK
+    );
     drop(server);
     database.drop().await;
 }

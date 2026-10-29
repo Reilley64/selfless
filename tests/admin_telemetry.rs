@@ -275,3 +275,70 @@ async fn each_users_page_action_logs_its_action_and_target_without_the_email_add
     drop(server);
     database.drop().await;
 }
+
+#[tokio::test]
+async fn signing_a_user_out_logs_the_device_or_the_user_as_the_target() {
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+    let user_id = server.create_user(USER_NAME, USER_PASSWORD).await;
+    server.sign_in(USER_NAME, USER_PASSWORD, "appleTv").await;
+    let mut browser = server.browser();
+    browser.sign_in(ADMIN_NAME, ADMIN_PASSWORD).await;
+    let exporter = InMemoryLogExporter::default();
+    let provider = SdkLoggerProvider::builder()
+        .with_simple_exporter(exporter.clone())
+        .build();
+    let _tracing = tracing::subscriber::set_default(
+        tracing_subscriber::registry()
+            .with(LevelFilter::INFO)
+            .with(OpenTelemetryTracingBridge::new(&provider)),
+    );
+
+    let user = browser.get(&format!("/admin/users/{user_id}")).await;
+    let csrf = user.csrf_token();
+    let sign_out_device = user
+        .body
+        .split(r#"action=""#)
+        .map(|x| &x[..x.find('"').unwrap()])
+        .find(|x| x.contains("/sessions/"))
+        .unwrap()
+        .to_owned();
+    let session_id = sign_out_device.split('/').nth(5).unwrap().to_owned();
+    browser
+        .post_form(&sign_out_device, &[("csrf", &csrf)])
+        .await;
+    browser
+        .post_form(
+            &format!("/admin/users/{user_id}/sign-out"),
+            &[("csrf", &csrf)],
+        )
+        .await;
+
+    let actions = exporter
+        .get_emitted_logs()
+        .unwrap()
+        .iter()
+        .filter(|x| x.record.body() == Some(&AnyValue::from("admin action")))
+        .map(|x| {
+            ["selfless.admin.action", "selfless.admin.target.id"].map(|key| {
+                x.record
+                    .attributes_iter()
+                    .find(|(name, _)| name.as_str() == key)
+                    .map(|(_, value)| match value {
+                        AnyValue::String(value) => value.to_string(),
+                        value => format!("{value:?}"),
+                    })
+                    .unwrap()
+            })
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        actions,
+        [
+            ["session.end".to_owned(), session_id],
+            ["session.end_all".to_owned(), user_id.to_string()],
+        ]
+    );
+    drop(server);
+    database.drop().await;
+}
