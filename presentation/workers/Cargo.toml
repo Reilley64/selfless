@@ -9,5 +9,6 @@ publish.workspace = true
 application = { workspace = true }
 domain = { workspace = true }
 infrastructure = { workspace = true }
+jiff = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }

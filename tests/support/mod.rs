@@ -424,6 +424,27 @@ impl StubRadarr {
             .await;
     }
 
+    pub async fn fail_movie(&self, id: i64) {
+        Mock::given(method("GET"))
+            .and(path(format!("/api/v3/movie/{id}")))
+            .respond_with(ResponseTemplate::new(
+                StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
+            ))
+            .mount(&self.0)
+            .await;
+    }
+
+    pub async fn movie_requests(&self, id: i64) -> usize {
+        let movie_path = format!("/api/v3/movie/{id}");
+        self.0
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .filter(|x| x.url.path() == movie_path)
+            .count()
+    }
+
     pub async fn serve_movies(&self, status: StatusCode, body: &str) {
         self.0.reset().await;
         Mock::given(method("GET"))

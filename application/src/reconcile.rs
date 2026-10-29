@@ -12,6 +12,8 @@ use crate::sync_movie;
 use crate::sync_show;
 use crate::sync_status::ReconcileProgress;
 use domain::HeldRemoval;
+use domain::InboxRow;
+use domain::InboxRowStatus;
 use domain::Movie;
 use domain::ReconcileResult;
 use domain::Show;
@@ -139,13 +141,16 @@ async fn reconcile_movies(
         .map(|x| x.tmdb_id)
         .collect::<HashSet<_>>();
     set_total(progress, radarr_movies.len());
+    let mut synced = HashSet::new();
     for radarr_movie in radarr_movies {
+        synced.insert(radarr_movie.radarr_id);
         sync_movie::save(db_context, radarr_movie)
             .instrument(sync_movie::span())
             .await
             .map_err(Error::caused_by)?;
         imported(progress);
     }
+    resolve_failed_rows(db_context, Source::Radarr, &synced).await?;
     let movies = Movie::all()
         .exec(db_context.executor_mut())
         .await
@@ -169,6 +174,7 @@ async fn reconcile_shows(
     let listed = series.iter().map(|x| x.tvdb_id).collect::<HashSet<_>>();
     set_total(progress, series.len());
     let mut failed_calls = 0;
+    let mut synced = HashSet::new();
     for series in series {
         let span = sync_show::span();
         match get_sonarr_episodes
@@ -177,6 +183,7 @@ async fn reconcile_shows(
             .await
         {
             Ok(episodes) => {
+                synced.insert(series.sonarr_id);
                 sync_show::save(db_context, SonarrShow { series, episodes })
                     .instrument(span)
                     .await
@@ -194,6 +201,7 @@ async fn reconcile_shows(
         }
         imported(progress);
     }
+    resolve_failed_rows(db_context, Source::Sonarr, &synced).await?;
     if failed_calls > 0 {
         return Err(Error::caused_by(format!(
             "{failed_calls} calls to Sonarr failed, so nothing was removed"
@@ -210,6 +218,32 @@ async fn reconcile_shows(
         .map(|x| x.id)
         .collect();
     remove_or_hold(db_context, Source::Sonarr, total, removed).await
+}
+
+async fn resolve_failed_rows(
+    db_context: &mut DbContext,
+    source: Source,
+    synced: &HashSet<i64>,
+) -> Result<(), Error> {
+    let failed_rows = InboxRow::filter(
+        InboxRow::fields()
+            .status()
+            .eq(InboxRowStatus::Failed)
+            .and(InboxRow::fields().source().eq(source)),
+    )
+    .exec(db_context.executor_mut())
+    .await
+    .map_err(Error::caused_by)?;
+    for mut row in failed_rows {
+        if row.source_item_id.is_some_and(|x| synced.contains(&x)) {
+            row.update()
+                .status(InboxRowStatus::Resolved)
+                .exec(db_context.executor_mut())
+                .await
+                .map_err(Error::caused_by)?;
+        }
+    }
+    Ok(())
 }
 
 fn set_total(progress: &Mutex<Option<ReconcileProgress>>, total: usize) {

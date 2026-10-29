@@ -88,6 +88,7 @@ impl Server {
     pub async fn serve(self, shutdown: impl Future<Output = ()>) -> Result<(), AppError> {
         let availability = self.availability;
         let inbox = tokio::spawn(workers::inbox(self.state.clone()));
+        let inbox_cleanup = tokio::spawn(workers::inbox_cleanup(self.state.clone()));
         let reconciles = tokio::spawn(workers::reconcile(self.state, self.reconcile_interval));
         availability.accept_traffic();
         tracing::info!(
@@ -102,6 +103,7 @@ impl Server {
         })
         .await;
         inbox.abort();
+        inbox_cleanup.abort();
         reconciles.abort();
         Ok(served?)
     }

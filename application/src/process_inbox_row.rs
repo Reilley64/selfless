@@ -1,4 +1,5 @@
 use crate::DbContext;
+use crate::ports::Clock;
 use crate::ports::GetRadarrMovie;
 use crate::ports::GetSonarrShow;
 use crate::sync_movie;
@@ -8,6 +9,7 @@ use crate::webhook_deliveries;
 use domain::InboxRow;
 use domain::InboxRowStatus;
 use domain::Source;
+use jiff::SignedDuration;
 use opentelemetry::propagation::TextMapPropagator;
 use opentelemetry::trace::TraceContextExt;
 use opentelemetry_sdk::propagation::TraceContextPropagator;
@@ -21,6 +23,7 @@ use uuid::Uuid;
 
 #[fundle::deps]
 pub struct Dependencies {
+    pub clock: Clock,
     pub db_context: DbContext,
     pub get_radarr_movie: GetRadarrMovie,
     pub get_sonarr_show: GetSonarrShow,
@@ -29,6 +32,13 @@ pub struct Dependencies {
 #[ohno::error]
 #[display("failed to process an inbox row")]
 pub struct Error;
+
+const RETRY_DELAYS: [SignedDuration; 4] = [
+    SignedDuration::from_mins(1),
+    SignedDuration::from_mins(5),
+    SignedDuration::from_mins(15),
+    SignedDuration::from_mins(30),
+];
 
 #[derive(Deserialize)]
 #[serde(tag = "eventType")]
@@ -96,17 +106,26 @@ struct SonarrSeries {
     id: i64,
 }
 
+enum Target {
+    Movie(i64),
+    Show(i64),
+    Nothing,
+}
+
 pub async fn call(dependencies: impl Into<Dependencies>) -> Result<bool, Error> {
     let Dependencies {
+        clock,
         mut db_context,
         get_radarr_movie,
         get_sonarr_show,
     } = dependencies.into();
+    let claimed_at = clock.call();
     let Some(claimed) = toasty::sql::query(
-        "UPDATE inbox_rows SET status = 'processing' WHERE id = (\
-         SELECT id FROM inbox_rows WHERE status = 'pending' \
+        "UPDATE inbox_rows SET status = 'processing', attempts = attempts + 1 WHERE id = (\
+         SELECT id FROM inbox_rows WHERE status = 'pending' AND next_attempt_at <= $1 \
          ORDER BY received_at LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING id, traceparent",
     )
+    .bind(claimed_at)
     .exec(db_context.executor_mut())
     .instrument(unsampled::inbox_poll())
     .await
@@ -147,79 +166,100 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<bool, Error> 
         );
         span.record("selfless.webhook.source", row.source.name());
         span.record("selfless.webhook.event_type", row.event_type.as_deref());
-        let sync_movie = sync_movie::Dependencies {
-            db_context: db_context.clone(),
-            get_radarr_movie,
+        let target = target(row.source, &row.body);
+        let source_item_id = match target {
+            Ok(Target::Movie(id) | Target::Show(id)) => Some(id),
+            Ok(Target::Nothing) | Err(_) => None,
         };
-        let sync_show = sync_show::Dependencies {
-            db_context: db_context.clone(),
-            get_sonarr_show,
-        };
-        let (status, outcome) = dispatch(row.source, &row.body, sync_movie, sync_show)
+        let processed: Result<_, Box<dyn std::error::Error + Send + Sync>> = match target {
+            Ok(Target::Movie(radarr_id)) => sync_movie::call(
+                sync_movie::Dependencies {
+                    db_context: db_context.clone(),
+                    get_radarr_movie,
+                },
+                radarr_id,
+            )
             .await
-            .unwrap_or_else(|error| {
+            .map(|()| (InboxRowStatus::Processed, "processed"))
+            .map_err(Into::into),
+            Ok(Target::Show(sonarr_id)) => sync_show::call(
+                sync_show::Dependencies {
+                    db_context: db_context.clone(),
+                    get_sonarr_show,
+                },
+                sonarr_id,
+            )
+            .await
+            .map(|()| (InboxRowStatus::Processed, "processed"))
+            .map_err(Into::into),
+            Ok(Target::Nothing) => Ok((InboxRowStatus::Ignored, "ignored")),
+            Err(error) => Err(error.into()),
+        };
+        let (status, next_attempt_at, error, outcome) = match processed {
+            Ok((status, outcome)) => (status, row.next_attempt_at, None, outcome),
+            Err(error) => {
                 tracing::warn!(
                     error = &*error as &dyn std::error::Error,
                     "failed to process a webhook delivery"
                 );
-                (InboxRowStatus::Failed, "failed")
-            });
+                let retry = usize::try_from(row.attempts - 1)
+                    .ok()
+                    .and_then(|x| RETRY_DELAYS.get(x));
+                let (status, next_attempt_at) = match retry {
+                    Some(delay) => (InboxRowStatus::Pending, claimed_at + *delay),
+                    None => (InboxRowStatus::Failed, row.next_attempt_at),
+                };
+                (status, next_attempt_at, Some(error.to_string()), "failed")
+            }
+        };
         span.record("selfless.webhook.outcome", outcome);
         let (source, event_type) = (row.source, row.event_type.clone());
         row.update()
             .status(status)
+            .next_attempt_at(next_attempt_at)
+            .error(error)
+            .source_item_id(source_item_id)
             .exec(db_context.executor_mut())
             .await
             .map_err(Error::caused_by)?;
-        webhook_deliveries::count(source, event_type, outcome);
+        if status != InboxRowStatus::Pending {
+            webhook_deliveries::count(source, event_type, outcome);
+        }
         Ok(true)
     }
     .instrument(span)
     .await
 }
 
-async fn dispatch(
-    source: Source,
-    body: &[u8],
-    sync_movie: sync_movie::Dependencies,
-    sync_show: sync_show::Dependencies,
-) -> Result<(InboxRowStatus, &'static str), Box<dyn std::error::Error + Send + Sync>> {
-    let processed = (InboxRowStatus::Processed, "processed");
-    let ignored = (InboxRowStatus::Ignored, "ignored");
-    match source {
+fn target(source: Source, body: &[u8]) -> Result<Target, serde_json::Error> {
+    Ok(match source {
         Source::Radarr => match serde_json::from_slice(body)? {
             RadarrEvent::Download { movie }
             | RadarrEvent::Rename { movie }
             | RadarrEvent::MovieAdded { movie }
             | RadarrEvent::MovieDelete { movie }
-            | RadarrEvent::MovieFileDelete { movie } => {
-                sync_movie::call(sync_movie, movie.id).await?;
-                Ok(processed)
-            }
+            | RadarrEvent::MovieFileDelete { movie } => Target::Movie(movie.id),
             RadarrEvent::Test
             | RadarrEvent::Grab
             | RadarrEvent::Health
             | RadarrEvent::HealthRestored
             | RadarrEvent::ApplicationUpdate
             | RadarrEvent::ManualInteractionRequired
-            | RadarrEvent::Other => Ok(ignored),
+            | RadarrEvent::Other => Target::Nothing,
         },
         Source::Sonarr => match serde_json::from_slice(body)? {
             SonarrEvent::Download { series }
             | SonarrEvent::Rename { series }
             | SonarrEvent::SeriesAdd { series }
             | SonarrEvent::SeriesDelete { series }
-            | SonarrEvent::EpisodeFileDelete { series } => {
-                sync_show::call(sync_show, series.id).await?;
-                Ok(processed)
-            }
+            | SonarrEvent::EpisodeFileDelete { series } => Target::Show(series.id),
             SonarrEvent::Test
             | SonarrEvent::Grab
             | SonarrEvent::Health
             | SonarrEvent::HealthRestored
             | SonarrEvent::ApplicationUpdate
             | SonarrEvent::ManualInteractionRequired
-            | SonarrEvent::Other => Ok(ignored),
+            | SonarrEvent::Other => Target::Nothing,
         },
-    }
+    })
 }

@@ -82,6 +82,10 @@ pub async fn call(
         received_at,
         traceparent: carrier.remove("traceparent"),
         status: InboxRowStatus::Pending,
+        attempts: 0,
+        next_attempt_at: received_at,
+        error: None,
+        source_item_id: None,
     })
     .exec(db_context.executor_mut())
     .await

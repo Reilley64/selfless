@@ -26,6 +26,7 @@ pub enum InboxRowStatus {
     Processed,
     Ignored,
     Failed,
+    Resolved,
 }
 
 #[derive(Debug, toasty::Model)]
@@ -40,6 +41,10 @@ pub struct InboxRow {
     pub traceparent: Option<String>,
     #[index]
     pub status: InboxRowStatus,
+    pub attempts: i64,
+    pub next_attempt_at: Timestamp,
+    pub error: Option<String>,
+    pub source_item_id: Option<i64>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, toasty::Embed)]
