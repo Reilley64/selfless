@@ -5,25 +5,24 @@ use crate::library_items;
 use crate::library_items::Change;
 use crate::media_files;
 use crate::media_files::Inspected;
+use crate::metadata;
+use crate::metadata::FoundArtwork;
+use crate::metadata::Nfo;
+use crate::metadata::Owner;
 use crate::ports::EpisodeFolder;
 use crate::ports::EpisodeNfo;
-use crate::ports::FoundFile;
 use crate::ports::GetSonarrShow;
 use crate::ports::ShowFolder;
 use crate::ports::ShowNfo;
 use crate::ports::SonarrEpisode;
 use crate::ports::SonarrSeries;
 use crate::ports::SonarrShow;
-use domain::Actor;
-use domain::Artwork;
 use domain::ArtworkKind;
 use domain::Episode;
 use domain::MediaFile;
 use domain::Season;
 use domain::Show;
 use domain::Source;
-use domain::SyncProblem;
-use domain::SyncProblemKind;
 use futures_util::future::try_join_all;
 use jiff::Timestamp;
 use jiff::civil::Date;
@@ -77,17 +76,6 @@ pub async fn call(dependencies: impl Into<Dependencies>, sonarr_id: i64) -> Resu
 
 pub(crate) fn span() -> Span {
     tracing::info_span!("sync_show", otel.name = "sync sonarr show")
-}
-
-struct EpisodeFile {
-    folder: EpisodeFolder,
-}
-
-enum Nfo<T> {
-    Missing,
-    Unchanged,
-    Read(T, Timestamp),
-    Unreadable(String),
 }
 
 #[derive(Clone, PartialEq)]
@@ -211,14 +199,6 @@ impl EpisodeMetadata {
     }
 }
 
-#[derive(PartialEq)]
-struct FoundArtwork {
-    season_id: Option<Uuid>,
-    episode_id: Option<Uuid>,
-    kind: ArtworkKind,
-    file: FoundFile,
-}
-
 pub(crate) async fn save(
     db_context: &mut DbContext,
     media_folder: &MediaFolder,
@@ -233,9 +213,7 @@ pub(crate) async fn save(
         if !files.contains_key(&file.path) {
             files.insert(
                 file.path.clone(),
-                EpisodeFile {
-                    folder: media_folder.read_episode_folder.call(&file.path).await,
-                },
+                media_folder.read_episode_folder.call(&file.path).await,
             );
         }
     }
@@ -275,7 +253,7 @@ pub(crate) async fn save(
     .into_iter()
     .collect::<HashMap<_, _>>();
     let mut transaction = db_context.transaction().await.map_err(Error::caused_by)?;
-    let change = sync(
+    let change = write(
         transaction.executor_mut(),
         sonarr_show,
         &files,
@@ -293,16 +271,36 @@ pub(crate) async fn save(
 
 pub(crate) async fn remove(db_context: &mut DbContext, show: Show) -> Result<(), Error> {
     let mut transaction = db_context.transaction().await.map_err(Error::caused_by)?;
-    delete(transaction.executor_mut(), show).await?;
+    let db = transaction.executor_mut();
+    let seasons = show
+        .seasons()
+        .exec(db)
+        .await
+        .map_err(Error::caused_by)?
+        .into_iter()
+        .map(|x| x.id)
+        .collect::<Vec<_>>();
+    let media_file_ids = episodes_of(db, &seasons)
+        .await?
+        .into_iter()
+        .filter_map(|x| x.media_file_id)
+        .collect::<HashSet<_>>();
+    metadata::delete(db, Owner::Show(show.id))
+        .await
+        .map_err(Error::caused_by)?;
+    show.delete().exec(db).await.map_err(Error::caused_by)?;
+    media_files::delete(db, media_file_ids.into_iter().collect())
+        .await
+        .map_err(Error::caused_by)?;
     transaction.commit().await.map_err(Error::caused_by)?;
     library_items::count(Source::Sonarr, Change::Removed);
     Ok(())
 }
 
-async fn sync(
+async fn write(
     db: &mut dyn toasty::Executor,
     sonarr_show: SonarrShow,
-    files: &HashMap<String, EpisodeFile>,
+    files: &HashMap<String, EpisodeFolder>,
     mut inspected: HashMap<String, Inspected>,
     folder: ShowFolder,
     media_folder: &MediaFolder,
@@ -313,27 +311,16 @@ async fn sync(
         .exec(db)
         .await
         .map_err(Error::caused_by)?;
-    let nfo = match folder.nfo {
-        None => Nfo::Missing,
-        Some(file)
-            if stored
-                .as_ref()
-                .is_some_and(|x| x.nfo_modified_at == Some(file.modified_at)) =>
-        {
-            Nfo::Unchanged
-        }
-        Some(file) => match media_folder.read_show_nfo.call(&file.path).await {
-            Ok(nfo) => Nfo::Read(nfo, file.modified_at),
-            Err(error) => {
-                warn_unreadable(&error, &file.path);
-                Nfo::Unreadable(file.path)
-            }
-        },
-    };
+    let nfo = Nfo::read(
+        folder.nfo,
+        stored.as_ref().and_then(|x| x.nfo_modified_at),
+        |path| media_folder.read_show_nfo.call(path),
+    )
+    .await;
+    let had_nfo = stored.as_ref().is_some_and(|x| x.nfo_modified_at.is_some());
     let metadata = ShowMetadata::of(&nfo, &series, stored.as_ref());
     let (show, show_change) = match stored {
         Some(mut show) => {
-            let had_nfo = show.nfo_modified_at.is_some();
             let changed = show.sonarr_id != series.sonarr_id
                 || show.year != series.year
                 || ShowMetadata::stored(&show) != metadata;
@@ -352,13 +339,6 @@ async fn sync(
                     .genres(metadata.genres)
                     .rating(metadata.rating)
                     .nfo_modified_at(metadata.nfo_modified_at)
-                    .exec(db)
-                    .await
-                    .map_err(Error::caused_by)?;
-            }
-            if had_nfo && !matches!(nfo, Nfo::Unchanged) {
-                Actor::filter_by_show_id(show.id)
-                    .delete()
                     .exec(db)
                     .await
                     .map_err(Error::caused_by)?;
@@ -388,19 +368,15 @@ async fn sync(
             Some(Change::Added),
         ),
     };
-    if let Nfo::Read(nfo, _) = &nfo {
-        for actor in &nfo.actors {
-            toasty::create!(Actor {
-                movie_id: None,
-                show_id: Some(show.id),
-                name: actor.name.clone(),
-                role: actor.role.clone(),
-                order: actor.order,
-            })
-            .exec(db)
+    let owner = Owner::Show(show.id);
+    if !matches!(nfo, Nfo::Unchanged) {
+        let actors = match &nfo {
+            Nfo::Read(nfo, _) => nfo.actors.as_slice(),
+            _ => &[],
+        };
+        metadata::replace_actors(db, owner, had_nfo, actors)
             .await
             .map_err(Error::caused_by)?;
-        }
     }
     let mut changed = show_change.is_some();
     let mut artwork = [
@@ -436,7 +412,7 @@ async fn sync(
         .filter_map(|x| x.media_file_id)
         .collect::<HashSet<_>>();
     let mut synced_seasons = HashSet::new();
-    let mut media_files = HashSet::new();
+    let mut media_file_ids = HashSet::new();
     let mut nfo_roots = HashMap::new();
     let mut unreadable_nfos = HashMap::new();
     let mut saved = HashMap::new();
@@ -449,7 +425,7 @@ async fn sync(
             let metadata = EpisodeMetadata::stored(&x);
             (x, metadata)
         });
-        let nfo = match file.and_then(|x| x.folder.nfo.as_ref()) {
+        let nfo = match file.and_then(|x| x.nfo.as_ref()) {
             None => Nfo::Missing,
             Some(nfo_file)
                 if stored
@@ -462,7 +438,7 @@ async fn sync(
                 if !nfo_roots.contains_key(&nfo_file.path) {
                     let roots = media_folder.read_episode_nfo.call(&nfo_file.path).await;
                     if let Err(error) = &roots {
-                        warn_unreadable(error, &nfo_file.path);
+                        metadata::warn_unreadable(error, &nfo_file.path);
                     }
                     nfo_roots.insert(nfo_file.path.clone(), roots.ok());
                 }
@@ -514,7 +490,7 @@ async fn sync(
                     }
                     None => saved[&sonarr_file.path],
                 };
-                media_files.insert(id);
+                media_file_ids.insert(id);
                 if let Nfo::Unreadable(path) = &nfo {
                     unreadable_nfos.insert(id, path.clone());
                 }
@@ -572,7 +548,7 @@ async fn sync(
                 .id
             }
         };
-        if let Some(thumb) = file.and_then(|x| x.folder.thumb.clone()) {
+        if let Some(thumb) = file.and_then(|x| x.thumb.clone()) {
             artwork.push(FoundArtwork {
                 season_id: None,
                 episode_id: Some(episode_id),
@@ -600,164 +576,37 @@ async fn sync(
         .map(|x| x.id)
         .collect::<Vec<_>>();
     let removed_media_files = old_media_files
-        .difference(&media_files)
+        .difference(&media_file_ids)
         .copied()
         .collect::<Vec<_>>();
     changed |= !episodes.is_empty() || !seasons.is_empty() || !removed_media_files.is_empty();
     delete_episodes(db, episodes).await?;
     delete_seasons(db, seasons).await?;
-    delete_media_files(db, removed_media_files).await?;
-    changed |= save_artwork(db, show.id, artwork).await?;
-    let show_nfo = match &nfo {
-        Nfo::Unreadable(path) => Some(path.as_str()),
-        _ => None,
-    };
-    save_unreadable_nfos(db, show.id, show_nfo, &media_files, unreadable_nfos).await?;
-    Ok(show_change.or(changed.then_some(Change::Changed)))
-}
-
-fn warn_unreadable(error: &crate::ports::UnreadableNfo, path: &str) {
-    tracing::warn!(
-        error = error as &dyn std::error::Error,
-        file.path = path,
-        "failed to read an NFO file"
-    );
-}
-
-async fn save_artwork(
-    db: &mut dyn toasty::Executor,
-    show_id: Uuid,
-    found: Vec<FoundArtwork>,
-) -> Result<bool, Error> {
-    let stored = Artwork::filter_by_show_id(show_id)
-        .exec(db)
-        .await
-        .map_err(Error::caused_by)?
-        .into_iter()
-        .map(|x| FoundArtwork {
-            season_id: x.season_id,
-            episode_id: x.episode_id,
-            kind: x.kind,
-            file: FoundFile {
-                path: x.path,
-                modified_at: x.modified_at,
-            },
-        })
-        .collect::<Vec<_>>();
-    if stored.len() == found.len() && found.iter().all(|x| stored.contains(x)) {
-        return Ok(false);
-    }
-    Artwork::filter_by_show_id(show_id)
-        .delete()
-        .exec(db)
+    media_files::delete(db, removed_media_files)
         .await
         .map_err(Error::caused_by)?;
-    for artwork in found {
-        toasty::create!(Artwork {
-            movie_id: None,
-            show_id: Some(show_id),
-            season_id: artwork.season_id,
-            episode_id: artwork.episode_id,
-            kind: artwork.kind,
-            path: artwork.file.path,
-            modified_at: artwork.file.modified_at,
-        })
-        .exec(db)
+    changed |= metadata::save_artwork(db, owner, artwork)
         .await
         .map_err(Error::caused_by)?;
-    }
-    Ok(true)
-}
-
-async fn save_unreadable_nfos(
-    db: &mut dyn toasty::Executor,
-    show_id: Uuid,
-    show_nfo: Option<&str>,
-    media_files: &HashSet<Uuid>,
-    episode_nfos: HashMap<Uuid, String>,
-) -> Result<(), Error> {
-    let mut stored = SyncProblem::filter_by_show_id(show_id)
-        .exec(db)
-        .await
-        .map_err(Error::caused_by)?;
-    if !media_files.is_empty() {
-        stored.extend(
-            SyncProblem::filter(
-                SyncProblem::fields()
-                    .media_file_id()
-                    .in_list(media_files.iter().copied().collect::<Vec<_>>())
-                    .and(
-                        SyncProblem::fields()
-                            .kind()
-                            .eq(SyncProblemKind::UnreadableNfo),
-                    ),
-            )
-            .exec(db)
-            .await
-            .map_err(Error::caused_by)?,
-        );
-    }
-    let found = show_nfo
+    let unreadable_nfos = nfo
+        .unreadable_path()
         .map(|path| (None, path.to_owned()))
         .into_iter()
-        .chain(episode_nfos.into_iter().map(|(id, path)| (Some(id), path)))
-        .collect::<HashSet<_>>();
-    let stored_found = stored
-        .iter()
-        .map(|x| (x.media_file_id, x.path.clone()))
-        .collect::<HashSet<_>>();
-    if stored_found == found {
-        return Ok(());
-    }
-    for problem in stored {
-        problem.delete().exec(db).await.map_err(Error::caused_by)?;
-    }
-    for (media_file_id, path) in found {
-        toasty::create!(SyncProblem {
-            movie_id: None,
-            media_file_id,
-            show_id: media_file_id.is_none().then_some(show_id),
-            kind: SyncProblemKind::UnreadableNfo,
-            path,
-        })
-        .exec(db)
-        .await
-        .map_err(Error::caused_by)?;
-    }
-    Ok(())
-}
-
-async fn delete(db: &mut dyn toasty::Executor, show: Show) -> Result<(), Error> {
-    let seasons = show
-        .seasons()
-        .exec(db)
-        .await
-        .map_err(Error::caused_by)?
-        .into_iter()
-        .map(|x| x.id)
-        .collect::<Vec<_>>();
-    let media_files = episodes_of(db, &seasons)
-        .await?
-        .into_iter()
-        .filter_map(|x| x.media_file_id)
-        .collect::<HashSet<_>>();
-    Actor::filter_by_show_id(show.id)
-        .delete()
-        .exec(db)
-        .await
-        .map_err(Error::caused_by)?;
-    Artwork::filter_by_show_id(show.id)
-        .delete()
-        .exec(db)
-        .await
-        .map_err(Error::caused_by)?;
-    SyncProblem::filter_by_show_id(show.id)
-        .delete()
-        .exec(db)
-        .await
-        .map_err(Error::caused_by)?;
-    show.delete().exec(db).await.map_err(Error::caused_by)?;
-    delete_media_files(db, media_files.into_iter().collect()).await
+        .chain(
+            unreadable_nfos
+                .into_iter()
+                .map(|(id, path)| (Some(id), path)),
+        )
+        .collect();
+    metadata::save_unreadable_nfos(
+        db,
+        owner,
+        media_file_ids.into_iter().collect(),
+        unreadable_nfos,
+    )
+    .await
+    .map_err(Error::caused_by)?;
+    Ok(show_change.or(changed.then_some(Change::Changed)))
 }
 
 async fn episodes_of(
@@ -793,8 +642,4 @@ async fn delete_seasons(db: &mut dyn toasty::Executor, ids: Vec<Uuid>) -> Result
         .exec(db)
         .await
         .map_err(Error::caused_by)
-}
-
-async fn delete_media_files(db: &mut dyn toasty::Executor, ids: Vec<Uuid>) -> Result<(), Error> {
-    media_files::delete(db, ids).await.map_err(Error::caused_by)
 }

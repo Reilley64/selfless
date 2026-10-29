@@ -8,6 +8,7 @@ pub mod list_movies;
 pub mod list_seasons;
 pub mod list_shows;
 mod media_files;
+mod metadata;
 pub mod next_inbox_attempt;
 pub mod ports;
 pub mod process_inbox_row;

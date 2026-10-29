@@ -5,24 +5,23 @@ use crate::library_items;
 use crate::library_items::Change;
 use crate::media_files;
 use crate::media_files::Inspected;
-use crate::ports::FoundFile;
+use crate::metadata;
+use crate::metadata::FoundArtwork;
+use crate::metadata::Nfo;
+use crate::metadata::Owner;
 use crate::ports::GetRadarrMovie;
 use crate::ports::MovieFolder;
 use crate::ports::MovieNfo;
 use crate::ports::RadarrMovie;
-use domain::Actor;
-use domain::Artwork;
 use domain::ArtworkKind;
 use domain::MediaFile;
 use domain::Movie;
 use domain::Source;
-use domain::SyncProblem;
-use domain::SyncProblemKind;
 use jiff::Timestamp;
 use jiff::civil::Date;
+use std::collections::HashSet;
 use tracing::Instrument;
 use tracing::Span;
-use uuid::Uuid;
 
 #[fundle::deps]
 pub struct Dependencies {
@@ -78,13 +77,6 @@ pub(crate) fn span() -> Span {
     tracing::info_span!("sync_movie", otel.name = "sync radarr movie")
 }
 
-enum Nfo {
-    Missing,
-    Unchanged(Metadata),
-    Read(MovieNfo, Timestamp),
-    Unreadable(String),
-}
-
 #[derive(Clone, PartialEq)]
 struct Metadata {
     title: String,
@@ -121,10 +113,10 @@ impl Metadata {
         }
     }
 
-    fn of(nfo: &Nfo, radarr_movie: &RadarrMovie) -> Self {
-        match nfo {
-            Nfo::Unchanged(metadata) => metadata.clone(),
-            Nfo::Read(nfo, modified_at) => Self {
+    fn of(nfo: &Nfo<MovieNfo>, radarr_movie: &RadarrMovie, stored: Option<&Movie>) -> Self {
+        match (nfo, stored) {
+            (Nfo::Unchanged, Some(movie)) => Self::stored(movie),
+            (Nfo::Read(nfo, modified_at), _) => Self {
                 title: nfo
                     .title
                     .clone()
@@ -146,7 +138,7 @@ impl Metadata {
                 directors: nfo.directors.clone(),
                 nfo_modified_at: Some(*modified_at),
             },
-            Nfo::Missing | Nfo::Unreadable(_) => Self {
+            _ => Self {
                 title: radarr_movie.title.clone(),
                 sort_title: None,
                 original_title: None,
@@ -199,7 +191,14 @@ pub(crate) async fn save(
         (ArtworkKind::Clearlogo, folder.clearlogo),
     ]
     .into_iter()
-    .filter_map(|(kind, file)| Some((kind, file?)))
+    .filter_map(|(kind, file)| {
+        Some(FoundArtwork {
+            season_id: None,
+            episode_id: None,
+            kind,
+            file: file?,
+        })
+    })
     .collect::<Vec<_>>();
     let mut transaction = db_context.transaction().await.map_err(Error::caused_by)?;
     let db = transaction.executor_mut();
@@ -217,32 +216,18 @@ pub(crate) async fn save(
         .exec(db)
         .await
         .map_err(Error::caused_by)?;
-    let nfo = match folder.nfo {
-        None => Nfo::Missing,
-        Some(file) => match stored
-            .as_ref()
-            .filter(|x| x.nfo_modified_at == Some(file.modified_at))
-        {
-            Some(movie) => Nfo::Unchanged(Metadata::stored(movie)),
-            None => match media_folder.read_movie_nfo.call(&file.path).await {
-                Ok(nfo) => Nfo::Read(nfo, file.modified_at),
-                Err(error) => {
-                    tracing::warn!(
-                        error = &error as &dyn std::error::Error,
-                        file.path = file.path,
-                        "failed to read an NFO file"
-                    );
-                    Nfo::Unreadable(file.path)
-                }
-            },
-        },
-    };
-    let metadata = Metadata::of(&nfo, &radarr_movie);
+    let nfo = Nfo::read(
+        folder.nfo,
+        stored.as_ref().and_then(|x| x.nfo_modified_at),
+        |path| media_folder.read_movie_nfo.call(path),
+    )
+    .await;
+    let metadata = Metadata::of(&nfo, &radarr_movie, stored.as_ref());
+    let had_nfo = stored.as_ref().is_some_and(|x| x.nfo_modified_at.is_some());
     let (movie_id, change) = match stored {
         Some(mut movie) => {
             let added_at = movie.added_at.or(date_added);
             let old_media_file_id = movie.media_file_id;
-            let had_nfo = movie.nfo_modified_at.is_some();
             let changed = media_file_changed
                 || movie.radarr_id != radarr_movie.radarr_id
                 || movie.added_at != added_at
@@ -280,9 +265,6 @@ pub(crate) async fn save(
                     .await
                     .map_err(Error::caused_by)?;
             }
-            if had_nfo && !matches!(nfo, Nfo::Unchanged(_)) {
-                delete_actors(db, movie.id).await?;
-            }
             (movie.id, changed.then_some(Change::Changed))
         }
         None => {
@@ -312,110 +294,30 @@ pub(crate) async fn save(
             (movie.id, Some(Change::Added))
         }
     };
-    if let Nfo::Read(nfo, _) = &nfo {
-        for actor in &nfo.actors {
-            toasty::create!(Actor {
-                movie_id: Some(movie_id),
-                show_id: None,
-                name: actor.name.clone(),
-                role: actor.role.clone(),
-                order: actor.order,
-            })
-            .exec(db)
+    let owner = Owner::Movie(movie_id);
+    if !matches!(nfo, Nfo::Unchanged) {
+        let actors = match &nfo {
+            Nfo::Read(nfo, _) => nfo.actors.as_slice(),
+            _ => &[],
+        };
+        metadata::replace_actors(db, owner, had_nfo, actors)
             .await
             .map_err(Error::caused_by)?;
-        }
     }
-    let artwork_changed = save_artwork(db, movie_id, artwork).await?;
-    let unreadable_nfo = match &nfo {
-        Nfo::Unreadable(path) => Some(path.as_str()),
-        _ => None,
-    };
-    save_unreadable_nfo(db, movie_id, unreadable_nfo).await?;
+    let artwork_changed = metadata::save_artwork(db, owner, artwork)
+        .await
+        .map_err(Error::caused_by)?;
+    let unreadable_nfos = nfo
+        .unreadable_path()
+        .map(|path| (None, path.to_owned()))
+        .into_iter()
+        .collect::<HashSet<_>>();
+    metadata::save_unreadable_nfos(db, owner, Vec::new(), unreadable_nfos)
+        .await
+        .map_err(Error::caused_by)?;
     transaction.commit().await.map_err(Error::caused_by)?;
     if let Some(change) = change.or(artwork_changed.then_some(Change::Changed)) {
         library_items::count(Source::Radarr, change);
-    }
-    Ok(())
-}
-
-async fn delete_actors(db: &mut dyn toasty::Executor, movie_id: Uuid) -> Result<(), Error> {
-    Actor::filter_by_movie_id(movie_id)
-        .delete()
-        .exec(db)
-        .await
-        .map_err(Error::caused_by)
-}
-
-async fn save_artwork(
-    db: &mut dyn toasty::Executor,
-    movie_id: Uuid,
-    found: Vec<(ArtworkKind, FoundFile)>,
-) -> Result<bool, Error> {
-    let stored = Artwork::filter_by_movie_id(movie_id)
-        .exec(db)
-        .await
-        .map_err(Error::caused_by)?;
-    if stored.len() == found.len()
-        && found.iter().all(|(kind, file)| {
-            stored.iter().any(|x| {
-                x.kind == *kind && x.path == file.path && x.modified_at == file.modified_at
-            })
-        })
-    {
-        return Ok(false);
-    }
-    Artwork::filter_by_movie_id(movie_id)
-        .delete()
-        .exec(db)
-        .await
-        .map_err(Error::caused_by)?;
-    for (kind, file) in found {
-        toasty::create!(Artwork {
-            movie_id: Some(movie_id),
-            show_id: None,
-            season_id: None,
-            episode_id: None,
-            kind,
-            path: file.path,
-            modified_at: file.modified_at,
-        })
-        .exec(db)
-        .await
-        .map_err(Error::caused_by)?;
-    }
-    Ok(true)
-}
-
-async fn save_unreadable_nfo(
-    db: &mut dyn toasty::Executor,
-    movie_id: Uuid,
-    path: Option<&str>,
-) -> Result<(), Error> {
-    let stored = SyncProblem::filter_by_movie_id(movie_id)
-        .exec(db)
-        .await
-        .map_err(Error::caused_by)?
-        .into_iter()
-        .filter(|x| x.kind == SyncProblemKind::UnreadableNfo)
-        .collect::<Vec<_>>();
-    if stored.iter().map(|x| x.path.as_str()).eq(path) {
-        return Ok(());
-    }
-    for problem in stored {
-        problem.delete().exec(db).await.map_err(Error::caused_by)?;
-    }
-    if let Some(path) = path {
-        toasty::create!(SyncProblem {
-            movie_id: Some(movie_id),
-            media_file_id: None,
-            show_id: None,
-            kind: SyncProblemKind::UnreadableNfo,
-            path: path.to_owned(),
-        })
-        .exec(db)
-        .await
-        .map_err(Error::caused_by)?;
     }
     Ok(())
 }
@@ -425,15 +327,7 @@ pub(crate) async fn remove(db_context: &mut DbContext, movies: Vec<Movie>) -> Re
         let mut transaction = db_context.transaction().await.map_err(Error::caused_by)?;
         let db = transaction.executor_mut();
         let media_file_id = movie.media_file_id;
-        delete_actors(db, movie.id).await?;
-        Artwork::filter_by_movie_id(movie.id)
-            .delete()
-            .exec(db)
-            .await
-            .map_err(Error::caused_by)?;
-        SyncProblem::filter_by_movie_id(movie.id)
-            .delete()
-            .exec(db)
+        metadata::delete(db, Owner::Movie(movie.id))
             .await
             .map_err(Error::caused_by)?;
         movie.delete().exec(db).await.map_err(Error::caused_by)?;
