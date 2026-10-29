@@ -87,6 +87,13 @@ export function startTvSession(storage: SessionStorage, clientKind: Exclude<Clie
     storage.setItem(usersKey, JSON.stringify(users));
     update({ users, ...next });
   };
+  const endSession = async (token: string) => {
+    const response = await signOut({ headers: authorizationHeaders(token) }).catch(() => undefined);
+    if (response?.status === 204) {
+      session.ended(token);
+    }
+    return response?.status === 204 || response?.status === 401;
+  };
   const session = {
     state: () => state,
     subscribe,
@@ -121,17 +128,17 @@ export function startTvSession(storage: SessionStorage, clientKind: Exclude<Clie
       update({ serverUrl: undefined });
     },
     async signIn(name: string, password: string, deviceName: string) {
+      const previous = state.users.find((user) => user.name.toLowerCase() === name.toLowerCase());
+      if (previous && !(await endSession(previous.token))) {
+        throw new Error("The old session could not be ended");
+      }
       const response = await signIn({ name, password, clientKind, deviceName });
       if (response.status === 201) {
         const signedIn = { token: response.data.token, ...response.data.user };
-        const previous = state.users.find(({ id }) => id === signedIn.id);
-        const users = previous
-          ? state.users.map((user) => (user === previous ? signedIn : user))
+        const users = state.users.some(({ id }) => id === signedIn.id)
+          ? state.users.map((user) => (user.id === signedIn.id ? signedIn : user))
           : [...state.users, signedIn];
         updateUsers(users, { currentUserId: signedIn.id });
-        if (previous) {
-          await signOut({ headers: authorizationHeaders(previous.token) });
-        }
       }
       return response;
     },
@@ -149,18 +156,15 @@ export function startTvSession(storage: SessionStorage, clientKind: Exclude<Clie
     },
     async remove(userId: string) {
       const removed = state.users.find(({ id }) => id === userId);
-      if (!removed) {
-        return;
+      if (removed && !(await endSession(removed.token))) {
+        return false;
       }
-      try {
-        await signOut({ headers: authorizationHeaders(removed.token) });
-      } finally {
-        const users = state.users.filter(({ id }) => id !== userId);
-        updateUsers(users);
-        if (users.length === 0) {
-          session.forgetServer();
-        }
+      const users = state.users.filter(({ id }) => id !== userId);
+      updateUsers(users);
+      if (users.length === 0) {
+        session.forgetServer();
       }
+      return true;
     },
   };
   provideSession(session);

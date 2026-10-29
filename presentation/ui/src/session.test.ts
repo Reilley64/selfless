@@ -25,7 +25,18 @@ const unauthenticated = {
 
 const serverUrl = "http://192.168.1.20:8080";
 
-function mockServer({ signedIn = true, issued = [{ token, user }, theo], ended = [] as string[] } = {}) {
+const wrongNameOrPassword = {
+  type: "urn:selfless:problem:wrong-name-or-password",
+  title: "The name or password is wrong.",
+  status: 401,
+};
+
+function mockServer({
+  signedIn = true,
+  issued = [{ token, user }, theo],
+  ended = [] as string[],
+  ending = "works" as "works" | "fails" | "unreachable",
+} = {}) {
   const caller = (init?: RequestInit) => {
     const bearer = new Headers(init?.headers).get("Authorization");
     return issued.find(({ token }) => bearer === `Bearer ${token}` && !ended.includes(token));
@@ -36,13 +47,26 @@ function mockServer({ signedIn = true, issued = [{ token, user }, theo], ended =
       case "GET /actuator/info/v1":
         return Response.json({ build: { name: "selfless", version: "0.1.0" } });
       case "POST /api/sessions/v1": {
-        const signedIn = issued.find(({ user }) => user.name === JSON.parse(String(init?.body)).name);
-        return Response.json(signedIn, { status: 201 });
+        const { name, password } = JSON.parse(String(init?.body));
+        const signedIn = issued.find(({ user }) => user.name.toLowerCase() === name.toLowerCase());
+        return password === "wrong"
+          ? Response.json(wrongNameOrPassword, { status: 401 })
+          : Response.json(signedIn, { status: 201 });
       }
       case "GET /api/me/v1":
         return signedIn && caller(init) ? Response.json(caller(init)?.user) : Response.json(unauthenticated, { status: 401 });
       case "DELETE /api/sessions/current/v1":
-        return caller(init) ? new Response(null, { status: 204 }) : Response.json(unauthenticated, { status: 401 });
+        if (ending === "unreachable") {
+          throw new TypeError("Network request failed");
+        }
+        if (ending === "fails") {
+          return new Response(null, { status: 500 });
+        }
+        if (caller(init)) {
+          ended.push(new Headers(init?.headers).get("Authorization")?.replace("Bearer ", "") ?? "");
+          return new Response(null, { status: 204 });
+        }
+        return Response.json(unauthenticated, { status: 401 });
       default:
         return new Response(null, { status: 404 });
     }
@@ -227,13 +251,62 @@ test("signing in again as a user on the picker replaces their entry and ends the
   const newToken = "Hn4cT7vB1xK9sW3eR6yU0iP2oL5aZ8dF1gJ4mQ7wE0r";
   mockServer({ issued: [{ token: newToken, user }, theo] });
 
-  await session.signIn("Noor", "correct horse", "Living Room");
+  await session.signIn("noor", "correct horse", "Living Room");
 
   expect(startTvSession(storage, "appleTv").state().users).toEqual([
     { token: newToken, ...user },
     { token: theo.token, ...theo.user },
   ]);
   expect(sentHeaders(fetch, `${serverUrl}/api/sessions/current/v1`).get("Authorization")).toBe(`Bearer ${token}`);
+});
+
+test("signing in again ends the old session before signing in", async () => {
+  mockServer();
+  const session = await connectedTv();
+  await session.signIn("Noor", "correct horse", "Living Room");
+  const fetch = mockServer();
+  fetch.mockClear();
+
+  await session.signIn("Noor", "correct horse", "Living Room");
+
+  expect(fetch.mock.calls.map(([input, init]) => `${init?.method ?? "GET"} ${input}`)).toEqual([
+    `DELETE ${serverUrl}/api/sessions/current/v1`,
+    `POST ${serverUrl}/api/sessions/v1`,
+  ]);
+});
+
+test.each([
+  { ending: "fails", what: "the server returns an error" },
+  { ending: "unreachable", what: "the server can't be reached" },
+] as const)(
+  "when $what while ending the old session, signing in again fails and keeps the old entry",
+  async ({ ending }) => {
+    mockServer();
+    const storage = fakeStorage();
+    const session = await connectedTv(storage);
+    await session.signIn("Noor", "correct horse", "Living Room");
+    session.switchUser();
+    const fetch = mockServer({ ending });
+    fetch.mockClear();
+
+    await expect(session.signIn("Noor", "correct horse", "Living Room")).rejects.toThrow();
+
+    expect(fetch.mock.calls.some(([input]) => input === `${serverUrl}/api/sessions/v1`)).toBe(false);
+    expect(startTvSession(storage, "appleTv").state().users).toEqual([{ token, ...user }]);
+  },
+);
+
+test("when signing in again fails after the old session ended, the user stays on the picker, dimmed", async () => {
+  mockServer();
+  const storage = fakeStorage();
+  const session = await connectedTv(storage);
+  await session.signIn("Noor", "correct horse", "Living Room");
+
+  const response = await session.signIn("Noor", "wrong", "Living Room");
+
+  expect(response.status).toBe(401);
+  expect(session.state().currentUserId).toBeUndefined();
+  expect(startTvSession(storage, "appleTv").state().users).toEqual([{ token, ...user, dimmed: true }]);
 });
 
 test("removing a user ends their session and takes them off the picker", async () => {
@@ -253,6 +326,30 @@ test("removing a user ends their session and takes them off the picker", async (
     currentUserId: undefined,
   });
 });
+
+test.each([
+  { ending: "fails", what: "the server returns an error" },
+  { ending: "unreachable", what: "the server can't be reached" },
+] as const)(
+  "when $what while ending the session, removing a user keeps them on the picker",
+  async ({ ending }) => {
+    mockServer();
+    const storage = fakeStorage();
+    const session = await connectedTv(storage);
+    await session.signIn("Noor", "correct horse", "Living Room");
+    session.switchUser();
+    mockServer({ ending });
+
+    const removed = await session.remove(user.id);
+
+    expect(removed).toBe(false);
+    expect(startTvSession(storage, "appleTv").state()).toEqual({
+      serverUrl,
+      users: [{ token, ...user }],
+      currentUserId: undefined,
+    });
+  },
+);
 
 test("removing the last user forgets the server address", async () => {
   const fetch = mockServer();

@@ -46,9 +46,15 @@ function PickerButton({
   );
 }
 
+async function remove(user: PickerUser) {
+  if (!(await session.remove(user.id))) {
+    Alert.alert(`${user.name} wasn't removed`, "The server can't be reached. Try again.");
+  }
+}
+
 function confirmRemove(user: PickerUser) {
   Alert.alert(user.name, undefined, [
-    { text: "Remove from this TV", style: "destructive", onPress: () => void session.remove(user.id) },
+    { text: "Remove from this TV", style: "destructive", onPress: () => void remove(user) },
     { text: "Cancel", style: "cancel" },
   ]);
 }
