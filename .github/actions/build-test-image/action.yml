@@ -1,0 +1,54 @@
+name: "Build and test: Container image"
+description: Build the image for linux/amd64, load it into Docker, and smoke test it beside PostgreSQL.
+
+inputs:
+  tag:
+    description: The tag of the loaded image.
+    required: true
+
+runs:
+  using: composite
+
+  steps:
+    - name: "Setup: Install the tools from mise.toml"
+      uses: jdx/mise-action@v5
+      with:
+        install_args: yq
+
+    - name: "Setup: Configure Docker Buildx"
+      uses: docker/setup-buildx-action@v4
+
+    - name: "Setup: Read the build metadata"
+      id: metadata
+      shell: bash
+      env:
+        BRANCH: ${{ github.head_ref || github.ref_name }}
+      run: |
+        {
+          echo "branch=$BRANCH"
+          echo "commit=$(git rev-parse HEAD)"
+          echo "commit-time=$(TZ=UTC git show --no-patch --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ HEAD)"
+          echo "version=$(yq --input-format toml '.package.version' Cargo.toml)"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: "Build and package: Container image"
+      uses: docker/build-push-action@v7
+      with:
+        context: .
+        platforms: linux/amd64
+        load: true
+        tags: ${{ inputs.tag }}
+        build-args: |
+          GIT_BRANCH=${{ steps.metadata.outputs.branch }}
+          GIT_COMMIT=${{ steps.metadata.outputs.commit }}
+          GIT_COMMIT_TIME=${{ steps.metadata.outputs.commit-time }}
+          VERSION=${{ steps.metadata.outputs.version }}
+        secrets: github_token=${{ github.token }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: "Test: Start the image beside PostgreSQL and wait for readiness"
+      shell: bash
+      env:
+        TAG: ${{ inputs.tag }}
+      run: scripts/smoke-test-image "$TAG"

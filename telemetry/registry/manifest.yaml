@@ -1,0 +1,4 @@
+file_format: definition_manifest/2.0
+name: selfless
+description: Telemetry names that OpenTelemetry does not define.
+schema_url: https://github.com/Reilley64/selfless/schemas/0.1.0

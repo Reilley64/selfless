@@ -1,0 +1,18 @@
+[package]
+name = "api"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+application = { workspace = true }
+http = { workspace = true }
+infrastructure = { workspace = true }
+ohno = { workspace = true }
+opentelemetry = { workspace = true }
+opentelemetry_sdk = { workspace = true }
+serde = { workspace = true }
+topcoat = { workspace = true, features = ["fs"] }
+tracing = { workspace = true }
+tracing-opentelemetry = { workspace = true }

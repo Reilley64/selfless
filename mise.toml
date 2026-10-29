@@ -1,0 +1,92 @@
+[tools]
+actionlint = "1.7.12"
+bun = "1.4.4"
+cargo-deny = "0.20.2"
+node = "26.13.0"
+vacuum = "0.35.7"
+yq = "4.54.1"
+"github:open-telemetry/weaver" = "0.28.0"
+
+[env]
+DATABASE__URL = "postgres://selfless:selfless@localhost:5432/selfless"
+OTEL_SERVICE_NAME = "selfless"
+
+[tasks.services]
+description = "Start PostgreSQL and grafana/otel-lgtm for local development"
+run = "docker compose up --detach --wait"
+
+[tasks.generate]
+description = "Generate the API client, the TypeScript telemetry constants, the theme and the admin stylesheet"
+run = "bun run generate"
+
+[tasks.dev]
+description = "Start the server and the web app against the local services"
+depends = ["dev:server", "dev:web"]
+
+[tasks."dev:server"]
+description = "Start the server"
+depends = ["services", "generate"]
+run = "cargo run"
+
+[tasks."dev:web"]
+description = "Start the web app's dev server, which proxies API calls to the server"
+depends = ["generate"]
+dir = "presentation/web"
+run = "bun run start"
+
+[tasks.check]
+description = "Check formatting, lints and crate direction"
+depends = ["generate"]
+run = [
+  "cargo fmt --all --check",
+  "cargo clippy --workspace --all-targets --all-features -- -D warnings",
+  "cargo deny check bans",
+]
+
+[tasks.test]
+description = "Run the server tests against the local PostgreSQL"
+depends = ["services", "generate"]
+run = "cargo test --workspace"
+
+[tasks."build:image"]
+description = "Build the container image for linux/amd64 as selfless:local"
+run = '''
+docker build --platform linux/amd64 --tag selfless:local \
+  --build-arg GIT_BRANCH="$(git rev-parse --abbrev-ref HEAD)" \
+  --build-arg GIT_COMMIT="$(git rev-parse HEAD)" \
+  --build-arg GIT_COMMIT_TIME="$(TZ=UTC git show --no-patch --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ HEAD)" \
+  --build-arg VERSION="$(yq --input-format toml '.package.version' Cargo.toml)" \
+  .
+'''
+
+[tasks."test:image"]
+description = "Start selfless:local beside PostgreSQL and wait for readiness"
+depends = ["build:image"]
+run = "scripts/smoke-test-image selfless:local"
+
+[tasks."lint:openapi"]
+description = "Lint the OpenAPI file"
+run = "vacuum lint --details openapi.yaml"
+
+[tasks."lint:telemetry"]
+description = "Check the Weaver registry"
+run = "weaver registry check --future --registry telemetry/registry"
+
+[tasks."lint:versions"]
+description = "Check that every crate has the release-please version"
+run = '''
+expected=$(yq --input-format json --output-format yaml '.["."]' .release-please-manifest.json)
+status=0
+for manifest in $(git ls-files '*Cargo.toml'); do
+  version=$(yq --input-format toml --output-format yaml '.package.version' "$manifest")
+  if [ "$version" != "$expected" ]; then
+    echo "$manifest: package.version is $version, expected $expected from .release-please-manifest.json"
+    status=1
+  fi
+done
+exit $status
+'''
+
+[tasks."lint:workflows"]
+description = "Lint the GitHub workflows"
+run = "actionlint"

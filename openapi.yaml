@@ -1,0 +1,293 @@
+openapi: 3.1.1
+info:
+  title: selfless
+  description: The HTTP API of the selfless media server, used by its web and TV apps.
+  version: 0.0.0 # x-release-please-version
+  license:
+    name: MIT OR Apache-2.0
+    identifier: MIT OR Apache-2.0
+servers:
+  - url: /
+security: []
+paths:
+  /actuator/health/v1:
+    get:
+      operationId: getHealth
+      summary: Overall health with every component
+      tags: [actuator]
+      responses:
+        "200":
+          description: Every component is up.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+              example: {"status":"UP","components":{"db":{"status":"UP"},"livenessState":{"status":"UP"},"readinessState":{"status":"UP"}}}
+        "503":
+          description: A component is down or out of service.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+              example: {"status":"DOWN","components":{"db":{"status":"DOWN"},"livenessState":{"status":"UP"},"readinessState":{"status":"UP"}}}
+  /actuator/health/liveness/v1:
+    get:
+      operationId: getLiveness
+      summary: Liveness group, which reports only the process's own state
+      tags: [actuator]
+      responses:
+        "200":
+          description: The process is live.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LivenessHealth"
+              example: {"status":"UP","components":{"livenessState":{"status":"UP"}}}
+        "503":
+          description: The process is broken.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LivenessHealth"
+              example: {"status":"DOWN","components":{"livenessState":{"status":"DOWN"}}}
+  /actuator/health/readiness/v1:
+    get:
+      operationId: getReadiness
+      summary: Readiness group, which also checks PostgreSQL
+      tags: [actuator]
+      responses:
+        "200":
+          description: The server accepts traffic.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessHealth"
+              example: {"status":"UP","components":{"db":{"status":"UP"},"readinessState":{"status":"UP"}}}
+        "503":
+          description: PostgreSQL is down or the server is shutting down.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessHealth"
+              example: {"status":"OUT_OF_SERVICE","components":{"db":{"status":"UP"},"readinessState":{"status":"OUT_OF_SERVICE"}}}
+  /actuator/info/v1:
+    get:
+      operationId: getInfo
+      summary: Build and git information of the running server
+      tags: [actuator]
+      responses:
+        "200":
+          description: The build and git information.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Info"
+              example: {"build":{"name":"selfless","version":"0.1.0"},"git":{"branch":"main","commit":{"id":"56ad9034","time":"2026-10-29T06:12:00Z"}}}
+  /api/telemetry/traces/v1:
+    post:
+      operationId: relayTraces
+      summary: Relay OTLP traces from an app to the server's collector
+      description: Takes OTLP/HTTP protobuf traces and forwards them to the server's own OTLP endpoint over gRPC. It checks no token yet.
+      tags: [telemetry]
+      requestBody:
+        description: The traces the app exports.
+        required: true
+        content:
+          application/x-protobuf:
+            schema:
+              description: A protobuf-encoded opentelemetry.proto.collector.trace.v1.ExportTraceServiceRequest.
+              type: string
+              contentMediaType: application/x-protobuf
+      responses:
+        "200":
+          description: The collector accepted the traces.
+          content:
+            application/x-protobuf:
+              schema:
+                description: The collector's protobuf-encoded opentelemetry.proto.collector.trace.v1.ExportTraceServiceResponse.
+                type: string
+                contentMediaType: application/x-protobuf
+        "400":
+          $ref: "#/components/responses/MalformedTelemetry"
+        "502":
+          $ref: "#/components/responses/CollectorFailed"
+  /api/telemetry/metrics/v1:
+    post:
+      operationId: relayMetrics
+      summary: Relay OTLP metrics from an app to the server's collector
+      description: Takes OTLP/HTTP protobuf metrics and forwards them to the server's own OTLP endpoint over gRPC. It checks no token yet.
+      tags: [telemetry]
+      requestBody:
+        description: The metrics the app exports.
+        required: true
+        content:
+          application/x-protobuf:
+            schema:
+              description: A protobuf-encoded opentelemetry.proto.collector.metrics.v1.ExportMetricsServiceRequest.
+              type: string
+              contentMediaType: application/x-protobuf
+      responses:
+        "200":
+          description: The collector accepted the metrics.
+          content:
+            application/x-protobuf:
+              schema:
+                description: The collector's protobuf-encoded opentelemetry.proto.collector.metrics.v1.ExportMetricsServiceResponse.
+                type: string
+                contentMediaType: application/x-protobuf
+        "400":
+          $ref: "#/components/responses/MalformedTelemetry"
+        "502":
+          $ref: "#/components/responses/CollectorFailed"
+  /api/telemetry/logs/v1:
+    post:
+      operationId: relayLogs
+      summary: Relay OTLP logs from an app to the server's collector
+      description: Takes OTLP/HTTP protobuf logs and forwards them to the server's own OTLP endpoint over gRPC. It checks no token yet.
+      tags: [telemetry]
+      requestBody:
+        description: The logs the app exports.
+        required: true
+        content:
+          application/x-protobuf:
+            schema:
+              description: A protobuf-encoded opentelemetry.proto.collector.logs.v1.ExportLogsServiceRequest.
+              type: string
+              contentMediaType: application/x-protobuf
+      responses:
+        "200":
+          description: The collector accepted the logs.
+          content:
+            application/x-protobuf:
+              schema:
+                description: The collector's protobuf-encoded opentelemetry.proto.collector.logs.v1.ExportLogsServiceResponse.
+                type: string
+                contentMediaType: application/x-protobuf
+        "400":
+          $ref: "#/components/responses/MalformedTelemetry"
+        "502":
+          $ref: "#/components/responses/CollectorFailed"
+tags:
+  - name: actuator
+    description: Health and info endpoints in the shape of Spring Boot Actuator.
+  - name: telemetry
+    description: The relay that forwards OTLP from the web and TV apps to the server's collector.
+components:
+  responses:
+    MalformedTelemetry:
+      description: The body is not a valid OTLP protobuf request for this signal.
+    CollectorFailed:
+      description: The collector did not accept the request. The app may retry.
+  schemas:
+    HealthStatus:
+      description: The status of a health group or component, as in Spring Boot Actuator.
+      type: string
+      enum: [UP, DOWN, OUT_OF_SERVICE, UNKNOWN]
+      examples: [UP]
+    HealthComponent:
+      description: One health component, shown without details.
+      type: object
+      required: [status]
+      examples:
+        - status: UP
+      properties:
+        status:
+          $ref: "#/components/schemas/HealthStatus"
+      additionalProperties: false
+    Health:
+      description: Overall health with the db, livenessState and readinessState components.
+      type: object
+      required: [status, components]
+      properties:
+        status:
+          $ref: "#/components/schemas/HealthStatus"
+        components:
+          type: object
+          required: [db, livenessState, readinessState]
+          properties:
+            db:
+              $ref: "#/components/schemas/HealthComponent"
+            livenessState:
+              $ref: "#/components/schemas/HealthComponent"
+            readinessState:
+              $ref: "#/components/schemas/HealthComponent"
+          additionalProperties: false
+      additionalProperties: false
+    LivenessHealth:
+      description: The liveness group. It reports only the process's own state.
+      type: object
+      required: [status, components]
+      properties:
+        status:
+          $ref: "#/components/schemas/HealthStatus"
+        components:
+          type: object
+          required: [livenessState]
+          properties:
+            livenessState:
+              $ref: "#/components/schemas/HealthComponent"
+          additionalProperties: false
+      additionalProperties: false
+    ReadinessHealth:
+      description: The readiness group. It reports whether the server accepts traffic and reaches PostgreSQL.
+      type: object
+      required: [status, components]
+      properties:
+        status:
+          $ref: "#/components/schemas/HealthStatus"
+        components:
+          type: object
+          required: [db, readinessState]
+          properties:
+            db:
+              $ref: "#/components/schemas/HealthComponent"
+            readinessState:
+              $ref: "#/components/schemas/HealthComponent"
+          additionalProperties: false
+      additionalProperties: false
+    Info:
+      description: Build and git information in the shape of Spring Boot Actuator's info endpoint, with git in simple mode.
+      type: object
+      required: [build, git]
+      properties:
+        build:
+          description: The server build.
+          type: object
+          required: [name, version]
+          properties:
+            name:
+              description: The name of the root crate.
+              type: string
+              examples: [selfless]
+            version:
+              description: The version of the root crate.
+              type: string
+              examples: [0.1.0]
+          additionalProperties: false
+        git:
+          description: The git commit the server was built from.
+          type: object
+          required: [branch, commit]
+          properties:
+            branch:
+              description: The branch the server was built from.
+              type: string
+              examples: [main]
+            commit:
+              description: The commit the server was built from.
+              type: object
+              required: [id, time]
+              properties:
+                id:
+                  description: The first 8 characters of the commit hash, as in the image tag.
+                  type: string
+                  pattern: "^[0-9a-f]{8}$"
+                  examples: [56ad9034]
+                time:
+                  description: The commit time in UTC.
+                  type: string
+                  format: date-time
+                  examples: ["2026-10-29T06:12:00Z"]
+              additionalProperties: false
+          additionalProperties: false
+      additionalProperties: false

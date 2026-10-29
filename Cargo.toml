@@ -1,0 +1,111 @@
+[workspace]
+resolver = "3"
+members = [
+    "application",
+    "domain",
+    "infrastructure/dependencies",
+    "infrastructure/persistence",
+    "infrastructure/settings",
+    "infrastructure/telemetry",
+    "presentation/admin",
+    "presentation/api",
+    "presentation/webhooks",
+    "presentation/workers",
+]
+
+[workspace.package]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[workspace.dependencies]
+async-trait = "0.1.92"
+bytes = "1.12.1"
+config = { version = "0.15.27", default-features = false }
+fundle = "0.4.1"
+http = "1.5.0"
+jsonschema = { version = "0.60.2", default-features = false }
+ohno = "0.5.3"
+opentelemetry = "0.33.1"
+opentelemetry-appender-tracing = "0.33.1"
+opentelemetry-instrumentation-process = "0.3.0"
+opentelemetry-otlp = { version = "0.33.1", default-features = false, features = ["grpc-tonic", "logs", "metrics", "trace"] }
+opentelemetry-proto = { version = "0.33.1", default-features = false, features = ["gen-tonic", "logs", "metrics", "trace"] }
+opentelemetry_sdk = "0.33.1"
+prost = "0.14.4"
+reqwest = { version = "0.13.5", default-features = false }
+serde = { version = "1.0.229", features = ["derive"] }
+serde-saphyr = "2.0.0"
+serde_json = "1.0.154"
+toasty = { version = "0.11.0", default-features = false, features = ["migration"] }
+toasty-cli = "0.11.0"
+toasty-core = "0.11.0"
+toasty-driver-postgresql = { version = "0.11.0", default-features = false, features = ["tls"] }
+tokio = { version = "1.54.1", features = ["full"] }
+tokio-postgres = "0.7.18"
+tokio-util = "0.7.20"
+tonic = { version = "0.14.8", default-features = false }
+topcoat = "0.11.0"
+tracing = "0.1.44"
+tracing-opentelemetry = "0.34.0"
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["env-filter", "fmt", "registry", "std"] }
+url = "2.5.8"
+uuid = { version = "1.29.0", features = ["v4"] }
+
+application = { path = "application" }
+domain = { path = "domain" }
+infrastructure = { path = "infrastructure/dependencies" }
+persistence = { path = "infrastructure/persistence" }
+settings = { path = "infrastructure/settings" }
+telemetry = { path = "infrastructure/telemetry" }
+admin = { path = "presentation/admin" }
+api = { path = "presentation/api" }
+webhooks = { path = "presentation/webhooks" }
+workers = { path = "presentation/workers" }
+
+[package]
+name = "selfless"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+default-run = "selfless"
+
+[dependencies]
+admin = { workspace = true }
+api = { workspace = true }
+application = { workspace = true }
+infrastructure = { workspace = true }
+ohno = { workspace = true, features = ["app-err"] }
+opentelemetry = { workspace = true }
+opentelemetry-appender-tracing = { workspace = true }
+opentelemetry-instrumentation-process = { workspace = true }
+opentelemetry-otlp = { workspace = true }
+opentelemetry_sdk = { workspace = true }
+settings = { workspace = true }
+toasty-cli = { workspace = true }
+tokio = { workspace = true }
+topcoat = { workspace = true }
+tracing = { workspace = true }
+tracing-opentelemetry = { workspace = true }
+tracing-subscriber = { workspace = true }
+uuid = { workspace = true }
+webhooks = { workspace = true }
+workers = { workspace = true }
+
+[dev-dependencies]
+jsonschema = { workspace = true }
+opentelemetry = { workspace = true }
+opentelemetry-proto = { workspace = true }
+opentelemetry_sdk = { workspace = true, features = ["testing"] }
+prost = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
+serde-saphyr = { workspace = true }
+serde_json = { workspace = true }
+tokio-postgres = { workspace = true }
+tokio-util = { workspace = true }
+tonic = { workspace = true, features = ["codegen", "router", "server"] }
+tracing = { workspace = true }
+tracing-opentelemetry = { workspace = true }
+tracing-subscriber = { workspace = true }
+url = { workspace = true }

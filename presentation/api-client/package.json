@@ -1,0 +1,23 @@
+{
+  "name": "@selfless/api-client",
+  "private": true,
+  "license": "MIT OR Apache-2.0",
+  "main": "src/index.ts",
+  "scripts": {
+    "generate": "orval",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "^1.10.0",
+    "@opentelemetry/semantic-conventions": "^1.44.0",
+    "@tanstack/react-query": "^5.105.0"
+  },
+  "devDependencies": {
+    "ajv": "^8.20.0",
+    "orval": "^8.45.0",
+    "react": "catalog:"
+  },
+  "peerDependencies": {
+    "react": "catalog:"
+  }
+}

@@ -1,0 +1,53 @@
+name: "Build and test: Apps"
+
+on:
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+  push:
+    branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-test-apps-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build-test:
+    name: "Build and test: Apps"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: "Source: Check out the repository"
+        uses: actions/checkout@v7
+
+      - name: "Setup: Install the tools from mise.toml"
+        uses: jdx/mise-action@v5
+        with:
+          install_args: bun node github:open-telemetry/weaver
+
+      - name: "Setup: Install the workspace dependencies"
+        run: bun install --frozen-lockfile
+
+      - name: "Build: Generate the API client, telemetry constants and theme"
+        run: bun run generate
+
+      - name: "Scan: Typecheck the apps"
+        run: bun run typecheck
+
+      - name: "Scan: Lint the apps"
+        run: bun run lint
+
+      - name: "Test: Run the app tests"
+        run: bun run test
+
+      - name: "Build: Export the web app"
+        run: bun run export

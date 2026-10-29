@@ -56,6 +56,8 @@ Every ticket description uses two h2 sections:
 1. **What to build**: one or two paragraphs on the behaviour, from the user's side.
 2. **Acceptance criteria**: a Plane task list. Behaviour first, then one criterion for tests naming the seam and the cases, then any manual checks.
 
+Before publishing a spec or its tickets, trace each test in Testing Decisions and each manual check through the request path the spec describes. Fix the spec when a check cannot pass under its own rules, for example a test that expects a span on a route the spec says creates none.
+
 Descriptions never repeat what Plane fields already hold: no Parent or Blocked by sections. When a spec or ticket changes, edit its description and leave a short comment saying what changed. Don't leave amendments only in comments.
 
 Specs and tickets start in Ready for agent, including blocked ones: the blocking links decide what is ready, so don't park blocked tickets in another state. Steps only the owner can do, such as granting access or approving an apply, go in their own ticket in Ready for human that blocks the agent tickets that need them.
