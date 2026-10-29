@@ -1,0 +1,35 @@
+[tools]
+actionlint = "1.7.12"
+bun = "1.4.4"
+cargo-deny = "0.20.2"
+node = "26.13.0"
+vacuum = "0.35.7"
+"github:open-telemetry/weaver" = "0.28.0"
+
+[env]
+DATABASE__URL = "postgres://selfless:selfless@localhost:5432/selfless"
+
+[tasks.services]
+description = "Start PostgreSQL for local development"
+run = "docker compose up --detach --wait"
+
+[tasks.check]
+description = "Check formatting, lints and crate direction"
+run = [
+  "cargo fmt --all --check",
+  "cargo clippy --workspace --all-targets --all-features -- -D warnings",
+  "cargo deny check bans",
+]
+
+[tasks.test]
+description = "Run the server tests against the local PostgreSQL"
+depends = ["services"]
+run = "cargo test --workspace"
+
+[tasks."lint:openapi"]
+description = "Lint the OpenAPI file"
+run = "vacuum lint --details openapi.yaml"
+
+[tasks."lint:workflows"]
+description = "Lint the GitHub workflows"
+run = "actionlint"
