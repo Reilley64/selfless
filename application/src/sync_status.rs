@@ -14,7 +14,6 @@ use domain::SourceState;
 use domain::SyncProblem;
 use domain::SyncProblemKind;
 use jiff::Timestamp;
-use std::collections::HashMap;
 use std::time::Duration;
 use uuid::Uuid;
 
@@ -218,107 +217,49 @@ async fn source_status(
 
 async fn problems(db_context: &mut DbContext) -> Result<Vec<Problem>, Error> {
     let stored = SyncProblem::all()
-        .exec(db_context.executor_mut())
-        .await
-        .map_err(Error::caused_by)?;
-    let movie_ids = stored.iter().filter_map(|x| x.movie_id).collect::<Vec<_>>();
-    let media_file_ids = stored
-        .iter()
-        .filter_map(|x| x.media_file_id)
-        .collect::<Vec<_>>();
-    let mut movies = Vec::new();
-    if !movie_ids.is_empty() {
-        movies.extend(
-            Movie::filter(Movie::fields().id().in_list(movie_ids))
-                .exec(db_context.executor_mut())
-                .await
-                .map_err(Error::caused_by)?,
-        );
-    }
-    let mut episodes = Vec::new();
-    if !media_file_ids.is_empty() {
-        movies.extend(
-            Movie::filter(
-                Movie::fields()
-                    .media_file_id()
-                    .in_list(media_file_ids.clone()),
-            )
-            .exec(db_context.executor_mut())
-            .await
-            .map_err(Error::caused_by)?,
-        );
-        episodes = Episode::filter(Episode::fields().media_file_id().in_list(media_file_ids))
-            .exec(db_context.executor_mut())
-            .await
-            .map_err(Error::caused_by)?;
-    }
-    let seasons = if episodes.is_empty() {
-        HashMap::new()
-    } else {
-        Season::filter(
-            Season::fields()
-                .id()
-                .in_list(episodes.iter().map(|x| x.season_id).collect::<Vec<_>>()),
+        .include(SyncProblem::fields().movie())
+        .include(SyncProblem::fields().show())
+        .include(SyncProblem::fields().media_file().movies())
+        .include(
+            SyncProblem::fields()
+                .media_file()
+                .episodes()
+                .season()
+                .show(),
         )
         .exec(db_context.executor_mut())
         .await
-        .map_err(Error::caused_by)?
-        .into_iter()
-        .map(|x| (x.id, x))
-        .collect::<HashMap<_, _>>()
-    };
-    let show_ids = seasons
-        .values()
-        .map(|x| x.show_id)
-        .chain(stored.iter().filter_map(|x| x.show_id))
-        .collect::<Vec<_>>();
-    let shows = if show_ids.is_empty() {
-        HashMap::new()
-    } else {
-        Show::filter(Show::fields().id().in_list(show_ids))
-            .exec(db_context.executor_mut())
-            .await
-            .map_err(Error::caused_by)?
-            .into_iter()
-            .map(|x| (x.id, x.title))
-            .collect::<HashMap<_, _>>()
-    };
+        .map_err(Error::caused_by)?;
     let mut problems = Vec::new();
     for problem in stored {
-        let movie_items = movies
+        let media_file = problem.media_file.get().as_ref();
+        let movies = problem
+            .movie
+            .get()
             .iter()
-            .filter(|x| {
-                problem.movie_id == Some(x.id)
-                    || problem.media_file_id.is_some() && problem.media_file_id == x.media_file_id
-            })
+            .chain(media_file.into_iter().flat_map(|x| x.movies.get()))
             .map(|x| ProblemItem::Movie {
                 title: x.title.clone(),
                 id: x.id,
             });
-        let episode_items = episodes
-            .iter()
-            .filter(|x| problem.media_file_id.is_some() && problem.media_file_id == x.media_file_id)
-            .filter_map(|x| {
-                let season = seasons.get(&x.season_id)?;
-                Some(ProblemItem::Episode {
-                    show: shows.get(&season.show_id)?.clone(),
+        let shows = problem.show.get().iter().map(|x| ProblemItem::Show {
+            title: x.title.clone(),
+            id: x.id,
+        });
+        let episodes = media_file
+            .into_iter()
+            .flat_map(|x| x.episodes.get())
+            .map(|x| {
+                let season = x.season.get();
+                ProblemItem::Episode {
+                    show: season.show.get().title.clone(),
                     season: season.number,
                     number: x.number,
                     title: x.title.clone(),
                     id: x.id,
-                })
+                }
             });
-        let show_items = problem.show_id.and_then(|id| {
-            Some(ProblemItem::Show {
-                title: shows.get(&id)?.clone(),
-                id,
-            })
-        });
-        for item in movie_items
-            .chain(show_items)
-            .chain(episode_items)
-            .collect::<Vec<_>>()
-        {
+        for item in movies.chain(shows).chain(episodes).collect::<Vec<_>>() {
             problems.push(Problem {
                 kind: problem.kind,
                 item,

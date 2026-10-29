@@ -1,5 +1,6 @@
 use crate::DbContext;
 use crate::list_movies::Artwork;
+use crate::list_movies::artwork;
 use jiff::Timestamp;
 use jiff::civil::Date;
 use uuid::Uuid;
@@ -30,40 +31,28 @@ pub async fn call(
     season_id: Uuid,
 ) -> Result<Vec<Episode>, Error> {
     let mut db_context = dependencies.into().db_context;
-    let episodes = domain::Episode::filter(
+    Ok(domain::Episode::filter(
         domain::Episode::fields()
             .season_id()
             .eq(season_id)
             .and(domain::Episode::fields().visible().eq(true)),
     )
     .order_by(domain::Episode::fields().number().asc())
+    .include(domain::Episode::fields().artwork())
     .exec(db_context.executor_mut())
     .await
-    .map_err(Error::caused_by)?;
-    let mut listed = Vec::with_capacity(episodes.len());
-    for episode in episodes {
-        let artwork = domain::Artwork::filter_by_episode_id(episode.id)
-            .exec(db_context.executor_mut())
-            .await
-            .map_err(Error::caused_by)?
-            .into_iter()
-            .map(|x| Artwork {
-                kind: x.kind,
-                path: x.path,
-                modified_at: x.modified_at,
-            })
-            .collect();
-        listed.push(Episode {
-            id: episode.id,
-            number: episode.number,
-            title: episode.title,
-            air_date: episode.air_date,
-            overview: episode.overview,
-            added_at: episode.added_at,
-            media_file_id: episode.media_file_id,
-            rating: episode.rating,
-            artwork,
-        });
-    }
-    Ok(listed)
+    .map_err(Error::caused_by)?
+    .into_iter()
+    .map(|episode| Episode {
+        id: episode.id,
+        number: episode.number,
+        title: episode.title,
+        air_date: episode.air_date,
+        overview: episode.overview,
+        added_at: episode.added_at,
+        media_file_id: episode.media_file_id,
+        rating: episode.rating,
+        artwork: artwork(episode.artwork.into_inner()),
+    })
+    .collect())
 }

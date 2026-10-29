@@ -1,6 +1,8 @@
 use crate::DbContext;
 use crate::list_movies::Actor;
 use crate::list_movies::Artwork;
+use crate::list_movies::actors;
+use crate::list_movies::artwork;
 use crate::list_movies::sort_key;
 use domain::Episode;
 use domain::Season;
@@ -36,65 +38,43 @@ pub struct Show {
 
 pub async fn call(dependencies: impl Into<Dependencies>) -> Result<Vec<Show>, Error> {
     let mut db_context = dependencies.into().db_context;
-    let shows = domain::Show::filter(
+    let mut shows = domain::Show::filter(
         domain::Show::fields().seasons().any(
             Season::fields()
                 .episodes()
                 .any(Episode::fields().visible().eq(true)),
         ),
     )
+    .include(domain::Show::fields().actors())
+    .include(
+        domain::Show::fields().artwork().filter(
+            domain::Artwork::fields()
+                .season_id()
+                .is_none()
+                .and(domain::Artwork::fields().episode_id().is_none()),
+        ),
+    )
     .exec(db_context.executor_mut())
     .await
-    .map_err(Error::caused_by)?;
-    let mut listed = Vec::with_capacity(shows.len());
-    for show in shows {
-        let mut actors = domain::Actor::filter_by_show_id(show.id)
-            .exec(db_context.executor_mut())
-            .await
-            .map_err(Error::caused_by)?
-            .into_iter()
-            .map(|x| Actor {
-                name: x.name,
-                role: x.role,
-                order: x.order,
-            })
-            .collect::<Vec<_>>();
-        actors.sort_by_key(|x| x.order);
-        let mut artwork = domain::Artwork::filter(
-            domain::Artwork::fields()
-                .show_id()
-                .eq(show.id)
-                .and(domain::Artwork::fields().season_id().is_none())
-                .and(domain::Artwork::fields().episode_id().is_none()),
-        )
-        .exec(db_context.executor_mut())
-        .await
-        .map_err(Error::caused_by)?
-        .into_iter()
-        .map(|x| Artwork {
-            kind: x.kind,
-            path: x.path,
-            modified_at: x.modified_at,
-        })
-        .collect::<Vec<_>>();
-        artwork.sort_by(|a, b| a.path.cmp(&b.path));
-        listed.push(Show {
-            id: show.id,
-            title: show.title,
-            sort_title: show.sort_title,
-            year: show.year,
-            genres: show.genres,
-            overview: show.overview,
-            certification: show.certification,
-            premiered: show.premiered,
-            end_date: show.end_date,
-            status: show.status,
-            network: show.network,
-            rating: show.rating,
-            actors,
-            artwork,
-        });
-    }
-    listed.sort_by_cached_key(|x| sort_key(x.sort_title.as_ref(), &x.title));
-    Ok(listed)
+    .map_err(Error::caused_by)?
+    .into_iter()
+    .map(|show| Show {
+        id: show.id,
+        title: show.title,
+        sort_title: show.sort_title,
+        year: show.year,
+        genres: show.genres,
+        overview: show.overview,
+        certification: show.certification,
+        premiered: show.premiered,
+        end_date: show.end_date,
+        status: show.status,
+        network: show.network,
+        rating: show.rating,
+        actors: actors(show.actors.into_inner()),
+        artwork: artwork(show.artwork.into_inner()),
+    })
+    .collect::<Vec<_>>();
+    shows.sort_by_cached_key(|x| sort_key(x.sort_title.as_ref(), &x.title));
+    Ok(shows)
 }

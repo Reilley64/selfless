@@ -50,37 +50,14 @@ pub struct Artwork {
 
 pub async fn call(dependencies: impl Into<Dependencies>) -> Result<Vec<Movie>, Error> {
     let mut db_context = dependencies.into().db_context;
-    let movies = domain::Movie::filter(domain::Movie::fields().visible().eq(true))
+    let mut movies = domain::Movie::filter(domain::Movie::fields().visible().eq(true))
+        .include(domain::Movie::fields().actors())
+        .include(domain::Movie::fields().artwork())
         .exec(db_context.executor_mut())
         .await
-        .map_err(Error::caused_by)?;
-    let mut listed = Vec::with_capacity(movies.len());
-    for movie in movies {
-        let mut actors = domain::Actor::filter_by_movie_id(movie.id)
-            .exec(db_context.executor_mut())
-            .await
-            .map_err(Error::caused_by)?
-            .into_iter()
-            .map(|x| Actor {
-                name: x.name,
-                role: x.role,
-                order: x.order,
-            })
-            .collect::<Vec<_>>();
-        actors.sort_by_key(|x| x.order);
-        let mut artwork = domain::Artwork::filter_by_movie_id(movie.id)
-            .exec(db_context.executor_mut())
-            .await
-            .map_err(Error::caused_by)?
-            .into_iter()
-            .map(|x| Artwork {
-                kind: x.kind,
-                path: x.path,
-                modified_at: x.modified_at,
-            })
-            .collect::<Vec<_>>();
-        artwork.sort_by(|a, b| a.path.cmp(&b.path));
-        listed.push(Movie {
+        .map_err(Error::caused_by)?
+        .into_iter()
+        .map(|movie| Movie {
             id: movie.id,
             title: movie.title,
             sort_title: movie.sort_title,
@@ -94,14 +71,14 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<Vec<Movie>, E
             genres: movie.genres,
             rating: movie.rating,
             directors: movie.directors,
-            actors,
-            artwork,
+            actors: actors(movie.actors.into_inner()),
+            artwork: artwork(movie.artwork.into_inner()),
             added_at: movie.added_at,
             media_file_id: movie.media_file_id,
-        });
-    }
-    listed.sort_by_cached_key(|x| sort_key(x.sort_title.as_ref(), &x.title));
-    Ok(listed)
+        })
+        .collect::<Vec<_>>();
+    movies.sort_by_cached_key(|x| sort_key(x.sort_title.as_ref(), &x.title));
+    Ok(movies)
 }
 
 pub(crate) fn sort_key(sort_title: Option<&String>, title: &str) -> (String, String) {
@@ -109,4 +86,30 @@ pub(crate) fn sort_key(sort_title: Option<&String>, title: &str) -> (String, Str
         sort_title.map_or(title, String::as_str).to_lowercase(),
         title.to_owned(),
     )
+}
+
+pub(crate) fn actors(stored: Vec<domain::Actor>) -> Vec<Actor> {
+    let mut actors = stored
+        .into_iter()
+        .map(|x| Actor {
+            name: x.name,
+            role: x.role,
+            order: x.order,
+        })
+        .collect::<Vec<_>>();
+    actors.sort_by_key(|x| x.order);
+    actors
+}
+
+pub(crate) fn artwork(stored: Vec<domain::Artwork>) -> Vec<Artwork> {
+    let mut artwork = stored
+        .into_iter()
+        .map(|x| Artwork {
+            kind: x.kind,
+            path: x.path,
+            modified_at: x.modified_at,
+        })
+        .collect::<Vec<_>>();
+    artwork.sort_by(|a, b| a.path.cmp(&b.path));
+    artwork
 }

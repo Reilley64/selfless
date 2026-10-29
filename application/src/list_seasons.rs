@@ -1,5 +1,6 @@
 use crate::DbContext;
 use crate::list_movies::Artwork;
+use crate::list_movies::artwork;
 use domain::Episode;
 use uuid::Uuid;
 
@@ -23,38 +24,24 @@ pub async fn call(
     show_id: Uuid,
 ) -> Result<Vec<Season>, Error> {
     let mut db_context = dependencies.into().db_context;
-    let seasons = domain::Season::filter(
+    let mut seasons = domain::Season::filter(
         domain::Season::fields().show_id().eq(show_id).and(
             domain::Season::fields()
                 .episodes()
                 .any(Episode::fields().visible().eq(true)),
         ),
     )
+    .include(domain::Season::fields().artwork())
     .exec(db_context.executor_mut())
     .await
     .map_err(Error::caused_by)?
     .into_iter()
-    .map(|x| (x.id, x.number))
+    .map(|x| Season {
+        id: x.id,
+        number: x.number,
+        artwork: artwork(x.artwork.into_inner()),
+    })
     .collect::<Vec<_>>();
-    let mut listed = Vec::with_capacity(seasons.len());
-    for (id, number) in seasons {
-        let artwork = domain::Artwork::filter_by_season_id(id)
-            .exec(db_context.executor_mut())
-            .await
-            .map_err(Error::caused_by)?
-            .into_iter()
-            .map(|x| Artwork {
-                kind: x.kind,
-                path: x.path,
-                modified_at: x.modified_at,
-            })
-            .collect();
-        listed.push(Season {
-            id,
-            number,
-            artwork,
-        });
-    }
-    listed.sort_by_key(|x| (x.number == 0, x.number));
-    Ok(listed)
+    seasons.sort_by_key(|x| (x.number == 0, x.number));
+    Ok(seasons)
 }

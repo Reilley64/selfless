@@ -100,6 +100,12 @@ pub struct Movie {
     pub rating: Option<f64>,
     pub directors: Vec<String>,
     pub nfo_modified_at: Option<Timestamp>,
+    #[has_many]
+    pub actors: toasty::Deferred<Vec<Actor>>,
+    #[has_many]
+    pub artwork: toasty::Deferred<Vec<Artwork>>,
+    #[has_many]
+    pub sync_problems: toasty::Deferred<Vec<SyncProblem>>,
 }
 
 #[derive(Debug, toasty::Model)]
@@ -109,8 +115,12 @@ pub struct Actor {
     pub id: Uuid,
     #[index]
     pub movie_id: Option<Uuid>,
+    #[belongs_to(key = movie_id, references = id)]
+    pub movie: toasty::Deferred<Option<Movie>>,
     #[index]
     pub show_id: Option<Uuid>,
+    #[belongs_to(key = show_id, references = id)]
+    pub show: toasty::Deferred<Option<Show>>,
     pub name: String,
     pub role: Option<String>,
     pub order: Option<i64>,
@@ -132,12 +142,20 @@ pub struct Artwork {
     pub id: Uuid,
     #[index]
     pub movie_id: Option<Uuid>,
+    #[belongs_to(key = movie_id, references = id)]
+    pub movie: toasty::Deferred<Option<Movie>>,
     #[index]
     pub show_id: Option<Uuid>,
+    #[belongs_to(key = show_id, references = id)]
+    pub show: toasty::Deferred<Option<Show>>,
     #[index]
     pub season_id: Option<Uuid>,
+    #[belongs_to(key = season_id, references = id)]
+    pub season: toasty::Deferred<Option<Season>>,
     #[index]
     pub episode_id: Option<Uuid>,
+    #[belongs_to(key = episode_id, references = id)]
+    pub episode: toasty::Deferred<Option<Episode>>,
     pub kind: ArtworkKind,
     pub path: String,
     pub modified_at: Timestamp,
@@ -158,10 +176,16 @@ pub struct SyncProblem {
     pub id: Uuid,
     #[index]
     pub movie_id: Option<Uuid>,
+    #[belongs_to(key = movie_id, references = id)]
+    pub movie: toasty::Deferred<Option<Movie>>,
     #[index]
     pub media_file_id: Option<Uuid>,
+    #[belongs_to(key = media_file_id, references = id)]
+    pub media_file: toasty::Deferred<Option<MediaFile>>,
     #[index]
     pub show_id: Option<Uuid>,
+    #[belongs_to(key = show_id, references = id)]
+    pub show: toasty::Deferred<Option<Show>>,
     pub kind: SyncProblemKind,
     pub path: String,
 }
@@ -189,6 +213,12 @@ pub struct Show {
     pub nfo_modified_at: Option<Timestamp>,
     #[has_many]
     pub seasons: toasty::Deferred<Vec<Season>>,
+    #[has_many]
+    pub actors: toasty::Deferred<Vec<Actor>>,
+    #[has_many]
+    pub artwork: toasty::Deferred<Vec<Artwork>>,
+    #[has_many]
+    pub sync_problems: toasty::Deferred<Vec<SyncProblem>>,
 }
 
 #[derive(Debug, toasty::Model)]
@@ -203,6 +233,8 @@ pub struct Season {
     pub number: i64,
     #[has_many]
     pub episodes: toasty::Deferred<Vec<Episode>>,
+    #[has_many]
+    pub artwork: toasty::Deferred<Vec<Artwork>>,
 }
 
 #[derive(Debug, toasty::Model)]
@@ -228,6 +260,8 @@ pub struct Episode {
     pub visible: bool,
     pub rating: Option<f64>,
     pub nfo_modified_at: Option<Timestamp>,
+    #[has_many]
+    pub artwork: toasty::Deferred<Vec<Artwork>>,
 }
 
 #[derive(Debug, toasty::Model)]
@@ -253,6 +287,8 @@ pub struct MediaFile {
     pub subtitle_streams: toasty::Deferred<Vec<SubtitleStream>>,
     #[has_many]
     pub subtitle_files: toasty::Deferred<Vec<SubtitleFile>>,
+    #[has_many]
+    pub sync_problems: toasty::Deferred<Vec<SyncProblem>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, toasty::Embed)]
