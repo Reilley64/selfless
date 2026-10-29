@@ -29,7 +29,7 @@ _Avoid_: Tag, category
 ## People
 
 **User**:
-A household member who watches. Users sign in on the web app and appear in the user picker on paired TVs.
+A household member who watches. Users sign in on the web app, and on each TV where they want to appear in the user picker.
 _Avoid_: Account, viewer, profile, member
 
 **Admin**:
@@ -38,16 +38,8 @@ _Avoid_: Account, administrator, owner
 
 ## TVs
 
-**Paired TV**:
-A TV app that an admin has approved. It can act as any user.
-_Avoid_: Device, client, session
-
-**Pairing code**:
-A short code a TV app shows so an admin can approve it as a paired TV.
-_Avoid_: Quick Connect code, link code
-
 **User picker**:
-The screen where someone on a paired TV chooses which user to watch as.
+The first screen of the TV app. It lists the users signed in on that TV and has a button to sign in another user.
 _Avoid_: Profile picker, profile switcher
 
 ## Watching
