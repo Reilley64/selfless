@@ -13,7 +13,7 @@ function startTelemetryOnceConnected() {
   const { serverUrl } = session.state();
   if (serverUrl && !telemetryStarted) {
     telemetryStarted = true;
-    startTelemetry("selfless-tv", serverUrl);
+    startTelemetry("selfless-tv", session);
   }
 }
 

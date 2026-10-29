@@ -7,7 +7,7 @@ import { session } from "../session";
 
 import "../global.css";
 
-startTelemetry("selfless-web");
+startTelemetry("selfless-web", session);
 
 const queryClient = new QueryClient();
 session.subscribe(() => queryClient.clear());
