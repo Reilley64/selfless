@@ -275,17 +275,14 @@ pub(crate) async fn save(
 pub(crate) async fn remove(db_context: &mut DbContext, show: Show) -> Result<(), Error> {
     let mut transaction = db_context.transaction().await.map_err(Error::caused_by)?;
     let db = transaction.executor_mut();
-    let seasons = show
+    let media_file_ids = show
         .seasons()
+        .include(Season::fields().episodes())
         .exec(db)
         .await
         .map_err(Error::caused_by)?
         .into_iter()
-        .map(|x| x.id)
-        .collect::<Vec<_>>();
-    let media_file_ids = episodes_of(db, &seasons)
-        .await?
-        .into_iter()
+        .flat_map(|x| x.episodes.into_inner())
         .filter_map(|x| x.media_file_id)
         .collect::<HashSet<_>>();
     metadata::delete(db, Owner::Show(show.id))
@@ -397,19 +394,24 @@ async fn write(
         })
     })
     .collect::<Vec<_>>();
-    let mut seasons = show
+    let mut seasons = HashMap::new();
+    let mut episodes = HashMap::new();
+    for season in show
         .seasons()
+        .include(Season::fields().episodes())
         .exec(db)
         .await
         .map_err(Error::caused_by)?
-        .into_iter()
-        .map(|x| (x.number, x))
-        .collect::<HashMap<_, _>>();
-    let mut episodes = episodes_of(db, &seasons.values().map(|x| x.id).collect::<Vec<_>>())
-        .await?
-        .into_iter()
-        .map(|x| (x.tvdb_id, x))
-        .collect::<HashMap<_, _>>();
+    {
+        seasons.insert(season.number, season.id);
+        episodes.extend(
+            season
+                .episodes
+                .into_inner()
+                .into_iter()
+                .map(|x| (x.tvdb_id, x)),
+        );
+    }
     let old_media_files = episodes
         .values()
         .filter_map(|x| x.media_file_id)
@@ -471,7 +473,7 @@ async fn write(
         let metadata = EpisodeMetadata::of(&nfo, &sonarr_episode, stored.as_ref().map(|(_, x)| x));
         let season_number = sonarr_episode.season_number;
         let season_id = match seasons.get(&season_number) {
-            Some(season) => season.id,
+            Some(id) => *id,
             None => {
                 let season = toasty::create!(Season {
                     show_id: show.id,
@@ -481,9 +483,8 @@ async fn write(
                 .await
                 .map_err(Error::caused_by)?;
                 changed = true;
-                let id = season.id;
-                seasons.insert(season_number, season);
-                id
+                seasons.insert(season_number, season.id);
+                season.id
             }
         };
         synced_seasons.insert(season_number);
@@ -570,11 +571,11 @@ async fn write(
         }
     }
     for (number, file) in folder.season_posters {
-        if let Some(season) = seasons.get(&number)
+        if let Some(id) = seasons.get(&number)
             && synced_seasons.contains(&number)
         {
             artwork.push(FoundArtwork {
-                season_id: Some(season.id),
+                season_id: Some(*id),
                 episode_id: None,
                 kind: ArtworkKind::Poster,
                 file,
@@ -583,9 +584,9 @@ async fn write(
     }
     let episodes = episodes.into_values().map(|x| x.id).collect::<Vec<_>>();
     let seasons = seasons
-        .into_values()
-        .filter(|x| !synced_seasons.contains(&x.number))
-        .map(|x| x.id)
+        .into_iter()
+        .filter(|(number, _)| !synced_seasons.contains(number))
+        .map(|(_, id)| id)
         .collect::<Vec<_>>();
     let removed_media_files = old_media_files
         .difference(&media_file_ids)
@@ -619,19 +620,6 @@ async fn write(
     .await
     .map_err(Error::caused_by)?;
     Ok(show_change.or(changed.then_some(Change::Changed)))
-}
-
-async fn episodes_of(
-    db: &mut dyn toasty::Executor,
-    season_ids: &[Uuid],
-) -> Result<Vec<Episode>, Error> {
-    if season_ids.is_empty() {
-        return Ok(Vec::new());
-    }
-    Episode::filter(Episode::fields().season_id().in_list(season_ids))
-        .exec(db)
-        .await
-        .map_err(Error::caused_by)
 }
 
 async fn delete_episodes(db: &mut dyn toasty::Executor, ids: Vec<Uuid>) -> Result<(), Error> {

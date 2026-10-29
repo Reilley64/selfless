@@ -32,20 +32,21 @@ pub async fn call(
     media_file_id: Uuid,
 ) -> Result<Option<MediaFile>, Error> {
     let mut db_context = dependencies.into().db_context;
-    let db = db_context.executor_mut();
     let Some(media_file) = domain::MediaFile::filter_by_id(media_file_id)
+        .include(domain::MediaFile::fields().video_streams())
+        .include(domain::MediaFile::fields().audio_streams())
+        .include(domain::MediaFile::fields().subtitle_streams())
+        .include(domain::MediaFile::fields().subtitle_files())
         .first()
-        .exec(db)
+        .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?
     else {
         return Ok(None);
     };
-    let video_streams = domain::VideoStream::filter_by_media_file_id(media_file_id)
-        .order_by(domain::VideoStream::fields().index().asc())
-        .exec(db)
-        .await
-        .map_err(Error::caused_by)?
+    let mut video_streams = media_file
+        .video_streams
+        .into_inner()
         .into_iter()
         .map(|x| VideoStream {
             index: x.index,
@@ -56,12 +57,11 @@ pub async fn call(
             frame_rate: x.frame_rate,
             hdr_type: x.hdr_type,
         })
-        .collect();
-    let audio_streams = domain::AudioStream::filter_by_media_file_id(media_file_id)
-        .order_by(domain::AudioStream::fields().index().asc())
-        .exec(db)
-        .await
-        .map_err(Error::caused_by)?
+        .collect::<Vec<_>>();
+    video_streams.sort_by_key(|x| x.index);
+    let mut audio_streams = media_file
+        .audio_streams
+        .into_inner()
         .into_iter()
         .map(|x| AudioStream {
             index: x.index,
@@ -71,12 +71,11 @@ pub async fn call(
             title: x.title,
             default: x.is_default,
         })
-        .collect();
-    let subtitle_streams = domain::SubtitleStream::filter_by_media_file_id(media_file_id)
-        .order_by(domain::SubtitleStream::fields().index().asc())
-        .exec(db)
-        .await
-        .map_err(Error::caused_by)?
+        .collect::<Vec<_>>();
+    audio_streams.sort_by_key(|x| x.index);
+    let mut subtitle_streams = media_file
+        .subtitle_streams
+        .into_inner()
         .into_iter()
         .map(|x| SubtitleStream {
             index: x.index,
@@ -88,12 +87,11 @@ pub async fn call(
             hearing_impaired: x.hearing_impaired,
             text: x.text,
         })
-        .collect();
-    let subtitle_files = domain::SubtitleFile::filter_by_media_file_id(media_file_id)
-        .order_by(domain::SubtitleFile::fields().path().asc())
-        .exec(db)
-        .await
-        .map_err(Error::caused_by)?
+        .collect::<Vec<_>>();
+    subtitle_streams.sort_by_key(|x| x.index);
+    let mut subtitle_files = media_file
+        .subtitle_files
+        .into_inner()
         .into_iter()
         .map(|x| SubtitleFile {
             path: x.path,
@@ -101,7 +99,8 @@ pub async fn call(
             hearing_impaired: x.hearing_impaired,
             forced: x.forced,
         })
-        .collect();
+        .collect::<Vec<_>>();
+    subtitle_files.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(Some(MediaFile {
         path: media_file.path,
         container: media_file.container,
