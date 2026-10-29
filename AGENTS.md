@@ -21,6 +21,6 @@ Work moves through these skills in order. Start at the step that matches what yo
 1. `/grill-with-docs`: shape an idea or feature with the user.
 2. `/to-spec`: turn the shared understanding into a spec.
 3. `/to-tickets`: break the spec into tickets with blocking links.
-4. `/implement`: build one ticket per session.
+4. `/implement-spec`: build the whole spec and its tickets on one integration branch.
 5. `/code-review`: review the work against the coding standards and the spec.
 6. `/retro`: suggest improvements to the agent environment from the session.
