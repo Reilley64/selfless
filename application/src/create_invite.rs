@@ -1,4 +1,5 @@
 use crate::DbContext;
+use crate::invite_email;
 use crate::ports::Clock;
 use crate::ports::SendEmail;
 use crate::session_tokens;
@@ -65,14 +66,7 @@ pub async fn call(
     .exec(db_context.executor_mut())
     .await
     .map_err(Error::caused_by)?;
-    send_email
-        .call(
-            email,
-            "You're invited to selfless".to_owned(),
-            format!(
-                "You're invited to selfless.\n\nOpen this link to choose your name and password:\n{origin}/invite#{token}\n\nThe link works once and expires in 7 days.\n"
-            ),
-        )
+    invite_email::send(&send_email, email, &origin, &token)
         .await
         .map_err(Error::caused_by)
 }

@@ -4,6 +4,7 @@ use application::create_invite::AddressTaken;
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use jiff::SignedDuration;
+use jiff::Timestamp;
 use ohno::ErrorExt;
 use reqwest::Method;
 use reqwest::StatusCode;
@@ -50,6 +51,54 @@ fn token_from(body: &str) -> String {
         .unwrap_or_else(|| panic!("the email has no invite link\n{body}"))
         + format!("{ORIGIN}/invite#").len();
     body[start..].split_whitespace().next().unwrap().to_owned()
+}
+
+async fn pending_invites(server: &TestServer) -> Vec<(String, Timestamp, Timestamp)> {
+    application::list_pending_invites::call(application::list_pending_invites::Dependencies {
+        db_context: server.db_context().await,
+    })
+    .await
+    .unwrap()
+    .into_iter()
+    .map(|x| (x.email, x.sent_at, x.expires_at))
+    .collect()
+}
+
+async fn invite_id(server: &TestServer, email: &str) -> Uuid {
+    application::list_pending_invites::call(application::list_pending_invites::Dependencies {
+        db_context: server.db_context().await,
+    })
+    .await
+    .unwrap()
+    .into_iter()
+    .find(|x| x.email == email)
+    .unwrap()
+    .id
+}
+
+async fn resend(server: &TestServer, id: Uuid) {
+    application::resend_invite::call(
+        application::resend_invite::Dependencies {
+            db_context: server.db_context().await,
+            clock: server.clock.port(),
+            send_email: server.mailer.send_email(),
+        },
+        id,
+        ORIGIN.to_owned(),
+    )
+    .await
+    .unwrap();
+}
+
+async fn cancel(server: &TestServer, id: Uuid) {
+    application::cancel_invite::call(
+        application::cancel_invite::Dependencies {
+            db_context: server.db_context().await,
+        },
+        id,
+    )
+    .await
+    .unwrap();
 }
 
 async fn accept(server: &TestServer, token: &str, name: &str) -> (StatusCode, Value) {
@@ -264,6 +313,82 @@ async fn an_empty_password_returns_422_and_leaves_the_invite_usable() {
     assert_eq!(empty.0, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(empty.1["type"], "urn:selfless:problem:empty-password");
     assert_eq!(other.0, StatusCode::CREATED);
+    drop(server);
+    database.drop().await;
+}
+
+#[tokio::test]
+async fn pending_invites_are_listed_newest_first_with_their_sent_time_and_expiry_including_expired_ones()
+ {
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+    let week = SignedDuration::from_hours(7 * 24);
+    invite(&server, &database, EMAIL).await.unwrap();
+    let expired_at = server.clock.now();
+    server.clock.advance(SignedDuration::from_hours(8 * 24));
+    invite(&server, &database, "ravi@example.com")
+        .await
+        .unwrap();
+    let pending_at = server.clock.now();
+
+    let invites = pending_invites(&server).await;
+
+    assert_eq!(
+        invites,
+        [
+            ("ravi@example.com".to_owned(), pending_at, pending_at + week),
+            (EMAIL.to_owned(), expired_at, expired_at + week),
+        ]
+    );
+    drop(server);
+    database.drop().await;
+}
+
+#[tokio::test]
+async fn a_resent_invite_has_a_new_link_and_a_new_7_day_expiry_and_the_old_link_stops_working() {
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+    invite(&server, &database, EMAIL).await.unwrap();
+    let old = token_from_last_email(&server);
+    server.clock.advance(SignedDuration::from_hours(24));
+    let resent_at = server.clock.now();
+
+    resend(&server, invite_id(&server, EMAIL).await).await;
+
+    let sent = server.mailer.sent();
+    let new = token_from_last_email(&server);
+    assert_eq!(sent.len(), 2);
+    assert_eq!(sent[1].recipient, EMAIL);
+    assert_eq!(
+        pending_invites(&server).await,
+        [(
+            EMAIL.to_owned(),
+            resent_at,
+            resent_at + SignedDuration::from_hours(7 * 24)
+        )]
+    );
+    let with_old = accept(&server, &old, NAME).await;
+    let with_new = accept(&server, &new, NAME).await;
+    assert_eq!(with_old.0, StatusCode::NOT_FOUND);
+    assert_eq!(with_old.1["type"], INVITE_NOT_FOUND);
+    assert_eq!(with_new.0, StatusCode::CREATED);
+    drop(server);
+    database.drop().await;
+}
+
+#[tokio::test]
+async fn a_cancelled_invite_is_no_longer_pending_and_its_link_stops_working() {
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+    invite(&server, &database, EMAIL).await.unwrap();
+    let token = token_from_last_email(&server);
+
+    cancel(&server, invite_id(&server, EMAIL).await).await;
+
+    let (status, problem) = accept(&server, &token, NAME).await;
+    assert_eq!(pending_invites(&server).await, []);
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(problem["type"], INVITE_NOT_FOUND);
     drop(server);
     database.drop().await;
 }
