@@ -5,3 +5,6 @@ templates:
   - template: attributes.rs.j2
     filter: '{attributes: [.groups[] | select(.type == "attribute_group") | .attributes[]] | sort_by(.name)}'
     application_mode: single
+  - template: metrics.rs.j2
+    filter: '{metrics: [.groups[] | select(.type == "metric")] | sort_by(.metric_name)}'
+    application_mode: single

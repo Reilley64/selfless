@@ -9,5 +9,6 @@ publish.workspace = true
 application = { workspace = true }
 email = { workspace = true }
 fundle = { workspace = true }
+jiff = { workspace = true }
 persistence = { workspace = true }
 telemetry = { workspace = true }

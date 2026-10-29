@@ -15,7 +15,7 @@ async fn main() -> Result<(), AppError> {
         signal(SignalKind::terminate()).into_app_err("failed to install the SIGTERM handler")?;
     let telemetry = telemetry::init()?;
     let result = async {
-        selfless::start(settings, send_email)
+        selfless::start(settings, infrastructure::system_clock(), send_email)
             .await?
             .serve(async move {
                 tokio::select! {

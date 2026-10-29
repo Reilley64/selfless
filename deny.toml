@@ -5,7 +5,7 @@ deny = [
     { name = "native-tls" },
 
     { name = "domain", wrappers = ["application"] },
-    { name = "application", wrappers = ["selfless", "infrastructure", "email", "persistence", "telemetry", "api"] },
+    { name = "application", wrappers = ["selfless", "infrastructure", "email", "persistence", "telemetry", "api", "admin"] },
 
     { name = "email", wrappers = ["infrastructure", "settings"] },
     { name = "persistence", wrappers = ["infrastructure", "settings"] },

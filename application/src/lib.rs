@@ -1,9 +1,19 @@
+pub mod admin_sign_in;
+pub mod admin_sign_out;
+pub mod bootstrap_first_admin;
 pub mod check_database;
+pub mod get_current_admin;
+mod passwords;
 pub mod ports;
 pub mod relay_telemetry;
+mod session_tokens;
 
 pub mod attributes {
     include!(concat!(env!("OUT_DIR"), "/attributes.rs"));
+}
+
+pub mod metrics {
+    include!(concat!(env!("OUT_DIR"), "/metrics.rs"));
 }
 
 use async_trait::async_trait;
@@ -22,6 +32,10 @@ use toasty_core::stmt::Statement;
 use toasty_core::stmt::UpdateTarget;
 use tracing::Instrument;
 use tracing::field;
+
+pub fn models() -> toasty::ModelSet {
+    toasty::models!(domain::*)
+}
 
 #[derive(Clone)]
 pub struct DbLocation {
