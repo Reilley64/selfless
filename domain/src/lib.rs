@@ -14,6 +14,8 @@ pub struct Admin {
     #[unique]
     pub name: String,
     pub password_hash: String,
+    pub created_at: Timestamp,
+    pub last_signed_in_at: Option<Timestamp>,
 }
 
 #[derive(Debug, toasty::Model)]

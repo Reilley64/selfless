@@ -54,3 +54,8 @@ snapshot_name = "20261029_140219_snapshot.toml"
 id = 6625847279185020701
 name = "20261029_141235_streams.sql"
 snapshot_name = "20261029_141235_snapshot.toml"
+
+[[migrations]]
+id = 6665036974824412014
+name = "20261029_184248_admin_sign_in_times.sql"
+snapshot_name = "20261029_184248_snapshot.toml"

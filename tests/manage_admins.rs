@@ -19,15 +19,9 @@ async fn create_admin(
     name: &str,
     password: &str,
 ) -> Result<Uuid, application::create_admin::Error> {
-    application::create_admin::call(
-        application::create_admin::Dependencies {
-            db_context: server.db_context().await,
-        },
-        name.to_owned(),
-        password.to_owned(),
-    )
-    .await
-    .map(|x| x.id)
+    application::create_admin::call(&server.state, name.to_owned(), password.to_owned())
+        .await
+        .map(|x| x.id)
 }
 
 async fn delete_admin(

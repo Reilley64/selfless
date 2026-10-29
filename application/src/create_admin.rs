@@ -1,5 +1,6 @@
 use crate::DbContext;
 use crate::passwords;
+use crate::ports::Clock;
 use crate::unique_index;
 use domain::Admin;
 
@@ -8,6 +9,7 @@ const NAME_INDEX: &str = "index_admins_by_name";
 #[fundle::deps]
 pub struct Dependencies {
     pub db_context: DbContext,
+    pub clock: Clock,
 }
 
 #[ohno::error]
@@ -23,11 +25,15 @@ pub async fn call(
     name: String,
     password: String,
 ) -> Result<Admin, Error> {
-    let mut db_context = dependencies.into().db_context;
+    let Dependencies {
+        mut db_context,
+        clock,
+    } = dependencies.into();
     let password_hash = passwords::hash(password).await.map_err(Error::caused_by)?;
     toasty::create!(Admin {
         name,
-        password_hash
+        password_hash,
+        created_at: clock.call(),
     })
     .exec(db_context.executor_mut())
     .await
