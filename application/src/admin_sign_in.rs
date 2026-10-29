@@ -1,14 +1,10 @@
 use crate::DbContext;
-use crate::attributes::SELFLESS_AUTH_CLIENT_KIND;
-use crate::attributes::SELFLESS_AUTH_OUTCOME;
-use crate::metrics::SELFLESS_AUTH_SIGN_INS;
-use crate::passwords;
+use crate::attributes::selfless_auth_client_kind;
 use crate::ports::Clock;
 use crate::session_tokens;
+use crate::sign_ins;
 use domain::Admin;
 use domain::AdminSession;
-use opentelemetry::KeyValue;
-use opentelemetry::global;
 
 #[fundle::deps]
 pub struct Dependencies {
@@ -34,23 +30,13 @@ pub async fn call(
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?;
-    let matches = passwords::verify(password, admin.as_ref().map(|x| x.password_hash.clone()))
-        .await
-        .map_err(Error::caused_by)?;
-    global::meter("selfless")
-        .u64_counter(SELFLESS_AUTH_SIGN_INS)
-        .with_unit("{sign_in}")
-        .build()
-        .add(
-            1,
-            &[
-                KeyValue::new(
-                    SELFLESS_AUTH_OUTCOME,
-                    if matches { "succeeded" } else { "failed" },
-                ),
-                KeyValue::new(SELFLESS_AUTH_CLIENT_KIND, "admin"),
-            ],
-        );
+    let matches = sign_ins::verify(
+        password,
+        admin.as_ref().map(|x| x.password_hash.clone()),
+        selfless_auth_client_kind::ADMIN,
+    )
+    .await
+    .map_err(Error::caused_by)?;
     let Some(admin) = admin.filter(|_| matches) else {
         tracing::warn!("admin sign-in failed");
         return Ok(None);

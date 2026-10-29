@@ -1,15 +1,11 @@
 use crate::DbContext;
-use crate::attributes::SELFLESS_AUTH_CLIENT_KIND;
-use crate::attributes::SELFLESS_AUTH_OUTCOME;
-use crate::metrics::SELFLESS_AUTH_SIGN_INS;
-use crate::passwords;
+use crate::attributes::selfless_auth_client_kind;
 use crate::ports::Clock;
 use crate::session_tokens;
+use crate::sign_ins;
 use domain::ClientKind;
 use domain::Session;
 use domain::User;
-use opentelemetry::KeyValue;
-use opentelemetry::global;
 
 #[fundle::deps]
 pub struct Dependencies {
@@ -42,30 +38,17 @@ pub async fn call(
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?;
-    let matches = passwords::verify(password, user.as_ref().map(|x| x.password_hash.clone()))
-        .await
-        .map_err(Error::caused_by)?;
-    global::meter("selfless")
-        .u64_counter(SELFLESS_AUTH_SIGN_INS)
-        .with_unit("{sign_in}")
-        .build()
-        .add(
-            1,
-            &[
-                KeyValue::new(
-                    SELFLESS_AUTH_OUTCOME,
-                    if matches { "succeeded" } else { "failed" },
-                ),
-                KeyValue::new(
-                    SELFLESS_AUTH_CLIENT_KIND,
-                    match client_kind {
-                        ClientKind::Web => "web",
-                        ClientKind::AppleTv => "appleTv",
-                        ClientKind::GoogleTv => "googleTv",
-                    },
-                ),
-            ],
-        );
+    let matches = sign_ins::verify(
+        password,
+        user.as_ref().map(|x| x.password_hash.clone()),
+        match client_kind {
+            ClientKind::Web => selfless_auth_client_kind::WEB,
+            ClientKind::AppleTv => selfless_auth_client_kind::APPLE_TV,
+            ClientKind::GoogleTv => selfless_auth_client_kind::GOOGLE_TV,
+        },
+    )
+    .await
+    .map_err(Error::caused_by)?;
     let Some(user) = user.filter(|_| matches) else {
         tracing::warn!("user sign-in failed");
         return Ok(None);
