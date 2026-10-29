@@ -21,7 +21,15 @@ use crate::components::dialog::dialog_description;
 use crate::components::dialog::dialog_footer;
 use crate::components::dialog::dialog_header;
 use crate::components::dialog::dialog_title;
+use crate::components::pagination::pagination;
+use crate::components::pagination::pagination_content;
+use crate::components::pagination::pagination_ellipsis;
+use crate::components::pagination::pagination_item;
+use crate::components::pagination::pagination_link;
+use crate::components::pagination::pagination_next;
+use crate::components::pagination::pagination_previous;
 use crate::components::progress::progress;
+use crate::components::select::select;
 use crate::components::table::table;
 use crate::components::table::table_body;
 use crate::components::table::table_cell;
@@ -37,7 +45,6 @@ use application::attributes::SELFLESS_ADMIN_ACTION;
 use application::attributes::SELFLESS_LIBRARY_SOURCE;
 use application::sync_status::ApiCall;
 use application::sync_status::FailedRow;
-use application::sync_status::Problem;
 use application::sync_status::ProblemItem;
 use application::sync_status::ReconcileProgress;
 use application::sync_status::SourceStatus;
@@ -49,6 +56,7 @@ use domain::SyncProblemKind;
 use infrastructure::AppState;
 use jiff::SignedDuration;
 use serde::Deserialize;
+use serde::Serialize;
 use std::error::Error;
 use topcoat::context::Cx;
 use topcoat::context::app_context;
@@ -58,6 +66,7 @@ use topcoat::router::error::not_found;
 use topcoat::router::href;
 use topcoat::router::page;
 use topcoat::router::path_param;
+use topcoat::router::query_params;
 use topcoat::view::View;
 use topcoat::view::attributes;
 use topcoat::view::component;
@@ -79,6 +88,45 @@ pub fn register(router: RouterBuilder) -> RouterBuilder {
         .page(confirm_removal)
 }
 
+#[query_params(error = bad_request)]
+#[derive(Clone, Copy, Serialize)]
+struct ProblemQuery {
+    kind: Option<ProblemKind>,
+    page: Option<usize>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum ProblemKind {
+    UnreadableNfo,
+    FileNotFound,
+    UnreadableFile,
+}
+
+impl ProblemKind {
+    const ALL: [Self; 3] = [
+        Self::UnreadableNfo,
+        Self::FileNotFound,
+        Self::UnreadableFile,
+    ];
+
+    fn value(self) -> &'static str {
+        match self {
+            Self::UnreadableNfo => "unreadable-nfo",
+            Self::FileNotFound => "file-not-found",
+            Self::UnreadableFile => "unreadable-file",
+        }
+    }
+
+    fn domain(self) -> SyncProblemKind {
+        match self {
+            Self::UnreadableNfo => SyncProblemKind::UnreadableNfo,
+            Self::FileNotFound => SyncProblemKind::FileNotFound,
+            Self::UnreadableFile => SyncProblemKind::FfprobeFailed,
+        }
+    }
+}
+
 #[derive(Deserialize)]
 struct SyncAction {
     #[serde(default)]
@@ -91,15 +139,30 @@ struct Notice {
     description: String,
 }
 
+async fn read_sync_status(cx: &Cx) -> topcoat::Result<(SyncStatus, ProblemQuery)> {
+    let query = *query_params::<ProblemQuery>(cx)?;
+    let status = application::sync_status::call(
+        app_context::<AppState>(cx),
+        query.kind.map(ProblemKind::domain),
+        query.page.unwrap_or(1),
+    )
+    .await?;
+    let query = ProblemQuery {
+        kind: query.kind,
+        page: Some(status.problem_page).filter(|x| *x > 1),
+    };
+    Ok((status, query))
+}
+
 #[page("/admin/sync")]
 async fn sync(cx: &Cx) -> topcoat::Result<impl View> {
     require_admin(cx).await?;
-    let status = application::sync_status::call(app_context::<AppState>(cx)).await?;
+    let (status, query) = read_sync_status(cx).await?;
     Ok(view! {
         admin_page(
             path: SYNC_PATH,
             title: "Sync status",
-            sync_status(status: &status, notice: None, polling: false)
+            sync_status(status: &status, query: query, notice: None, polling: false)
         )
     })
 }
@@ -107,8 +170,8 @@ async fn sync(cx: &Cx) -> topcoat::Result<impl View> {
 #[page("/admin/sync/sources")]
 async fn sources(cx: &Cx) -> topcoat::Result<impl View> {
     require_admin(cx).await?;
-    let status = application::sync_status::call(app_context::<AppState>(cx)).await?;
-    Ok(view! { source_cards(status: &status, polling: false) })
+    let (status, query) = read_sync_status(cx).await?;
+    Ok(view! { source_cards(status: &status, query: query, polling: false) })
 }
 
 #[page(POST "/admin/sync/start")]
@@ -118,14 +181,14 @@ async fn sync_now(cx: &Cx, Form(form): Form<SyncAction>) -> topcoat::Result<impl
     let state = app_context::<AppState>(cx);
     application::sync_now::call(state);
     log_source_action(AdminAction::SyncStart, None);
-    let status = application::sync_status::call(state).await?;
+    let (status, query) = read_sync_status(cx).await?;
     let notice = Notice {
         variant: AlertVariant::Neutral,
         title: "Reconcile started",
         description: "Radarr and Sonarr are reconciling. The cards update until they finish."
             .to_owned(),
     };
-    Ok(view! { sync_status(status: &status, notice: Some(notice), polling: true) })
+    Ok(view! { sync_status(status: &status, query: query, notice: Some(notice), polling: true) })
 }
 
 #[page(POST "/admin/sync/failed-deliveries/{delivery_id}/retry")]
@@ -152,8 +215,8 @@ async fn retry(cx: &Cx, Form(form): Form<SyncAction>) -> topcoat::Result<impl Vi
             }
         }
     };
-    let status = application::sync_status::call(state).await?;
-    Ok(view! { sync_status(status: &status, notice: Some(notice), polling: false) })
+    let (status, query) = read_sync_status(cx).await?;
+    Ok(view! { sync_status(status: &status, query: query, notice: Some(notice), polling: false) })
 }
 
 #[page(POST "/admin/sync/{source_name}/confirm-removal")]
@@ -190,8 +253,8 @@ async fn confirm_removal(cx: &Cx, Form(form): Form<SyncAction>) -> topcoat::Resu
             }
         }
     };
-    let status = application::sync_status::call(state).await?;
-    Ok(view! { sync_status(status: &status, notice: Some(notice), polling: false) })
+    let (status, query) = read_sync_status(cx).await?;
+    Ok(view! { sync_status(status: &status, query: query, notice: Some(notice), polling: false) })
 }
 
 fn log_source_action(action: AdminAction, source: Option<Source>) {
@@ -205,6 +268,7 @@ fn log_source_action(action: AdminAction, source: Option<Source>) {
 #[component]
 async fn sync_status(
     status: &SyncStatus,
+    query: ProblemQuery,
     notice: Option<Notice>,
     polling: bool,
 ) -> topcoat::Result<impl View> {
@@ -214,7 +278,7 @@ async fn sync_status(
                 button(
                     attrs: attributes! {
                         type="button"
-                        hx-post=(href!(sync_now))
+                        hx-post=(href!(sync_now).query(query))
                         hx-target=(SYNC_STATUS_TARGET)
                         hx-swap="outerHTML"
                     },
@@ -232,15 +296,19 @@ async fn sync_status(
                 ),
                 None => "",
             }
-            source_cards(status: status, polling: polling)
-            failed_deliveries(rows: &status.failed_rows)
-            sync_problems(problems: &status.problems)
+            source_cards(status: status, query: query, polling: polling)
+            failed_deliveries(rows: &status.failed_rows, query: query)
+            sync_problems(status: status, query: query)
         </div>
     })
 }
 
 #[component]
-async fn source_cards(status: &SyncStatus, polling: bool) -> topcoat::Result<impl View> {
+async fn source_cards(
+    status: &SyncStatus,
+    query: ProblemQuery,
+    polling: bool,
+) -> topcoat::Result<impl View> {
     let polling = polling
         || status.radarr.reconcile_progress.is_some()
         || status.sonarr.reconcile_progress.is_some();
@@ -248,19 +316,23 @@ async fn source_cards(status: &SyncStatus, polling: bool) -> topcoat::Result<imp
         <div
             class="grid gap-6 md:grid-cols-2"
             if polling {
-                hx-get=(href!(sources))
+                hx-get=(href!(sources).query(query))
                 hx-trigger="every 5s"
                 hx-swap="outerHTML"
             }
         >
-            source_card(source: Source::Radarr, status: &status.radarr)
-            source_card(source: Source::Sonarr, status: &status.sonarr)
+            source_card(source: Source::Radarr, status: &status.radarr, query: query)
+            source_card(source: Source::Sonarr, status: &status.sonarr, query: query)
         </div>
     })
 }
 
 #[component]
-async fn source_card(source: Source, status: &SourceStatus) -> topcoat::Result<impl View> {
+async fn source_card(
+    source: Source,
+    status: &SourceStatus,
+    query: ProblemQuery,
+) -> topcoat::Result<impl View> {
     let label = source_label(source);
     Ok(view! {
         <section aria-label=(label)>
@@ -289,6 +361,7 @@ async fn source_card(source: Source, status: &SourceStatus) -> topcoat::Result<i
                         Some(held_removal) => held_removal_alert(
                             source: source,
                             items: source_items(source, held_removal.count),
+                            query: query,
                         ),
                         None => "",
                     }
@@ -376,7 +449,11 @@ async fn source_card(source: Source, status: &SourceStatus) -> topcoat::Result<i
 }
 
 #[component]
-async fn held_removal_alert(source: Source, items: String) -> topcoat::Result<impl View> {
+async fn held_removal_alert(
+    source: Source,
+    items: String,
+    query: ProblemQuery,
+) -> topcoat::Result<impl View> {
     let label = source_label(source);
     let dialog_id = format!("confirm-removal-{}", source.name());
     let title_id = format!("{dialog_id}-title");
@@ -421,7 +498,7 @@ async fn held_removal_alert(source: Source, items: String) -> topcoat::Result<im
                         variant: ButtonVariant::Destructive,
                         attrs: attributes! {
                             type="button"
-                            hx-post=(href!(confirm_removal, SourceName(source.name())))
+                            hx-post=(href!(confirm_removal, SourceName(source.name())).query(query))
                             hx-target=(SYNC_STATUS_TARGET)
                             hx-swap="outerHTML"
                         },
@@ -434,7 +511,7 @@ async fn held_removal_alert(source: Source, items: String) -> topcoat::Result<im
 }
 
 #[component]
-async fn failed_deliveries(rows: &[FailedRow]) -> topcoat::Result<impl View> {
+async fn failed_deliveries(rows: &[FailedRow], query: ProblemQuery) -> topcoat::Result<impl View> {
     Ok(view! {
         <section aria-label="Failed deliveries" class="flex flex-col gap-3">
             <h2 class="text-sm font-semibold">"Failed deliveries"</h2>
@@ -472,7 +549,7 @@ async fn failed_deliveries(rows: &[FailedRow]) -> topcoat::Result<impl View> {
                                             size: ButtonSize::Sm,
                                             attrs: attributes! {
                                                 type="button"
-                                                hx-post=(href!(retry, DeliveryId(row.id)))
+                                                hx-post=(href!(retry, DeliveryId(row.id)).query(query))
                                                 hx-target=(SYNC_STATUS_TARGET)
                                                 hx-swap="outerHTML"
                                             },
@@ -490,11 +567,40 @@ async fn failed_deliveries(rows: &[FailedRow]) -> topcoat::Result<impl View> {
 }
 
 #[component]
-async fn sync_problems(problems: &[Problem]) -> topcoat::Result<impl View> {
+async fn sync_problems(status: &SyncStatus, query: ProblemQuery) -> topcoat::Result<impl View> {
+    let page = status.problem_page;
+    let page_href = move |page: usize| {
+        href!(sync).query(ProblemQuery {
+            kind: query.kind,
+            page: Some(page).filter(|x| *x > 1),
+        })
+    };
     Ok(view! {
         <section aria-label="Items with problems" class="flex flex-col gap-3">
-            <h2 class="text-sm font-semibold">"Items with problems"</h2>
-            if problems.is_empty() {
+            <div class="flex items-center justify-between gap-3">
+                <h2 class="text-sm font-semibold">"Items with problems"</h2>
+                select(
+                    attrs: attributes! {
+                        class="w-44"
+                        name="kind"
+                        aria-label="Kind"
+                        hx-get=(href!(sync))
+                        hx-trigger="change"
+                        hx-select=(SYNC_STATUS_TARGET)
+                        hx-target=(SYNC_STATUS_TARGET)
+                        hx-swap="outerHTML"
+                        hx-push-url="true"
+                    },
+                    <option value="" selected=(query.kind.is_none())>"All kinds"</option>
+                    #[key(kind.value())]
+                    for kind in ProblemKind::ALL {
+                        <option value=(kind.value()) selected=(query.kind == Some(kind))>
+                            (problem_kind(kind.domain()))
+                        </option>
+                    }
+                )
+            </div>
+            if status.problems.is_empty() {
                 <p class="text-sm text-muted-foreground">"No items with problems"</p>
             } else {
                 card(
@@ -508,7 +614,7 @@ async fn sync_problems(problems: &[Problem]) -> topcoat::Result<impl View> {
                         )
                         table_body(
                             #[key(index)]
-                            for (index, problem) in problems.iter().enumerate() {
+                            for (index, problem) in status.problems.iter().enumerate() {
                                 table_row(
                                     table_cell((problem_kind(problem.kind)))
                                     table_cell((problem_item(&problem.item)))
@@ -522,8 +628,45 @@ async fn sync_problems(problems: &[Problem]) -> topcoat::Result<impl View> {
                     )
                 )
             }
+            if status.problem_pages > 1 {
+                pagination(
+                    pagination_content(
+                        if page > 1 {
+                            pagination_item(pagination_previous(attrs: attributes! { href=(page_href(page - 1)) }))
+                        }
+                        #[key(index)]
+                        for (index, number) in page_numbers(page, status.problem_pages).into_iter().enumerate() {
+                            pagination_item(
+                                match number {
+                                    Some(number) => pagination_link(
+                                        active: number == page,
+                                        attrs: attributes! { href=(page_href(number)) },
+                                        (number.to_string())
+                                    ),
+                                    None => pagination_ellipsis(),
+                                }
+                            )
+                        }
+                        if page < status.problem_pages {
+                            pagination_item(pagination_next(attrs: attributes! { href=(page_href(page + 1)) }))
+                        }
+                    )
+                )
+            }
         </section>
     })
+}
+
+fn page_numbers(page: usize, pages: usize) -> Vec<Option<usize>> {
+    let mut numbers = Vec::new();
+    for number in 1..=pages {
+        if number == 1 || number == pages || number.abs_diff(page) <= 1 {
+            numbers.push(Some(number));
+        } else if numbers.last() != Some(&None) {
+            numbers.push(None);
+        }
+    }
+    numbers
 }
 
 fn source_label(source: Source) -> &'static str {

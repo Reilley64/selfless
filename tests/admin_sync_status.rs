@@ -30,9 +30,14 @@ use tracing_subscriber::layer::SubscriberExt;
 
 const ARRIVAL: i64 = 42;
 const DUNE: i64 = 43;
+const BLADE_RUNNER: i64 = 44;
 const ALL_MOVIES: [i64; 4] = [42, 43, 44, 45];
 const SEVERANCE: i64 = 7;
 const ARRIVAL_FILE: &str = "Movies/Arrival (2016)/Arrival (2016) Bluray-1080p.mkv";
+const DUNE_FILE: &str = "Movies/Dune (2021)/Dune (2021) Bluray-2160p.mkv";
+const DUNE_NFO: &str = "Movies/Dune (2021)/Dune (2021) Bluray-2160p.nfo";
+const BLADE_RUNNER_FILE: &str =
+    "Movies/Blade Runner 2049 (2017)/Blade Runner 2049 (2017) Bluray-1080p.mkv";
 const SEVERANCE_FILES: [&str; 4] = [
     "TV/Severance/Specials/Severance - S00E01 - Inside the Episode WEBDL-1080p.mkv",
     "TV/Severance/Season 01/Severance - S01E01 - Good News About Hell WEBDL-1080p.mkv",
@@ -89,7 +94,7 @@ impl Fixture {
     async fn reconciled(&self) {
         let started_at = self.server.clock.now();
         eventually(async || {
-            let status = application::sync_status::call(&self.server.state)
+            let status = application::sync_status::call(&self.server.state, None, 1)
                 .await
                 .unwrap();
             [status.radarr, status.sonarr]
@@ -116,6 +121,28 @@ impl Fixture {
         let movies = movies
             .into_iter()
             .filter(|x| ids.contains(&x["id"].as_i64().unwrap()))
+            .collect();
+        Value::Array(movies).to_string()
+    }
+
+    fn missing_movies(&self, count: i64) -> String {
+        let arrival: Value = serde_json::from_str::<Vec<Value>>(&self.listed_movies(&[ARRIVAL]))
+            .unwrap()
+            .remove(0);
+        let movies = (1..=count)
+            .map(|number| {
+                let title = format!("Missing {number:02}");
+                let mut movie: Value =
+                    serde_json::from_str(&arrival.to_string().replace("Arrival (2016)", &title))
+                        .unwrap();
+                movie["id"] = (1000 + number).into();
+                movie["tmdbId"] = (1000 + number).into();
+                movie["imdbId"] = format!("tt{number:07}").into();
+                movie["movieFile"]["id"] = (1000 + number).into();
+                movie["movieFile"]["movieId"] = (1000 + number).into();
+                movie["title"] = title.into();
+                movie
+            })
             .collect();
         Value::Array(movies).to_string()
     }
@@ -399,7 +426,7 @@ async fn retry_on_a_failed_delivery_processes_it_again() {
         application::process_inbox_row::call(&fixture.server.state)
             .await
             .unwrap();
-        application::sync_status::call(&fixture.server.state)
+        application::sync_status::call(&fixture.server.state, None, 1)
             .await
             .unwrap()
             .failed_rows
@@ -548,5 +575,115 @@ async fn items_with_problems_lists_the_kind_the_item_and_the_path() {
     ] {
         assert!(problems.contains(expected), "{expected:?} in {problems}");
     }
+    fixture.stop().await;
+}
+
+#[tokio::test]
+async fn items_with_problems_can_be_filtered_by_kind() {
+    let mut fixture = Fixture::start().await;
+    fixture
+        .radarr
+        .serve_movies(
+            StatusCode::OK,
+            &fixture.listed_movies(&[ARRIVAL, DUNE, BLADE_RUNNER]),
+        )
+        .await;
+    fixture.media.create(DUNE_FILE);
+    fixture.media.write(DUNE_NFO, "unreadable");
+    fixture.media.create(BLADE_RUNNER_FILE);
+    fixture
+        .server
+        .prober
+        .fail(&fixture.media.path(BLADE_RUNNER_FILE));
+    fixture.sync_now().await;
+    let page = fixture.sync_page().await;
+
+    for (kind, shown, hidden) in [
+        (
+            "All kinds",
+            &["Arrival", "Dune", "Blade Runner 2049"][..],
+            &[][..],
+        ),
+        (
+            "Unreadable NFO",
+            &["Dune"],
+            &["Arrival", "Blade Runner 2049"],
+        ),
+        (
+            "File not found",
+            &["Arrival"],
+            &["Dune", "Blade Runner 2049"],
+        ),
+        (
+            "Unreadable file",
+            &["Blade Runner 2049"],
+            &["Arrival", "Dune"],
+        ),
+    ] {
+        let filtered = fixture.browser.get(&page.hx_get_on_choosing(kind)).await;
+        assert_eq!(filtered.status, StatusCode::OK, "{}", filtered.body);
+        let problems = filtered.section_text("Items with problems");
+        for title in shown {
+            assert!(problems.contains(title), "{kind}: {title:?} in {problems}");
+        }
+        for title in hidden {
+            assert!(
+                !problems.contains(title),
+                "{kind}: no {title:?} in {problems}"
+            );
+        }
+    }
+    fixture.stop().await;
+}
+
+#[tokio::test]
+async fn items_with_problems_show_50_a_page() {
+    let mut fixture = Fixture::start().await;
+    fixture
+        .radarr
+        .serve_movies(StatusCode::OK, &fixture.missing_movies(55))
+        .await;
+    fixture.sync_now().await;
+
+    let first = fixture.sync_page().await;
+    let next = fixture.browser.get(&first.link("Next")).await;
+
+    let first = first.section_text("Items with problems");
+    assert!(first.contains("Missing 01"), "{first}");
+    assert!(first.contains("Missing 50"), "{first}");
+    assert!(!first.contains("Missing 51"), "{first}");
+    assert_eq!(next.status, StatusCode::OK, "{}", next.body);
+    let next = next.section_text("Items with problems");
+    assert!(!next.contains("Missing 50"), "{next}");
+    assert!(next.contains("Missing 51"), "{next}");
+    assert!(next.contains("Missing 55"), "{next}");
+    fixture.stop().await;
+}
+
+#[tokio::test]
+async fn the_kind_and_page_stay_after_an_action() {
+    let mut fixture = Fixture::start().await;
+    let mut movies: Vec<Value> = serde_json::from_str(&fixture.missing_movies(55)).unwrap();
+    movies.extend(serde_json::from_str::<Vec<Value>>(&fixture.listed_movies(&[DUNE])).unwrap());
+    fixture
+        .radarr
+        .serve_movies(StatusCode::OK, &Value::Array(movies).to_string())
+        .await;
+    fixture.media.create(DUNE_FILE);
+    fixture.media.write(DUNE_NFO, "unreadable");
+    fixture.sync_now().await;
+    let page = fixture.sync_page().await;
+    let filtered = fixture
+        .browser
+        .get(&page.hx_get_on_choosing("File not found"))
+        .await;
+    let next = fixture.browser.get(&filtered.link("Next")).await;
+
+    let after = fixture.click(&next, "Sync now").await;
+
+    let problems = after.section_text("Items with problems");
+    assert!(problems.contains("Missing 51"), "{problems}");
+    assert!(!problems.contains("Missing 50"), "{problems}");
+    assert!(!problems.contains("Dune"), "{problems}");
     fixture.stop().await;
 }

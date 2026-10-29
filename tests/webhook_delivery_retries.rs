@@ -119,7 +119,7 @@ impl Fixture {
         let started_at = self.server.clock.now();
         application::sync_now::call(&self.server.state);
         eventually(async || {
-            application::sync_status::call(&self.server.state)
+            application::sync_status::call(&self.server.state, None, 1)
                 .await
                 .unwrap()
                 .radarr
@@ -131,7 +131,7 @@ impl Fixture {
     }
 
     async fn failed_rows(&self) -> Vec<FailedRow> {
-        application::sync_status::call(&self.server.state)
+        application::sync_status::call(&self.server.state, None, 1)
             .await
             .unwrap()
             .failed_rows
