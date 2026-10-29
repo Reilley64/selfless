@@ -29,6 +29,8 @@ use tracing::Span;
 use tracing::field;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
+const OTHER_METHOD: &str = "_OTHER";
+
 pub(crate) struct HttpServerLayer {
     duration: Histogram<f64>,
 }
@@ -58,7 +60,7 @@ impl Layer for HttpServerLayer {
         let request_method = match method(cx).as_str() {
             x @ ("CONNECT" | "DELETE" | "GET" | "HEAD" | "OPTIONS" | "PATCH" | "POST" | "PUT"
             | "QUERY" | "TRACE") => x,
-            _ => "_OTHER",
+            _ => OTHER_METHOD,
         };
         let route = rewritten.map_or_else(
             || {
@@ -87,7 +89,7 @@ impl Layer for HttpServerLayer {
         {
             Span::none()
         } else {
-            let span_method = if request_method == "_OTHER" {
+            let span_method = if request_method == OTHER_METHOD {
                 "HTTP"
             } else {
                 request_method
@@ -99,7 +101,7 @@ impl Layer for HttpServerLayer {
                 otel.kind = "server",
                 otel.status_code = field::Empty,
                 http.request.method = request_method,
-                http.request.method_original = (request_method == "_OTHER").then(|| method(cx).as_str()),
+                http.request.method_original = (request_method == OTHER_METHOD).then(|| method(cx).as_str()),
                 http.route = route,
                 http.response.status_code = field::Empty,
                 url.path = uri(cx).path(),
