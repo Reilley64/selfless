@@ -6,10 +6,13 @@ Created in [T3 Code](https://t3.codes).
 
 ## Development
 
-Install [mise](https://mise.jdx.dev) and Docker, then run `mise install` in the repository root.
+Install [mise](https://mise.jdx.dev) and Docker, then run `mise install` and `bun install` in the repository root.
 
 - `mise run services` starts PostgreSQL and grafana/otel-lgtm from `compose.yaml`. Grafana runs at http://localhost:3000.
-- `cargo run` starts the server. It reads `DATABASE__URL` (set in `mise.toml`) and `HTTP__PORT` (default 8080). It sends traces, metrics and logs over OTLP gRPC to `localhost:4317`. The standard `OTEL_*` variables change this, and `mise.toml` sets `OTEL_SERVICE_NAME`.
+- `cargo run` starts the server. It reads `DATABASE__URL` (set in `mise.toml`) and `HTTP__PORT` (default 8080). It serves the web export from `WEB__DIR` (default `presentation/web/dist`) at `/`. It sends traces, metrics and logs over OTLP gRPC to `localhost:4317`. The standard `OTEL_*` variables change this, and `mise.toml` sets `OTEL_SERVICE_NAME`.
+- `mise run dev` starts PostgreSQL, the server and the web app's dev server on port 8081. The dev server sends `/actuator` and `/api` requests to the server.
+- `bun run generate` writes the API client from `openapi.yaml`. Run it after changing that file. `bun run typecheck`, `bun run lint` and `bun run test` check the apps, and `bun run export` writes the web export to `presentation/web/dist`.
+- The server build reads the branch, commit and commit time for `/actuator/info/v1` from git. `GIT_BRANCH`, `GIT_COMMIT` and `GIT_COMMIT_TIME` override them, for builds outside a git checkout.
 - A cargo build runs Weaver to generate Rust constants from `telemetry/registry`. `mise run generate:telemetry` writes the TypeScript constants. `mise run lint:telemetry` checks the registry.
 - `mise run test` runs the server tests against that PostgreSQL. Each test creates its own database.
 - `mise run check` checks formatting, Clippy lints and crate direction.

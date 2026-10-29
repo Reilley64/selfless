@@ -1,4 +1,5 @@
 use api::Availability;
+use application::BuildInfo;
 use application::DbContext;
 use application::DbServer;
 use infrastructure::AppState;
@@ -31,10 +32,21 @@ pub async fn start(settings: AppSettings) -> Result<Server, AppError> {
         port: database_url.port().unwrap_or(5432),
     };
     let state = AppState::builder()
+        .build_info(|_| BuildInfo {
+            name: env!("CARGO_PKG_NAME"),
+            version: env!("CARGO_PKG_VERSION"),
+            git_branch: env!("GIT_BRANCH"),
+            git_commit_id: env!("GIT_COMMIT"),
+            git_commit_time: env!("GIT_COMMIT_TIME"),
+        })
         .db_context(|_| DbContext::new(db.clone(), server.clone()))
         .build();
     let availability = Availability::default();
-    let router = api::router(state, availability.clone());
+    let router = api::router(
+        state,
+        availability.clone(),
+        std::path::absolute(&settings.web.dir)?,
+    );
     let listener = TcpListener::bind(("0.0.0.0", settings.http.port)).await?;
     Ok(Server {
         listener,

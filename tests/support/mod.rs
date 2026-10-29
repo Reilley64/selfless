@@ -7,6 +7,7 @@ use serde_json::json;
 use settings::AppSettings;
 use settings::DatabaseSettings;
 use settings::HttpSettings;
+use settings::WebSettings;
 use std::net::SocketAddr;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
@@ -82,6 +83,7 @@ impl TestServer {
             database: DatabaseSettings {
                 url: database_url.to_string(),
             },
+            web: WebSettings::default(),
         })
         .await
         .unwrap();

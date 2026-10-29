@@ -12,6 +12,6 @@ infrastructure = { workspace = true }
 opentelemetry = { workspace = true }
 opentelemetry_sdk = { workspace = true }
 serde = { workspace = true }
-topcoat = { workspace = true }
+topcoat = { workspace = true, features = ["fs"] }
 tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }

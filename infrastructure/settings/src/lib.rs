@@ -2,6 +2,7 @@ use config::Config;
 use config::ConfigError;
 use config::Environment;
 use serde::Deserialize;
+use std::path::PathBuf;
 
 pub use persistence::DatabaseSettings;
 
@@ -10,6 +11,8 @@ pub struct AppSettings {
     #[serde(default)]
     pub http: HttpSettings,
     pub database: DatabaseSettings,
+    #[serde(default)]
+    pub web: WebSettings,
 }
 
 impl AppSettings {
@@ -30,5 +33,19 @@ pub struct HttpSettings {
 impl Default for HttpSettings {
     fn default() -> Self {
         Self { port: 8080 }
+    }
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(default)]
+pub struct WebSettings {
+    pub dir: PathBuf,
+}
+
+impl Default for WebSettings {
+    fn default() -> Self {
+        Self {
+            dir: PathBuf::from("presentation/web/dist"),
+        }
     }
 }

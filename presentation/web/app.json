@@ -1,0 +1,18 @@
+{
+  "expo": {
+    "name": "selfless",
+    "slug": "selfless-web",
+    "version": "0.0.0",
+    "platforms": [
+      "web"
+    ],
+    "scheme": "selfless",
+    "web": {
+      "output": "single",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router"
+    ]
+  }
+}
