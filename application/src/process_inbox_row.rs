@@ -12,6 +12,7 @@ use crate::sync_show;
 use crate::unsampled;
 use crate::webhook_deliveries;
 use crate::webhook_deliveries::Outcome;
+use domain::InboxAttempt;
 use domain::InboxRow;
 use domain::InboxRowStatus;
 use domain::Source;
@@ -233,6 +234,14 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<bool, Error> 
         };
         span.record(SELFLESS_WEBHOOK_OUTCOME, outcome.name());
         let (source, event_type) = (row.source, row.event_type.clone());
+        toasty::create!(InboxAttempt {
+            inbox_row_id: id,
+            attempted_at: claimed_at,
+            error: error.clone(),
+        })
+        .exec(db_context.executor_mut())
+        .await
+        .map_err(Error::caused_by)?;
         row.update()
             .status(status)
             .next_attempt_at(next_attempt_at)

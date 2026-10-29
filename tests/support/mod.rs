@@ -849,6 +849,19 @@ impl Page {
         attribute(tag, "hx-post").unwrap_or_else(|| panic!("{button:?} posts nothing: {tag}"))
     }
 
+    pub fn dialog_text(&self, button: &str) -> String {
+        let button_tag = self.opening_tag("button", button);
+        let id = attribute(button_tag, "commandfor")
+            .unwrap_or_else(|| panic!("{button:?} opens no dialog: {button_tag}"));
+        let id_at = self
+            .body
+            .find(&format!(r#" id="{id}""#))
+            .unwrap_or_else(|| panic!("the page has no dialog {id:?}\n{}", self.body));
+        let start = self.body[..id_at].rfind("<dialog").unwrap();
+        let end = start + self.body[start..].find("</dialog>").unwrap();
+        visible_text(&self.body[start..end])
+    }
+
     pub fn hx_get_on_choosing(&self, option: &str) -> String {
         let option_tag = self.opening_tag("option", option);
         let option_at = self.body.find(option_tag).unwrap();
