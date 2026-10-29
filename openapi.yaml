@@ -2,7 +2,7 @@ openapi: 3.1.1
 info:
   title: selfless
   description: The HTTP API of the selfless media server, used by its web and TV apps.
-  version: 0.0.0 # x-release-please-version
+  version: 0.1.0 # x-release-please-version
   license:
     name: MIT OR Apache-2.0
     identifier: MIT OR Apache-2.0

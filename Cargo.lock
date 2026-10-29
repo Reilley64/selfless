@@ -10,7 +10,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "admin"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "infrastructure",
  "topcoat",
@@ -170,7 +170,7 @@ checksum = "fb5dfbc6d8d2675589ccbe4d0fd61df2419075625f8c1a62325e718e2b0049f9"
 
 [[package]]
 name = "api"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "application",
  "http",
@@ -186,7 +186,7 @@ dependencies = [
 
 [[package]]
 name = "application"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "bytes",
@@ -911,7 +911,7 @@ dependencies = [
 
 [[package]]
 name = "domain"
-version = "0.0.0"
+version = "0.1.0"
 
 [[package]]
 name = "dotenvy"
@@ -1658,7 +1658,7 @@ dependencies = [
 
 [[package]]
 name = "infrastructure"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "application",
  "fundle",
@@ -2358,7 +2358,7 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 
 [[package]]
 name = "persistence"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "application",
  "ohno",
@@ -3004,7 +3004,7 @@ dependencies = [
 
 [[package]]
 name = "selfless"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "admin",
  "api",
@@ -3148,7 +3148,7 @@ dependencies = [
 
 [[package]]
 name = "settings"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "config",
  "persistence",
@@ -3465,7 +3465,7 @@ dependencies = [
 
 [[package]]
 name = "telemetry"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "application",
  "bytes",
@@ -4748,7 +4748,7 @@ dependencies = [
 
 [[package]]
 name = "webhooks"
-version = "0.0.0"
+version = "0.1.0"
 
 [[package]]
 name = "webpki-root-certs"
@@ -4895,7 +4895,7 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 
 [[package]]
 name = "workers"
-version = "0.0.0"
+version = "0.1.0"
 
 [[package]]
 name = "writeable"
