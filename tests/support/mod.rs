@@ -790,7 +790,7 @@ impl Page {
             .unwrap_or_else(|| panic!("{text:?} is not in a link\n{}", self.body));
         let start = link_at + self.body[link_at..].find(r#"href=""#).unwrap() + r#"href=""#.len();
         let length = self.body[start..].find('"').unwrap();
-        self.body[start..start + length].to_owned()
+        self.body[start..start + length].replace("&amp;", "&")
     }
 
     pub fn header(&self, name: &str) -> Option<&str> {
@@ -847,11 +847,6 @@ impl Page {
     pub fn hx_post(&self, button: &str) -> String {
         let tag = self.opening_tag("button", button);
         attribute(tag, "hx-post").unwrap_or_else(|| panic!("{button:?} posts nothing: {tag}"))
-    }
-
-    pub fn link(&self, label: &str) -> String {
-        let tag = self.opening_tag("a", label);
-        attribute(tag, "href").unwrap_or_else(|| panic!("{label:?} links nowhere: {tag}"))
     }
 
     pub fn hx_get_on_choosing(&self, option: &str) -> String {
