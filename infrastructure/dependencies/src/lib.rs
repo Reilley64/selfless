@@ -10,8 +10,11 @@ use application::ports::GetSonarrEpisodes;
 use application::ports::GetSonarrShow;
 use application::ports::ListRadarrMovies;
 use application::ports::ListSonarrSeries;
+use application::ports::ReadMovieFolder;
+use application::ports::ReadMovieNfo;
 use jiff::Timestamp;
 
+pub use media_files;
 pub use persistence;
 pub use radarr;
 pub use sonarr;
@@ -30,6 +33,8 @@ pub struct AppState {
     pub inbox_wakeup: InboxWakeup,
     pub list_radarr_movies: ListRadarrMovies,
     pub list_sonarr_series: ListSonarrSeries,
+    pub read_movie_folder: ReadMovieFolder,
+    pub read_movie_nfo: ReadMovieNfo,
     pub reconciles: Reconciles,
     pub webhook_passwords: WebhookPasswords,
 }

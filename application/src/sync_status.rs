@@ -10,6 +10,8 @@ use domain::Season;
 use domain::Show;
 use domain::Source;
 use domain::SourceState;
+use domain::SyncProblem;
+use domain::SyncProblemKind;
 use jiff::Timestamp;
 use std::time::Duration;
 use uuid::Uuid;
@@ -28,6 +30,7 @@ pub struct SyncStatus {
     pub radarr: SourceStatus,
     pub sonarr: SourceStatus,
     pub failed_rows: Vec<FailedRow>,
+    pub problems: Vec<Problem>,
 }
 
 pub struct FailedRow {
@@ -37,6 +40,12 @@ pub struct FailedRow {
     pub error: String,
     pub attempts: i64,
     pub received_at: Timestamp,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct Problem {
+    pub kind: SyncProblemKind,
+    pub path: String,
 }
 
 #[derive(Debug)]
@@ -114,6 +123,17 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<SyncStatus, E
             received_at: x.received_at,
         })
         .collect();
+    let problems = SyncProblem::all()
+        .order_by(SyncProblem::fields().path().asc())
+        .exec(db_context.executor_mut())
+        .await
+        .map_err(Error::caused_by)?
+        .into_iter()
+        .map(|x| Problem {
+            kind: x.kind,
+            path: x.path,
+        })
+        .collect();
     Ok(SyncStatus {
         radarr: source_status(
             &mut db_context,
@@ -130,6 +150,7 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<SyncStatus, E
         )
         .await?,
         failed_rows,
+        problems,
     })
 }
 

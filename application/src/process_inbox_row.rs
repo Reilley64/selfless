@@ -2,6 +2,8 @@ use crate::DbContext;
 use crate::ports::Clock;
 use crate::ports::GetRadarrMovie;
 use crate::ports::GetSonarrShow;
+use crate::ports::ReadMovieFolder;
+use crate::ports::ReadMovieNfo;
 use crate::sync_movie;
 use crate::sync_show;
 use crate::unsampled;
@@ -27,6 +29,8 @@ pub struct Dependencies {
     pub db_context: DbContext,
     pub get_radarr_movie: GetRadarrMovie,
     pub get_sonarr_show: GetSonarrShow,
+    pub read_movie_folder: ReadMovieFolder,
+    pub read_movie_nfo: ReadMovieNfo,
 }
 
 #[ohno::error]
@@ -118,6 +122,8 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<bool, Error> 
         mut db_context,
         get_radarr_movie,
         get_sonarr_show,
+        read_movie_folder,
+        read_movie_nfo,
     } = dependencies.into();
     let claimed_at = clock.call();
     let Some(claimed) = toasty::sql::query(
@@ -176,6 +182,8 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<bool, Error> 
                 sync_movie::Dependencies {
                     db_context: db_context.clone(),
                     get_radarr_movie,
+                    read_movie_folder,
+                    read_movie_nfo,
                 },
                 radarr_id,
             )

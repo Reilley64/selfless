@@ -24,3 +24,8 @@ snapshot_name = "20261029_132403_snapshot.toml"
 id = 8526660021506937677
 name = "20261029_133709_delivery_retries.sql"
 snapshot_name = "20261029_133709_snapshot.toml"
+
+[[migrations]]
+id = 6166417879876173805
+name = "20261029_134758_movie_nfo.sql"
+snapshot_name = "20261029_134758_snapshot.toml"

@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<movie>
+  <title>Arrival</title>
+  <originaltitle>Arrival</originaltitle>
+  <sorttitle>arrival</sorttitle>
+  <ratings>
+    <rating name="imdb" max="10" default="true">
+      <value>7.9</value>
+      <votes>812345</votes>
+    </rating>
+    <rating name="themoviedb" max="10">
+      <value>7.6</value>
+      <votes>18123</votes>
+    </rating>
+    <rating name="tomatometerallcritics" max="100">
+      <value>94</value>
+    </rating>
+  </ratings>
+  <rating>7.6</rating>
+  <criticrating>94</criticrating>
+  <userrating />
+  <top250 />
+  <outline />
+  <plot>When twelve mysterious spacecraft appear around the world, linguistics professor Louise Banks is tasked with interpreting the language of the apparent alien visitors.</plot>
+  <tagline />
+  <runtime>116</runtime>
+  <thumb aspect="poster" preview="https://image.tmdb.org/t/p/original/x2FJsf1ElAgr63Y3PNPtJrcmpoe.jpg">https://image.tmdb.org/t/p/original/x2FJsf1ElAgr63Y3PNPtJrcmpoe.jpg</thumb>
+  <fanart>
+    <thumb preview="https://image.tmdb.org/t/p/original/yIZ1xendyqKvY3FGeeUYUd5X9Mm.jpg">https://image.tmdb.org/t/p/original/yIZ1xendyqKvY3FGeeUYUd5X9Mm.jpg</thumb>
+  </fanart>
+  <mpaa>PG-13</mpaa>
+  <playcount />
+  <lastplayed />
+  <id>329865</id>
+  <uniqueid type="tmdb" default="true">329865</uniqueid>
+  <uniqueid type="imdb">tt2543164</uniqueid>
+  <genre>Drama</genre>
+  <genre>Science Fiction</genre>
+  <genre>Mystery</genre>
+  <country />
+  <set tmdbcolid="1170000">
+    <name>Arrival Collection</name>
+    <overview />
+  </set>
+  <tag>4k</tag>
+  <tag>favourites</tag>
+  <status>Released</status>
+  <credits>Eric Heisserer</credits>
+  <director>Denis Villeneuve</director>
+  <premiered>2016-11-10</premiered>
+  <year>2016</year>
+  <studio>FilmNation Entertainment</studio>
+  <trailer>plugin://plugin.video.youtube/play/?video_id=tFMo3UJ4B4g</trailer>
+  <watched>false</watched>
+  <fileinfo>
+    <streamdetails>
+      <video>
+        <aspect>2.4</aspect>
+        <bitrate>0</bitrate>
+        <codec>x264</codec>
+        <framerate>23.976</framerate>
+        <height>800</height>
+        <scantype>Progressive</scantype>
+        <width>1920</width>
+        <duration>116.33333333333333</duration>
+        <durationinseconds>6980</durationinseconds>
+        <hdrtype></hdrtype>
+      </video>
+      <audio>
+        <bitrate>1509000</bitrate>
+        <channels>6</channels>
+        <codec>DTS</codec>
+        <language>eng</language>
+      </audio>
+      <subtitle>
+        <language>eng</language>
+      </subtitle>
+    </streamdetails>
+  </fileinfo>
+  <actor>
+    <name>Amy Adams</name>
+    <role>Louise Banks</role>
+    <order>0</order>
+    <thumb>https://image.tmdb.org/t/p/original/7x4lhKHjCCtYzCdUlzMmF4jAsHd.jpg</thumb>
+  </actor>
+  <actor>
+    <name>Jeremy Renner</name>
+    <role>Ian Donnelly</role>
+    <order>1</order>
+    <thumb>https://image.tmdb.org/t/p/original/yB84D1neTYXfWBaV0QOE9RF2VCu.jpg</thumb>
+  </actor>
+  <actor>
+    <name>Forest Whitaker</name>
+    <role>Colonel Weber</role>
+    <order>2</order>
+    <thumb>https://image.tmdb.org/t/p/original/4pMQkelS5lK661m9Kz3oIxLYiyS.jpg</thumb>
+  </actor>
+</movie>
+https://www.themoviedb.org/movie/329865
+https://www.imdb.com/title/tt2543164

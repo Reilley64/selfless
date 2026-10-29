@@ -6,6 +6,7 @@ use application::Reconciles;
 use application::WebhookPasswords;
 use application::ports::Clock;
 use infrastructure::AppState;
+use infrastructure::media_files;
 use infrastructure::persistence;
 use infrastructure::telemetry;
 use ohno::AppError;
@@ -56,6 +57,8 @@ pub async fn start(settings: AppSettings, clock: Clock) -> Result<Server, AppErr
         .inbox_wakeup(|_| InboxWakeup::default())
         .list_radarr_movies(|_| list_radarr_movies.clone())
         .list_sonarr_series(|_| list_sonarr_series.clone())
+        .read_movie_folder(|_| media_files::read_movie_folder())
+        .read_movie_nfo(|_| media_files::read_movie_nfo())
         .reconciles(|_| Reconciles::default())
         .webhook_passwords(|_| webhook_passwords.clone())
         .build();
