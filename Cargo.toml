@@ -4,6 +4,7 @@ members = [
     "application",
     "domain",
     "infrastructure/dependencies",
+    "infrastructure/ffmpeg",
     "infrastructure/media-files",
     "infrastructure/persistence",
     "infrastructure/radarr",
@@ -27,6 +28,7 @@ base64 = "0.22.1"
 bytes = "1.12.1"
 config = { version = "0.15.27", default-features = false }
 fundle = "0.4.1"
+futures-util = "0.3.34"
 http = "1.5.0"
 jiff = "0.2.38"
 jsonschema = { version = "0.60.2", default-features = false }
@@ -63,6 +65,7 @@ wiremock = "0.6.5"
 application = { path = "application" }
 domain = { path = "domain" }
 infrastructure = { path = "infrastructure/dependencies" }
+ffmpeg = { path = "infrastructure/ffmpeg" }
 media-files = { path = "infrastructure/media-files" }
 persistence = { path = "infrastructure/persistence" }
 radarr = { path = "infrastructure/radarr" }

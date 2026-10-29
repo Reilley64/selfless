@@ -1,10 +1,14 @@
 use crate::DbContext;
+use crate::Prober;
 use crate::SourceHealth;
 use crate::library_items;
 use crate::library_items::Change;
 use crate::media_files;
+use crate::media_files::Inspected;
+use crate::media_files::Inspector;
 use crate::ports::FoundFile;
 use crate::ports::GetRadarrMovie;
+use crate::ports::ListSubtitleFiles;
 use crate::ports::MovieFolder;
 use crate::ports::MovieNfo;
 use crate::ports::RadarrMovie;
@@ -13,6 +17,7 @@ use crate::ports::ReadMovieNfo;
 use domain::Actor;
 use domain::Artwork;
 use domain::ArtworkKind;
+use domain::MediaFile;
 use domain::Movie;
 use domain::Source;
 use domain::SyncProblem;
@@ -27,6 +32,8 @@ use uuid::Uuid;
 pub struct Dependencies {
     pub db_context: DbContext,
     pub get_radarr_movie: GetRadarrMovie,
+    pub list_subtitle_files: ListSubtitleFiles,
+    pub prober: Prober,
     pub read_movie_folder: ReadMovieFolder,
     pub read_movie_nfo: ReadMovieNfo,
     pub source_health: SourceHealth,
@@ -40,10 +47,16 @@ pub async fn call(dependencies: impl Into<Dependencies>, radarr_id: i64) -> Resu
     let Dependencies {
         mut db_context,
         get_radarr_movie,
+        list_subtitle_files,
+        prober,
         read_movie_folder,
         read_movie_nfo,
         source_health,
     } = dependencies.into();
+    let inspector = Inspector {
+        prober,
+        list_subtitle_files,
+    };
     async {
         let radarr_movie = get_radarr_movie.call(radarr_id).await;
         match source_health
@@ -51,11 +64,21 @@ pub async fn call(dependencies: impl Into<Dependencies>, radarr_id: i64) -> Resu
             .map_err(Error::caused_by)?
         {
             Some(radarr_movie) => {
+                let stored = match &radarr_movie.movie_file {
+                    Some(file) => MediaFile::filter_by_path(&file.path)
+                        .first()
+                        .exec(db_context.executor_mut())
+                        .await
+                        .map_err(Error::caused_by)?,
+                    None => None,
+                };
+                let inspected = inspect(&inspector, stored.as_ref(), &radarr_movie).await?;
                 save(
                     &mut db_context,
                     &read_movie_folder,
                     &read_movie_nfo,
                     radarr_movie,
+                    inspected,
                 )
                 .await
             }
@@ -163,20 +186,34 @@ impl Metadata {
     }
 }
 
+pub(crate) async fn inspect(
+    inspector: &Inspector,
+    stored: Option<&MediaFile>,
+    radarr_movie: &RadarrMovie,
+) -> Result<Option<Inspected>, Error> {
+    match &radarr_movie.movie_file {
+        Some(file) => Ok(Some(
+            inspector
+                .inspect(stored, &file.path)
+                .await
+                .map_err(Error::caused_by)?,
+        )),
+        None => Ok(None),
+    }
+}
+
 pub(crate) async fn save(
     db_context: &mut DbContext,
     read_movie_folder: &ReadMovieFolder,
     read_movie_nfo: &ReadMovieNfo,
     radarr_movie: RadarrMovie,
+    inspected: Option<Inspected>,
 ) -> Result<(), Error> {
-    let (on_disk, folder) = match &radarr_movie.movie_file {
-        Some(file) => (
-            media_files::on_disk(&file.path).await,
-            read_movie_folder.call(&file.path).await,
-        ),
-        None => (None, MovieFolder::default()),
+    let folder = match &radarr_movie.movie_file {
+        Some(file) => read_movie_folder.call(&file.path).await,
+        None => MovieFolder::default(),
     };
-    let visible = on_disk.is_some();
+    let visible = inspected.as_ref().is_some_and(Inspected::on_disk);
     let date_added = radarr_movie.movie_file.as_ref().map(|x| x.date_added);
     let artwork = [
         (ArtworkKind::Poster, folder.poster),
@@ -188,14 +225,14 @@ pub(crate) async fn save(
     .collect::<Vec<_>>();
     let mut transaction = db_context.transaction().await.map_err(Error::caused_by)?;
     let db = transaction.executor_mut();
-    let (media_file_id, media_file_changed) = match &radarr_movie.movie_file {
-        Some(file) => {
-            let (id, changed) = media_files::save(db, &file.path, on_disk)
+    let (media_file_id, media_file_changed) = match (&radarr_movie.movie_file, inspected) {
+        (Some(file), Some(inspected)) => {
+            let (id, changed) = media_files::save(db, &file.path, inspected)
                 .await
                 .map_err(Error::caused_by)?;
             (Some(id), changed)
         }
-        None => (None, false),
+        _ => (None, false),
     };
     let stored = Movie::filter_by_tmdb_id(radarr_movie.tmdb_id)
         .first()

@@ -46,7 +46,7 @@ RUN --mount=from=jellyfin-ffmpeg,target=/mnt/jellyfin-ffmpeg \
 WORKDIR /app
 COPY --from=build /app/target/release/selfless ./selfless
 COPY --from=web /app/presentation/web/dist ./web
-ENV WEB__DIR=/app/web OTEL_SERVICE_NAME=selfless
+ENV WEB__DIR=/app/web OTEL_SERVICE_NAME=selfless PATH=/usr/lib/jellyfin-ffmpeg:$PATH
 USER 10001:10001
 EXPOSE 8080
 ARG GIT_COMMIT VERSION

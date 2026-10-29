@@ -1,8 +1,11 @@
+use crate::CONCURRENT_PROBES;
 use crate::DbContext;
+use crate::Prober;
 use crate::Reconciles;
 use crate::SourceHealth;
 use crate::attributes::SELFLESS_LIBRARY_SOURCE;
 use crate::attributes::SELFLESS_RECONCILE_RESULT;
+use crate::media_files::Inspector;
 use crate::metrics::SELFLESS_RECONCILE_DURATION;
 use crate::ports::CheckRadarrKodiMetadata;
 use crate::ports::CheckSonarrKodiMetadata;
@@ -10,6 +13,7 @@ use crate::ports::Clock;
 use crate::ports::GetSonarrEpisodes;
 use crate::ports::ListRadarrMovies;
 use crate::ports::ListSonarrSeries;
+use crate::ports::ListSubtitleFiles;
 use crate::ports::ReadMovieFolder;
 use crate::ports::ReadMovieNfo;
 use crate::ports::SonarrShow;
@@ -19,12 +23,16 @@ use crate::sync_status::ReconcileProgress;
 use domain::HeldRemoval;
 use domain::InboxRow;
 use domain::InboxRowStatus;
+use domain::MediaFile;
 use domain::Movie;
 use domain::ReconcileResult;
 use domain::Show;
 use domain::Source;
+use futures_util::StreamExt;
+use futures_util::stream;
 use opentelemetry::KeyValue;
 use opentelemetry::global;
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Mutex;
 use std::time::Instant;
@@ -41,6 +49,8 @@ pub struct Dependencies {
     pub get_sonarr_episodes: GetSonarrEpisodes,
     pub list_radarr_movies: ListRadarrMovies,
     pub list_sonarr_series: ListSonarrSeries,
+    pub list_subtitle_files: ListSubtitleFiles,
+    pub prober: Prober,
     pub read_movie_folder: ReadMovieFolder,
     pub read_movie_nfo: ReadMovieNfo,
     pub reconciles: Reconciles,
@@ -60,11 +70,17 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
         get_sonarr_episodes,
         list_radarr_movies,
         list_sonarr_series,
+        list_subtitle_files,
+        prober,
         read_movie_folder,
         read_movie_nfo,
         reconciles,
         source_health,
     } = dependencies.into();
+    let inspector = Inspector {
+        prober,
+        list_subtitle_files,
+    };
     let reconcile = reconciles.source(source);
     let Ok(_running) = reconcile.running.clone().try_lock_owned() else {
         return Ok(());
@@ -89,6 +105,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
                 record_kodi_metadata(&source_health, source, kodi_metadata);
                 reconcile_movies(
                     &mut db_context,
+                    &inspector,
                     &list_radarr_movies,
                     &read_movie_folder,
                     &read_movie_nfo,
@@ -106,6 +123,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
                 record_kodi_metadata(&source_health, source, kodi_metadata);
                 reconcile_shows(
                     &mut db_context,
+                    &inspector,
                     &list_sonarr_series,
                     &get_sonarr_episodes,
                     &source_health,
@@ -180,6 +198,7 @@ fn record_kodi_metadata(
 
 async fn reconcile_movies(
     db_context: &mut DbContext,
+    inspector: &Inspector,
     list_radarr_movies: &ListRadarrMovies,
     read_movie_folder: &ReadMovieFolder,
     read_movie_nfo: &ReadMovieNfo,
@@ -194,13 +213,44 @@ async fn reconcile_movies(
         .map(|x| x.tmdb_id)
         .collect::<HashSet<_>>();
     set_total(progress, radarr_movies.len());
-    let mut synced = HashSet::new();
-    for radarr_movie in radarr_movies {
-        synced.insert(radarr_movie.radarr_id);
-        sync_movie::save(db_context, read_movie_folder, read_movie_nfo, radarr_movie)
-            .instrument(sync_movie::span())
-            .await
-            .map_err(Error::caused_by)?;
+    let synced = radarr_movies
+        .iter()
+        .map(|x| x.radarr_id)
+        .collect::<HashSet<_>>();
+    let stored = MediaFile::all()
+        .exec(db_context.executor_mut())
+        .await
+        .map_err(Error::caused_by)?
+        .into_iter()
+        .map(|x| (x.path.clone(), x))
+        .collect::<HashMap<_, _>>();
+    let mut inspections = stream::iter(radarr_movies)
+        .map(|radarr_movie| {
+            let span = sync_movie::span();
+            let stored = radarr_movie
+                .movie_file
+                .as_ref()
+                .and_then(|x| stored.get(&x.path));
+            async move {
+                let inspected = sync_movie::inspect(inspector, stored, &radarr_movie)
+                    .instrument(span.clone())
+                    .await;
+                (radarr_movie, inspected, span)
+            }
+        })
+        .buffered(CONCURRENT_PROBES);
+    while let Some((radarr_movie, inspected, span)) = inspections.next().await {
+        let inspected = inspected.map_err(Error::caused_by)?;
+        sync_movie::save(
+            db_context,
+            read_movie_folder,
+            read_movie_nfo,
+            radarr_movie,
+            inspected,
+        )
+        .instrument(span)
+        .await
+        .map_err(Error::caused_by)?;
         imported(progress);
     }
     resolve_failed_rows(db_context, Source::Radarr, &synced).await?;
@@ -219,6 +269,7 @@ async fn reconcile_movies(
 
 async fn reconcile_shows(
     db_context: &mut DbContext,
+    inspector: &Inspector,
     list_sonarr_series: &ListSonarrSeries,
     get_sonarr_episodes: &GetSonarrEpisodes,
     source_health: &SourceHealth,
@@ -240,7 +291,7 @@ async fn reconcile_shows(
         match source_health.api_call(Source::Sonarr, episodes) {
             Ok(episodes) => {
                 synced.insert(series.sonarr_id);
-                sync_show::save(db_context, SonarrShow { series, episodes })
+                sync_show::save(db_context, inspector, SonarrShow { series, episodes })
                     .instrument(span)
                     .await
                     .map_err(Error::caused_by)?;

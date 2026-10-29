@@ -1,6 +1,7 @@
 pub mod check_database;
 pub mod confirm_held_removal;
 pub mod delete_old_inbox_rows;
+pub mod get_media_file;
 mod library_items;
 pub mod list_episodes;
 pub mod list_movies;
@@ -35,6 +36,9 @@ use domain::Source;
 use opentelemetry::KeyValue;
 use opentelemetry::global;
 use opentelemetry::metrics::Histogram;
+use ports::Probe;
+use ports::ProbeError;
+use ports::ProbeMediaFile;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::Instant;
@@ -49,6 +53,7 @@ use toasty_core::stmt::InsertTarget;
 use toasty_core::stmt::Statement;
 use toasty_core::stmt::UpdateTarget;
 use tokio::sync::Notify;
+use tokio::sync::Semaphore;
 use tracing::Instrument;
 use tracing::field;
 
@@ -151,6 +156,28 @@ impl SourceHealth {
             Source::Radarr => &self.radarr,
             Source::Sonarr => &self.sonarr,
         }
+    }
+}
+
+pub(crate) const CONCURRENT_PROBES: usize = 4;
+
+#[derive(Clone)]
+pub struct Prober {
+    probe_media_file: ProbeMediaFile,
+    slots: Arc<Semaphore>,
+}
+
+impl Prober {
+    pub fn new(probe_media_file: ProbeMediaFile) -> Self {
+        Self {
+            probe_media_file,
+            slots: Arc::new(Semaphore::new(CONCURRENT_PROBES)),
+        }
+    }
+
+    async fn probe(&self, path: &str) -> Result<Probe, ProbeError> {
+        let _slot = self.slots.acquire().await.map_err(ProbeError::caused_by)?;
+        self.probe_media_file.call(path).await
     }
 }
 

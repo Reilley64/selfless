@@ -1,6 +1,9 @@
 #![allow(dead_code)]
 
 use application::ports::Clock;
+use application::ports::Probe;
+use application::ports::ProbeError;
+use application::ports::ProbeMediaFile;
 use infrastructure::AppState;
 use jiff::SignedDuration;
 use jiff::Timestamp;
@@ -20,6 +23,7 @@ use settings::OtlpSettings;
 use settings::RadarrSettings;
 use settings::SonarrSettings;
 use settings::WebSettings;
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
@@ -32,6 +36,7 @@ use std::time::SystemTime;
 use tempfile::TempDir;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
+use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tokio::task::JoinSet;
 use tokio_postgres::NoTls;
@@ -108,6 +113,7 @@ pub struct TestServer {
     shutdown: CancellationToken,
     pub state: AppState,
     pub clock: FakeClock,
+    pub prober: FakeProber,
 }
 
 pub fn settings(database_url: Url) -> AppSettings {
@@ -155,6 +161,106 @@ impl FakeClock {
     }
 }
 
+#[derive(Clone)]
+pub struct FakeProber {
+    state: Arc<Mutex<ProberState>>,
+    held: watch::Sender<bool>,
+}
+
+#[derive(Default)]
+struct ProberState {
+    probes: HashMap<String, Option<Probe>>,
+    calls: HashMap<String, usize>,
+    running: usize,
+    most_running: usize,
+}
+
+impl FakeProber {
+    pub fn new() -> Self {
+        Self {
+            state: Arc::default(),
+            held: watch::Sender::new(false),
+        }
+    }
+
+    pub fn serve(&self, path: &str, probe: Probe) {
+        self.state
+            .lock()
+            .unwrap()
+            .probes
+            .insert(path.to_owned(), Some(probe));
+    }
+
+    pub fn fail(&self, path: &str) {
+        self.state
+            .lock()
+            .unwrap()
+            .probes
+            .insert(path.to_owned(), None);
+    }
+
+    pub fn calls(&self, path: &str) -> usize {
+        self.state
+            .lock()
+            .unwrap()
+            .calls
+            .get(path)
+            .copied()
+            .unwrap_or_default()
+    }
+
+    pub fn total_calls(&self) -> usize {
+        self.state.lock().unwrap().calls.values().sum()
+    }
+
+    pub fn running(&self) -> usize {
+        self.state.lock().unwrap().running
+    }
+
+    pub fn most_running(&self) -> usize {
+        self.state.lock().unwrap().most_running
+    }
+
+    pub fn hold(&self) {
+        self.held.send_replace(true);
+    }
+
+    pub fn release(&self) {
+        self.held.send_replace(false);
+    }
+
+    pub fn port(&self) -> ProbeMediaFile {
+        let prober = self.clone();
+        ProbeMediaFile::new(move |path| {
+            let prober = prober.clone();
+            Box::pin(async move {
+                {
+                    let mut state = prober.state.lock().unwrap();
+                    *state.calls.entry(path.clone()).or_default() += 1;
+                    state.running += 1;
+                    state.most_running = state.most_running.max(state.running);
+                }
+                let _ = prober.held.subscribe().wait_for(|held| !held).await;
+                let mut state = prober.state.lock().unwrap();
+                state.running -= 1;
+                match state.probes.get(&path) {
+                    Some(Some(probe)) => Ok(probe.clone()),
+                    Some(None) => Err(ProbeError::caused_by(
+                        "Invalid data found when processing input",
+                    )),
+                    None => Ok(Probe {
+                        container: "matroska,webm".to_owned(),
+                        duration: None,
+                        video_streams: Vec::new(),
+                        audio_streams: Vec::new(),
+                        subtitle_streams: Vec::new(),
+                    }),
+                }
+            })
+        })
+    }
+}
+
 impl TestServer {
     pub async fn start(database_url: Url) -> Self {
         Self::start_with(settings(database_url), FakeClock::new()).await
@@ -179,7 +285,17 @@ impl TestServer {
     }
 
     pub async fn start_with(settings: AppSettings, clock: FakeClock) -> Self {
-        let server = selfless::start(settings, clock.port()).await.unwrap();
+        Self::start_with_prober(settings, clock, FakeProber::new()).await
+    }
+
+    pub async fn start_with_prober(
+        settings: AppSettings,
+        clock: FakeClock,
+        prober: FakeProber,
+    ) -> Self {
+        let server = selfless::start(settings, clock.port(), prober.port())
+            .await
+            .unwrap();
         let address = server.local_addr().unwrap();
         let state = server.state().clone();
         let shutdown = CancellationToken::new();
@@ -189,6 +305,7 @@ impl TestServer {
             shutdown,
             state,
             clock,
+            prober,
         }
     }
 
@@ -603,6 +720,10 @@ impl MediaFolder {
                 .to_str()
                 .unwrap(),
         );
+    }
+
+    pub fn remove_absolute(&self, path: &str) {
+        std::fs::remove_file(path).unwrap();
     }
 
     pub fn change_absolute(&self, path: &str) {

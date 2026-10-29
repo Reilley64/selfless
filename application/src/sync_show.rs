@@ -1,15 +1,20 @@
 use crate::DbContext;
+use crate::Prober;
 use crate::SourceHealth;
 use crate::library_items;
 use crate::library_items::Change;
 use crate::media_files;
-use crate::media_files::OnDisk;
+use crate::media_files::Inspected;
+use crate::media_files::Inspector;
 use crate::ports::GetSonarrShow;
+use crate::ports::ListSubtitleFiles;
 use crate::ports::SonarrShow;
 use domain::Episode;
+use domain::MediaFile;
 use domain::Season;
 use domain::Show;
 use domain::Source;
+use futures_util::future::try_join_all;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use tracing::Instrument;
@@ -21,6 +26,8 @@ pub struct Dependencies {
     pub db_context: DbContext,
     pub get_sonarr_show: GetSonarrShow,
     pub source_health: SourceHealth,
+    pub list_subtitle_files: ListSubtitleFiles,
+    pub prober: Prober,
 }
 
 #[ohno::error]
@@ -32,14 +39,20 @@ pub async fn call(dependencies: impl Into<Dependencies>, sonarr_id: i64) -> Resu
         mut db_context,
         get_sonarr_show,
         source_health,
+        list_subtitle_files,
+        prober,
     } = dependencies.into();
+    let inspector = Inspector {
+        prober,
+        list_subtitle_files,
+    };
     async {
         let sonarr_show = get_sonarr_show.call(sonarr_id).await;
         match source_health
             .api_call(Source::Sonarr, sonarr_show)
             .map_err(Error::caused_by)?
         {
-            Some(sonarr_show) => save(&mut db_context, sonarr_show).await,
+            Some(sonarr_show) => save(&mut db_context, &inspector, sonarr_show).await,
             None => match Show::filter_by_sonarr_id(sonarr_id)
                 .first()
                 .exec(db_context.executor_mut())
@@ -59,19 +72,41 @@ pub(crate) fn span() -> Span {
     tracing::info_span!("sync_show", otel.name = "sync sonarr show")
 }
 
-pub(crate) async fn save(db_context: &mut DbContext, sonarr_show: SonarrShow) -> Result<(), Error> {
-    let mut on_disk = HashMap::new();
-    for file in sonarr_show
+pub(crate) async fn save(
+    db_context: &mut DbContext,
+    inspector: &Inspector,
+    sonarr_show: SonarrShow,
+) -> Result<(), Error> {
+    let paths = sonarr_show
         .episodes
         .iter()
-        .filter_map(|x| x.episode_file.as_ref())
-    {
-        if !on_disk.contains_key(&file.path) {
-            on_disk.insert(file.path.clone(), media_files::on_disk(&file.path).await);
-        }
-    }
+        .filter_map(|x| Some(x.episode_file.as_ref()?.path.clone()))
+        .collect::<HashSet<_>>();
+    let stored = if paths.is_empty() {
+        HashMap::new()
+    } else {
+        MediaFile::filter(
+            MediaFile::fields()
+                .path()
+                .in_list(paths.iter().cloned().collect::<Vec<_>>()),
+        )
+        .exec(db_context.executor_mut())
+        .await
+        .map_err(Error::caused_by)?
+        .into_iter()
+        .map(|x| (x.path.clone(), x))
+        .collect()
+    };
+    let inspected = try_join_all(paths.into_iter().map(async |path| {
+        let inspected = inspector.inspect(stored.get(&path), &path).await?;
+        Ok::<_, media_files::Error>((path, inspected))
+    }))
+    .await
+    .map_err(Error::caused_by)?
+    .into_iter()
+    .collect::<HashMap<_, _>>();
     let mut transaction = db_context.transaction().await.map_err(Error::caused_by)?;
-    let change = sync(transaction.executor_mut(), sonarr_show, &on_disk).await?;
+    let change = sync(transaction.executor_mut(), sonarr_show, inspected).await?;
     transaction.commit().await.map_err(Error::caused_by)?;
     if let Some(change) = change {
         library_items::count(Source::Sonarr, change);
@@ -90,7 +125,7 @@ pub(crate) async fn remove(db_context: &mut DbContext, show: Show) -> Result<(),
 async fn sync(
     db: &mut dyn toasty::Executor,
     sonarr_show: SonarrShow,
-    on_disk: &HashMap<String, Option<OnDisk>>,
+    mut inspected: HashMap<String, Inspected>,
 ) -> Result<Option<Change>, Error> {
     let series = sonarr_show.series;
     let (show, show_change) = match Show::filter_by_tvdb_id(series.tvdb_id)
@@ -155,6 +190,7 @@ async fn sync(
         .collect::<HashSet<_>>();
     let mut synced_seasons = HashSet::new();
     let mut media_files = HashSet::new();
+    let mut saved = HashMap::new();
     for sonarr_episode in sonarr_show.episodes {
         let season_id = match seasons.get(&sonarr_episode.season_number) {
             Some(season) => season.id,
@@ -175,13 +211,20 @@ async fn sync(
         synced_seasons.insert(sonarr_episode.season_number);
         let (media_file_id, visible) = match &sonarr_episode.episode_file {
             Some(file) => {
-                let file_on_disk = on_disk.get(&file.path).copied().flatten();
-                let (id, file_changed) = media_files::save(db, &file.path, file_on_disk)
-                    .await
-                    .map_err(Error::caused_by)?;
-                changed |= file_changed;
+                let (id, visible) = match inspected.remove(&file.path) {
+                    Some(inspected) => {
+                        let visible = inspected.on_disk();
+                        let (id, file_changed) = media_files::save(db, &file.path, inspected)
+                            .await
+                            .map_err(Error::caused_by)?;
+                        changed |= file_changed;
+                        saved.insert(file.path.clone(), (id, visible));
+                        (id, visible)
+                    }
+                    None => saved[&file.path],
+                };
                 media_files.insert(id);
-                (Some(id), file_on_disk.is_some())
+                (Some(id), visible)
             }
             None => (None, false),
         };

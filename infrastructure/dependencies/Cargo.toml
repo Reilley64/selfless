@@ -7,6 +7,7 @@ publish.workspace = true
 
 [dependencies]
 application = { workspace = true }
+ffmpeg = { workspace = true }
 fundle = { workspace = true }
 jiff = { workspace = true }
 media-files = { workspace = true }

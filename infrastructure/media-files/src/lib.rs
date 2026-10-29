@@ -1,3 +1,5 @@
+mod subtitle_files;
+
 use application::ports::FoundFile;
 use application::ports::MovieFolder;
 use application::ports::MovieNfo;
@@ -8,6 +10,8 @@ use application::ports::UnreadableNfo;
 use jiff::Timestamp;
 use serde::Deserialize;
 use std::path::Path;
+
+pub use subtitle_files::list_subtitle_files;
 
 pub fn read_movie_folder() -> ReadMovieFolder {
     ReadMovieFolder::new(|media_file_path| {

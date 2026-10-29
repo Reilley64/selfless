@@ -31,6 +31,7 @@ pub struct Movie {
     pub actors: Vec<Actor>,
     pub artwork: Vec<Artwork>,
     pub added_at: Option<Timestamp>,
+    pub media_file_id: Option<Uuid>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -97,6 +98,7 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<Vec<Movie>, E
             actors,
             artwork,
             added_at: movie.added_at,
+            media_file_id: movie.media_file_id,
         });
     }
     Ok(listed)

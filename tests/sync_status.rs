@@ -1,5 +1,6 @@
 mod support;
 
+use application::ports::Probe;
 use application::sync_status::ApiCall;
 use application::sync_status::Problem;
 use application::sync_status::ProblemItem;
@@ -118,6 +119,42 @@ impl Fixture {
         drop(self.server);
         self.database.drop().await;
     }
+}
+
+#[tokio::test]
+async fn a_movie_file_ffprobe_cannot_read_is_listed_as_ffprobe_failed_until_it_is_read() {
+    let fixture = Fixture::start(true, true).await;
+    fixture.media.create(ARRIVAL_FILE);
+    let path = fixture.media.path(ARRIVAL_FILE);
+    fixture.server.prober.fail(&path);
+    fixture.radarr_lists_arrival().await;
+
+    let status = fixture.sync_now().await;
+
+    let [problem] = status.problems.as_slice() else {
+        panic!("one problem, not {:?}", status.problems);
+    };
+    assert_eq!(problem.kind, SyncProblemKind::FfprobeFailed);
+    assert_eq!(problem.path, path);
+    assert!(
+        matches!(&problem.item, ProblemItem::Movie { title, .. } if title == "Arrival"),
+        "the problem names Arrival: {:?}",
+        problem.item
+    );
+
+    fixture.media.change_absolute(&path);
+    fixture.server.prober.serve(
+        &path,
+        Probe {
+            container: "matroska,webm".to_owned(),
+            duration: None,
+            video_streams: Vec::new(),
+            audio_streams: Vec::new(),
+            subtitle_streams: Vec::new(),
+        },
+    );
+    assert_eq!(fixture.sync_now().await.problems, []);
+    fixture.stop().await;
 }
 
 async fn serve(radarr: &StubRadarr, sonarr: &StubSonarr, radarr_kodi: bool, sonarr_kodi: bool) {

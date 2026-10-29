@@ -139,6 +139,7 @@ pub struct Artwork {
 pub enum SyncProblemKind {
     UnreadableNfo,
     FileNotFound,
+    FfprobeFailed,
 }
 
 #[derive(Debug, toasty::Model)]
@@ -217,8 +218,96 @@ pub struct MediaFile {
     pub path: String,
     pub size: Option<i64>,
     pub modified_at: Option<Timestamp>,
+    pub container: Option<String>,
+    pub duration_ms: Option<i64>,
     #[has_many]
     pub movies: toasty::Deferred<Vec<Movie>>,
     #[has_many]
     pub episodes: toasty::Deferred<Vec<Episode>>,
+    #[has_many]
+    pub video_streams: toasty::Deferred<Vec<VideoStream>>,
+    #[has_many]
+    pub audio_streams: toasty::Deferred<Vec<AudioStream>>,
+    #[has_many]
+    pub subtitle_streams: toasty::Deferred<Vec<SubtitleStream>>,
+    #[has_many]
+    pub subtitle_files: toasty::Deferred<Vec<SubtitleFile>>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, toasty::Embed)]
+#[column(type = text)]
+pub enum HdrType {
+    Sdr,
+    Hdr10,
+    Hlg,
+    DolbyVision,
+}
+
+#[derive(Debug, toasty::Model)]
+pub struct VideoStream {
+    #[key]
+    #[auto]
+    pub id: Uuid,
+    #[index]
+    pub media_file_id: Uuid,
+    #[belongs_to(key = media_file_id, references = id)]
+    pub media_file: toasty::Deferred<MediaFile>,
+    pub index: i64,
+    pub codec: String,
+    pub profile: Option<String>,
+    pub width: i64,
+    pub height: i64,
+    pub frame_rate: Option<f64>,
+    pub hdr_type: HdrType,
+}
+
+#[derive(Debug, toasty::Model)]
+pub struct AudioStream {
+    #[key]
+    #[auto]
+    pub id: Uuid,
+    #[index]
+    pub media_file_id: Uuid,
+    #[belongs_to(key = media_file_id, references = id)]
+    pub media_file: toasty::Deferred<MediaFile>,
+    pub index: i64,
+    pub codec: String,
+    pub language: Option<String>,
+    pub channels: i64,
+    pub title: Option<String>,
+    pub is_default: bool,
+}
+
+#[derive(Debug, toasty::Model)]
+pub struct SubtitleStream {
+    #[key]
+    #[auto]
+    pub id: Uuid,
+    #[index]
+    pub media_file_id: Uuid,
+    #[belongs_to(key = media_file_id, references = id)]
+    pub media_file: toasty::Deferred<MediaFile>,
+    pub index: i64,
+    pub codec: String,
+    pub language: Option<String>,
+    pub title: Option<String>,
+    pub is_default: bool,
+    pub forced: bool,
+    pub hearing_impaired: bool,
+    pub text: bool,
+}
+
+#[derive(Debug, toasty::Model)]
+pub struct SubtitleFile {
+    #[key]
+    #[auto]
+    pub id: Uuid,
+    #[index]
+    pub media_file_id: Uuid,
+    #[belongs_to(key = media_file_id, references = id)]
+    pub media_file: toasty::Deferred<MediaFile>,
+    pub path: String,
+    pub language: Option<String>,
+    pub hearing_impaired: bool,
+    pub forced: bool,
 }

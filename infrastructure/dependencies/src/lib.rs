@@ -1,6 +1,7 @@
 use application::BuildInfo;
 use application::DbContext;
 use application::InboxWakeup;
+use application::Prober;
 use application::Reconciles;
 use application::SourceHealth;
 use application::WebhookPasswords;
@@ -13,10 +14,12 @@ use application::ports::GetSonarrEpisodes;
 use application::ports::GetSonarrShow;
 use application::ports::ListRadarrMovies;
 use application::ports::ListSonarrSeries;
+use application::ports::ListSubtitleFiles;
 use application::ports::ReadMovieFolder;
 use application::ports::ReadMovieNfo;
 use jiff::Timestamp;
 
+pub use ffmpeg;
 pub use media_files;
 pub use persistence;
 pub use radarr;
@@ -38,6 +41,8 @@ pub struct AppState {
     pub inbox_wakeup: InboxWakeup,
     pub list_radarr_movies: ListRadarrMovies,
     pub list_sonarr_series: ListSonarrSeries,
+    pub list_subtitle_files: ListSubtitleFiles,
+    pub prober: Prober,
     pub read_movie_folder: ReadMovieFolder,
     pub read_movie_nfo: ReadMovieNfo,
     pub reconciles: Reconciles,

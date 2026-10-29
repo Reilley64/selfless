@@ -5,6 +5,7 @@ use std::error::Error;
 use std::fmt;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::time::Duration;
 
 pub type PortFuture<T> = Pin<Box<dyn Future<Output = T> + Send + 'static>>;
 
@@ -359,6 +360,135 @@ pub struct UnreadableNfo {
 }
 
 impl UnreadableNfo {
+    pub fn caused_by(source: impl Into<Box<dyn Error + Send + Sync>>) -> Self {
+        Self {
+            core: ohno::OhnoCore::from(source),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Probe {
+    pub container: String,
+    pub duration: Option<Duration>,
+    pub video_streams: Vec<VideoStream>,
+    pub audio_streams: Vec<AudioStream>,
+    pub subtitle_streams: Vec<SubtitleStream>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct VideoStream {
+    pub index: i64,
+    pub codec: String,
+    pub profile: Option<String>,
+    pub width: i64,
+    pub height: i64,
+    pub frame_rate: Option<f64>,
+    pub hdr_type: HdrType,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HdrType {
+    Sdr,
+    Hdr10,
+    Hlg,
+    DolbyVision,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AudioStream {
+    pub index: i64,
+    pub codec: String,
+    pub language: Option<String>,
+    pub channels: i64,
+    pub title: Option<String>,
+    pub default: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SubtitleStream {
+    pub index: i64,
+    pub codec: String,
+    pub language: Option<String>,
+    pub title: Option<String>,
+    pub default: bool,
+    pub forced: bool,
+    pub hearing_impaired: bool,
+    pub text: bool,
+}
+
+type ProbeMediaFileFn = dyn Fn(String) -> PortFuture<Result<Probe, ProbeError>> + Send + Sync;
+
+#[derive(Clone)]
+pub struct ProbeMediaFile(Arc<ProbeMediaFileFn>);
+
+impl ProbeMediaFile {
+    pub fn new(
+        f: impl Fn(String) -> PortFuture<Result<Probe, ProbeError>> + Send + Sync + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self, path: &str) -> PortFuture<Result<Probe, ProbeError>> {
+        (self.0)(path.to_owned())
+    }
+}
+
+#[derive(ohno::Error, Default)]
+#[no_constructors]
+#[display("ffprobe failed")]
+pub struct ProbeError {
+    core: ohno::OhnoCore,
+}
+
+impl ProbeError {
+    pub fn caused_by(source: impl Into<Box<dyn Error + Send + Sync>>) -> Self {
+        Self {
+            core: ohno::OhnoCore::from(source),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct SubtitleFile {
+    pub path: String,
+    pub language: Option<String>,
+    pub hearing_impaired: bool,
+    pub forced: bool,
+}
+
+type ListSubtitleFilesFn =
+    dyn Fn(String) -> PortFuture<Result<Vec<SubtitleFile>, ListSubtitleFilesError>> + Send + Sync;
+
+#[derive(Clone)]
+pub struct ListSubtitleFiles(Arc<ListSubtitleFilesFn>);
+
+impl ListSubtitleFiles {
+    pub fn new(
+        f: impl Fn(String) -> PortFuture<Result<Vec<SubtitleFile>, ListSubtitleFilesError>>
+        + Send
+        + Sync
+        + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(
+        &self,
+        media_file_path: &str,
+    ) -> PortFuture<Result<Vec<SubtitleFile>, ListSubtitleFilesError>> {
+        (self.0)(media_file_path.to_owned())
+    }
+}
+
+#[derive(ohno::Error, Default)]
+#[no_constructors]
+#[display("failed to list the subtitle files beside a media file")]
+pub struct ListSubtitleFilesError {
+    core: ohno::OhnoCore,
+}
+
+impl ListSubtitleFilesError {
     pub fn caused_by(source: impl Into<Box<dyn Error + Send + Sync>>) -> Self {
         Self {
             core: ohno::OhnoCore::from(source),

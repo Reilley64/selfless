@@ -2,10 +2,12 @@ use api::Availability;
 use application::BuildInfo;
 use application::DbContext;
 use application::InboxWakeup;
+use application::Prober;
 use application::Reconciles;
 use application::SourceHealth;
 use application::WebhookPasswords;
 use application::ports::Clock;
+use application::ports::ProbeMediaFile;
 use infrastructure::AppState;
 use infrastructure::media_files;
 use infrastructure::persistence;
@@ -29,7 +31,11 @@ pub struct Server {
     reconcile_interval: Duration,
 }
 
-pub async fn start(settings: AppSettings, clock: Clock) -> Result<Server, AppError> {
+pub async fn start(
+    settings: AppSettings,
+    clock: Clock,
+    probe_media_file: ProbeMediaFile,
+) -> Result<Server, AppError> {
     let get_radarr_movie = settings.radarr.get_movie()?;
     let webhook_passwords = WebhookPasswords {
         radarr: settings.radarr.webhook_password()?,
@@ -62,6 +68,8 @@ pub async fn start(settings: AppSettings, clock: Clock) -> Result<Server, AppErr
         .inbox_wakeup(|_| InboxWakeup::default())
         .list_radarr_movies(|_| list_radarr_movies.clone())
         .list_sonarr_series(|_| list_sonarr_series.clone())
+        .list_subtitle_files(|_| media_files::list_subtitle_files())
+        .prober(|_| Prober::new(probe_media_file.clone()))
         .read_movie_folder(|_| media_files::read_movie_folder())
         .read_movie_nfo(|_| media_files::read_movie_nfo())
         .reconciles(|_| Reconciles::default())

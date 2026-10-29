@@ -10,6 +10,7 @@ async-trait = { workspace = true }
 bytes = { workspace = true }
 domain = { workspace = true }
 fundle = { workspace = true }
+futures-util = { workspace = true }
 jiff = { workspace = true }
 ohno = { workspace = true }
 opentelemetry = { workspace = true }
