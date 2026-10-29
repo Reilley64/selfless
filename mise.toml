@@ -8,13 +8,14 @@ vacuum = "0.35.7"
 
 [env]
 DATABASE__URL = "postgres://selfless:selfless@localhost:5432/selfless"
+OTEL_SERVICE_NAME = "selfless"
 
 [tasks.services]
-description = "Start PostgreSQL for local development"
+description = "Start PostgreSQL and grafana/otel-lgtm for local development"
 run = "docker compose up --detach --wait"
 
 [tasks.generate]
-description = "Generate the API client from openapi.yaml"
+description = "Generate the API client and the TypeScript telemetry constants"
 run = "bun run generate"
 
 [tasks.dev]
@@ -48,6 +49,10 @@ run = "cargo test --workspace"
 [tasks."lint:openapi"]
 description = "Lint the OpenAPI file"
 run = "vacuum lint --details openapi.yaml"
+
+[tasks."lint:telemetry"]
+description = "Check the Weaver registry"
+run = "weaver registry check --future --registry telemetry/registry"
 
 [tasks."lint:workflows"]
 description = "Lint the GitHub workflows"

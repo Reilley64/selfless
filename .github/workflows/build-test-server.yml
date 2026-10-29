@@ -50,7 +50,7 @@ jobs:
       - name: "Setup: Install the tools from mise.toml"
         uses: jdx/mise-action@v5
         with:
-          install_args: cargo-deny
+          install_args: cargo-deny github:open-telemetry/weaver
 
       - name: "Setup: Install the Rust toolchain from rust-toolchain.toml"
         run: rustup toolchain install

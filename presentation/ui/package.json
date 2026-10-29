@@ -4,7 +4,9 @@
   "license": "MIT OR Apache-2.0",
   "main": "src/index.ts",
   "scripts": {
-    "generate": "style-dictionary build --config style-dictionary.config.mjs",
+    "generate": "bun run generate:telemetry && bun run generate:theme",
+    "generate:telemetry": "weaver registry generate --quiet --registry ../../telemetry/registry --templates ../../telemetry/templates ts src/telemetry",
+    "generate:theme": "style-dictionary build --config style-dictionary.config.mjs",
     "typecheck": "tsc --noEmit",
     "test": "jest"
   },

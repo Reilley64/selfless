@@ -1,0 +1,3 @@
+{% for attribute in ctx.attributes %}
+export const {{ attribute.name | screaming_snake_case }} = "{{ attribute.name }}";
+{% endfor %}

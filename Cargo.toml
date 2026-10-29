@@ -20,22 +20,34 @@ license = "MIT OR Apache-2.0"
 publish = false
 
 [workspace.dependencies]
+async-trait = "0.1.92"
 config = { version = "0.15.27", default-features = false }
 fundle = "0.4.1"
+http = "1.5.0"
 jsonschema = { version = "0.60.2", default-features = false }
 ohno = "0.5.3"
+opentelemetry = "0.33.1"
+opentelemetry-appender-tracing = "0.33.1"
+opentelemetry-instrumentation-process = "0.3.0"
+opentelemetry-otlp = { version = "0.33.1", default-features = false, features = ["grpc-tonic", "logs", "metrics", "trace"] }
+opentelemetry_sdk = "0.33.1"
 reqwest = { version = "0.13.5", default-features = false }
 serde = { version = "1.0.229", features = ["derive"] }
 serde-saphyr = "2.0.0"
 serde_json = "1.0.154"
 toasty = { version = "0.11.0", default-features = false, features = ["migration"] }
 toasty-cli = "0.11.0"
+toasty-core = "0.11.0"
 toasty-driver-postgresql = { version = "0.11.0", default-features = false, features = ["tls"] }
 tokio = { version = "1.54.1", features = ["full"] }
 tokio-postgres = "0.7.18"
 tokio-util = "0.7.20"
 topcoat = "0.11.0"
+tracing = "0.1.44"
+tracing-opentelemetry = "0.34.0"
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["env-filter", "fmt", "registry", "std"] }
 url = "2.5.8"
+uuid = { version = "1.29.0", features = ["v4"] }
 
 application = { path = "application" }
 domain = { path = "domain" }
@@ -62,18 +74,33 @@ api = { workspace = true }
 application = { workspace = true }
 infrastructure = { workspace = true }
 ohno = { workspace = true, features = ["app-err"] }
+opentelemetry = { workspace = true }
+opentelemetry-appender-tracing = { workspace = true }
+opentelemetry-instrumentation-process = { workspace = true }
+opentelemetry-otlp = { workspace = true }
+opentelemetry_sdk = { workspace = true }
 settings = { workspace = true }
 toasty-cli = { workspace = true }
 tokio = { workspace = true }
 topcoat = { workspace = true }
+tracing = { workspace = true }
+tracing-opentelemetry = { workspace = true }
+tracing-subscriber = { workspace = true }
+url = { workspace = true }
+uuid = { workspace = true }
 webhooks = { workspace = true }
 workers = { workspace = true }
 
 [dev-dependencies]
 jsonschema = { workspace = true }
+opentelemetry = { workspace = true }
+opentelemetry_sdk = { workspace = true, features = ["testing"] }
 reqwest = { workspace = true, features = ["json"] }
 serde-saphyr = { workspace = true }
 serde_json = { workspace = true }
 tokio-postgres = { workspace = true }
 tokio-util = { workspace = true }
+tracing = { workspace = true }
+tracing-opentelemetry = { workspace = true }
+tracing-subscriber = { workspace = true }
 url = { workspace = true }

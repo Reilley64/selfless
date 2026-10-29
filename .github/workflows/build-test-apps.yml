@@ -32,12 +32,12 @@ jobs:
       - name: "Setup: Install the tools from mise.toml"
         uses: jdx/mise-action@v5
         with:
-          install_args: bun node
+          install_args: bun node github:open-telemetry/weaver
 
       - name: "Setup: Install the workspace dependencies"
         run: bun install --frozen-lockfile
 
-      - name: "Build: Generate the API client"
+      - name: "Build: Generate the API client and telemetry constants"
         run: bun run generate
 
       - name: "Scan: Typecheck the apps"

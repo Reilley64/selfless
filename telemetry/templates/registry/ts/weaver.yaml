@@ -1,0 +1,7 @@
+whitespace_control:
+  trim_blocks: true
+  lstrip_blocks: true
+templates:
+  - template: attributes.ts.j2
+    filter: '{attributes: [.groups[] | select(.type == "attribute_group") | .attributes[]] | sort_by(.name)}'
+    application_mode: single

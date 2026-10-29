@@ -1,4 +1,5 @@
 mod actuator;
+mod http_server;
 mod web;
 
 use infrastructure::AppState;
@@ -38,5 +39,6 @@ pub fn router(state: AppState, availability: Availability, web_dir: PathBuf) -> 
         .route(actuator::info)
         .route(web::index)
         .public_dir(web_dir)
+        .layer(http_server::HttpServerLayer::new())
         .build()
 }
