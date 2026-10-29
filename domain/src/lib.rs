@@ -82,6 +82,8 @@ pub struct User {
     pub id: Uuid,
     #[unique]
     pub name: String,
+    #[unique]
+    pub email: String,
     pub password_hash: String,
     pub colour: Colour,
     pub symbol: Symbol,
@@ -106,4 +108,22 @@ pub struct Session {
 
 impl Session {
     pub const WEB_IDLE_TIMEOUT: SignedDuration = SignedDuration::from_hours(30 * 24);
+}
+
+#[derive(Debug, toasty::Model)]
+pub struct Invite {
+    #[key]
+    #[auto]
+    pub id: Uuid,
+    #[unique]
+    pub email: String,
+    #[unique]
+    pub token_hash: Vec<u8>,
+    pub admin_id: Uuid,
+    pub sent_at: Timestamp,
+    pub expires_at: Timestamp,
+}
+
+impl Invite {
+    pub const VALID_FOR: SignedDuration = SignedDuration::from_hours(7 * 24);
 }

@@ -1,5 +1,6 @@
 mod actuator;
 mod http_server;
+mod invites;
 mod problem;
 mod sessions;
 mod telemetry;
@@ -52,11 +53,13 @@ pub fn router(
         .route(sessions::sign_out)
         .route(users::me)
         .route(users::change_password)
+        .route(invites::accept)
         .route(telemetry::traces)
         .route(telemetry::metrics)
         .route(telemetry::logs)
         .route(web::index)
         .route(web::settings)
+        .route(web::invite)
         .serve_dir(web::FILES, web_dir)
         .layer(web::ContentSecurityPolicyLayer)
         .layer(user_auth::UserAuthLayer)

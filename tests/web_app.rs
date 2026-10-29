@@ -54,6 +54,21 @@ async fn the_web_app_comes_with_a_strict_content_security_policy() {
 }
 
 #[tokio::test]
+async fn the_invite_screen_loads_from_the_invite_link() {
+    let database = TestDatabase::create().await;
+    let (server, web_dir) = start_with_web_app(&database).await;
+
+    let (status, headers, html) = server.get_text("/invite").await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(html.contains("<title>selfless</title>"), "{html}");
+    assert!(headers.contains_key(CONTENT_SECURITY_POLICY));
+    drop(server);
+    std::fs::remove_dir_all(web_dir).unwrap();
+    database.drop().await;
+}
+
+#[tokio::test]
 async fn the_settings_screen_loads_from_its_own_address() {
     let database = TestDatabase::create().await;
     let (server, web_dir) = start_with_web_app(&database).await;
