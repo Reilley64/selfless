@@ -6,5 +6,10 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+application = { workspace = true }
+jiff = { workspace = true, features = ["serde"] }
 ohno = { workspace = true }
+reqwest = { workspace = true, features = ["json", "rustls"] }
 serde = { workspace = true }
+tracing = { workspace = true }
+url = { workspace = true, features = ["serde"] }

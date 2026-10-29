@@ -26,6 +26,7 @@ pub struct Server {
 }
 
 pub async fn start(settings: AppSettings, clock: Clock) -> Result<Server, AppError> {
+    let get_radarr_movie = settings.radarr.get_movie()?;
     let webhook_passwords = WebhookPasswords {
         radarr: settings.radarr.webhook_password()?,
     };
@@ -42,6 +43,7 @@ pub async fn start(settings: AppSettings, clock: Clock) -> Result<Server, AppErr
         .clock(|_| clock.clone())
         .db_context(|_| DbContext::new(db.clone(), settings.database.location()))
         .export_telemetry_try(|_| telemetry::export_telemetry(&settings.otlp))?
+        .get_radarr_movie(|_| get_radarr_movie.clone())
         .inbox_wakeup(|_| InboxWakeup::default())
         .webhook_passwords(|_| webhook_passwords.clone())
         .build();

@@ -75,20 +75,30 @@ async fn post_and_put_accept_the_right_password_with_any_username() {
 }
 
 #[test]
-fn the_server_exits_naming_a_missing_radarr_webhook_password() {
-    let output = Command::new(env!("CARGO_BIN_EXE_selfless"))
-        .env(
-            "DATABASE__URL",
-            "postgres://selfless:selfless@127.0.0.1:1/selfless",
-        )
-        .env_remove("RADARR__WEBHOOK_PASSWORD")
-        .output()
-        .unwrap();
+fn the_server_exits_naming_a_missing_radarr_setting() {
+    let settings = [
+        ("RADARR__URL", "http://127.0.0.1:7878"),
+        ("RADARR__API_KEY", "radarr api key"),
+        ("RADARR__WEBHOOK_PASSWORD", RADARR_WEBHOOK_PASSWORD),
+    ];
+    for (missing, _) in settings {
+        let output = Command::new(env!("CARGO_BIN_EXE_selfless"))
+            .env(
+                "DATABASE__URL",
+                "postgres://selfless:selfless@127.0.0.1:1/selfless",
+            )
+            .envs(
+                settings
+                    .iter()
+                    .filter(|(name, _)| *name != missing)
+                    .copied(),
+            )
+            .env_remove(missing)
+            .output()
+            .unwrap();
 
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("RADARR__WEBHOOK_PASSWORD"),
-        "RADARR__WEBHOOK_PASSWORD is not named: {stderr}"
-    );
+        assert!(!output.status.success());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains(missing), "{missing} is not named: {stderr}");
+    }
 }

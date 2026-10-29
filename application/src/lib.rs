@@ -1,9 +1,11 @@
 pub mod check_database;
+pub mod list_movies;
 pub mod ports;
 pub mod process_inbox_row;
 pub mod relay_telemetry;
 pub mod release_inbox_rows;
 pub mod store_webhook_delivery;
+pub mod sync_movie;
 pub mod sync_status;
 mod unsampled;
 mod webhook_deliveries;

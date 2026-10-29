@@ -5,10 +5,10 @@ deny = [
     { name = "native-tls" },
 
     { name = "domain", wrappers = ["application", "webhooks"] },
-    { name = "application", wrappers = ["selfless", "infrastructure", "persistence", "telemetry", "api", "webhooks", "workers"] },
+    { name = "application", wrappers = ["selfless", "infrastructure", "persistence", "radarr", "telemetry", "api", "webhooks", "workers"] },
 
     { name = "persistence", wrappers = ["infrastructure", "settings"] },
-    { name = "radarr", wrappers = ["settings"] },
+    { name = "radarr", wrappers = ["infrastructure", "settings"] },
     { name = "telemetry", wrappers = ["infrastructure", "settings"] },
     { name = "settings", wrappers = ["selfless"] },
     { name = "infrastructure", wrappers = ["selfless", "api", "admin", "webhooks", "workers"] },

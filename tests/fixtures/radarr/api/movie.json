@@ -1,0 +1,129 @@
+{
+  "id": 42,
+  "title": "Arrival",
+  "originalTitle": "Arrival",
+  "originalLanguage": {
+    "id": 1,
+    "name": "English"
+  },
+  "alternateTitles": [],
+  "secondaryYearSourceId": 0,
+  "sortTitle": "arrival",
+  "sizeOnDisk": 9876543210,
+  "status": "released",
+  "overview": "Taking place after alien crafts land around the world, an expert linguist is recruited by the military to determine whether they come in peace or are a threat.",
+  "inCinemas": "2016-11-10T00:00:00Z",
+  "physicalRelease": "2017-02-14T00:00:00Z",
+  "digitalRelease": "2017-01-31T00:00:00Z",
+  "releaseDate": "2017-02-14T00:00:00Z",
+  "images": [
+    {
+      "coverType": "poster",
+      "url": "/MediaCover/42/poster.jpg?lastWrite=638663000000000000",
+      "remoteUrl": "https://image.tmdb.org/t/p/original/x2FJsf1ElAgr63Y3PNPtJrcmpoe.jpg"
+    }
+  ],
+  "website": "https://www.paramount.com/movies/arrival",
+  "year": 2016,
+  "youTubeTrailerId": "tFMo3UJ4B4g",
+  "studio": "FilmNation Entertainment",
+  "path": "/mnt/media/Movies/Arrival (2016)",
+  "qualityProfileId": 4,
+  "hasFile": true,
+  "movieFileId": 77,
+  "monitored": true,
+  "minimumAvailability": "released",
+  "isAvailable": true,
+  "folderName": "/mnt/media/Movies/Arrival (2016)",
+  "runtime": 116,
+  "cleanTitle": "arrival",
+  "imdbId": "tt2543164",
+  "tmdbId": 329865,
+  "titleSlug": "329865",
+  "rootFolderPath": "/mnt/media/Movies",
+  "certification": "PG-13",
+  "genres": [
+    "Drama",
+    "Science Fiction",
+    "Mystery"
+  ],
+  "keywords": [
+    "linguistics",
+    "alien contact"
+  ],
+  "tags": [],
+  "added": "2026-10-28T09:00:00Z",
+  "ratings": {
+    "imdb": {
+      "votes": 812345,
+      "value": 7.9,
+      "type": "user"
+    },
+    "tmdb": {
+      "votes": 18123,
+      "value": 7.6,
+      "type": "user"
+    }
+  },
+  "movieFile": {
+    "id": 77,
+    "movieId": 42,
+    "relativePath": "Arrival (2016) Bluray-1080p.mkv",
+    "path": "/mnt/media/Movies/Arrival (2016)/Arrival (2016) Bluray-1080p.mkv",
+    "size": 9876543210,
+    "dateAdded": "2026-10-29T10:00:00Z",
+    "sceneName": "Arrival.2016.1080p.BluRay.x264-SPARKS",
+    "releaseGroup": "SPARKS",
+    "edition": "",
+    "languages": [
+      {
+        "id": 1,
+        "name": "English"
+      }
+    ],
+    "quality": {
+      "quality": {
+        "id": 7,
+        "name": "Bluray-1080p",
+        "source": "bluray",
+        "resolution": 1080,
+        "modifier": "none"
+      },
+      "revision": {
+        "version": 1,
+        "real": 0,
+        "isRepack": false
+      }
+    },
+    "customFormats": [],
+    "customFormatScore": 0,
+    "indexerFlags": 0,
+    "mediaInfo": {
+      "audioBitrate": 1509000,
+      "audioChannels": 5.1,
+      "audioCodec": "DTS",
+      "audioLanguages": "eng",
+      "audioStreamCount": 1,
+      "videoBitDepth": 8,
+      "videoBitrate": 0,
+      "videoCodec": "x264",
+      "videoFps": 23.976,
+      "videoDynamicRange": "",
+      "videoDynamicRangeType": "",
+      "resolution": "1920x800",
+      "runTime": "1:56:20",
+      "scanType": "Progressive",
+      "subtitles": "eng"
+    },
+    "originalFilePath": "Arrival.2016.1080p.BluRay.x264-SPARKS/arrival.mkv",
+    "qualityCutoffNotMet": true
+  },
+  "popularity": 21.4,
+  "statistics": {
+    "movieFileCount": 1,
+    "sizeOnDisk": 9876543210,
+    "releaseGroups": [
+      "SPARKS"
+    ]
+  }
+}

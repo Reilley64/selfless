@@ -1,4 +1,6 @@
 use crate::DbContext;
+use crate::ports::GetRadarrMovie;
+use crate::sync_movie;
 use crate::unsampled;
 use crate::webhook_deliveries;
 use domain::InboxRow;
@@ -17,6 +19,7 @@ use uuid::Uuid;
 #[fundle::deps]
 pub struct Dependencies {
     pub db_context: DbContext,
+    pub get_radarr_movie: GetRadarrMovie,
 }
 
 #[ohno::error]
@@ -24,8 +27,28 @@ pub struct Dependencies {
 pub struct Error;
 
 #[derive(Deserialize)]
+struct RadarrMovieRef {
+    id: i64,
+}
+
+#[derive(Deserialize)]
 #[serde(tag = "eventType")]
 enum RadarrEvent {
+    Download {
+        movie: RadarrMovieRef,
+    },
+    Rename {
+        movie: RadarrMovieRef,
+    },
+    MovieAdded {
+        movie: RadarrMovieRef,
+    },
+    MovieDelete {
+        movie: RadarrMovieRef,
+    },
+    MovieFileDelete {
+        movie: RadarrMovieRef,
+    },
     Test,
     Grab,
     Health,
@@ -37,7 +60,10 @@ enum RadarrEvent {
 }
 
 pub async fn call(dependencies: impl Into<Dependencies>) -> Result<bool, Error> {
-    let mut db_context = dependencies.into().db_context;
+    let Dependencies {
+        mut db_context,
+        get_radarr_movie,
+    } = dependencies.into();
     let Some(claimed) = toasty::sql::query(
         "UPDATE inbox_rows SET status = 'processing' WHERE id = (\
          SELECT id FROM inbox_rows WHERE status = 'pending' \
@@ -84,6 +110,30 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<bool, Error> 
         span.record("selfless.webhook.source", row.source.name());
         span.record("selfless.webhook.event_type", row.event_type.as_deref());
         let (status, outcome) = match serde_json::from_slice::<RadarrEvent>(&row.body) {
+            Ok(
+                RadarrEvent::Download { movie }
+                | RadarrEvent::Rename { movie }
+                | RadarrEvent::MovieAdded { movie }
+                | RadarrEvent::MovieDelete { movie }
+                | RadarrEvent::MovieFileDelete { movie },
+            ) => match sync_movie::call(
+                sync_movie::Dependencies {
+                    db_context: db_context.clone(),
+                    get_radarr_movie,
+                },
+                movie.id,
+            )
+            .await
+            {
+                Ok(()) => (InboxRowStatus::Processed, "processed"),
+                Err(error) => {
+                    tracing::error!(
+                        error = &error as &dyn std::error::Error,
+                        "failed to sync a movie"
+                    );
+                    (InboxRowStatus::Failed, "failed")
+                }
+            },
             Ok(
                 RadarrEvent::Test
                 | RadarrEvent::Grab

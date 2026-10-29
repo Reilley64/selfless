@@ -24,6 +24,7 @@ use std::sync::Mutex;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 use std::time::SystemTime;
+use tempfile::TempDir;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
 use tokio::task::JoinHandle;
@@ -31,12 +32,20 @@ use tokio::task::JoinSet;
 use tokio_postgres::NoTls;
 use tokio_util::sync::CancellationToken;
 use url::Url;
+use wiremock::Mock;
+use wiremock::MockServer;
+use wiremock::ResponseTemplate;
+use wiremock::matchers::header;
+use wiremock::matchers::method;
+use wiremock::matchers::path;
 
 static OPENAPI: LazyLock<Value> =
     LazyLock::new(|| serde_saphyr::from_str(include_str!("../../openapi.yaml")).unwrap());
 const OPENAPI_URI: &str = "urn:selfless:openapi";
 const PROTOBUF: &str = "application/x-protobuf";
 pub const RADARR_WEBHOOK_PASSWORD: &str = "radarr webhook password";
+pub const RADARR_API_KEY: &str = "radarr api key";
+const RADARR_MEDIA_ROOT: &str = "/mnt/media";
 
 pub struct TestDatabase {
     url: Url,
@@ -100,6 +109,8 @@ pub fn settings(database_url: Url) -> AppSettings {
         web: WebSettings::default(),
         otlp: OtlpSettings::default(),
         radarr: RadarrSettings {
+            url: Some("http://127.0.0.1:1".parse().unwrap()),
+            api_key: Some(RADARR_API_KEY.to_owned()),
             webhook_password: Some(RADARR_WEBHOOK_PASSWORD.to_owned()),
         },
     }
@@ -128,6 +139,12 @@ impl FakeClock {
 impl TestServer {
     pub async fn start(database_url: Url) -> Self {
         Self::start_with(settings(database_url), FakeClock::new()).await
+    }
+
+    pub async fn start_with_radarr(database_url: Url, radarr: &StubRadarr) -> Self {
+        let mut settings = settings(database_url);
+        settings.radarr.url = Some(radarr.url());
+        Self::start_with(settings, FakeClock::new()).await
     }
 
     pub async fn start_with_collector(database_url: Url, collector_url: &str) -> Self {
@@ -345,5 +362,52 @@ impl Proxy {
 
     pub fn stop(&self) {
         self.task.abort();
+    }
+}
+
+pub struct StubRadarr(MockServer);
+
+impl StubRadarr {
+    pub async fn start() -> Self {
+        Self(MockServer::start().await)
+    }
+
+    pub fn url(&self) -> Url {
+        self.0.uri().parse().unwrap()
+    }
+
+    pub async fn serve_movie(&self, id: i64, status: StatusCode, body: &str) {
+        self.0.reset().await;
+        Mock::given(method("GET"))
+            .and(path(format!("/api/v3/movie/{id}")))
+            .and(header("X-Api-Key", RADARR_API_KEY))
+            .respond_with(
+                ResponseTemplate::new(status.as_u16())
+                    .set_body_raw(body.to_owned(), "application/json"),
+            )
+            .mount(&self.0)
+            .await;
+    }
+}
+
+pub struct MediaFolder(TempDir);
+
+impl MediaFolder {
+    pub fn new() -> Self {
+        Self(TempDir::new().unwrap())
+    }
+
+    pub fn create(&self, relative_path: &str) {
+        let path = self.0.path().join(relative_path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, []).unwrap();
+    }
+
+    pub fn remove(&self, relative_path: &str) {
+        std::fs::remove_file(self.0.path().join(relative_path)).unwrap();
+    }
+
+    pub fn radarr_fixture(&self, path: &str) -> String {
+        fixture(path).replace(RADARR_MEDIA_ROOT, &self.0.path().to_string_lossy())
     }
 }

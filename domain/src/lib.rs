@@ -20,6 +20,7 @@ impl Source {
 pub enum InboxRowStatus {
     Pending,
     Processing,
+    Processed,
     Ignored,
     Failed,
 }
@@ -44,4 +45,21 @@ pub struct SourceState {
     pub source: Source,
     pub last_webhook_at: Option<Timestamp>,
     pub rejected_webhooks: i64,
+}
+
+#[derive(Debug, toasty::Model)]
+pub struct Movie {
+    #[key]
+    #[auto]
+    pub id: Uuid,
+    #[unique]
+    pub tmdb_id: i64,
+    #[index]
+    pub radarr_id: i64,
+    pub title: String,
+    pub year: i64,
+    pub overview: Option<String>,
+    pub genres: Vec<String>,
+    pub added_at: Option<Timestamp>,
+    pub visible: bool,
 }
