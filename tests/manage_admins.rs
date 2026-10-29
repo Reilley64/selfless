@@ -142,6 +142,25 @@ async fn deleting_the_last_admin_fails() {
 }
 
 #[tokio::test]
+async fn two_admins_deleting_each_other_at_once_leave_one_admin() {
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+    let ravi = create_admin(&server, "Ravi", "another password")
+        .await
+        .unwrap();
+    let maya = database.admin_id(ADMIN_NAME).await;
+
+    let (first, second) = tokio::join!(delete_admin(&server, maya), delete_admin(&server, ravi));
+
+    let failure = first.err().or(second.err()).expect("one delete fails");
+    assert!(failure.find_source::<LastAdmin>().is_some(), "{failure}");
+    let admins: i64 = database.query("SELECT count(*) FROM admins").await[0].get(0);
+    assert_eq!(admins, 1);
+    drop(server);
+    database.drop().await;
+}
+
+#[tokio::test]
 async fn changing_an_admins_password_ends_their_sessions() {
     let database = TestDatabase::create().await;
     let server = TestServer::start(database.url()).await;
