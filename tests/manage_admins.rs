@@ -58,7 +58,7 @@ async fn a_new_admin_signs_in_to_the_admin_app() {
 
     let mut browser = server.browser();
     assert!(signs_in(&mut browser, "Ravi", "another password").await);
-    assert_eq!(browser.get("/admin").await.status, StatusCode::OK);
+    assert_eq!(browser.get("/admin/sync").await.status, StatusCode::OK);
     drop(server);
     database.drop().await;
 }
@@ -128,9 +128,9 @@ async fn deleting_an_admin_ends_their_sessions() {
 
     delete_admin(&server, id).await.unwrap();
 
-    assert_eq!(ravi.get("/admin").await.status, StatusCode::SEE_OTHER);
+    assert_eq!(ravi.get("/admin/sync").await.status, StatusCode::SEE_OTHER);
     assert!(!signs_in(&mut server.browser(), "Ravi", "another password").await);
-    assert_eq!(maya.get("/admin").await.status, StatusCode::OK);
+    assert_eq!(maya.get("/admin/sync").await.status, StatusCode::OK);
     drop(server);
     database.drop().await;
 }
@@ -152,7 +152,7 @@ async fn deleting_the_last_admin_fails() {
         .expect_err("the last admin stays");
 
     assert!(error.find_source::<LastAdmin>().is_some(), "{error}");
-    assert_eq!(browser.get("/admin").await.status, StatusCode::OK);
+    assert_eq!(browser.get("/admin/sync").await.status, StatusCode::OK);
     drop(server);
     database.drop().await;
 }
@@ -201,9 +201,12 @@ async fn changing_an_admins_password_ends_their_sessions() {
     .await
     .unwrap();
 
-    assert_eq!(first.get("/admin").await.status, StatusCode::SEE_OTHER);
-    assert_eq!(second.get("/admin").await.status, StatusCode::SEE_OTHER);
-    assert_eq!(ravi.get("/admin").await.status, StatusCode::OK);
+    assert_eq!(first.get("/admin/sync").await.status, StatusCode::SEE_OTHER);
+    assert_eq!(
+        second.get("/admin/sync").await.status,
+        StatusCode::SEE_OTHER
+    );
+    assert_eq!(ravi.get("/admin/sync").await.status, StatusCode::OK);
     let mut browser = server.browser();
     assert!(!signs_in(&mut browser, ADMIN_NAME, ADMIN_PASSWORD).await);
     assert!(signs_in(&mut browser, ADMIN_NAME, "a new password").await);
@@ -240,7 +243,7 @@ async fn admin_passwords_cannot_be_empty() {
         changed.find_source::<EmptyPassword>().is_some(),
         "{changed}"
     );
-    assert_eq!(browser.get("/admin").await.status, StatusCode::OK);
+    assert_eq!(browser.get("/admin/sync").await.status, StatusCode::OK);
     assert!(!signs_in(&mut server.browser(), "Ravi", "").await);
     drop(server);
     database.drop().await;

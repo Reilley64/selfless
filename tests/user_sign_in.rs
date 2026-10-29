@@ -273,7 +273,7 @@ async fn a_user_token_is_rejected_on_admin() {
     let mut browser = server.browser();
 
     browser.set_cookie("session", &token);
-    let home = browser.get("/admin").await;
+    let home = browser.get("/admin/sync").await;
 
     assert_eq!(home.status, StatusCode::SEE_OTHER);
     assert_eq!(home.location.as_deref(), Some("/admin/sign-in"));

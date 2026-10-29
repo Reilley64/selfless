@@ -86,7 +86,7 @@ async fn the_daily_cleanup_deletes_only_expired_web_and_admin_sessions() {
         ["Living Room", "Bedroom", "Firefox on macOS"]
     );
     assert_eq!(admin_session_count(&database).await, 1);
-    assert_eq!(admin.get("/admin").await.status, StatusCode::OK);
+    assert_eq!(admin.get("/admin/sync").await.status, StatusCode::OK);
     drop(server);
     database.drop().await;
 }
