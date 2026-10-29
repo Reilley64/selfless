@@ -5,7 +5,7 @@ A self-hosted media server for one household. It plays the movies and shows that
 ## Library
 
 **Library**:
-Every movie and show selfless knows about, as reported by Radarr and Sonarr.
+Every movie and episode that has a file on disk, as reported by Radarr and Sonarr, and the shows and seasons they belong to.
 _Avoid_: Collection, catalog
 
 **Movie**:
@@ -18,6 +18,10 @@ _Avoid_: Series, TV series, program
 
 **Season**:
 A numbered group of episodes within a show.
+
+**Specials**:
+The season numbered 0, holding a show's episodes that sit outside its numbered seasons. It is listed after the numbered seasons.
+_Avoid_: Season 0, extras
 
 **Episode**:
 A single installment of a show, belonging to one season.
@@ -58,6 +62,10 @@ The movies and episodes a user has a resume position in.
 **Next up**:
 For each show a user is part way through, the first episode after the last one they watched.
 _Avoid_: On deck, up next
+
+**Recently added**:
+The movies and episodes whose file Radarr or Sonarr first added most recently. Replacing a file with a better copy does not count as adding it.
+_Avoid_: New, latest
 
 **Popular now**:
 The movies and shows the most different users have played in the last 14 days.
