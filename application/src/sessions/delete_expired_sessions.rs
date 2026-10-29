@@ -22,7 +22,7 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<Output, Error
             Session::fields().client_kind().is_web().and(
                 Session::fields()
                     .last_used_at()
-                    .le(now - Session::WEB_IDLE_TIMEOUT),
+                    .le(Session::web_idle_cutoff(now)),
             ),
         )
         .delete()
@@ -34,7 +34,7 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<Output, Error
         .filter(
             AdminSession::fields()
                 .last_used_at()
-                .le(now - AdminSession::IDLE_TIMEOUT),
+                .le(AdminSession::idle_cutoff(now)),
         )
         .delete()
         .exec(db_context.executor_mut())

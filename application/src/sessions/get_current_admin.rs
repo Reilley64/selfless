@@ -23,11 +23,11 @@ pub async fn call(dependencies: impl Into<Dependencies>, token: &str) -> Result<
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?
-        .filter(|x| now.duration_since(x.last_used_at) < AdminSession::IDLE_TIMEOUT)
+        .filter(|x| !x.expired(now))
     else {
         return Ok(Output::NotSignedIn);
     };
-    if now.duration_since(session.last_used_at) >= AdminSession::LAST_USED_PRECISION {
+    if session.last_used_is_stale(now) {
         session
             .update()
             .last_used_at(now)

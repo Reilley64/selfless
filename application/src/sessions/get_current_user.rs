@@ -27,7 +27,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, token: &str) -> Result<
     else {
         return Ok(Output::NotSignedIn);
     };
-    if now.duration_since(session.last_used_at) >= Session::LAST_USED_PRECISION {
+    if session.last_used_is_stale(now) {
         session
             .update()
             .last_used_at(now)

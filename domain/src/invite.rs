@@ -18,4 +18,8 @@ pub struct Invite {
 
 impl Invite {
     pub const VALID_FOR: SignedDuration = SignedDuration::from_hours(7 * 24);
+
+    pub fn expired(&self, now: Timestamp) -> bool {
+        now >= self.expires_at
+    }
 }

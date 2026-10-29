@@ -32,7 +32,7 @@ pub async fn call(
         .exec(transaction.executor_mut())
         .await
         .map_err(Error::caused_by)?
-        .filter(|x| now < x.expires_at)
+        .filter(|x| !x.expired(now))
     else {
         return Err(Error::caused_by(InviteNotFound::new()));
     };
