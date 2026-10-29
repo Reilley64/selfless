@@ -2,6 +2,7 @@ use crate::Availability;
 use infrastructure::AppState;
 use serde::Serialize;
 use std::collections::BTreeMap;
+use std::error::Error;
 use topcoat::context::Cx;
 use topcoat::context::app_context;
 use topcoat::router::StatusCode;
@@ -60,7 +61,10 @@ pub(crate) async fn readiness(cx: &Cx) -> topcoat::Result<Response> {
 async fn db(cx: &Cx) -> Status {
     match application::check_database::call(app_context::<AppState>(cx)).await {
         Ok(()) => Status::Up,
-        Err(_) => Status::Down,
+        Err(error) => {
+            tracing::warn!(error = &error as &dyn Error, "database check failed");
+            Status::Down
+        }
     }
 }
 

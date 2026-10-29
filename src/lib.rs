@@ -51,8 +51,13 @@ impl Server {
     pub async fn serve(self, shutdown: impl Future<Output = ()>) -> Result<(), AppError> {
         let availability = self.availability;
         availability.accept_traffic();
+        tracing::info!(
+            server.port = self.listener.local_addr()?.port(),
+            "accepting traffic"
+        );
         topcoat::serve_until(self.listener, self.router, async {
             shutdown.await;
+            tracing::info!("shutdown started, refusing traffic");
             availability.refuse_traffic();
             tokio::time::sleep(DRAIN_PERIOD).await;
         })
