@@ -3467,10 +3467,9 @@ version = "0.1.0"
 dependencies = [
  "application",
  "jiff",
- "ohno",
  "reqwest",
  "serde",
- "tracing",
+ "servarr",
  "url",
 ]
 
@@ -4118,6 +4117,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "servarr"
+version = "0.1.0"
+dependencies = [
+ "ohno",
+ "reqwest",
+ "serde",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "settings"
 version = "0.1.0"
 dependencies = [
@@ -4318,10 +4328,9 @@ version = "0.1.0"
 dependencies = [
  "application",
  "jiff",
- "ohno",
  "reqwest",
  "serde",
- "tracing",
+ "servarr",
  "url",
 ]
 

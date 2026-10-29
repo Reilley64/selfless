@@ -8,6 +8,7 @@ members = [
     "infrastructure/media-files",
     "infrastructure/persistence",
     "infrastructure/radarr",
+    "infrastructure/servarr",
     "infrastructure/settings",
     "infrastructure/sonarr",
     "infrastructure/telemetry",
@@ -69,6 +70,7 @@ ffmpeg = { path = "infrastructure/ffmpeg" }
 media-files = { path = "infrastructure/media-files" }
 persistence = { path = "infrastructure/persistence" }
 radarr = { path = "infrastructure/radarr" }
+servarr = { path = "infrastructure/servarr" }
 settings = { path = "infrastructure/settings" }
 sonarr = { path = "infrastructure/sonarr" }
 telemetry = { path = "infrastructure/telemetry" }
