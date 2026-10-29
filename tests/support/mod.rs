@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use jsonschema::Registry;
+use reqwest::RequestBuilder;
 use reqwest::StatusCode;
 use reqwest::header::CONTENT_TYPE;
 use serde_json::Value;
@@ -11,6 +12,7 @@ use settings::HttpSettings;
 use settings::OtlpSettings;
 use settings::WebSettings;
 use std::net::SocketAddr;
+use std::sync::LazyLock;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 use std::time::SystemTime;
@@ -22,7 +24,8 @@ use tokio_postgres::NoTls;
 use tokio_util::sync::CancellationToken;
 use url::Url;
 
-const OPENAPI: &str = include_str!("../../openapi.yaml");
+static OPENAPI: LazyLock<Value> =
+    LazyLock::new(|| serde_saphyr::from_str(include_str!("../../openapi.yaml")).unwrap());
 const OPENAPI_URI: &str = "urn:selfless:openapi";
 const PROTOBUF: &str = "application/x-protobuf";
 
@@ -115,38 +118,27 @@ impl TestServer {
     }
 
     pub async fn get(&self, path: &str) -> (StatusCode, Value) {
-        let response = reqwest::get(format!("http://{}{path}", self.address))
-            .await
-            .unwrap();
-        let status = response.status();
-        let body = response.json::<Value>().await.unwrap();
-        assert_matches_openapi(path, status, &body);
-        (status, body)
-    }
-
-    pub async fn get_text(&self, path: &str) -> (StatusCode, String) {
-        let response = reqwest::get(format!("http://{}{path}", self.address))
-            .await
-            .unwrap();
-        (response.status(), response.text().await.unwrap())
+        get_json(reqwest::Client::new().get(self.url(path)), path).await
     }
 
     pub async fn get_with_traceparent(&self, path: &str, traceparent: &str) -> (StatusCode, Value) {
-        let response = reqwest::Client::new()
-            .get(format!("http://{}{path}", self.address))
-            .header("traceparent", traceparent)
-            .send()
-            .await
-            .unwrap();
-        let status = response.status();
-        let body = response.json::<Value>().await.unwrap();
-        assert_matches_openapi(path, status, &body);
-        (status, body)
+        get_json(
+            reqwest::Client::new()
+                .get(self.url(path))
+                .header("traceparent", traceparent),
+            path,
+        )
+        .await
+    }
+
+    pub async fn get_text(&self, path: &str) -> (StatusCode, String) {
+        let response = reqwest::get(self.url(path)).await.unwrap();
+        (response.status(), response.text().await.unwrap())
     }
 
     pub async fn post_protobuf(&self, path: &str, body: Vec<u8>) -> (StatusCode, Vec<u8>) {
         let response = reqwest::Client::new()
-            .post(format!("http://{}{path}", self.address))
+            .post(self.url(path))
             .header(CONTENT_TYPE, PROTOBUF)
             .body(body)
             .send()
@@ -155,8 +147,7 @@ impl TestServer {
         let status = response.status();
         let content_type = response.headers().get(CONTENT_TYPE).cloned();
         let body = response.bytes().await.unwrap().to_vec();
-        let openapi: Value = serde_saphyr::from_str(OPENAPI).unwrap();
-        let operation = format!("/paths/{}/post", path.replace('~', "~0").replace('/', "~1"));
+        let operation = operation_pointer(path, "post");
         for pointer in [
             format!("{operation}/requestBody/content/application~1x-protobuf"),
             format!(
@@ -165,7 +156,7 @@ impl TestServer {
             ),
         ] {
             assert!(
-                openapi.pointer(&pointer).is_some(),
+                OPENAPI.pointer(&pointer).is_some(),
                 "openapi.yaml has nothing at {pointer}"
             );
         }
@@ -175,6 +166,10 @@ impl TestServer {
         );
         (status, body)
     }
+
+    fn url(&self, path: &str) -> String {
+        format!("http://{}{path}", self.address)
+    }
 }
 
 impl Drop for TestServer {
@@ -183,19 +178,33 @@ impl Drop for TestServer {
     }
 }
 
+async fn get_json(request: RequestBuilder, path: &str) -> (StatusCode, Value) {
+    let response = request.send().await.unwrap();
+    let status = response.status();
+    let body = response.json::<Value>().await.unwrap();
+    assert_matches_openapi(path, status, &body);
+    (status, body)
+}
+
+fn operation_pointer(path: &str, method: &str) -> String {
+    format!(
+        "/paths/{}/{method}",
+        path.replace('~', "~0").replace('/', "~1")
+    )
+}
+
 fn assert_matches_openapi(path: &str, status: StatusCode, body: &Value) {
-    let openapi: Value = serde_saphyr::from_str(OPENAPI).unwrap();
     let pointer = format!(
-        "/paths/{}/get/responses/{}/content/application~1json/schema",
-        path.replace('~', "~0").replace('/', "~1"),
+        "{}/responses/{}/content/application~1json/schema",
+        operation_pointer(path, "get"),
         status.as_u16()
     );
     assert!(
-        openapi.pointer(&pointer).is_some(),
+        OPENAPI.pointer(&pointer).is_some(),
         "openapi.yaml has no schema at {pointer}"
     );
     let registry = Registry::new()
-        .add(OPENAPI_URI, openapi)
+        .add(OPENAPI_URI, OPENAPI.clone())
         .unwrap()
         .prepare()
         .unwrap();
