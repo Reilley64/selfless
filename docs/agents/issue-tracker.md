@@ -34,6 +34,29 @@ A work item is **open** while its state group is `backlog`, `unstarted` or `star
 - **Apply / remove labels**: `workitem manage_label` with `add_label_id` or `remove_label_id`. Create a missing label first with `label create`.
 - **Close**: post the explanation with `workitem_comment create`, then `workitem update` with the Done state. Use the Cancelled state instead when the issue will not be done.
 
+## Specs and tickets
+
+A **spec** is a work item labelled `spec`, published by `/to-spec`. Its **tickets** are work items published by `/to-tickets` with the spec as their `parent`. Filter on the `spec` label to see only specs. Plane's work item types and templates are paid features, so the label and the structures below stand in for them.
+
+Every spec description uses these h2 sections, in this order:
+
+1. **Problem Statement**: the user's problem, in their words.
+2. **Solution**: what the user gets.
+3. **User Stories**: one numbered list of "As a ..., I want ..., so that ...". Group with h3 headings only past about 40 stories, and keep the numbering going across groups.
+4. **Implementation Decisions**: h3 subsections. Start with **Scope line with other specs** when the spec reads or writes a model another spec owns, and name the owner with its number. Then Domain, Application, API, Settings, each app, Telemetry and Homelab, leaving out the ones that don't apply.
+5. **Testing Decisions**: what a good test is, the seams, what each seam covers, and prior art.
+6. **Out of Scope**.
+7. **Further Notes**: facts and measurements first, then a **Builds on** bullet listing ADRs and specs with their numbers. The last bullet is **Decided in** with the wayfinder ticket the spec came from.
+
+Every ticket description uses two h2 sections:
+
+1. **What to build**: one or two paragraphs on the behaviour, from the user's side.
+2. **Acceptance criteria**: a Plane task list. Behaviour first, then one criterion for tests naming the seam and the cases, then any manual checks.
+
+Descriptions never repeat what Plane fields already hold: no Parent or Blocked by sections. When a spec or ticket changes, edit its description and leave a short comment saying what changed. Don't leave amendments only in comments.
+
+Tickets start in Todo. A ticket is ready when it has no assignee and no open blocker, so don't move tickets between Backlog and Todo by hand. Steps only the owner can do, such as granting access or approving an apply, go in their own ticket labelled `ready-for-human` that blocks the agent tickets that need them.
+
 ## When a skill says "publish to the issue tracker"
 
 Create a work item in the `selfless` project.

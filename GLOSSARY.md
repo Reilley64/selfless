@@ -40,6 +40,10 @@ _Avoid_: Tag, category
 A household member who watches. Users sign in on the web app, and on each TV where they want to appear in the user picker.
 _Avoid_: Account, viewer, profile, member
 
+**Invite**:
+An email an admin sends to add a user. Its link lets the person choose their username and password. It works once and expires after 7 days.
+_Avoid_: Invitation code, sign-up link, registration
+
 **Admin**:
 An account that runs the server through the admin app. An admin is not a user, cannot watch, and never appears in the user picker.
 _Avoid_: Account, administrator, owner
@@ -64,7 +68,7 @@ _Avoid_: Played, seen, completed
 The movies and episodes a user has a resume position in, plus the next up episode of each show they are part way through. A show appears once.
 
 **Next up**:
-For each show a user is part way through, the first episode after the last one they watched for the first time. Rewatching an episode doesn't move it.
+For each show a user is part way through, the first episode after the one that most recently changed from unwatched to watched. Rewatching an episode that is already watched doesn't move it.
 _Avoid_: On deck, up next
 
 **Last played**:
@@ -76,7 +80,7 @@ The movies and episodes whose file Radarr or Sonarr first added most recently. R
 _Avoid_: New, latest
 
 **Popular now**:
-The movies and shows the most different users have played in the last 14 days.
+The movies and shows with the most different users whose last played time is in the last 14 days.
 _Avoid_: Trending
 
 **Now playing**:
