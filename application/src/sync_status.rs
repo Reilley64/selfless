@@ -8,6 +8,8 @@ use domain::Season;
 use domain::Show;
 use domain::Source;
 use domain::SourceState;
+use domain::SyncProblem;
+use domain::SyncProblemKind;
 use jiff::Timestamp;
 use std::time::Duration;
 
@@ -24,6 +26,13 @@ pub struct Error;
 pub struct SyncStatus {
     pub radarr: SourceStatus,
     pub sonarr: SourceStatus,
+    pub problems: Vec<Problem>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct Problem {
+    pub kind: SyncProblemKind,
+    pub path: String,
 }
 
 #[derive(Debug)]
@@ -86,6 +95,17 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<SyncStatus, E
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?;
+    let problems = SyncProblem::all()
+        .order_by(SyncProblem::fields().path().asc())
+        .exec(db_context.executor_mut())
+        .await
+        .map_err(Error::caused_by)?
+        .into_iter()
+        .map(|x| Problem {
+            kind: x.kind,
+            path: x.path,
+        })
+        .collect();
     Ok(SyncStatus {
         radarr: source_status(
             &mut db_context,
@@ -101,6 +121,7 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<SyncStatus, E
             VisibleCounts::Shows { shows, episodes },
         )
         .await?,
+        problems,
     })
 }
 

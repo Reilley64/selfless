@@ -86,6 +86,64 @@ pub struct Movie {
     #[belongs_to(key = media_file_id, references = id)]
     pub media_file: toasty::Deferred<Option<MediaFile>>,
     pub visible: bool,
+    pub sort_title: Option<String>,
+    pub original_title: Option<String>,
+    pub runtime_minutes: Option<i64>,
+    pub certification: Option<String>,
+    pub premiered: Option<Date>,
+    pub studio: Option<String>,
+    pub rating: Option<f64>,
+    pub directors: Vec<String>,
+    pub nfo_modified_at: Option<Timestamp>,
+}
+
+#[derive(Debug, toasty::Model)]
+pub struct Actor {
+    #[key]
+    #[auto]
+    pub id: Uuid,
+    #[index]
+    pub movie_id: Uuid,
+    pub name: String,
+    pub role: Option<String>,
+    pub order: Option<i64>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, toasty::Embed)]
+#[column(type = text)]
+pub enum ArtworkKind {
+    Poster,
+    Fanart,
+    Clearlogo,
+}
+
+#[derive(Debug, toasty::Model)]
+pub struct Artwork {
+    #[key]
+    #[auto]
+    pub id: Uuid,
+    #[index]
+    pub movie_id: Uuid,
+    pub kind: ArtworkKind,
+    pub path: String,
+    pub modified_at: Timestamp,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, toasty::Embed)]
+#[column(type = text)]
+pub enum SyncProblemKind {
+    UnreadableNfo,
+}
+
+#[derive(Debug, toasty::Model)]
+pub struct SyncProblem {
+    #[key]
+    #[auto]
+    pub id: Uuid,
+    #[index]
+    pub movie_id: Uuid,
+    pub kind: SyncProblemKind,
+    pub path: String,
 }
 
 #[derive(Debug, toasty::Model)]

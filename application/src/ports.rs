@@ -246,3 +246,88 @@ impl SonarrError {
         }
     }
 }
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FoundFile {
+    pub path: String,
+    pub modified_at: Timestamp,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct MovieFolder {
+    pub nfo: Option<FoundFile>,
+    pub poster: Option<FoundFile>,
+    pub fanart: Option<FoundFile>,
+    pub clearlogo: Option<FoundFile>,
+}
+
+type ReadMovieFolderFn = dyn Fn(String) -> PortFuture<MovieFolder> + Send + Sync;
+
+#[derive(Clone)]
+pub struct ReadMovieFolder(Arc<ReadMovieFolderFn>);
+
+impl ReadMovieFolder {
+    pub fn new(f: impl Fn(String) -> PortFuture<MovieFolder> + Send + Sync + 'static) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self, media_file_path: &str) -> PortFuture<MovieFolder> {
+        (self.0)(media_file_path.to_owned())
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct MovieNfo {
+    pub title: Option<String>,
+    pub sort_title: Option<String>,
+    pub original_title: Option<String>,
+    pub year: Option<i64>,
+    pub plot: Option<String>,
+    pub runtime_minutes: Option<i64>,
+    pub certification: Option<String>,
+    pub premiered: Option<Date>,
+    pub studio: Option<String>,
+    pub genres: Vec<String>,
+    pub rating: Option<f64>,
+    pub directors: Vec<String>,
+    pub actors: Vec<NfoActor>,
+}
+
+#[derive(Clone, Debug)]
+pub struct NfoActor {
+    pub name: String,
+    pub role: Option<String>,
+    pub order: Option<i64>,
+}
+
+type ReadMovieNfoFn = dyn Fn(String) -> PortFuture<Result<MovieNfo, UnreadableNfo>> + Send + Sync;
+
+#[derive(Clone)]
+pub struct ReadMovieNfo(Arc<ReadMovieNfoFn>);
+
+impl ReadMovieNfo {
+    pub fn new(
+        f: impl Fn(String) -> PortFuture<Result<MovieNfo, UnreadableNfo>> + Send + Sync + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self, path: &str) -> PortFuture<Result<MovieNfo, UnreadableNfo>> {
+        (self.0)(path.to_owned())
+    }
+}
+
+#[derive(ohno::Error, Default)]
+#[no_constructors]
+#[display("failed to read an NFO file")]
+pub struct UnreadableNfo {
+    core: ohno::OhnoCore,
+}
+
+impl UnreadableNfo {
+    pub fn caused_by(source: impl Into<Box<dyn Error + Send + Sync>>) -> Self {
+        Self {
+            core: ohno::OhnoCore::from(source),
+        }
+    }
+}

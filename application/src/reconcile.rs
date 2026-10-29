@@ -7,6 +7,8 @@ use crate::ports::Clock;
 use crate::ports::GetSonarrEpisodes;
 use crate::ports::ListRadarrMovies;
 use crate::ports::ListSonarrSeries;
+use crate::ports::ReadMovieFolder;
+use crate::ports::ReadMovieNfo;
 use crate::ports::SonarrShow;
 use crate::sync_movie;
 use crate::sync_show;
@@ -32,6 +34,8 @@ pub struct Dependencies {
     pub get_sonarr_episodes: GetSonarrEpisodes,
     pub list_radarr_movies: ListRadarrMovies,
     pub list_sonarr_series: ListSonarrSeries,
+    pub read_movie_folder: ReadMovieFolder,
+    pub read_movie_nfo: ReadMovieNfo,
     pub reconciles: Reconciles,
 }
 
@@ -46,6 +50,8 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
         get_sonarr_episodes,
         list_radarr_movies,
         list_sonarr_series,
+        read_movie_folder,
+        read_movie_nfo,
         reconciles,
     } = dependencies.into();
     let reconcile = reconciles.source(source);
@@ -67,9 +73,15 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
     );
     let reconciled = match source {
         Source::Radarr => {
-            reconcile_movies(&mut db_context, &list_radarr_movies, progress)
-                .instrument(span.clone())
-                .await
+            reconcile_movies(
+                &mut db_context,
+                &list_radarr_movies,
+                &read_movie_folder,
+                &read_movie_nfo,
+                progress,
+            )
+            .instrument(span.clone())
+            .await
         }
         Source::Sonarr => {
             reconcile_shows(
@@ -131,6 +143,8 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
 async fn reconcile_movies(
     db_context: &mut DbContext,
     list_radarr_movies: &ListRadarrMovies,
+    read_movie_folder: &ReadMovieFolder,
+    read_movie_nfo: &ReadMovieNfo,
     progress: &Mutex<Option<ReconcileProgress>>,
 ) -> Result<(), Error> {
     let radarr_movies = list_radarr_movies.call().await.map_err(Error::caused_by)?;
@@ -140,7 +154,7 @@ async fn reconcile_movies(
         .collect::<HashSet<_>>();
     set_total(progress, radarr_movies.len());
     for radarr_movie in radarr_movies {
-        sync_movie::save(db_context, radarr_movie)
+        sync_movie::save(db_context, read_movie_folder, read_movie_nfo, radarr_movie)
             .instrument(sync_movie::span())
             .await
             .map_err(Error::caused_by)?;

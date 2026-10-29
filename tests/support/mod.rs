@@ -564,8 +564,32 @@ impl MediaFolder {
         std::fs::write(path, "changed").unwrap();
     }
 
+    pub fn write(&self, relative_path: &str, contents: &str) {
+        let path = self.0.path().join(relative_path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, contents).unwrap();
+    }
+
+    pub fn set_modified(&self, relative_path: &str, modified_at: &str) {
+        std::fs::File::options()
+            .write(true)
+            .open(self.0.path().join(relative_path))
+            .unwrap()
+            .set_modified(SystemTime::from(modified_at.parse::<Timestamp>().unwrap()))
+            .unwrap();
+    }
+
     pub fn remove(&self, relative_path: &str) {
         std::fs::remove_file(self.0.path().join(relative_path)).unwrap();
+    }
+
+    pub fn path(&self, relative_path: &str) -> String {
+        self.0
+            .path()
+            .join(relative_path)
+            .to_str()
+            .unwrap()
+            .to_owned()
     }
 
     pub fn fixture(&self, path: &str) -> String {

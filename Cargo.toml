@@ -4,6 +4,7 @@ members = [
     "application",
     "domain",
     "infrastructure/dependencies",
+    "infrastructure/media-files",
     "infrastructure/persistence",
     "infrastructure/radarr",
     "infrastructure/settings",
@@ -37,6 +38,7 @@ opentelemetry-otlp = { version = "0.33.1", default-features = false, features = 
 opentelemetry-proto = { version = "0.33.1", default-features = false, features = ["gen-tonic", "logs", "metrics", "trace"] }
 opentelemetry_sdk = "0.33.1"
 prost = "0.14.4"
+quick-xml = "0.42.0"
 reqwest = { version = "0.13.5", default-features = false }
 serde = { version = "1.0.229", features = ["derive"] }
 serde-saphyr = "2.0.0"
@@ -61,6 +63,7 @@ wiremock = "0.6.5"
 application = { path = "application" }
 domain = { path = "domain" }
 infrastructure = { path = "infrastructure/dependencies" }
+media-files = { path = "infrastructure/media-files" }
 persistence = { path = "infrastructure/persistence" }
 radarr = { path = "infrastructure/radarr" }
 settings = { path = "infrastructure/settings" }
