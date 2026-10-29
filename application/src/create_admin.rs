@@ -1,7 +1,10 @@
 use crate::DbContext;
 use crate::passwords;
+use crate::unique_index;
 use domain::Admin;
 use std::fmt;
+
+const NAME_INDEX: &str = "index_admins_by_name";
 
 #[fundle::deps]
 pub struct Dependencies {
@@ -29,15 +32,6 @@ pub async fn call(
     password: String,
 ) -> Result<Admin, Error> {
     let mut db_context = dependencies.into().db_context;
-    if Admin::filter_by_name(name.clone())
-        .first()
-        .exec(db_context.executor_mut())
-        .await
-        .map_err(Error::caused_by)?
-        .is_some()
-    {
-        return Err(Error::caused_by(NameTaken));
-    }
     let password_hash = passwords::hash(password).await.map_err(Error::caused_by)?;
     toasty::create!(Admin {
         name,
@@ -45,5 +39,8 @@ pub async fn call(
     })
     .exec(db_context.executor_mut())
     .await
-    .map_err(Error::caused_by)
+    .map_err(|error| match unique_index::violated(&error) {
+        Some(NAME_INDEX) => Error::caused_by(NameTaken),
+        _ => Error::caused_by(error),
+    })
 }

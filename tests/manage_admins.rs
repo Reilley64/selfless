@@ -80,6 +80,22 @@ async fn admin_names_are_unique_ignoring_case() {
 }
 
 #[tokio::test]
+async fn creating_two_admins_with_one_name_at_once_creates_one() {
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+
+    let (first, second) = tokio::join!(
+        create_admin(&server, "Ravi", "password"),
+        create_admin(&server, "RAVI", "another password")
+    );
+
+    let error = first.err().or(second.err()).expect("one name is taken");
+    assert!(error.find_source::<NameTaken>().is_some(), "{error}");
+    drop(server);
+    database.drop().await;
+}
+
+#[tokio::test]
 async fn admin_names_and_user_names_are_separate_sets() {
     let database = TestDatabase::create().await;
     let server = TestServer::start(database.url()).await;

@@ -47,7 +47,7 @@ pub async fn call(
     else {
         return Err(Error::caused_by(InviteNotFound));
     };
-    let user = create_user::call(
+    let user = match create_user::call(
         create_user::Dependencies {
             db_context: db_context.clone(),
         },
@@ -56,7 +56,22 @@ pub async fn call(
         invite.email.clone(),
     )
     .await
-    .map_err(Error::caused_by)?;
+    {
+        Ok(user) => user,
+        Err(error) => {
+            let accepted = User::filter_by_email(invite.email.clone())
+                .first()
+                .exec(db_context.executor_mut())
+                .await
+                .map_err(Error::caused_by)?
+                .is_some();
+            return Err(if accepted {
+                Error::caused_by(InviteNotFound)
+            } else {
+                Error::caused_by(error)
+            });
+        }
+    };
     invite
         .delete()
         .exec(db_context.executor_mut())

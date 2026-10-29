@@ -232,6 +232,37 @@ async fn a_link_works_once() {
 }
 
 #[tokio::test]
+async fn accepting_one_link_twice_at_once_creates_one_user_and_the_other_gets_invite_not_found() {
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+
+    for (email, names) in [
+        (EMAIL, [NAME, NAME]),
+        ("ravi@example.com", ["Ravi", "Ravi K"]),
+    ] {
+        invite(&server, &database, email).await.unwrap();
+        let token = token_from_last_email(&server);
+
+        let (first, second) = tokio::join!(
+            accept(&server, &token, names[0]),
+            accept(&server, &token, names[1])
+        );
+
+        let mut statuses = [first.0, second.0];
+        statuses.sort();
+        assert_eq!(statuses, [StatusCode::CREATED, StatusCode::NOT_FOUND]);
+        let not_found = if first.0 == StatusCode::NOT_FOUND {
+            first
+        } else {
+            second
+        };
+        assert_eq!(not_found.1["type"], INVITE_NOT_FOUND);
+    }
+    drop(server);
+    database.drop().await;
+}
+
+#[tokio::test]
 async fn a_link_expires_7_days_after_the_invite_was_sent() {
     let database = TestDatabase::create().await;
     let server = TestServer::start(database.url()).await;
@@ -277,6 +308,23 @@ async fn an_address_that_already_has_a_user_or_a_pending_invite_cannot_be_invite
         assert!(error.find_source::<AddressTaken>().is_some(), "{error}");
     }
     assert_eq!(server.mailer.sent().len(), 2);
+    drop(server);
+    database.drop().await;
+}
+
+#[tokio::test]
+async fn inviting_one_address_twice_at_once_sends_one_invite() {
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+
+    let (first, second) = tokio::join!(
+        invite(&server, &database, EMAIL),
+        invite(&server, &database, "NOOR@HOUSEHOLD.EXAMPLE")
+    );
+
+    let error = first.err().or(second.err()).expect("the address is taken");
+    assert!(error.find_source::<AddressTaken>().is_some(), "{error}");
+    assert_eq!(server.mailer.sent().len(), 1);
     drop(server);
     database.drop().await;
 }

@@ -3,10 +3,13 @@ use crate::invite_email;
 use crate::ports::Clock;
 use crate::ports::SendEmail;
 use crate::session_tokens;
+use crate::unique_index;
 use domain::Invite;
 use domain::User;
 use std::fmt;
 use uuid::Uuid;
+
+const EMAIL_INDEX: &str = "index_invites_by_email";
 
 #[fundle::deps]
 pub struct Dependencies {
@@ -46,12 +49,7 @@ pub async fn call(
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?;
-    let invite = Invite::filter_by_email(email.clone())
-        .first()
-        .exec(db_context.executor_mut())
-        .await
-        .map_err(Error::caused_by)?;
-    if user.is_some() || invite.is_some() {
+    if user.is_some() {
         return Err(Error::caused_by(AddressTaken));
     }
     let token = session_tokens::generate();
@@ -65,7 +63,10 @@ pub async fn call(
     })
     .exec(db_context.executor_mut())
     .await
-    .map_err(Error::caused_by)?;
+    .map_err(|error| match unique_index::violated(&error) {
+        Some(EMAIL_INDEX) => Error::caused_by(AddressTaken),
+        _ => Error::caused_by(error),
+    })?;
     invite_email::send(&send_email, email, &origin, &token)
         .await
         .map_err(Error::caused_by)

@@ -20,5 +20,6 @@ sha2 = { workspace = true }
 toasty = { workspace = true }
 toasty-core = { workspace = true }
 tokio = { workspace = true }
+tokio-postgres = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true }

@@ -28,6 +28,7 @@ mod session_tokens;
 pub mod sign_in;
 mod sign_ins;
 pub mod sign_out;
+mod unique_index;
 
 pub use passwords::EmptyPassword;
 
