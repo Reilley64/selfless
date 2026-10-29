@@ -8,6 +8,7 @@ use opentelemetry::trace::TraceContextExt;
 use opentelemetry_sdk::propagation::TraceContextPropagator;
 use std::time::Instant;
 use topcoat::context::Cx;
+use topcoat::context::try_request_context;
 use topcoat::router::Body;
 use topcoat::router::HeaderMap;
 use topcoat::router::Layer;
@@ -52,13 +53,22 @@ impl Layer for HttpServerLayer {
     }
 
     fn handle<'a>(&'a self, cx: &'a Cx, body: Body, next: Next<'a>) -> LayerFuture<'a> {
-        let start = Instant::now();
+        let rewritten = try_request_context::<Rewritten>(cx);
+        let start = rewritten.map_or_else(Instant::now, |x| x.start);
         let request_method = match method(cx).as_str() {
             x @ ("CONNECT" | "DELETE" | "GET" | "HEAD" | "OPTIONS" | "PATCH" | "POST" | "PUT"
             | "QUERY" | "TRACE") => x,
             _ => "_OTHER",
         };
-        let route = try_endpoint(cx).map(|x| x.path().as_str());
+        let route = rewritten.map_or_else(
+            || {
+                try_endpoint(cx).map(|x| match x.path().as_str() {
+                    "" => "/".to_owned(),
+                    x => x.to_owned(),
+                })
+            },
+            |x| x.route.clone(),
+        );
         let scheme = uri(cx).scheme_str().unwrap_or("http");
         let protocol_version = match *version(cx) {
             http::Version::HTTP_09 => Some("0.9"),
@@ -70,7 +80,9 @@ impl Layer for HttpServerLayer {
         };
         let parent = TraceContextPropagator::new()
             .extract_with_context(&Context::new(), &Traceparent(headers(cx)));
-        let span = if uri(cx).path().starts_with("/actuator/health")
+        let span = if let Some(rewritten) = rewritten {
+            rewritten.span.clone()
+        } else if uri(cx).path().starts_with("/actuator/health")
             && !parent.span().span_context().is_sampled()
         {
             Span::none()
@@ -83,7 +95,7 @@ impl Layer for HttpServerLayer {
             let span = tracing::info_span!(
                 parent: None,
                 "http_request",
-                otel.name = %route.map_or_else(|| span_method.to_owned(), |x| format!("{span_method} {x}")),
+                otel.name = %route.as_ref().map_or_else(|| span_method.to_owned(), |x| format!("{span_method} {x}")),
                 otel.kind = "server",
                 otel.status_code = field::Empty,
                 http.request.method = request_method,
@@ -106,8 +118,18 @@ impl Layer for HttpServerLayer {
             async move {
                 let response = match next.run(cx, body).await {
                     Ok(response) => response,
-                    Err(error) if error.is::<RewriteError>() => return Err(error),
-                    Err(error) => error.into_response(cx)?,
+                    Err(error) => match error.downcast::<RewriteError>() {
+                        Ok(rewrite) => {
+                            return Err(rewrite
+                                .with(Rewritten {
+                                    span: recorder,
+                                    start,
+                                    route,
+                                })
+                                .into());
+                        }
+                        Err(error) => error.into_error().into_response(cx)?,
+                    },
                 };
                 let status = response.status();
                 recorder.record("http.response.status_code", status.as_u16());
@@ -117,7 +139,7 @@ impl Layer for HttpServerLayer {
                     KeyValue::new("http.response.status_code", i64::from(status.as_u16())),
                 ];
                 if let Some(route) = route {
-                    attributes.push(KeyValue::new("http.route", route.to_owned()));
+                    attributes.push(KeyValue::new("http.route", route));
                 }
                 if let Some(protocol_version) = protocol_version {
                     attributes.push(KeyValue::new("network.protocol.version", protocol_version));
@@ -134,6 +156,12 @@ impl Layer for HttpServerLayer {
             .instrument(span),
         )
     }
+}
+
+struct Rewritten {
+    span: Span,
+    start: Instant,
+    route: Option<String>,
 }
 
 struct Traceparent<'a>(&'a HeaderMap);
