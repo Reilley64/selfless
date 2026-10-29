@@ -21,6 +21,7 @@ use crate::ports::ReadMovieNfo;
 use crate::ports::ReadShowFolder;
 use crate::ports::ReadShowNfo;
 use crate::ports::SonarrShow;
+use crate::process_inbox_row;
 use crate::sync_movie;
 use crate::sync_show;
 use crate::sync_status::ReconcileProgress;
@@ -110,14 +111,23 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
         selfless.library.source = source.name(),
         selfless.reconcile.result = field::Empty,
     );
-    let reconciled = match source {
-        Source::Radarr => {
-            async {
-                let kodi_metadata = check_radarr_kodi_metadata.call().await;
-                let failed_calls = record_kodi_metadata(&source_health, source, kodi_metadata);
-                reconcile_movies(
+    let reconciled = async {
+        let failed_metadata_calls = match source {
+            Source::Radarr => record_kodi_metadata(
+                &source_health,
+                source,
+                check_radarr_kodi_metadata.call().await,
+            ),
+            Source::Sonarr => record_kodi_metadata(
+                &source_health,
+                source,
+                check_sonarr_kodi_metadata.call().await,
+            ),
+        };
+        let listing = match source {
+            Source::Radarr => {
+                sync_movies(
                     &mut db_context,
-                    failed_calls,
                     &inspector,
                     &list_radarr_movies,
                     &read_movie_folder,
@@ -125,18 +135,11 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
                     &source_health,
                     progress,
                 )
-                .await
+                .await?
             }
-            .instrument(span.clone())
-            .await
-        }
-        Source::Sonarr => {
-            async {
-                let kodi_metadata = check_sonarr_kodi_metadata.call().await;
-                let failed_calls = record_kodi_metadata(&source_health, source, kodi_metadata);
-                reconcile_shows(
+            Source::Sonarr => {
+                sync_shows(
                     &mut db_context,
-                    failed_calls,
                     &inspector,
                     &list_sonarr_series,
                     &get_sonarr_episodes,
@@ -149,12 +152,24 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
                     &source_health,
                     progress,
                 )
-                .await
+                .await?
             }
-            .instrument(span.clone())
-            .await
+        };
+        let failed_calls = failed_metadata_calls + listing.failed_calls;
+        if failed_calls == 0 {
+            remove_or_hold(&mut db_context, source, &listing).await?;
         }
-    };
+        resolve_failed_rows(&mut db_context, source, &listing.synced).await?;
+        if failed_calls > 0 {
+            return Err(Error::caused_by(format!(
+                "{failed_calls} calls to {} failed, so nothing was removed",
+                source.name()
+            )));
+        }
+        Ok(())
+    }
+    .instrument(span.clone())
+    .await;
     *progress.lock().unwrap() = None;
     let duration = start.elapsed();
     let result = match reconciled {
@@ -222,16 +237,23 @@ fn record_kodi_metadata(
     }
 }
 
-async fn reconcile_movies(
-    db_context: &mut DbContext,
+struct Listing {
+    listed: HashSet<i64>,
+    total: usize,
+    absent: Vec<Uuid>,
+    synced: HashSet<i64>,
     failed_calls: usize,
+}
+
+async fn sync_movies(
+    db_context: &mut DbContext,
     inspector: &Inspector,
     list_radarr_movies: &ListRadarrMovies,
     read_movie_folder: &ReadMovieFolder,
     read_movie_nfo: &ReadMovieNfo,
     source_health: &SourceHealth,
     progress: &Mutex<Option<ReconcileProgress>>,
-) -> Result<(), Error> {
+) -> Result<Listing, Error> {
     let radarr_movies = source_health
         .api_call(Source::Radarr, list_radarr_movies.call().await)
         .map_err(Error::caused_by)?;
@@ -249,7 +271,7 @@ async fn reconcile_movies(
         .await
         .map_err(Error::caused_by)?;
     let total = stored_movies.len();
-    let removed = stored_movies
+    let absent = stored_movies
         .into_iter()
         .filter(|x| !listed.contains(&x.tmdb_id))
         .map(|x| x.id)
@@ -290,25 +312,24 @@ async fn reconcile_movies(
         .map_err(Error::caused_by)?;
         imported(progress);
     }
-    resolve_failed_rows(db_context, Source::Radarr, &synced).await?;
-    if failed_calls > 0 {
-        return Err(Error::caused_by(format!(
-            "{failed_calls} calls to Radarr failed, so nothing was removed"
-        )));
-    }
-    remove_or_hold(db_context, Source::Radarr, total, removed, &listed).await
+    Ok(Listing {
+        listed,
+        total,
+        absent,
+        synced,
+        failed_calls: 0,
+    })
 }
 
-async fn reconcile_shows(
+async fn sync_shows(
     db_context: &mut DbContext,
-    mut failed_calls: usize,
     inspector: &Inspector,
     list_sonarr_series: &ListSonarrSeries,
     get_sonarr_episodes: &GetSonarrEpisodes,
     readers: sync_show::Readers<'_>,
     source_health: &SourceHealth,
     progress: &Mutex<Option<ReconcileProgress>>,
-) -> Result<(), Error> {
+) -> Result<Listing, Error> {
     let series = source_health
         .api_call(Source::Sonarr, list_sonarr_series.call().await)
         .map_err(Error::caused_by)?;
@@ -319,11 +340,12 @@ async fn reconcile_shows(
         .await
         .map_err(Error::caused_by)?;
     let total = stored_shows.len();
-    let removed = stored_shows
+    let absent = stored_shows
         .into_iter()
         .filter(|x| !listed.contains(&x.tvdb_id))
         .map(|x| x.id)
         .collect();
+    let mut failed_calls = 0;
     let mut synced = HashSet::new();
     for series in series {
         let span = sync_show::span();
@@ -356,13 +378,13 @@ async fn reconcile_shows(
         }
         imported(progress);
     }
-    resolve_failed_rows(db_context, Source::Sonarr, &synced).await?;
-    if failed_calls > 0 {
-        return Err(Error::caused_by(format!(
-            "{failed_calls} calls to Sonarr failed, so nothing was removed"
-        )));
-    }
-    remove_or_hold(db_context, Source::Sonarr, total, removed, &listed).await
+    Ok(Listing {
+        listed,
+        total,
+        absent,
+        synced,
+        failed_calls,
+    })
 }
 
 async fn resolve_failed_rows(
@@ -379,8 +401,29 @@ async fn resolve_failed_rows(
     .exec(db_context.executor_mut())
     .await
     .map_err(Error::caused_by)?;
+    let stored = match source {
+        Source::Radarr => Movie::all()
+            .exec(db_context.executor_mut())
+            .await
+            .map_err(Error::caused_by)?
+            .into_iter()
+            .map(|x| x.radarr_id)
+            .collect::<HashSet<_>>(),
+        Source::Sonarr => Show::all()
+            .exec(db_context.executor_mut())
+            .await
+            .map_err(Error::caused_by)?
+            .into_iter()
+            .map(|x| x.sonarr_id)
+            .collect(),
+    };
     for mut row in failed_rows {
-        if row.source_item_id.is_some_and(|x| synced.contains(&x)) {
+        let Some(item_id) = row.source_item_id else {
+            continue;
+        };
+        let gone = process_inbox_row::is_removal(source, row.event_type.as_deref())
+            && !stored.contains(&item_id);
+        if synced.contains(&item_id) || gone {
             row.update()
                 .status(InboxRowStatus::Resolved)
                 .exec(db_context.executor_mut())
@@ -407,30 +450,28 @@ fn imported(progress: &Mutex<Option<ReconcileProgress>>) {
 async fn remove_or_hold(
     db_context: &mut DbContext,
     source: Source,
-    total: usize,
-    removed: Vec<Uuid>,
-    listed: &HashSet<i64>,
+    listing: &Listing,
 ) -> Result<(), Error> {
     HeldRemoval::filter_by_source(source)
         .delete()
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?;
-    if removed.len() * 2 > total {
+    if listing.absent.len() * 2 > listing.total {
         tracing::warn!(
             selfless.library.source = source.name(),
             "held a removal of more than half of a source's items"
         );
         toasty::create!(HeldRemoval {
             source,
-            item_ids: removed,
+            item_ids: listing.absent.clone(),
         })
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?;
         return Ok(());
     }
-    remove(db_context, source, removed, listed).await
+    remove(db_context, source, listing.absent.clone(), &listing.listed).await
 }
 
 pub(crate) async fn remove(

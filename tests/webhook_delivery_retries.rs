@@ -248,6 +248,24 @@ async fn a_reconcile_that_syncs_the_movie_resolves_its_failed_deliveries() {
 }
 
 #[tokio::test]
+async fn a_reconcile_that_removes_the_movie_resolves_its_failed_delete_deliveries() {
+    let fixture = Fixture::start().await;
+    fixture.reconcile_lists(&[RADARR_ID, 43]).await;
+    fixture.radarr.fail_movie(43).await;
+    let mut movie_delete: Value =
+        serde_json::from_str(&support::fixture("radarr/webhooks/movie-delete.json")).unwrap();
+    movie_delete["movie"]["id"] = 43.into();
+    fixture.send_body(&movie_delete.to_string()).await;
+    fixture.until_failed(1).await;
+
+    fixture.reconcile_lists(&[RADARR_ID]).await;
+
+    assert!(fixture.failed_rows().await.is_empty());
+    assert_eq!(fixture.movie_titles().await, ["Arrival"]);
+    fixture.stop().await;
+}
+
+#[tokio::test]
 async fn processed_ignored_and_resolved_deliveries_are_deleted_30_days_after_they_were_received() {
     let fixture = Fixture::start().await;
     let first_received_at = fixture.server.clock.now();

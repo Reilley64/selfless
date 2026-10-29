@@ -270,6 +270,13 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<bool, Error> 
     .await
 }
 
+pub(crate) fn is_removal(source: Source, event_type: Option<&str>) -> bool {
+    matches!(
+        (source, event_type),
+        (Source::Radarr, Some("MovieDelete")) | (Source::Sonarr, Some("SeriesDelete"))
+    )
+}
+
 fn target(source: Source, body: &[u8]) -> Result<Target, serde_json::Error> {
     Ok(match source {
         Source::Radarr => match serde_json::from_slice(body)? {
