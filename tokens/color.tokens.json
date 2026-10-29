@@ -1,0 +1,178 @@
+{
+  "color": {
+    "$type": "color",
+    "$description": "Shared by the TV and web apps. Colours never differ per platform.",
+    "background": {
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.0431,
+          0.0431,
+          0.051
+        ],
+        "hex": "#0b0b0d"
+      },
+      "$description": "Page background."
+    },
+    "surface": {
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.1333,
+          0.1333,
+          0.1333
+        ],
+        "hex": "#222222"
+      },
+      "$description": "Tile placeholder behind artwork."
+    },
+    "surface-raised": {
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "hex": "#ffffff",
+        "alpha": 0.08
+      },
+      "$description": "Keys, hover rows, inputs."
+    },
+    "scrim": {
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "hex": "#000000",
+        "alpha": 0.72
+      },
+      "$description": "Badges and overlays on artwork."
+    },
+    "accent": {
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.851,
+          0.4667,
+          0.0235
+        ],
+        "hex": "#d97706"
+      },
+      "$description": "Brand amber: progress, current item, kicker."
+    },
+    "text": {
+      "primary": {
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "hex": "#ffffff"
+        }
+      },
+      "secondary": {
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "hex": "#ffffff",
+          "alpha": 0.82
+        },
+        "$description": "Metadata and synopsis."
+      },
+      "muted": {
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "hex": "#ffffff",
+          "alpha": 0.55
+        },
+        "$description": "Inactive menu items and row labels."
+      },
+      "inverse": {
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.0667,
+            0.0667,
+            0.0667
+          ],
+          "hex": "#111111"
+        },
+        "$description": "Text on a focused (white) control."
+      }
+    },
+    "button": {
+      "background": {
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.4314,
+            0.4314,
+            0.4706
+          ],
+          "alpha": 0.5,
+          "hex": "#6e6e78"
+        }
+      },
+      "primary": {
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "hex": "#ffffff",
+          "alpha": 0.22
+        }
+      },
+      "focus": {
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "hex": "#ffffff"
+        },
+        "$description": "Focused or hovered button fill."
+      }
+    },
+    "focus-ring": {
+      "$value": "{color.text.primary}",
+      "$description": "Ring around the focused tile or control."
+    },
+    "progress": {
+      "track": {
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "hex": "#ffffff",
+          "alpha": 0.3
+        }
+      },
+      "fill": {
+        "$value": "{color.accent}"
+      }
+    }
+  }
+}

@@ -1,5 +1,7 @@
-// PROTOTYPE: three variants of the selfless TV app home, switchable with ?variant=A|B|C.
+// PROTOTYPE: five variants of the selfless TV app home, switchable with ?variant=A|B|C|D|E.
 // Question: which pre-2025-style TV layout (left menu + rows) should the TV app use?
+// Verdict so far: E (B's billboard, then A's focused details once focus is in the rows), so E is the default.
+// ?user=maya skips the user picker; ?focus=<row>,<col> focuses that tile on the home of variant D or E.
 // Throwaway code. No tests, no persistence, fake data only.
 import {
   episodeLabel, featuredFor, metaLine, moreLike, nextUp, resumeOf, rowsFor, titles, users,
@@ -8,7 +10,7 @@ import {
 import { avatarArt, backdropArt, icons, tileArt } from "./prototype-art";
 
 type Key = "up" | "down" | "left" | "right" | "select" | "back";
-type VariantKey = "A" | "B" | "C";
+type VariantKey = "A" | "B" | "C" | "D" | "E";
 
 interface Screen {
   el: HTMLElement;
@@ -16,10 +18,10 @@ interface Screen {
   describe(): string;
 }
 
-const variants: Record<VariantKey, string> = { A: "Focused details", B: "Billboard", C: "Expanding tile" };
+const variants: Record<VariantKey, string> = { A: "Focused details", B: "Billboard", C: "Expanding tile", D: "Billboard + expanding tile", E: "Billboard then focused details" };
 const variantKeys = Object.keys(variants) as VariantKey[];
 const params = new URLSearchParams(location.search);
-let variant: VariantKey = variantKeys.includes(params.get("variant") as VariantKey) ? (params.get("variant") as VariantKey) : "A";
+let variant: VariantKey = variantKeys.includes(params.get("variant") as VariantKey) ? (params.get("variant") as VariantKey) : "E";
 
 function h<K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", html = ""): HTMLElementTagNameMap[K] {
   const el = document.createElement(tag);
@@ -88,6 +90,16 @@ function tileSummary(t: Tile) {
     <div class="meta">${metaHtml(t.title)}</div>
     ${ep}${resume}
     <p class="synopsis">${t.episode ? t.episode.synopsis : t.title.synopsis}</p>`;
+}
+
+/** Adds the backdrop and card that a tile shows once it expands (variants C and D). */
+function addExpandedCard(el: HTMLElement, t: Tile) {
+  const back = h("div", "tile-back");
+  back.style.backgroundImage = backdropArt(t.title);
+  const card = h("div", "card-info", tileSummary(t));
+  card.append(h("div", "buttons", `<div class="btn primary">${icons.play}<span>${t.progress != null ? "Resume" : "Play"}</span></div><div class="btn">${icons.info}<span>More info</span></div>`));
+  el.prepend(back);
+  el.append(card);
 }
 
 function openTitle(t: Tile) {
@@ -298,17 +310,7 @@ class VariantC implements PageView {
     viewport.append(this.inner);
     this.el.append(viewport);
     this.strips = rows.map((r) => new RowStrip(r, 268));
-    for (const s of this.strips) {
-      s.tiles.forEach((el, i) => {
-        const t = s.row.tiles[i];
-        const back = h("div", "tile-back");
-        back.style.backgroundImage = backdropArt(t.title);
-        const card = h("div", "card-info", tileSummary(t));
-        card.append(h("div", "buttons", `<div class="btn primary">${icons.play}<span>${t.progress != null ? "Resume" : "Play"}</span></div><div class="btn">${icons.info}<span>More info</span></div>`));
-        el.prepend(back);
-        el.append(card);
-      });
-    }
+    for (const s of this.strips) s.tiles.forEach((el, i) => addExpandedCard(el, s.row.tiles[i]));
     this.inner.append(...this.strips.map((s) => s.el));
     this.update(true);
   }
@@ -387,6 +389,254 @@ class VariantC implements PageView {
   describe() {
     const s = this.strip;
     return `row "${s.row.name}", tile ${s.col + 1}: ${s.tile.title.name}${this.open ? " (expanded)" : ""}${this.inCard ? `, button ${this.btn ? "More info" : "Play"}` : ""}`;
+  }
+}
+
+// ---------- Variant D: Billboard + expanding tile ----------
+
+/** B's billboard on top; the rows below expand the focused tile in place like C. */
+class VariantD implements PageView {
+  el = h("div", "page vd");
+  scroller = h("div", "vd-scroller");
+  buttons: HTMLElement[];
+  strips: RowStrip[];
+  row = -1;
+  btn = 0;
+  open = false;
+  inCard = false;
+  cardBtn = 0;
+  timer = 0;
+  rowHeight: number;
+  rowsTop: number;
+  constructor(rows: Row[], public featured: Title) {
+    const css = getComputedStyle(document.documentElement);
+    const token = (name: string) => parseFloat(css.getPropertyValue(name));
+    this.rowHeight = token("--tile-tv-height") + 100;
+    this.rowsTop = token("--billboard-tv-height") - 200;
+    const bill = h("div", "vb-billboard");
+    const back = h("div", "vb-back");
+    back.style.backgroundImage = backdropArt(featured);
+    const info = h("div", "vb-info", `<div class="kicker">Featured ${featured.kind === "movie" ? "Movie" : "Show"}</div>
+      <h1 class="vb-title">${featured.name}</h1>
+      <div class="meta">${metaHtml(featured)}</div>
+      <p class="synopsis">${featured.synopsis}</p>`);
+    const btns = h("div", "buttons");
+    this.buttons = [h("div", "btn primary", `${icons.play}<span>Play</span>`), h("div", "btn", `${icons.info}<span>More info</span>`)];
+    btns.append(...this.buttons);
+    info.append(btns);
+    bill.append(back, h("div", "vb-fade"), info);
+    const rowsEl = h("div", "vd-rows");
+    this.strips = rows.map((r) => new RowStrip(r, token("--tile-tv-width") + token("--tile-tv-gap")));
+    for (const s of this.strips) s.tiles.forEach((el, i) => addExpandedCard(el, s.row.tiles[i]));
+    rowsEl.append(...this.strips.map((s) => s.el));
+    this.scroller.append(bill, rowsEl);
+    this.el.append(this.scroller);
+    this.render();
+  }
+  get strip() {
+    return this.strips[this.row];
+  }
+  focusAt(row: number, col: number) {
+    this.row = clamp(row, 0, this.strips.length - 1);
+    this.strip.col = clamp(col, 0, this.strip.tiles.length - 1);
+    this.open = true;
+    this.render();
+  }
+  update(moved: boolean) {
+    if (moved) {
+      this.open = false;
+      this.inCard = false;
+      clearTimeout(this.timer);
+      if (this.row >= 0) {
+        this.timer = window.setTimeout(() => {
+          this.open = true;
+          this.render();
+        }, 450);
+      }
+    }
+    this.render();
+  }
+  render() {
+    // Rows above the focused one are always collapsed, so the focused row settles near the top of the screen.
+    const y = this.row < 0 ? 0 : -(this.rowsTop + this.row * this.rowHeight) + 90;
+    this.scroller.style.transform = `translateY(${y}px)`;
+    this.buttons.forEach((b, i) => b.classList.toggle("focus", this.row < 0 && i === this.btn));
+    this.strips.forEach((s, i) => {
+      s.layout(i === this.row);
+      s.el.classList.toggle("above", i < this.row);
+      s.el.classList.toggle("open", i === this.row && this.open);
+      s.tiles.forEach((el, j) => {
+        const isOpen = i === this.row && j === s.col && this.open;
+        el.classList.toggle("open", isOpen);
+        el.classList.toggle("in-card", isOpen && this.inCard);
+        el.querySelectorAll(".card-info .btn").forEach((b, n) => b.classList.toggle("focus", isOpen && this.inCard && n === this.cardBtn));
+      });
+    });
+    renderSwitcher();
+  }
+  key(k: Key): boolean {
+    if (this.row < 0) {
+      if (k === "back" || (k === "left" && this.btn === 0)) return false;
+      if (k === "left" || k === "right") this.btn = k === "left" ? 0 : 1;
+      if (k === "select") {
+        if (this.btn === 0) playTile({ title: this.featured });
+        else openTitle({ title: this.featured });
+      }
+      if (k === "down") this.row = 0;
+      this.update(k === "down");
+      return true;
+    }
+    if (this.inCard) {
+      if (k === "left" || k === "right") this.cardBtn = k === "left" ? 0 : 1;
+      if (k === "select") {
+        if (this.cardBtn === 0) playTile(this.strip.tile);
+        else openTitle(this.strip.tile);
+      }
+      if (k === "back" || k === "up" || k === "down") this.inCard = false;
+      if (k === "up" || k === "down") return this.key(k);
+      this.render();
+      return true;
+    }
+    const s = this.strip;
+    if (k === "left") {
+      if (!s.move(-1)) return false;
+      this.update(true);
+    }
+    if (k === "right") this.update(s.move(1));
+    if (k === "up") {
+      this.row -= 1;
+      this.update(true);
+    }
+    if (k === "down") {
+      const next = clamp(this.row + 1, 0, this.strips.length - 1);
+      const moved = next !== this.row;
+      this.row = next;
+      this.update(moved);
+    }
+    if (k === "select") {
+      clearTimeout(this.timer);
+      this.open = true;
+      this.inCard = true;
+      this.cardBtn = 0;
+      this.render();
+    }
+    if (k === "back") {
+      this.row = -1;
+      this.strips.forEach((x) => (x.col = 0));
+      this.update(true);
+    }
+    return true;
+  }
+  active(on: boolean) {
+    this.el.classList.toggle("inactive", !on);
+  }
+  describe() {
+    if (this.row < 0) return `billboard "${this.featured.name}", button ${this.btn ? "More info" : "Play"}`;
+    const s = this.strip;
+    return `row "${s.row.name}", tile ${s.col + 1}: ${s.tile.title.name}${this.open ? " (expanded)" : ""}${this.inCard ? `, button ${this.cardBtn ? "More info" : "Play"}` : ""}`;
+  }
+}
+
+// ---------- Variant E: Billboard then focused details ----------
+
+/** Opens on B's billboard; once focus is in the rows, the top area becomes A's focused-details area. Tiles never expand. */
+class VariantE implements PageView {
+  el = h("div", "page ve");
+  bill = h("div", "vb-billboard ve-bill");
+  hero = h("div", "va-hero ve-hero");
+  backs = [h("div", "va-back"), h("div", "va-back")];
+  front = 0;
+  info = h("div", "va-info");
+  viewport = h("div", "ve-rows");
+  inner = h("div", "ve-rows-inner");
+  buttons: HTMLElement[];
+  strips: RowStrip[];
+  row = -1;
+  btn = 0;
+  shown?: Tile;
+  rowHeight: number;
+  constructor(rows: Row[], public featured: Title) {
+    const css = getComputedStyle(document.documentElement);
+    const token = (name: string) => parseFloat(css.getPropertyValue(name));
+    this.rowHeight = token("--tile-tv-height") + 100;
+    const back = h("div", "vb-back");
+    back.style.backgroundImage = backdropArt(featured);
+    const info = h("div", "vb-info", `<div class="kicker">Featured ${featured.kind === "movie" ? "Movie" : "Show"}</div>
+      <h1 class="vb-title">${featured.name}</h1>
+      <div class="meta">${metaHtml(featured)}</div>
+      <p class="synopsis">${featured.synopsis}</p>`);
+    const btns = h("div", "buttons");
+    this.buttons = [h("div", "btn primary", `${icons.play}<span>Play</span>`), h("div", "btn", `${icons.info}<span>More info</span>`)];
+    btns.append(...this.buttons);
+    info.append(btns);
+    this.bill.append(back, h("div", "vb-fade"), info);
+    this.hero.append(...this.backs, h("div", "va-fade"), this.info);
+    this.strips = rows.map((r) => new RowStrip(r, token("--tile-tv-width") + token("--tile-tv-gap")));
+    this.inner.append(...this.strips.map((s) => s.el));
+    this.viewport.append(this.inner);
+    this.el.append(this.bill, this.hero, this.viewport);
+    this.render();
+  }
+  focusAt(row: number, col: number) {
+    this.row = clamp(row, 0, this.strips.length - 1);
+    this.strips[this.row].col = clamp(col, 0, this.strips[this.row].tiles.length - 1);
+    this.render();
+  }
+  render() {
+    const inRows = this.row >= 0;
+    this.el.classList.toggle("in-rows", inRows);
+    this.inner.style.transform = `translateY(${-Math.max(0, this.row) * this.rowHeight}px)`;
+    this.buttons.forEach((b, i) => b.classList.toggle("focus", !inRows && i === this.btn));
+    this.strips.forEach((s, i) => {
+      s.layout(i === this.row);
+      s.el.classList.toggle("above", i < this.row);
+    });
+    if (!inRows) {
+      this.shown = undefined;
+      return;
+    }
+    const t = this.strips[this.row].tile;
+    if (t === this.shown) return;
+    this.shown = t;
+    const next = this.backs[1 - this.front];
+    next.style.backgroundImage = backdropArt(t.title);
+    next.classList.add("on");
+    this.backs[this.front].classList.remove("on");
+    this.front = 1 - this.front;
+    this.info.innerHTML = tileSummary(t);
+    this.info.animate([{ opacity: 0, transform: "translateY(12px)" }, { opacity: 1, transform: "none" }], { duration: 260, easing: "ease-out" });
+  }
+  key(k: Key) {
+    if (this.row < 0) {
+      if (k === "back" || (k === "left" && this.btn === 0)) return false;
+      if (k === "left" || k === "right") this.btn = k === "left" ? 0 : 1;
+      if (k === "down") this.row = 0;
+      if (k === "select") {
+        if (this.btn === 0) playTile({ title: this.featured });
+        else openTitle({ title: this.featured });
+      }
+    } else {
+      const s = this.strips[this.row];
+      if (k === "left" && !s.move(-1)) return false;
+      if (k === "right") s.move(1);
+      if (k === "up") this.row -= 1;
+      if (k === "down") this.row = clamp(this.row + 1, 0, this.strips.length - 1);
+      if (k === "select") openTitle(s.tile);
+      if (k === "back") {
+        this.row = -1;
+        this.strips.forEach((x) => (x.col = 0));
+      }
+    }
+    this.render();
+    return true;
+  }
+  active(on: boolean) {
+    this.el.classList.toggle("inactive", !on);
+  }
+  describe() {
+    if (this.row < 0) return `billboard "${this.featured.name}", button ${this.btn ? "More info" : "Play"}`;
+    const s = this.strips[this.row];
+    return `row "${s.row.name}", tile ${s.col + 1}: ${s.tile.title.name}`;
   }
 }
 
@@ -523,7 +773,9 @@ class Shell implements Screen {
     this.view = p === "search" ? new SearchView()
       : variant === "A" ? new VariantA(rows)
       : variant === "B" ? new VariantB(rows, featuredFor(p))
-      : new VariantC(rows, name);
+      : variant === "C" ? new VariantC(rows, name)
+      : variant === "D" ? new VariantD(rows, featuredFor(p))
+      : new VariantE(rows, featuredFor(p));
     this.host.replaceChildren(this.view.el);
     this.render();
   }
@@ -850,5 +1102,8 @@ fit();
 const preset = users.find((u) => u.name.toLowerCase() === params.get("user")?.toLowerCase());
 if (preset) {
   currentUser = preset;
-  replaceAll(new Shell(preset));
+  const shell = new Shell(preset);
+  const focus = params.get("focus")?.split(",").map(Number);
+  if (focus && (shell.view instanceof VariantD || shell.view instanceof VariantE)) shell.view.focusAt(focus[0], focus[1]);
+  replaceAll(shell);
 } else replaceAll(new UserPicker());
