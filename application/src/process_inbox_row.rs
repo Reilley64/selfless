@@ -50,7 +50,7 @@ const RETRY_DELAYS: [SignedDuration; 4] = [
 
 #[derive(Deserialize)]
 #[serde(tag = "eventType")]
-enum RadarrEvent {
+pub(crate) enum RadarrEvent {
     Download {
         movie: RadarrMovieRef,
     },
@@ -78,7 +78,7 @@ enum RadarrEvent {
 
 #[derive(Deserialize)]
 #[serde(tag = "eventType")]
-enum SonarrEvent {
+pub(crate) enum SonarrEvent {
     Download {
         series: SonarrSeriesRef,
     },
@@ -106,14 +106,14 @@ enum SonarrEvent {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct RadarrMovieRef {
+pub(crate) struct RadarrMovieRef {
     id: i64,
     tmdb_id: i64,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct SonarrSeriesRef {
+pub(crate) struct SonarrSeriesRef {
     id: i64,
     tvdb_id: i64,
 }
@@ -252,13 +252,6 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<bool, Error> 
     }
     .instrument(span)
     .await
-}
-
-pub(crate) fn is_removal(source: Source, event_type: Option<&str>) -> bool {
-    matches!(
-        (source, event_type),
-        (Source::Radarr, Some("MovieDelete")) | (Source::Sonarr, Some("SeriesDelete"))
-    )
 }
 
 fn target(source: Source, body: &[u8]) -> Result<Target, serde_json::Error> {

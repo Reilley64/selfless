@@ -13,7 +13,8 @@ use crate::ports::GetSonarrEpisodes;
 use crate::ports::ListRadarrMovies;
 use crate::ports::ListSonarrSeries;
 use crate::ports::SonarrShow;
-use crate::process_inbox_row;
+use crate::process_inbox_row::RadarrEvent;
+use crate::process_inbox_row::SonarrEvent;
 use crate::source_states;
 use crate::sync_movie;
 use crate::sync_show;
@@ -367,8 +368,17 @@ async fn resolve_failed_rows(
         let Some(item_id) = row.source_item_id else {
             continue;
         };
-        let gone = process_inbox_row::is_removal(source, row.event_type.as_deref())
-            && !stored.contains(&item_id);
+        let removal = match source {
+            Source::Radarr => matches!(
+                serde_json::from_slice(&row.body),
+                Ok(RadarrEvent::MovieDelete { .. })
+            ),
+            Source::Sonarr => matches!(
+                serde_json::from_slice(&row.body),
+                Ok(SonarrEvent::SeriesDelete { .. })
+            ),
+        };
+        let gone = removal && !stored.contains(&item_id);
         if synced.contains(&item_id) || gone {
             row.update()
                 .status(InboxRowStatus::Resolved)
