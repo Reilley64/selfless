@@ -1,6 +1,6 @@
 use crate::DbContext;
 use crate::ports::Clock;
-use crate::session_tokens;
+use crate::tokens;
 use domain::AdminSession;
 use jiff::SignedDuration;
 use uuid::Uuid;
@@ -26,7 +26,7 @@ pub async fn call(
         clock,
     } = dependencies.into();
     let now = clock.call();
-    let Some(mut session) = AdminSession::filter_by_token_hash(session_tokens::hash(token))
+    let Some(mut session) = AdminSession::filter_by_token_hash(tokens::hash(token))
         .first()
         .exec(db_context.executor_mut())
         .await

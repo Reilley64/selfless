@@ -1,6 +1,6 @@
 use crate::DbContext;
 use crate::passwords;
-use crate::session_tokens;
+use crate::tokens;
 use domain::Session;
 use domain::User;
 use uuid::Uuid;
@@ -47,11 +47,10 @@ pub async fn call(
         .await
         .map_err(Error::caused_by)?;
     Session::filter(
-        Session::fields().user_id().eq(user_id).and(
-            Session::fields()
-                .token_hash()
-                .ne(session_tokens::hash(token)),
-        ),
+        Session::fields()
+            .user_id()
+            .eq(user_id)
+            .and(Session::fields().token_hash().ne(tokens::hash(token))),
     )
     .delete()
     .exec(db_context.executor_mut())

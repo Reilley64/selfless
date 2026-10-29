@@ -2,7 +2,7 @@ use crate::DbContext;
 use crate::invite_email;
 use crate::ports::Clock;
 use crate::ports::SendEmail;
-use crate::session_tokens;
+use crate::tokens;
 use domain::Invite;
 use uuid::Uuid;
 
@@ -35,11 +35,11 @@ pub async fn call(
     else {
         return Ok(());
     };
-    let token = session_tokens::generate();
+    let token = tokens::generate();
     let sent_at = clock.call();
     invite
         .update()
-        .token_hash(session_tokens::hash(&token))
+        .token_hash(tokens::hash(&token))
         .sent_at(sent_at)
         .expires_at(sent_at + Invite::VALID_FOR)
         .exec(db_context.executor_mut())

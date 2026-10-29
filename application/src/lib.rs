@@ -24,10 +24,10 @@ pub mod ports;
 pub mod relay_telemetry;
 pub mod resend_invite;
 pub mod reset_user_password;
-mod session_tokens;
 pub mod sign_in;
 mod sign_ins;
 pub mod sign_out;
+mod tokens;
 mod unique_index;
 
 pub use passwords::EmptyPassword;

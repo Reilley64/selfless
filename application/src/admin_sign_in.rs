@@ -1,8 +1,8 @@
 use crate::DbContext;
 use crate::attributes::selfless_auth_client_kind;
 use crate::ports::Clock;
-use crate::session_tokens;
 use crate::sign_ins;
+use crate::tokens;
 use domain::Admin;
 use domain::AdminSession;
 
@@ -41,11 +41,11 @@ pub async fn call(
         tracing::warn!("admin sign-in failed");
         return Ok(None);
     };
-    let token = session_tokens::generate();
+    let token = tokens::generate();
     let now = clock.call();
     toasty::create!(AdminSession {
         admin_id: admin.id,
-        token_hash: session_tokens::hash(&token),
+        token_hash: tokens::hash(&token),
         signed_in_at: now,
         last_used_at: now,
     })

@@ -1,8 +1,8 @@
 use crate::DbContext;
 use crate::attributes::selfless_auth_client_kind;
 use crate::ports::Clock;
-use crate::session_tokens;
 use crate::sign_ins;
+use crate::tokens;
 use domain::ClientKind;
 use domain::Session;
 use domain::User;
@@ -53,13 +53,13 @@ pub async fn call(
         tracing::warn!("user sign-in failed");
         return Ok(None);
     };
-    let token = session_tokens::generate();
+    let token = tokens::generate();
     let now = clock.call();
     toasty::create!(Session {
         user_id: user.id,
         client_kind,
         device_name,
-        token_hash: session_tokens::hash(&token),
+        token_hash: tokens::hash(&token),
         signed_in_at: now,
         last_used_at: now,
     })

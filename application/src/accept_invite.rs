@@ -1,7 +1,7 @@
 use crate::DbContext;
 use crate::create_user;
 use crate::ports::Clock;
-use crate::session_tokens;
+use crate::tokens;
 use domain::Invite;
 use domain::User;
 
@@ -30,7 +30,7 @@ pub async fn call(
         clock,
     } = dependencies.into();
     let now = clock.call();
-    let Some(invite) = Invite::filter_by_token_hash(session_tokens::hash(token))
+    let Some(invite) = Invite::filter_by_token_hash(tokens::hash(token))
         .first()
         .exec(db_context.executor_mut())
         .await

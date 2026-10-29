@@ -2,7 +2,7 @@ use crate::DbContext;
 use crate::invite_email;
 use crate::ports::Clock;
 use crate::ports::SendEmail;
-use crate::session_tokens;
+use crate::tokens;
 use crate::unique_index;
 use domain::Invite;
 use domain::User;
@@ -44,11 +44,11 @@ pub async fn call(
     if user.is_some() {
         return Err(Error::caused_by(AddressTaken::new()));
     }
-    let token = session_tokens::generate();
+    let token = tokens::generate();
     let sent_at = clock.call();
     toasty::create!(Invite {
         email: email.clone(),
-        token_hash: session_tokens::hash(&token),
+        token_hash: tokens::hash(&token),
         admin_id,
         sent_at,
         expires_at: sent_at + Invite::VALID_FOR,
