@@ -1,0 +1,152 @@
+{
+  "font": {
+    "family": {
+      "sans": {
+        "$type": "fontFamily",
+        "$value": [
+          "-apple-system",
+          "SF Pro Display",
+          "Helvetica Neue",
+          "Segoe UI",
+          "Roboto",
+          "Arial",
+          "sans-serif"
+        ]
+      }
+    },
+    "weight": {
+      "$type": "fontWeight",
+      "regular": {
+        "$value": 400
+      },
+      "semibold": {
+        "$value": 600
+      },
+      "bold": {
+        "$value": 700
+      },
+      "extrabold": {
+        "$value": 800
+      },
+      "black": {
+        "$value": 900
+      }
+    },
+    "line-height": {
+      "$type": "number",
+      "display": {
+        "$value": 0.95
+      },
+      "title": {
+        "$value": 1.04
+      },
+      "body": {
+        "$value": 1.45
+      }
+    },
+    "size": {
+      "$type": "dimension",
+      "$description": "Type scale. Same steps on both platforms; the TV values are larger for a 10-foot screen.",
+      "tv": {
+        "display": {
+          "$value": {
+            "value": 120,
+            "unit": "px"
+          }
+        },
+        "title": {
+          "$value": {
+            "value": 72,
+            "unit": "px"
+          }
+        },
+        "heading": {
+          "$value": {
+            "value": 44,
+            "unit": "px"
+          }
+        },
+        "row": {
+          "$value": {
+            "value": 30,
+            "unit": "px"
+          }
+        },
+        "body": {
+          "$value": {
+            "value": 26,
+            "unit": "px"
+          }
+        },
+        "meta": {
+          "$value": {
+            "value": 24,
+            "unit": "px"
+          }
+        },
+        "label": {
+          "$value": {
+            "value": 20,
+            "unit": "px"
+          }
+        },
+        "caption": {
+          "$value": {
+            "value": 18,
+            "unit": "px"
+          }
+        }
+      },
+      "web": {
+        "display": {
+          "$value": {
+            "value": 64,
+            "unit": "px"
+          }
+        },
+        "title": {
+          "$value": {
+            "value": 40,
+            "unit": "px"
+          }
+        },
+        "heading": {
+          "$value": {
+            "value": 28,
+            "unit": "px"
+          }
+        },
+        "row": {
+          "$value": {
+            "value": 20,
+            "unit": "px"
+          }
+        },
+        "body": {
+          "$value": {
+            "value": 16,
+            "unit": "px"
+          }
+        },
+        "meta": {
+          "$value": {
+            "value": 14,
+            "unit": "px"
+          }
+        },
+        "label": {
+          "$value": {
+            "value": 13,
+            "unit": "px"
+          }
+        },
+        "caption": {
+          "$value": {
+            "value": 12,
+            "unit": "px"
+          }
+        }
+      }
+    }
+  }
+}

@@ -4,12 +4,15 @@
   "license": "MIT OR Apache-2.0",
   "main": "src/index.ts",
   "scripts": {
-    "generate": "weaver registry generate --quiet --registry ../../telemetry/registry --templates ../../telemetry/templates ts src/telemetry",
+    "generate": "bun run generate:telemetry && bun run generate:theme",
+    "generate:telemetry": "weaver registry generate --quiet --registry ../../telemetry/registry --templates ../../telemetry/templates ts src/telemetry",
+    "generate:theme": "style-dictionary build --config style-dictionary.config.mjs",
     "typecheck": "tsc --noEmit",
     "test": "jest"
   },
   "dependencies": {
-    "@selfless/api-client": "workspace:*"
+    "@selfless/api-client": "workspace:*",
+    "react-native-css": "catalog:"
   },
   "devDependencies": {
     "@tanstack/react-query": "^5.105.0",
@@ -20,6 +23,7 @@
     "jest-expo": "~58.0.13",
     "react": "catalog:",
     "react-native": "catalog:",
+    "style-dictionary": "^5.7.1",
     "test-renderer": "^1.3.1"
   },
   "peerDependencies": {

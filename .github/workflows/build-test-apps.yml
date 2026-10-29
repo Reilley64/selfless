@@ -37,7 +37,7 @@ jobs:
       - name: "Setup: Install the workspace dependencies"
         run: bun install --frozen-lockfile
 
-      - name: "Build: Generate the API client and telemetry constants"
+      - name: "Build: Generate the API client, telemetry constants and theme"
         run: bun run generate
 
       - name: "Scan: Typecheck the apps"
