@@ -97,11 +97,11 @@ impl IntoResponse for Problem {
     }
 }
 
-pub(crate) struct BadRequestProblemLayer(pub(crate) &'static str);
+pub(crate) struct BadRequestProblemLayer;
 
 impl Layer for BadRequestProblemLayer {
     fn path(&self) -> Option<&Path> {
-        Some(Path::new(self.0))
+        Some(Path::new("/api"))
     }
 
     fn handle<'a>(&'a self, cx: &'a Cx, body: Body, next: Next<'a>) -> LayerFuture<'a> {

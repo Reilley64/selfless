@@ -12,17 +12,17 @@ use topcoat::router::response::IntoResponse;
 use topcoat::router::response::Response;
 use topcoat::router::route;
 
-#[route(POST "/api/telemetry/traces/v1")]
+#[route(POST "/api/(user)/telemetry/traces/v1")]
 pub(crate) async fn traces(cx: &Cx, request: Bytes) -> topcoat::Result<Response> {
     relay(cx, TelemetrySignal::Traces, request).await
 }
 
-#[route(POST "/api/telemetry/metrics/v1")]
+#[route(POST "/api/(user)/telemetry/metrics/v1")]
 pub(crate) async fn metrics(cx: &Cx, request: Bytes) -> topcoat::Result<Response> {
     relay(cx, TelemetrySignal::Metrics, request).await
 }
 
-#[route(POST "/api/telemetry/logs/v1")]
+#[route(POST "/api/(user)/telemetry/logs/v1")]
 pub(crate) async fn logs(cx: &Cx, request: Bytes) -> topcoat::Result<Response> {
     relay(cx, TelemetrySignal::Logs, request).await
 }

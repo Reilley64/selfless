@@ -22,7 +22,7 @@ pub(crate) struct UserAuthLayer;
 
 impl Layer for UserAuthLayer {
     fn path(&self) -> Option<&Path> {
-        Some(Path::new("/api"))
+        Some(Path::new("/api/(user)"))
     }
 
     fn handle<'a>(&'a self, cx: &'a Cx, body: Body, next: Next<'a>) -> LayerFuture<'a> {

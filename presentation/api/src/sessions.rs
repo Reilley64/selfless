@@ -29,7 +29,7 @@ struct SignedIn {
     user: UserBody,
 }
 
-#[route(POST "/(public)/api/sessions/v1")]
+#[route(POST "/api/(public)/sessions/v1")]
 pub(crate) async fn sign_in(cx: &Cx, Json(request): Json<SignIn>) -> topcoat::Result<Response> {
     let signed_in = application::sign_in::call(
         app_context::<AppState>(cx),
@@ -52,7 +52,7 @@ pub(crate) async fn sign_in(cx: &Cx, Json(request): Json<SignIn>) -> topcoat::Re
         .into_response(cx)
 }
 
-#[route(DELETE "/api/sessions/current/v1")]
+#[route(DELETE "/api/(user)/sessions/current/v1")]
 pub(crate) async fn sign_out(cx: &Cx) -> topcoat::Result<Response> {
     let token = &request_context::<CurrentSession>(cx).token;
     application::sign_out::call(app_context::<AppState>(cx), token).await?;

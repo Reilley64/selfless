@@ -35,7 +35,7 @@ impl From<&User> for UserBody {
     }
 }
 
-#[route(GET "/api/me/v1")]
+#[route(GET "/api/(user)/me/v1")]
 pub(crate) async fn me(cx: &Cx) -> topcoat::Result<Response> {
     Json(UserBody::from(&request_context::<CurrentSession>(cx).user)).into_response(cx)
 }
@@ -47,7 +47,7 @@ struct ChangePassword {
     new_password: String,
 }
 
-#[route(PUT "/api/me/password/v1")]
+#[route(PUT "/api/(user)/me/password/v1")]
 pub(crate) async fn change_password(
     cx: &Cx,
     Json(request): Json<ChangePassword>,

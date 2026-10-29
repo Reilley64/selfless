@@ -12,4 +12,3 @@ serde = { workspace = true }
 topcoat = { workspace = true }
 tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
-uuid = { workspace = true }

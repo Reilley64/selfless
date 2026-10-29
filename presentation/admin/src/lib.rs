@@ -23,7 +23,6 @@ use topcoat::view::component;
 use topcoat::view::view;
 use tracing::Span;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
-use uuid::Uuid;
 
 const HOME_PATH: &str = "/admin";
 const SIGN_IN_PATH: &str = "/admin/sign-in";
@@ -166,7 +165,7 @@ fn verify_csrf(cx: &Cx, submitted: &str) -> topcoat::Result<()> {
     }
 }
 
-async fn require_admin(cx: &Cx) -> topcoat::Result<Uuid> {
+async fn require_admin(cx: &Cx) -> topcoat::Result<()> {
     let admin_id = match cookies(cx).get(SESSION_COOKIE) {
         Some(session) => {
             application::get_current_admin::call(app_context::<AppState>(cx), session.value())
@@ -178,7 +177,7 @@ async fn require_admin(cx: &Cx) -> topcoat::Result<Uuid> {
         return Err(see_other(SIGN_IN_PATH).into());
     };
     Span::current().set_attribute(SELFLESS_ADMIN_ID, admin_id.to_string());
-    Ok(admin_id)
+    Ok(())
 }
 
 fn admin_cookie(name: &'static str, value: String) -> Cookie<'static> {
