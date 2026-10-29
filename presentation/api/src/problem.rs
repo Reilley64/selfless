@@ -23,6 +23,18 @@ pub(crate) const UNAUTHENTICATED: Problem = Problem {
     status: StatusCode::UNAUTHORIZED,
 };
 
+pub(crate) const WRONG_CURRENT_PASSWORD: Problem = Problem {
+    problem_type: "urn:selfless:problem:wrong-current-password",
+    title: "The current password is wrong.",
+    status: StatusCode::FORBIDDEN,
+};
+
+pub(crate) const EMPTY_PASSWORD: Problem = Problem {
+    problem_type: "urn:selfless:problem:empty-password",
+    title: "The password is empty.",
+    status: StatusCode::UNPROCESSABLE_ENTITY,
+};
+
 pub(crate) const INVITE_NOT_FOUND: Problem = Problem {
     problem_type: "urn:selfless:problem:invite-not-found",
     title: "The invite link no longer works.",

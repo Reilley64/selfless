@@ -53,12 +53,21 @@ fn token_from(body: &str) -> String {
 }
 
 async fn accept(server: &TestServer, token: &str, name: &str) -> (StatusCode, Value) {
+    accept_with_password(server, token, name, PASSWORD).await
+}
+
+async fn accept_with_password(
+    server: &TestServer,
+    token: &str,
+    name: &str,
+    password: &str,
+) -> (StatusCode, Value) {
     server
         .request(
             Method::POST,
             "/api/invites/accept/v1",
             None,
-            Some(json!({ "token": token, "name": name, "password": PASSWORD })),
+            Some(json!({ "token": token, "name": name, "password": password })),
         )
         .await
 }
@@ -238,6 +247,23 @@ async fn a_taken_name_returns_409_and_leaves_the_invite_usable() {
     assert_eq!(taken.1["type"], "urn:selfless:problem:name-taken");
     assert_eq!(other.0, StatusCode::CREATED);
     assert_eq!(other.1["name"], "Ravi");
+    drop(server);
+    database.drop().await;
+}
+
+#[tokio::test]
+async fn an_empty_password_returns_422_and_leaves_the_invite_usable() {
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+    invite(&server, &database, EMAIL).await.unwrap();
+    let token = token_from_last_email(&server);
+
+    let empty = accept_with_password(&server, &token, NAME, "").await;
+    let other = accept(&server, &token, NAME).await;
+
+    assert_eq!(empty.0, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(empty.1["type"], "urn:selfless:problem:empty-password");
+    assert_eq!(other.0, StatusCode::CREATED);
     drop(server);
     database.drop().await;
 }

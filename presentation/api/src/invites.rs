@@ -1,6 +1,8 @@
+use crate::problem::EMPTY_PASSWORD;
 use crate::problem::INVITE_NOT_FOUND;
 use crate::problem::NAME_TAKEN;
 use crate::users::UserBody;
+use application::EmptyPassword;
 use application::accept_invite::InviteNotFound;
 use application::create_user::NameTaken;
 use infrastructure::AppState;
@@ -39,6 +41,9 @@ pub(crate) async fn accept(
             INVITE_NOT_FOUND.into_response(cx)
         }
         Err(error) if error.find_source::<NameTaken>().is_some() => NAME_TAKEN.into_response(cx),
+        Err(error) if error.find_source::<EmptyPassword>().is_some() => {
+            EMPTY_PASSWORD.into_response(cx)
+        }
         Err(error) => Err(error.into()),
     }
 }

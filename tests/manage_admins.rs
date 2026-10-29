@@ -1,5 +1,6 @@
 mod support;
 
+use application::EmptyPassword;
 use application::create_admin::NameTaken;
 use application::delete_admin::LastAdmin;
 use ohno::ErrorExt;
@@ -171,6 +172,41 @@ async fn changing_an_admins_password_ends_their_sessions() {
     let mut browser = server.browser();
     assert!(!signs_in(&mut browser, ADMIN_NAME, ADMIN_PASSWORD).await);
     assert!(signs_in(&mut browser, ADMIN_NAME, "a new password").await);
+    drop(server);
+    database.drop().await;
+}
+
+#[tokio::test]
+async fn admin_passwords_cannot_be_empty() {
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+    let maya = database.admin_id(ADMIN_NAME).await;
+    let mut browser = server.browser();
+    signs_in(&mut browser, ADMIN_NAME, ADMIN_PASSWORD).await;
+
+    let created = create_admin(&server, "Ravi", "")
+        .await
+        .expect_err("the password is empty");
+    let changed = application::change_admin_password::call(
+        application::change_admin_password::Dependencies {
+            db_context: server.db_context().await,
+        },
+        maya,
+        String::new(),
+    )
+    .await
+    .expect_err("the password is empty");
+
+    assert!(
+        created.find_source::<EmptyPassword>().is_some(),
+        "{created}"
+    );
+    assert!(
+        changed.find_source::<EmptyPassword>().is_some(),
+        "{changed}"
+    );
+    assert_eq!(browser.get("/admin").await.status, StatusCode::OK);
+    assert!(!signs_in(&mut server.browser(), "Ravi", "").await);
     drop(server);
     database.drop().await;
 }

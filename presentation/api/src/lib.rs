@@ -52,6 +52,7 @@ pub fn router(
         .route(sessions::sign_in)
         .route(sessions::sign_out)
         .route(users::me)
+        .route(users::change_password)
         .route(invites::accept)
         .route(telemetry::traces)
         .route(telemetry::metrics)

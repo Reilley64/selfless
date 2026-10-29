@@ -1,6 +1,8 @@
 mod support;
 
+use application::EmptyPassword;
 use jiff::SignedDuration;
+use ohno::ErrorExt;
 use reqwest::Method;
 use reqwest::StatusCode;
 use serde_json::Value;
@@ -178,6 +180,65 @@ async fn ending_all_of_a_users_sessions_leaves_other_users_signed_in() {
         me(&server, other["token"].as_str().unwrap()).await,
         StatusCode::OK
     );
+    drop(server);
+    database.drop().await;
+}
+
+#[tokio::test]
+async fn resetting_a_users_password_ends_all_their_sessions() {
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+    let id = server.create_user(NAME, PASSWORD).await;
+    server.create_user("Ravi", "another password").await;
+    let web = sign_in(&server, "web", "Firefox on macOS").await;
+    let tv = sign_in(&server, "googleTv", "Bedroom").await;
+    let (_, other) = server.sign_in("Ravi", "another password", "web").await;
+
+    application::reset_user_password::call(
+        application::reset_user_password::Dependencies {
+            db_context: server.db_context().await,
+        },
+        id,
+        "a new passphrase".to_owned(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(me(&server, &web).await, StatusCode::UNAUTHORIZED);
+    assert_eq!(me(&server, &tv).await, StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        me(&server, other["token"].as_str().unwrap()).await,
+        StatusCode::OK
+    );
+    let (status, _) = server.sign_in(NAME, PASSWORD, "web").await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let (status, _) = server.sign_in(NAME, "a new passphrase", "web").await;
+    assert_eq!(status, StatusCode::CREATED);
+    drop(server);
+    database.drop().await;
+}
+
+#[tokio::test]
+async fn resetting_a_password_to_an_empty_one_fails_and_changes_nothing() {
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+    let id = server.create_user(NAME, PASSWORD).await;
+    let web = sign_in(&server, "web", "Firefox on macOS").await;
+
+    let error = application::reset_user_password::call(
+        application::reset_user_password::Dependencies {
+            db_context: server.db_context().await,
+        },
+        id,
+        String::new(),
+    )
+    .await
+    .expect_err("the password is empty");
+
+    assert!(error.find_source::<EmptyPassword>().is_some(), "{error}");
+    assert_eq!(me(&server, &web).await, StatusCode::OK);
+    let (status, _) = server.sign_in(NAME, PASSWORD, "web").await;
+    assert_eq!(status, StatusCode::CREATED);
     drop(server);
     database.drop().await;
 }
