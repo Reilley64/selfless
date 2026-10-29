@@ -275,3 +275,64 @@ async fn each_users_page_action_logs_its_action_and_target_without_the_email_add
     drop(server);
     database.drop().await;
 }
+
+#[tokio::test]
+async fn renaming_a_user_logs_the_action_and_target_without_either_name() {
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+    let user_id = server.create_user(USER_NAME, USER_PASSWORD).await;
+    let mut browser = server.browser();
+    browser.sign_in(ADMIN_NAME, ADMIN_PASSWORD).await;
+    let exporter = InMemoryLogExporter::default();
+    let provider = SdkLoggerProvider::builder()
+        .with_simple_exporter(exporter.clone())
+        .build();
+    let _tracing = tracing::subscriber::set_default(
+        tracing_subscriber::registry()
+            .with(LevelFilter::INFO)
+            .with(OpenTelemetryTracingBridge::new(&provider)),
+    );
+    let new_name = "Nour";
+
+    let user = browser.get(&format!("/admin/users/{user_id}")).await;
+    browser
+        .post_form(
+            &user.form_action("Save"),
+            &[("csrf", &user.csrf_token()), ("name", new_name)],
+        )
+        .await;
+
+    let logs = exporter.get_emitted_logs().unwrap();
+    let actions = logs
+        .iter()
+        .filter(|x| x.record.body() == Some(&AnyValue::from("admin action")))
+        .map(|x| {
+            let attribute = |key: &str| {
+                x.record
+                    .attributes_iter()
+                    .find(|(name, _)| name.as_str() == key)
+                    .map(|(_, value)| match value {
+                        AnyValue::String(value) => value.to_string(),
+                        value => format!("{value:?}"),
+                    })
+                    .unwrap()
+            };
+            (
+                attribute("selfless.admin.action"),
+                attribute("selfless.admin.target.id"),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(actions, [("user.rename".to_owned(), user_id.to_string())]);
+    for log in &logs {
+        let record = format!(
+            "{:?} {:?}",
+            log.record.body(),
+            log.record.attributes_iter().collect::<Vec<_>>()
+        );
+        assert!(!record.contains(USER_NAME), "{record}");
+        assert!(!record.contains(new_name), "{record}");
+    }
+    drop(server);
+    database.drop().await;
+}

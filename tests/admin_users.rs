@@ -353,3 +353,76 @@ async fn a_user_is_deleted_only_when_the_typed_name_matches_in_any_capitals() {
     drop(server);
     database.drop().await;
 }
+
+#[tokio::test]
+async fn renaming_a_user_keeps_them_signed_in_and_their_apps_get_the_new_name() {
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+    server.create_user(NAME, PASSWORD).await;
+    let web = sign_in(&server, PASSWORD, "web").await;
+    let tv = sign_in(&server, PASSWORD, "appleTv").await;
+    let mut browser = admin(&server).await;
+    let user = user_page(&mut browser, NAME).await;
+
+    let renamed = submit(&mut browser, &user, "Save", &[("name", "Nour")]).await;
+    let users = browser.get("/admin/users").await;
+
+    assert!(user.text().contains("Rename"), "{}", user.body);
+    assert!(
+        renamed.text().contains("Renamed Noor to Nour."),
+        "{}",
+        renamed.body
+    );
+    assert_eq!(rows_with(&users, "Nour").len(), 1);
+    assert_eq!(rows_with(&users, NAME), Vec::<Vec<String>>::new());
+    for token in [&web, &tv] {
+        let (status, body) = server
+            .request(Method::GET, "/api/me/v1", Some(token), None)
+            .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["name"], "Nour");
+    }
+    drop(server);
+    database.drop().await;
+}
+
+#[tokio::test]
+async fn a_user_can_be_renamed_to_their_name_in_other_capitals() {
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+    server.create_user(NAME, PASSWORD).await;
+    let mut browser = admin(&server).await;
+    let user = user_page(&mut browser, NAME).await;
+
+    submit(&mut browser, &user, "Save", &[("name", "NOOR")]).await;
+
+    let users = browser.get("/admin/users").await;
+    assert_eq!(rows_with(&users, "NOOR").len(), 1);
+    drop(server);
+    database.drop().await;
+}
+
+#[tokio::test]
+async fn a_rename_to_a_taken_or_empty_name_shows_an_error_and_keeps_the_name() {
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+    server.create_user(NAME, PASSWORD).await;
+    server.create_user("Ravi", PASSWORD).await;
+    let mut browser = admin(&server).await;
+    let user = user_page(&mut browser, "Ravi").await;
+
+    let taken = submit(&mut browser, &user, "Save", &[("name", "nOOR")]).await;
+    let empty = submit(&mut browser, &user, "Save", &[("name", "")]).await;
+    let users = browser.get("/admin/users").await;
+
+    assert!(
+        taken.text().contains("A user already has this name."),
+        "{}",
+        taken.body
+    );
+    assert!(empty.text().contains("Enter a name."), "{}", empty.body);
+    assert_eq!(rows_with(&users, "Ravi").len(), 1);
+    assert_eq!(rows_with(&users, NAME).len(), 1);
+    drop(server);
+    database.drop().await;
+}
