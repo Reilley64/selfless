@@ -202,7 +202,6 @@ impl ShowMetadata {
 
 #[derive(Clone, PartialEq)]
 struct EpisodeMetadata {
-    season_number: i64,
     number: i64,
     title: String,
     air_date: Option<Date>,
@@ -212,9 +211,8 @@ struct EpisodeMetadata {
 }
 
 impl EpisodeMetadata {
-    fn stored(episode: &Episode, season_number: i64) -> Self {
+    fn stored(episode: &Episode) -> Self {
         Self {
-            season_number,
             number: episode.number,
             title: episode.title.clone(),
             air_date: episode.air_date,
@@ -232,8 +230,7 @@ impl EpisodeMetadata {
         match (nfo, stored) {
             (Nfo::Unchanged, Some(stored)) => stored.clone(),
             (Nfo::Read(nfo, modified_at), _) => Self {
-                season_number: nfo.season_number.unwrap_or(sonarr_episode.season_number),
-                number: nfo.episode_number.unwrap_or(sonarr_episode.episode_number),
+                number: sonarr_episode.episode_number,
                 title: nfo
                     .title
                     .clone()
@@ -244,7 +241,6 @@ impl EpisodeMetadata {
                 nfo_modified_at: Some(*modified_at),
             },
             _ => Self {
-                season_number: sonarr_episode.season_number,
                 number: sonarr_episode.episode_number,
                 title: sonarr_episode.title.clone(),
                 air_date: sonarr_episode.air_date,
@@ -472,10 +468,6 @@ async fn sync(
         .into_iter()
         .map(|x| (x.number, x))
         .collect::<HashMap<_, _>>();
-    let season_numbers = seasons
-        .values()
-        .map(|x| (x.id, x.number))
-        .collect::<HashMap<_, _>>();
     let mut episodes = episodes_of(db, &seasons.values().map(|x| x.id).collect::<Vec<_>>())
         .await?
         .into_iter()
@@ -496,7 +488,7 @@ async fn sync(
             .as_ref()
             .and_then(|x| files.get(&x.path));
         let stored = episodes.remove(&sonarr_episode.tvdb_id).map(|x| {
-            let metadata = EpisodeMetadata::stored(&x, season_numbers[&x.season_id]);
+            let metadata = EpisodeMetadata::stored(&x);
             (x, metadata)
         });
         let nfo = match file.and_then(|x| x.folder.nfo.as_ref()) {
@@ -531,23 +523,24 @@ async fn sync(
             }
         };
         let metadata = EpisodeMetadata::of(&nfo, &sonarr_episode, stored.as_ref().map(|(_, x)| x));
-        let season_id = match seasons.get(&metadata.season_number) {
+        let season_number = sonarr_episode.season_number;
+        let season_id = match seasons.get(&season_number) {
             Some(season) => season.id,
             None => {
                 let season = toasty::create!(Season {
                     show_id: show.id,
-                    number: metadata.season_number,
+                    number: season_number,
                 })
                 .exec(db)
                 .await
                 .map_err(Error::caused_by)?;
                 changed = true;
                 let id = season.id;
-                seasons.insert(metadata.season_number, season);
+                seasons.insert(season_number, season);
                 id
             }
         };
-        synced_seasons.insert(metadata.season_number);
+        synced_seasons.insert(season_number);
         let (media_file_id, visible) = match &sonarr_episode.episode_file {
             Some(sonarr_file) => {
                 let (id, visible) = match inspected.remove(&sonarr_file.path) {

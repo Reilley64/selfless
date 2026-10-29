@@ -319,7 +319,8 @@ async fn an_nfo_with_two_episodes_fills_each_of_them() {
 }
 
 #[tokio::test]
-async fn an_episode_nfo_matches_by_sonarr_uniqueid_then_by_season_and_episode_number() {
+async fn an_episode_nfo_matches_by_sonarr_uniqueid_then_by_season_and_episode_number_and_keeps_sonarrs_numbers()
+ {
     let fixture = Fixture::start().await;
     fixture.create_files(&SEVERANCE);
     fixture.write_nfo(&format!("{S02E01}.nfo"), "renumbered-episode");
@@ -333,7 +334,7 @@ async fn an_episode_nfo_matches_by_sonarr_uniqueid_then_by_season_and_episode_nu
             .iter()
             .map(|x| (x.number, x.title.as_str(), x.rating))
             .collect::<Vec<_>>(),
-        [(9, "Hello, Ms. Cobel", Some(8.6))]
+        [(1, "Hello, Ms. Cobel", Some(8.6))]
     );
     let specials = fixture.episodes(show.id, 0).await;
     assert_eq!(
