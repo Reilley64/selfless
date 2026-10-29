@@ -26,6 +26,10 @@ _Avoid_: Season 0, extras
 **Episode**:
 A single installment of a show, belonging to one season.
 
+**Media file**:
+The video file on disk that a movie or episode plays from. One media file can hold several episodes.
+_Avoid_: File, media source, version, asset
+
 **Genre**:
 A category from the NFO files that users filter movies and shows by.
 _Avoid_: Tag, category
