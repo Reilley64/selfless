@@ -20,6 +20,7 @@ use reqwest::header::CONTENT_TYPE;
 use reqwest::header::COOKIE;
 use reqwest::header::HeaderMap;
 use reqwest::header::LOCATION;
+use reqwest::header::ORIGIN;
 use reqwest::header::SET_COOKIE;
 use reqwest::redirect::Policy;
 use serde_json::Value;
@@ -425,6 +426,7 @@ impl TestServer {
         application::create_user::call(
             application::create_user::Dependencies {
                 db_context: self.db_context().await,
+                clock: self.clock.port(),
             },
             name.to_owned(),
             password.to_owned(),
@@ -760,6 +762,37 @@ impl Page {
         visible_text(&self.body)
     }
 
+    pub fn table_rows(&self) -> Vec<Vec<String>> {
+        self.body
+            .split("<tr")
+            .skip(1)
+            .map(|row| {
+                row[..row.find("</tr>").unwrap()]
+                    .split("<td")
+                    .skip(1)
+                    .map(|cell| {
+                        let start = cell.find('>').unwrap() + 1;
+                        visible_text(&cell[start..cell.find("</td>").unwrap()])
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .filter(|x| !x.is_empty())
+            .collect()
+    }
+
+    pub fn link(&self, text: &str) -> String {
+        let text_at = self
+            .body
+            .find(&format!(">{text}<"))
+            .unwrap_or_else(|| panic!("the page has no {text:?} link\n{}", self.body));
+        let link_at = self.body[..text_at]
+            .rfind("<a ")
+            .unwrap_or_else(|| panic!("{text:?} is not in a link\n{}", self.body));
+        let start = link_at + self.body[link_at..].find(r#"href=""#).unwrap() + r#"href=""#.len();
+        let length = self.body[start..].find('"').unwrap();
+        self.body[start..start + length].to_owned()
+    }
+
     pub fn header(&self, name: &str) -> Option<&str> {
         self.headers.get(name).map(|x| x.to_str().unwrap())
     }
@@ -873,6 +906,7 @@ impl Browser {
         let request = self
             .client
             .post(format!("{}{path}", self.base))
+            .header(ORIGIN, &self.base)
             .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
             .body(body);
         self.send(request).await
@@ -896,6 +930,7 @@ impl Browser {
             .client
             .post(format!("{}{path}", self.base))
             .header("HX-Request", "true")
+            .header(ORIGIN, &self.base)
             .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
             .body("");
         if let Some(csrf) = csrf {

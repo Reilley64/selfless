@@ -35,13 +35,14 @@ pub async fn call(
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?
-        .filter(|x| now < x.expires_at)
+        .filter(|x| !x.expired(now))
     else {
         return Err(Error::caused_by(InviteNotFound::new()));
     };
     let user = match create_user::call(
         create_user::Dependencies {
             db_context: db_context.clone(),
+            clock,
         },
         name,
         password,

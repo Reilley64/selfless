@@ -61,6 +61,11 @@ name = "20261029_184248_admin_sign_in_times.sql"
 snapshot_name = "20261029_184248_snapshot.toml"
 
 [[migrations]]
-id = 1464726603378879150
-name = "20261029_192644_inbox_attempts.sql"
-snapshot_name = "20261029_192644_snapshot.toml"
+id = 4472497810647265250
+name = "20261029_190902_user_created_at.sql"
+snapshot_name = "20261029_190902_snapshot.toml"
+
+[[migrations]]
+id = 3603335964398289043
+name = "20261029_193812_inbox_attempts.sql"
+snapshot_name = "20261029_193812_snapshot.toml"

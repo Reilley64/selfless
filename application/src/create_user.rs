@@ -1,5 +1,6 @@
 use crate::DbContext;
 use crate::passwords;
+use crate::ports::Clock;
 use crate::unique_index;
 use domain::Colour;
 use domain::Symbol;
@@ -10,6 +11,7 @@ const NAME_INDEX: &str = "index_users_by_name";
 #[fundle::deps]
 pub struct Dependencies {
     pub db_context: DbContext,
+    pub clock: Clock,
 }
 
 #[ohno::error]
@@ -26,7 +28,10 @@ pub async fn call(
     password: String,
     email: String,
 ) -> Result<User, Error> {
-    let mut db_context = dependencies.into().db_context;
+    let Dependencies {
+        mut db_context,
+        clock,
+    } = dependencies.into();
     let users = User::all()
         .exec(db_context.executor_mut())
         .await
@@ -42,6 +47,7 @@ pub async fn call(
         password_hash,
         colour,
         symbol,
+        created_at: clock.call(),
     })
     .exec(db_context.executor_mut())
     .await

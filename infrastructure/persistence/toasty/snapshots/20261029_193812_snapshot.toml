@@ -1381,6 +1381,12 @@ name = "symbol"
 ty = "String"
 storage_ty = { Enum = { name = "symbol", variants = [{ name = "ring" }, { name = "triangle" }, { name = "star" }, { name = "waves" }] } }
 
+[[schema.tables.columns]]
+id = { table = 18, index = 6 }
+name = "created_at"
+ty = "Timestamp"
+storage_ty = { Timestamp = 6 }
+
 [[schema.tables.indices]]
 id = { table = 18, index = 0 }
 name = "index_users_by_id"
