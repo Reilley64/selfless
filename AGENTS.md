@@ -14,6 +14,10 @@ The five triage roles are Plane states, not labels: set the state instead of app
 
 Single-context: one `GLOSSARY.md` at the repo root. ADRs are Plane pages under Architecture decisions. See `docs/agents/domain.md`.
 
+### Implementation
+
+Building tickets in worktrees: see `docs/agents/implementation.md`.
+
 ## Workflow
 
 Work moves through these skills in order. Start at the step that matches what you were given:
