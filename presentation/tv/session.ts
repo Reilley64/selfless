@@ -7,15 +7,4 @@ export const session = startTvSession(
   Platform.OS === "ios" ? "appleTv" : "googleTv",
 );
 
-let telemetryStarted = false;
-
-function startTelemetryOnceConnected() {
-  const { serverUrl } = session.state();
-  if (serverUrl && !telemetryStarted) {
-    telemetryStarted = true;
-    startTelemetry("selfless-tv", session);
-  }
-}
-
-startTelemetryOnceConnected();
-session.subscribe(startTelemetryOnceConnected);
+startTelemetry("selfless-tv", session);

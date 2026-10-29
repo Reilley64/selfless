@@ -2,7 +2,7 @@ import { type ProxyTracerProvider, logs, metrics, trace } from "@opentelemetry/a
 import type { LoggerProvider } from "@opentelemetry/sdk-logs";
 import type { MeterProvider } from "@opentelemetry/sdk-metrics";
 import type { TracerProvider } from "@opentelemetry/sdk-trace";
-import { type SessionStorage, startWebSession } from "../session";
+import { type SessionStorage, startTvSession, startWebSession } from "../session";
 import { startTelemetry } from "./startTelemetry";
 
 const token = "q2Xz8kQ0mJ3Hc1yF5bR7tVw9nL4pA6sD0eG2iK8uO1M";
@@ -99,9 +99,35 @@ test("telemetry recorded after sign-in goes out with the session token", async (
   record("after sign-in");
   await flush();
 
-  expect(telemetryCalls(fetch).map(([input, init]) => [input, new Headers(init?.headers).get("Authorization")])).toEqual(
+  expect(
+    telemetryCalls(fetch).map(([input, init]) => [input, new Headers(init?.headers).get("Authorization")]),
+  ).toEqual(
     expect.arrayContaining(
-      ["traces", "metrics", "logs"].map((signal) => [`http://localhost:8081/api/telemetry/${signal}/v1`, `Bearer ${token}`]),
+      ["traces", "metrics", "logs"].map((signal) => [
+        `http://localhost:8081/api/telemetry/${signal}/v1`,
+        `Bearer ${token}`,
+      ]),
     ),
   );
+});
+
+test("after the TV is pointed at another server, telemetry goes to the new server", async () => {
+  const fetch = mockServer();
+  const session = startTvSession(fakeStorage(), "appleTv");
+  startTelemetry("selfless-tv", session);
+  await session.connect("http://192.168.1.20:8080");
+  await session.signIn("Noor", "correct horse", "Living Room");
+  record("on the first server");
+  await flush();
+  await session.remove(user.id);
+  await session.connect("http://192.168.1.30:8080");
+  await session.signIn("Noor", "correct horse", "Living Room");
+
+  record("on the second server");
+  await flush();
+
+  expect(telemetryCalls(fetch).map(([input]) => new URL(String(input)).origin)).toEqual([
+    ...Array(3).fill("http://192.168.1.20:8080"),
+    ...Array(3).fill("http://192.168.1.30:8080"),
+  ]);
 });

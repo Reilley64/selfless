@@ -21,23 +21,33 @@ interface Exporter<Items> {
   shutdown(): Promise<void>;
 }
 
-function whileSignedIn<Items>(session: TelemetrySession, exporter: Exporter<Items>): Required<Exporter<Items>> {
+function sessionExporter<Items>(
+  session: TelemetrySession,
+  signal: string,
+  OtlpExporter: new (config: { url: string; headers: () => Promise<Record<string, string>> }) => Exporter<Items>,
+): Required<Exporter<Items>> {
+  let url: string | undefined;
+  let exporter: Exporter<Items> | undefined;
   return {
     export(items, resultCallback) {
-      if (session.token()) {
-        exporter.export(items, resultCallback);
-      } else {
+      if (!session.token()) {
         resultCallback({ code: ExportResultCode.SUCCESS });
+        return;
       }
+      const current = `${session.serverUrl()}/api/telemetry/${signal}/v1`;
+      if (!exporter || url !== current) {
+        void exporter?.shutdown();
+        url = current;
+        exporter = new OtlpExporter({ url, headers: async () => authorizationHeaders(session.token()) });
+      }
+      exporter.export(items, resultCallback);
     },
-    forceFlush: async () => exporter.forceFlush?.(),
-    shutdown: () => exporter.shutdown(),
+    forceFlush: async () => exporter?.forceFlush?.(),
+    shutdown: async () => exporter?.shutdown(),
   };
 }
 
 export function startTelemetry(serviceName: string, session: TelemetrySession) {
-  const serverUrl = session.serverUrl();
-  const headers = async () => authorizationHeaders(session.token());
   const resource = defaultResource().merge(resourceFromAttributes({ [ATTR_SERVICE_NAME]: serviceName }));
   propagation.setGlobalPropagator(new W3CTraceContextPropagator());
   trace.setGlobalTracerProvider(
@@ -51,10 +61,7 @@ export function startTelemetry(serviceName: string, session: TelemetrySession) {
             }
           }
         })({
-          exporter: whileSignedIn(
-            session,
-            new OTLPTraceExporter({ url: `${serverUrl}/api/telemetry/traces/v1`, headers }),
-          ),
+          exporter: sessionExporter(session, "traces", OTLPTraceExporter),
         }),
       ],
     }),
@@ -64,10 +71,7 @@ export function startTelemetry(serviceName: string, session: TelemetrySession) {
       resource,
       readers: [
         new PeriodicExportingMetricReader({
-          exporter: whileSignedIn(
-            session,
-            new OTLPMetricExporter({ url: `${serverUrl}/api/telemetry/metrics/v1`, headers }),
-          ),
+          exporter: sessionExporter(session, "metrics", OTLPMetricExporter),
         }),
       ],
     }),
@@ -83,7 +87,7 @@ export function startTelemetry(serviceName: string, session: TelemetrySession) {
             }
           }
         })({
-          exporter: whileSignedIn(session, new OTLPLogExporter({ url: `${serverUrl}/api/telemetry/logs/v1`, headers })),
+          exporter: sessionExporter(session, "logs", OTLPLogExporter),
         }),
       ],
     }),
