@@ -59,7 +59,7 @@ pub(crate) async fn health(cx: &Cx) -> topcoat::Result<Response> {
     respond(
         cx,
         [
-            ("db", db(cx).await),
+            ("db", database_status(cx).await),
             ("livenessState", Status::Up),
             ("readinessState", readiness_state(cx)),
         ],
@@ -76,7 +76,7 @@ pub(crate) async fn readiness(cx: &Cx) -> topcoat::Result<Response> {
     respond(
         cx,
         [
-            ("db", db(cx).await),
+            ("db", database_status(cx).await),
             ("readinessState", readiness_state(cx)),
         ],
     )
@@ -101,7 +101,7 @@ pub(crate) async fn info(cx: &Cx) -> topcoat::Result<Response> {
     .into_response(cx)
 }
 
-async fn db(cx: &Cx) -> Status {
+async fn database_status(cx: &Cx) -> Status {
     match application::check_database::call(app_context::<AppState>(cx)).await {
         Ok(()) => Status::Up,
         Err(error) => {
