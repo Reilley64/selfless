@@ -50,7 +50,7 @@ jobs:
       - name: "Setup: Install the tools from mise.toml"
         uses: jdx/mise-action@v5
         with:
-          install_args: cargo-deny github:open-telemetry/weaver
+          install_args: bun cargo-deny github:open-telemetry/weaver
 
       - name: "Setup: Install the Rust toolchain from rust-toolchain.toml"
         run: rustup toolchain install
@@ -59,6 +59,12 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: "Setup: Install the workspace dependencies"
+        run: bun install --frozen-lockfile
+
+      - name: "Build: Generate the theme for the admin app"
+        run: bun run generate
 
       - name: "Scan: Check Rust formatting"
         run: cargo fmt --all --check

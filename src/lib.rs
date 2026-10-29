@@ -45,6 +45,7 @@ pub async fn start(settings: AppSettings) -> Result<Server, AppError> {
         .build();
     let availability = Availability::default();
     let router = api::router(
+        admin::register(Router::builder()),
         state,
         availability.clone(),
         std::path::absolute(&settings.web.dir)?,

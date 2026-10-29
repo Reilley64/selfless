@@ -10,7 +10,7 @@ deny = [
     { name = "persistence", wrappers = ["infrastructure", "settings"] },
     { name = "telemetry", wrappers = ["infrastructure", "settings"] },
     { name = "settings", wrappers = ["selfless"] },
-    { name = "infrastructure", wrappers = ["selfless", "api"] },
+    { name = "infrastructure", wrappers = ["selfless", "api", "admin"] },
 
     { name = "admin", wrappers = ["selfless"] },
     { name = "api", wrappers = ["selfless"] },

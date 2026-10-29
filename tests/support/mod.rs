@@ -126,6 +126,13 @@ impl TestServer {
         (status, body)
     }
 
+    pub async fn get_text(&self, path: &str) -> (StatusCode, String) {
+        let response = reqwest::get(format!("http://{}{path}", self.address))
+            .await
+            .unwrap();
+        (response.status(), response.text().await.unwrap())
+    }
+
     pub async fn get_with_traceparent(&self, path: &str, traceparent: &str) -> (StatusCode, Value) {
         let response = reqwest::Client::new()
             .get(format!("http://{}{path}", self.address))
