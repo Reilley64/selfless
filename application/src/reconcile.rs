@@ -14,6 +14,7 @@ use crate::ports::ListRadarrMovies;
 use crate::ports::ListSonarrSeries;
 use crate::ports::SonarrShow;
 use crate::process_inbox_row;
+use crate::source_states;
 use crate::sync_movie;
 use crate::sync_show;
 use crate::sync_status::ReconcileProgress;
@@ -163,22 +164,20 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
                 KeyValue::new(SELFLESS_RECONCILE_RESULT, result.0),
             ],
         );
-    toasty::sql::statement(
-        "INSERT INTO source_states (source, rejected_webhooks, last_reconcile_started_at, \
-         last_reconcile_duration_ms, last_reconcile_result) VALUES ($1, 0, $2, $3, $4) \
-         ON CONFLICT (source) DO UPDATE SET \
-         last_reconcile_started_at = EXCLUDED.last_reconcile_started_at, \
-         last_reconcile_duration_ms = EXCLUDED.last_reconcile_duration_ms, \
-         last_reconcile_result = EXCLUDED.last_reconcile_result",
-    )
-    .bind(source.name())
-    .bind(started_at)
-    .bind(i64::try_from(duration.as_millis()).unwrap_or(i64::MAX))
-    .bind(result.0)
-    .exec(db_context.executor_mut())
-    .instrument(span)
-    .await
-    .map_err(Error::caused_by)?;
+    source_states::upsert(db_context.executor_mut(), source)
+        .instrument(span.clone())
+        .await
+        .map_err(Error::caused_by)?
+        .update()
+        .last_reconcile_started_at(Some(started_at))
+        .last_reconcile_duration_ms(Some(
+            i64::try_from(duration.as_millis()).unwrap_or(i64::MAX),
+        ))
+        .last_reconcile_result(Some(result.1))
+        .exec(db_context.executor_mut())
+        .instrument(span)
+        .await
+        .map_err(Error::caused_by)?;
     Ok(())
 }
 

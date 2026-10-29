@@ -2,6 +2,7 @@ use crate::DbContext;
 use crate::InboxWakeup;
 use crate::WebhookPasswords;
 use crate::ports::Clock;
+use crate::source_states;
 use crate::webhook_deliveries;
 use bytes::Bytes;
 use domain::InboxRow;
@@ -54,9 +55,11 @@ pub async fn call(
         Source::Sonarr => webhook_passwords.sonarr,
     };
     if password != Some(expected_password) {
+        source_states::upsert(db_context.executor_mut(), source)
+            .await
+            .map_err(Error::caused_by)?;
         toasty::sql::statement(
-            "INSERT INTO source_states (source, rejected_webhooks) VALUES ($1, 1) \
-             ON CONFLICT (source) DO UPDATE SET rejected_webhooks = source_states.rejected_webhooks + 1",
+            "UPDATE source_states SET rejected_webhooks = rejected_webhooks + 1 WHERE source = $1",
         )
         .bind(source.name())
         .exec(db_context.executor_mut())
@@ -91,15 +94,14 @@ pub async fn call(
     .await
     .map_err(Error::caused_by)?;
     inbox_wakeup.wake();
-    toasty::sql::statement(
-        "INSERT INTO source_states (source, last_webhook_at, rejected_webhooks) VALUES ($1, $2, 0) \
-         ON CONFLICT (source) DO UPDATE SET last_webhook_at = EXCLUDED.last_webhook_at",
-    )
-    .bind(source.name())
-    .bind(received_at)
-    .exec(db_context.executor_mut())
-    .await
-    .map_err(Error::caused_by)?;
+    source_states::upsert(db_context.executor_mut(), source)
+        .await
+        .map_err(Error::caused_by)?
+        .update()
+        .last_webhook_at(Some(received_at))
+        .exec(db_context.executor_mut())
+        .await
+        .map_err(Error::caused_by)?;
     webhook_deliveries::count(source, event_type, "stored");
     Ok(Delivery::Stored)
 }
