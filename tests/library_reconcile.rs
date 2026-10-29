@@ -10,6 +10,7 @@ use domain::Source;
 use jiff::SignedDuration;
 use reqwest::StatusCode;
 use serde_json::Value;
+use std::path::Path;
 use std::time::Duration;
 use support::FakeClock;
 use support::MediaFolder;
@@ -451,6 +452,42 @@ async fn the_sync_status_shows_imported_n_of_m_while_a_reconcile_runs() {
     let finished = fixture.reconciled(Source::Sonarr).await;
     assert_eq!(finished.reconcile_progress, None);
     assert_eq!(fixture.show_titles().await, ["Andor", "Severance"]);
+    fixture.stop().await;
+}
+
+#[tokio::test]
+async fn movies_and_shows_are_sorted_by_their_sort_title() {
+    let fixture = Fixture::start(&[], &[]).await;
+    fixture.reconciled(Source::Radarr).await;
+    let movies = fixture.arrs.listed_movies(&ALL_MOVIES);
+    let arrival = movies[0]["movieFile"]["path"].as_str().unwrap();
+    std::fs::write(
+        Path::new(arrival).with_extension("nfo"),
+        "<movie><title>The Arrival</title><sorttitle>Arrival</sorttitle></movie>",
+    )
+    .unwrap();
+    fixture
+        .arrs
+        .radarr
+        .serve_movies(StatusCode::OK, &Value::Array(movies).to_string())
+        .await;
+    fixture.arrs.sonarr_lists(&[SEVERANCE, ANDOR]).await;
+    let andor: Value =
+        serde_json::from_str(&fixture.arrs.media.fixture("sonarr/api/series-andor.json")).unwrap();
+    std::fs::write(
+        Path::new(andor["path"].as_str().unwrap()).join("tvshow.nfo"),
+        "<tvshow><title>Andor</title><sorttitle>Star Wars: Andor</sorttitle></tvshow>",
+    )
+    .unwrap();
+
+    fixture.sync_now(Source::Radarr).await;
+    fixture.reconciled(Source::Sonarr).await;
+
+    assert_eq!(
+        fixture.movie_titles().await,
+        ["The Arrival", "Blade Runner 2049", "Dune", "Sicario"]
+    );
+    assert_eq!(fixture.show_titles().await, ["Severance", "Andor"]);
     fixture.stop().await;
 }
 

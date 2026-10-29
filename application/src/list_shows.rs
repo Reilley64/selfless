@@ -1,6 +1,7 @@
 use crate::DbContext;
 use crate::list_movies::Actor;
 use crate::list_movies::Artwork;
+use crate::list_movies::sort_key;
 use domain::Episode;
 use domain::Season;
 use jiff::civil::Date;
@@ -42,7 +43,6 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<Vec<Show>, Er
                 .any(Episode::fields().visible().eq(true)),
         ),
     )
-    .order_by(domain::Show::fields().title().asc())
     .exec(db_context.executor_mut())
     .await
     .map_err(Error::caused_by)?;
@@ -95,5 +95,6 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<Vec<Show>, Er
             artwork,
         });
     }
+    listed.sort_by_cached_key(|x| sort_key(x.sort_title.as_ref(), &x.title));
     Ok(listed)
 }

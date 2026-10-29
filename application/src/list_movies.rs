@@ -51,7 +51,6 @@ pub struct Artwork {
 pub async fn call(dependencies: impl Into<Dependencies>) -> Result<Vec<Movie>, Error> {
     let mut db_context = dependencies.into().db_context;
     let movies = domain::Movie::filter(domain::Movie::fields().visible().eq(true))
-        .order_by(domain::Movie::fields().title().asc())
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?;
@@ -101,5 +100,13 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<Vec<Movie>, E
             media_file_id: movie.media_file_id,
         });
     }
+    listed.sort_by_cached_key(|x| sort_key(x.sort_title.as_ref(), &x.title));
     Ok(listed)
+}
+
+pub(crate) fn sort_key(sort_title: Option<&String>, title: &str) -> (String, String) {
+    (
+        sort_title.map_or(title, String::as_str).to_lowercase(),
+        title.to_owned(),
+    )
 }
