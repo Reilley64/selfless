@@ -7,3 +7,20 @@
 @import "../ui/theme/fonts.css";
 
 @source "../ui/src";
+
+@layer base {
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    overflow: hidden;
+  }
+
+  #root {
+    display: flex;
+    height: 100%;
+    flex: 1;
+  }
+}

@@ -13,6 +13,7 @@ use reqwest::StatusCode;
 use reqwest::header::AUTHORIZATION;
 use reqwest::header::CONTENT_TYPE;
 use reqwest::header::COOKIE;
+use reqwest::header::HeaderMap;
 use reqwest::header::LOCATION;
 use reqwest::header::SET_COOKIE;
 use reqwest::redirect::Policy;
@@ -340,9 +341,13 @@ impl TestServer {
         .await
     }
 
-    pub async fn get_text(&self, path: &str) -> (StatusCode, String) {
+    pub async fn get_text(&self, path: &str) -> (StatusCode, HeaderMap, String) {
         let response = reqwest::get(self.url(path)).await.unwrap();
-        (response.status(), response.text().await.unwrap())
+        (
+            response.status(),
+            response.headers().clone(),
+            response.text().await.unwrap(),
+        )
     }
 
     pub async fn post_protobuf(

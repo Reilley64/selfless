@@ -8,14 +8,18 @@ import {
   ATTR_URL_FULL,
 } from "@opentelemetry/semantic-conventions";
 
-let sessionToken: () => string | undefined = () => undefined;
-
-export function provideSessionToken(token: () => string | undefined) {
-  sessionToken = token;
+export interface Session {
+  token(): string | undefined;
+  ended(token: string): void;
 }
 
-export function authorizationHeaders(): Record<string, string> {
-  const token = sessionToken();
+let session: Session = { token: () => undefined, ended: () => {} };
+
+export function provideSession(provided: Session) {
+  session = provided;
+}
+
+export function authorizationHeaders(token = session.token()): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
@@ -33,7 +37,8 @@ export async function tracedFetch<T>(url: string, options: RequestInit): Promise
     },
   });
   const headers = new Headers(options.headers);
-  for (const [name, value] of Object.entries(authorizationHeaders())) {
+  const token = session.token();
+  for (const [name, value] of Object.entries(authorizationHeaders(token))) {
     headers.set(name, value);
   }
   propagation.inject(trace.setSpan(context.active(), span), headers, {
@@ -42,6 +47,9 @@ export async function tracedFetch<T>(url: string, options: RequestInit): Promise
   try {
     const response = await fetch(href, { ...options, headers });
     span.setAttribute(ATTR_HTTP_RESPONSE_STATUS_CODE, response.status);
+    if (response.status === 401 && token) {
+      session.ended(token);
+    }
     if (response.status >= 400) {
       span.setAttribute(ATTR_ERROR_TYPE, String(response.status));
       span.setStatus({ code: SpanStatusCode.ERROR });

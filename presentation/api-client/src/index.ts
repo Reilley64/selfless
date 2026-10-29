@@ -1,2 +1,2 @@
 export * from "./generated/selfless";
-export { authorizationHeaders, provideSessionToken } from "./tracedFetch";
+export { authorizationHeaders, provideSession } from "./tracedFetch";
