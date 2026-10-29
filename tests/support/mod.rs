@@ -757,17 +757,7 @@ pub struct Page {
 
 impl Page {
     pub fn text(&self) -> String {
-        let mut text = String::new();
-        let mut in_tag = false;
-        for char in self.body.chars() {
-            match char {
-                '<' => in_tag = true,
-                '>' => in_tag = false,
-                _ if !in_tag => text.push(char),
-                _ => {}
-            }
-        }
-        text
+        visible_text(&self.body)
     }
 
     pub fn header(&self, name: &str) -> Option<&str> {
@@ -810,6 +800,44 @@ impl Page {
         let length = self.body[start..].find('"').unwrap();
         self.body[start..start + length].to_owned()
     }
+
+    pub fn section_text(&self, label: &str) -> String {
+        let label_at = self
+            .body
+            .find(&format!(r#"aria-label="{label}""#))
+            .unwrap_or_else(|| panic!("the page has no {label:?} section\n{}", self.body));
+        let start = self.body[..label_at].rfind("<section").unwrap();
+        let end = start + self.body[start..].find("</section>").unwrap();
+        visible_text(&self.body[start..end])
+    }
+
+    pub fn hx_post(&self, button: &str) -> String {
+        let button_at = self
+            .body
+            .find(&format!(">{button}<"))
+            .unwrap_or_else(|| panic!("the page has no {button:?} button\n{}", self.body));
+        let tag = &self.body[self.body[..button_at].rfind("<button").unwrap()..button_at];
+        let start = tag
+            .find(r#"hx-post=""#)
+            .unwrap_or_else(|| panic!("{button:?} posts nothing: {tag}"))
+            + r#"hx-post=""#.len();
+        let length = tag[start..].find('"').unwrap();
+        tag[start..start + length].to_owned()
+    }
+}
+
+fn visible_text(html: &str) -> String {
+    let mut text = String::new();
+    let mut in_tag = false;
+    for char in html.chars() {
+        match char {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            _ if !in_tag => text.push(char),
+            _ => {}
+        }
+    }
+    text
 }
 
 impl Browser {
