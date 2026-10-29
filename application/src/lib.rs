@@ -87,11 +87,22 @@ pub struct BuildInfo {
     pub git_commit_time: &'static str,
 }
 
-#[derive(Clone)]
-pub struct WebhookPasswords {
-    pub radarr: String,
-    pub sonarr: String,
+#[derive(Clone, Default)]
+pub struct BySource<T> {
+    pub radarr: T,
+    pub sonarr: T,
 }
+
+impl<T> BySource<T> {
+    pub fn get(&self, source: Source) -> &T {
+        match source {
+            Source::Radarr => &self.radarr,
+            Source::Sonarr => &self.sonarr,
+        }
+    }
+}
+
+pub type WebhookPasswords = BySource<String>;
 
 #[derive(Clone, Default)]
 pub struct InboxWakeup(Arc<Notify>);
@@ -109,8 +120,7 @@ impl InboxWakeup {
 #[derive(Clone, Default)]
 pub struct Reconciles {
     requested: Arc<Notify>,
-    radarr: SourceReconcile,
-    sonarr: SourceReconcile,
+    sources: BySource<SourceReconcile>,
 }
 
 #[derive(Clone, Default)]
@@ -129,18 +139,16 @@ impl Reconciles {
     }
 
     fn source(&self, source: Source) -> &SourceReconcile {
-        match source {
-            Source::Radarr => &self.radarr,
-            Source::Sonarr => &self.sonarr,
-        }
+        self.sources.get(source)
+    }
+
+    fn progress(&self, source: Source) -> Option<ReconcileProgress> {
+        *self.source(source).progress.lock().unwrap()
     }
 }
 
 #[derive(Clone, Default)]
-pub struct SourceHealth {
-    radarr: Arc<Mutex<Health>>,
-    sonarr: Arc<Mutex<Health>>,
-}
+pub struct SourceHealth(BySource<Arc<Mutex<Health>>>);
 
 #[derive(Clone, Default)]
 struct Health {
@@ -154,18 +162,19 @@ impl SourceHealth {
         source: Source,
         result: Result<T, E>,
     ) -> Result<T, E> {
-        self.source(source).lock().unwrap().last_api_call = Some(match &result {
+        self.0.get(source).lock().unwrap().last_api_call = Some(match &result {
             Ok(_) => ApiCall::Succeeded,
             Err(error) => ApiCall::Failed(error.to_string()),
         });
         result
     }
 
-    fn source(&self, source: Source) -> &Mutex<Health> {
-        match source {
-            Source::Radarr => &self.radarr,
-            Source::Sonarr => &self.sonarr,
-        }
+    fn set_kodi_metadata(&self, source: Source, enabled: bool) {
+        self.0.get(source).lock().unwrap().kodi_metadata = Some(enabled);
+    }
+
+    fn health(&self, source: Source) -> Health {
+        self.0.get(source).lock().unwrap().clone()
     }
 }
 

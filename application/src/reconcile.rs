@@ -140,7 +140,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
     *progress.lock().unwrap() = None;
     let duration = start.elapsed();
     let result = match reconciled {
-        Ok(()) => ("succeeded", ReconcileResult::Succeeded),
+        Ok(()) => ReconcileResult::Succeeded,
         Err(error) => {
             span.in_scope(|| {
                 tracing::warn!(
@@ -149,10 +149,10 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
                     "failed to reconcile the library"
                 );
             });
-            ("failed", ReconcileResult::Failed)
+            ReconcileResult::Failed
         }
     };
-    span.record(SELFLESS_RECONCILE_RESULT, result.0);
+    span.record(SELFLESS_RECONCILE_RESULT, result.name());
     global::meter("selfless")
         .f64_histogram(SELFLESS_RECONCILE_DURATION)
         .with_unit("s")
@@ -161,7 +161,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
             duration.as_secs_f64(),
             &[
                 KeyValue::new(SELFLESS_LIBRARY_SOURCE, source.name()),
-                KeyValue::new(SELFLESS_RECONCILE_RESULT, result.0),
+                KeyValue::new(SELFLESS_RECONCILE_RESULT, result.name()),
             ],
         );
     source_states::upsert(db_context.executor_mut(), source)
@@ -173,7 +173,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
         .last_reconcile_duration_ms(Some(
             i64::try_from(duration.as_millis()).unwrap_or(i64::MAX),
         ))
-        .last_reconcile_result(Some(result.1))
+        .last_reconcile_result(Some(result))
         .exec(db_context.executor_mut())
         .instrument(span)
         .await
@@ -188,7 +188,7 @@ fn record_kodi_metadata(
 ) -> usize {
     match source_health.api_call(source, kodi_metadata) {
         Ok(enabled) => {
-            source_health.source(source).lock().unwrap().kodi_metadata = Some(enabled);
+            source_health.set_kodi_metadata(source, enabled);
             0
         }
         Err(error) => {

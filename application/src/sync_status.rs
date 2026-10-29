@@ -194,13 +194,13 @@ async fn source_status(
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?;
-    let health = source_health.source(source).lock().unwrap().clone();
+    let health = source_health.health(source);
     Ok(SourceStatus {
         last_api_call: health.last_api_call,
         kodi_metadata: health.kodi_metadata,
         last_webhook_at: state.as_ref().and_then(|x| x.last_webhook_at),
         rejected_webhooks: state.as_ref().map_or(0, |x| x.rejected_webhooks),
-        reconcile_progress: *reconciles.source(source).progress.lock().unwrap(),
+        reconcile_progress: reconciles.progress(source),
         last_reconcile: state.and_then(|x| {
             Some(LastReconcile {
                 started_at: x.last_reconcile_started_at?,

@@ -54,6 +54,15 @@ pub enum ReconcileResult {
     Failed,
 }
 
+impl ReconcileResult {
+    pub fn name(self) -> &'static str {
+        match self {
+            ReconcileResult::Succeeded => "succeeded",
+            ReconcileResult::Failed => "failed",
+        }
+    }
+}
+
 #[derive(Debug, toasty::Model)]
 pub struct SourceState {
     #[key]

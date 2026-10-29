@@ -4,6 +4,7 @@ use crate::WebhookPasswords;
 use crate::ports::Clock;
 use crate::source_states;
 use crate::webhook_deliveries;
+use crate::webhook_deliveries::Outcome;
 use bytes::Bytes;
 use domain::InboxRow;
 use domain::InboxRowStatus;
@@ -50,11 +51,7 @@ pub async fn call(
         inbox_wakeup,
         webhook_passwords,
     } = dependencies.into();
-    let expected_password = match source {
-        Source::Radarr => webhook_passwords.radarr,
-        Source::Sonarr => webhook_passwords.sonarr,
-    };
-    if password != Some(expected_password) {
+    if password.as_ref() != Some(webhook_passwords.get(source)) {
         source_states::upsert(db_context.executor_mut(), source)
             .await
             .map_err(Error::caused_by)?;
@@ -65,7 +62,7 @@ pub async fn call(
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?;
-        webhook_deliveries::count(source, None, "rejected");
+        webhook_deliveries::count(source, None, Outcome::Rejected);
         tracing::warn!(
             selfless.webhook.source = source.name(),
             "rejected a webhook delivery with a wrong or missing password"
@@ -102,6 +99,6 @@ pub async fn call(
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?;
-    webhook_deliveries::count(source, event_type, "stored");
+    webhook_deliveries::count(source, event_type, Outcome::Stored);
     Ok(Delivery::Stored)
 }

@@ -11,6 +11,7 @@ use crate::sync_movie;
 use crate::sync_show;
 use crate::unsampled;
 use crate::webhook_deliveries;
+use crate::webhook_deliveries::Outcome;
 use domain::InboxRow;
 use domain::InboxRowStatus;
 use domain::Source;
@@ -79,19 +80,19 @@ enum RadarrEvent {
 #[serde(tag = "eventType")]
 enum SonarrEvent {
     Download {
-        series: SonarrSeries,
+        series: SonarrSeriesRef,
     },
     Rename {
-        series: SonarrSeries,
+        series: SonarrSeriesRef,
     },
     SeriesAdd {
-        series: SonarrSeries,
+        series: SonarrSeriesRef,
     },
     SeriesDelete {
-        series: SonarrSeries,
+        series: SonarrSeriesRef,
     },
     EpisodeFileDelete {
-        series: SonarrSeries,
+        series: SonarrSeriesRef,
     },
     Test,
     Grab,
@@ -109,7 +110,7 @@ struct RadarrMovieRef {
 }
 
 #[derive(Deserialize)]
-struct SonarrSeries {
+struct SonarrSeriesRef {
     id: i64,
 }
 
@@ -191,7 +192,7 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<bool, Error> 
                 radarr_id,
             )
             .await
-            .map(|()| (InboxRowStatus::Processed, "processed"))
+            .map(|()| InboxRowStatus::Processed)
             .map_err(Into::into),
             Ok(Target::Show(sonarr_id)) => sync_show::call(
                 sync_show::Dependencies {
@@ -203,13 +204,13 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<bool, Error> 
                 sonarr_id,
             )
             .await
-            .map(|()| (InboxRowStatus::Processed, "processed"))
+            .map(|()| InboxRowStatus::Processed)
             .map_err(Into::into),
-            Ok(Target::Nothing) => Ok((InboxRowStatus::Ignored, "ignored")),
+            Ok(Target::Nothing) => Ok(InboxRowStatus::Ignored),
             Err(error) => Err(error.into()),
         };
-        let (status, next_attempt_at, error, outcome) = match processed {
-            Ok((status, outcome)) => (status, row.next_attempt_at, None, outcome),
+        let (status, next_attempt_at, error) = match processed {
+            Ok(status) => (status, row.next_attempt_at, None),
             Err(error) => {
                 tracing::warn!(
                     error = &*error as &dyn std::error::Error,
@@ -222,10 +223,15 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<bool, Error> 
                     Some(delay) => (InboxRowStatus::Pending, claimed_at + *delay),
                     None => (InboxRowStatus::Failed, row.next_attempt_at),
                 };
-                (status, next_attempt_at, Some(error.to_string()), "failed")
+                (status, next_attempt_at, Some(error.to_string()))
             }
         };
-        span.record(SELFLESS_WEBHOOK_OUTCOME, outcome);
+        let outcome = match status {
+            InboxRowStatus::Processed => Outcome::Processed,
+            InboxRowStatus::Ignored => Outcome::Ignored,
+            _ => Outcome::Failed,
+        };
+        span.record(SELFLESS_WEBHOOK_OUTCOME, outcome.name());
         let (source, event_type) = (row.source, row.event_type.clone());
         row.update()
             .status(status)
