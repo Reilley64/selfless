@@ -6,14 +6,12 @@ use crate::library_items::Change;
 use crate::media_files;
 use crate::media_files::Inspected;
 use crate::metadata;
-use crate::metadata::FoundArtwork;
 use crate::metadata::Nfo;
 use crate::metadata::Owner;
 use crate::ports::GetRadarrMovie;
 use crate::ports::MovieFolder;
 use crate::ports::MovieNfo;
 use crate::ports::RadarrMovie;
-use domain::ArtworkKind;
 use domain::MediaFile;
 use domain::Movie;
 use domain::Source;
@@ -185,21 +183,7 @@ pub(crate) async fn save(
     };
     let visible = inspected.as_ref().is_some_and(Inspected::on_disk);
     let date_added = radarr_movie.movie_file.as_ref().map(|x| x.date_added);
-    let artwork = [
-        (ArtworkKind::Poster, folder.poster),
-        (ArtworkKind::Fanart, folder.fanart),
-        (ArtworkKind::Clearlogo, folder.clearlogo),
-    ]
-    .into_iter()
-    .filter_map(|(kind, file)| {
-        Some(FoundArtwork {
-            season_id: None,
-            episode_id: None,
-            kind,
-            file: file?,
-        })
-    })
-    .collect::<Vec<_>>();
+    let artwork = metadata::item_artwork(folder.poster, folder.fanart, folder.clearlogo);
     let mut transaction = db_context.transaction().await.map_err(Error::caused_by)?;
     let db = transaction.executor_mut();
     let (media_file_id, media_file_changed) = match (&radarr_movie.movie_file, inspected) {
@@ -295,15 +279,9 @@ pub(crate) async fn save(
         }
     };
     let owner = Owner::Movie(movie_id);
-    if !matches!(nfo, Nfo::Unchanged) {
-        let actors = match &nfo {
-            Nfo::Read(nfo, _) => nfo.actors.as_slice(),
-            _ => &[],
-        };
-        metadata::replace_actors(db, owner, had_nfo, actors)
-            .await
-            .map_err(Error::caused_by)?;
-    }
+    metadata::save_actors(db, owner, had_nfo, &nfo, |x| &x.actors)
+        .await
+        .map_err(Error::caused_by)?;
     let artwork_changed = metadata::save_artwork(db, owner, artwork)
         .await
         .map_err(Error::caused_by)?;

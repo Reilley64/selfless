@@ -369,31 +369,11 @@ async fn write(
         ),
     };
     let owner = Owner::Show(show.id);
-    if !matches!(nfo, Nfo::Unchanged) {
-        let actors = match &nfo {
-            Nfo::Read(nfo, _) => nfo.actors.as_slice(),
-            _ => &[],
-        };
-        metadata::replace_actors(db, owner, had_nfo, actors)
-            .await
-            .map_err(Error::caused_by)?;
-    }
+    metadata::save_actors(db, owner, had_nfo, &nfo, |x| &x.actors)
+        .await
+        .map_err(Error::caused_by)?;
     let mut changed = show_change.is_some();
-    let mut artwork = [
-        (ArtworkKind::Poster, folder.poster),
-        (ArtworkKind::Fanart, folder.fanart),
-        (ArtworkKind::Clearlogo, folder.clearlogo),
-    ]
-    .into_iter()
-    .filter_map(|(kind, file)| {
-        Some(FoundArtwork {
-            season_id: None,
-            episode_id: None,
-            kind,
-            file: file?,
-        })
-    })
-    .collect::<Vec<_>>();
+    let mut artwork = metadata::item_artwork(folder.poster, folder.fanart, folder.clearlogo);
     let mut seasons = HashMap::new();
     let mut episodes = HashMap::new();
     for season in show
