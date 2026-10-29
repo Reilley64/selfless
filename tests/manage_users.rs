@@ -42,6 +42,7 @@ async fn list_sessions(server: &TestServer, user_id: Uuid) -> Vec<Value> {
     application::list_user_sessions::call(
         application::list_user_sessions::Dependencies {
             db_context: server.db_context().await,
+            clock: server.clock.port(),
         },
         user_id,
     )
@@ -96,6 +97,33 @@ async fn listing_a_users_sessions_shows_each_client_kind_device_and_time() {
 }
 
 #[tokio::test]
+async fn the_list_leaves_out_web_sessions_past_30_days_without_use() {
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+    let id = server.create_user(NAME, PASSWORD).await;
+    sign_in(&server, "web", "Firefox on macOS").await;
+    sign_in(&server, "googleTv", "Bedroom").await;
+
+    server
+        .clock
+        .advance(SignedDuration::from_hours(30 * 24) - SignedDuration::from_secs(1));
+    let before = list_sessions(&server, id).await;
+    server.clock.advance(SignedDuration::from_secs(1));
+    let after = list_sessions(&server, id).await;
+
+    let devices = |sessions: Vec<Value>| {
+        sessions
+            .into_iter()
+            .map(|x| x["deviceName"].as_str().unwrap().to_owned())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(devices(before), ["Firefox on macOS", "Bedroom"]);
+    assert_eq!(devices(after), ["Bedroom"]);
+    drop(server);
+    database.drop().await;
+}
+
+#[tokio::test]
 async fn deleting_a_user_ends_their_sessions() {
     let database = TestDatabase::create().await;
     let server = TestServer::start(database.url()).await;
@@ -131,6 +159,7 @@ async fn ending_one_session_signs_out_only_that_session() {
     let web_session = application::list_user_sessions::call(
         application::list_user_sessions::Dependencies {
             db_context: server.db_context().await,
+            clock: server.clock.port(),
         },
         id,
     )

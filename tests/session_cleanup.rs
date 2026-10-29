@@ -11,7 +11,6 @@ use support::TestDatabase;
 use support::TestServer;
 use support::USER_NAME;
 use support::USER_PASSWORD;
-use uuid::Uuid;
 
 async fn sign_in(server: &TestServer, client_kind: &str, device_name: &str) {
     let (status, _) = server
@@ -37,18 +36,13 @@ async fn sign_in_admin(server: &TestServer) -> Browser {
     browser
 }
 
-async fn device_names(server: &TestServer, user_id: Uuid) -> Vec<String> {
-    application::list_user_sessions::call(
-        application::list_user_sessions::Dependencies {
-            db_context: server.db_context().await,
-        },
-        user_id,
-    )
-    .await
-    .unwrap()
-    .into_iter()
-    .map(|x| x.device_name)
-    .collect()
+async fn device_names(database: &TestDatabase) -> Vec<String> {
+    database
+        .query("SELECT device_name FROM sessions ORDER BY signed_in_at")
+        .await
+        .iter()
+        .map(|x| x.get(0))
+        .collect()
 }
 
 async fn admin_session_count(database: &TestDatabase) -> i64 {
@@ -59,7 +53,7 @@ async fn admin_session_count(database: &TestDatabase) -> i64 {
 async fn the_daily_cleanup_deletes_only_expired_web_and_admin_sessions() {
     let database = TestDatabase::create().await;
     let server = TestServer::start(database.url()).await;
-    let id = server.create_user(USER_NAME, USER_PASSWORD).await;
+    server.create_user(USER_NAME, USER_PASSWORD).await;
     sign_in(&server, "web", "Old laptop").await;
     sign_in(&server, "appleTv", "Living Room").await;
     sign_in(&server, "googleTv", "Bedroom").await;
@@ -82,7 +76,7 @@ async fn the_daily_cleanup_deletes_only_expired_web_and_admin_sessions() {
     .unwrap();
 
     assert_eq!(
-        device_names(&server, id).await,
+        device_names(&database).await,
         ["Living Room", "Bedroom", "Firefox on macOS"]
     );
     assert_eq!(admin_session_count(&database).await, 1);
@@ -95,7 +89,7 @@ async fn the_daily_cleanup_deletes_only_expired_web_and_admin_sessions() {
 async fn starting_the_server_deletes_expired_sessions() {
     let database = TestDatabase::create().await;
     let server = TestServer::start(database.url()).await;
-    let id = server.create_user(USER_NAME, USER_PASSWORD).await;
+    server.create_user(USER_NAME, USER_PASSWORD).await;
     sign_in(&server, "web", "Old laptop").await;
     sign_in(&server, "appleTv", "Living Room").await;
     sign_in_admin(&server).await;
@@ -105,7 +99,7 @@ async fn starting_the_server_deletes_expired_sessions() {
 
     let server = TestServer::start_with(support::settings(database.url()), clock).await;
 
-    assert_eq!(device_names(&server, id).await, ["Living Room"]);
+    assert_eq!(device_names(&database).await, ["Living Room"]);
     assert_eq!(admin_session_count(&database).await, 0);
     drop(server);
     database.drop().await;

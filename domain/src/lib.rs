@@ -110,6 +110,11 @@ pub struct Session {
 
 impl Session {
     pub const WEB_IDLE_TIMEOUT: SignedDuration = SignedDuration::from_hours(30 * 24);
+
+    pub fn expired(&self, now: Timestamp) -> bool {
+        self.client_kind == ClientKind::Web
+            && now.duration_since(self.last_used_at) >= Self::WEB_IDLE_TIMEOUT
+    }
 }
 
 #[derive(Debug, toasty::Model)]
