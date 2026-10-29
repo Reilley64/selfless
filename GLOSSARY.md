@@ -64,8 +64,12 @@ _Avoid_: Played, seen, completed
 The movies and episodes a user has a resume position in, plus the next up episode of each show they are part way through. A show appears once.
 
 **Next up**:
-For each show a user is part way through, the first episode after the last one they watched.
+For each show a user is part way through, the first episode after the last one they watched for the first time. Rewatching an episode doesn't move it.
 _Avoid_: On deck, up next
+
+**Last played**:
+When a user last watched past the first minute of a movie or episode. Marking it watched by hand doesn't count.
+_Avoid_: Last watched, recently played
 
 **Recently added**:
 The movies and episodes whose file Radarr or Sonarr first added most recently. Replacing a file with a better copy does not count as adding it.
