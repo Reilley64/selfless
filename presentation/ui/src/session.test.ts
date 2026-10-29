@@ -1,8 +1,12 @@
 import { getMe } from "@selfless/api-client";
-import { type SessionStorage, startWebSession } from "./session";
+import { type SessionStorage, startTvSession, startWebSession } from "./session";
 
 const token = "q2Xz8kQ0mJ3Hc1yF5bR7tVw9nL4pA6sD0eG2iK8uO1M";
 const user = { id: "01890a5d-ac96-774b-bcce-b302099a8057", name: "Noor", colour: "amber", symbol: "ring" };
+const theo = {
+  token: "Zt0bX9qL2wR5yV8nH3kM6pJ1sF4dG7aC0eU2iO5lN8Q",
+  user: { id: "01890a5d-ac96-774b-bcce-b302099a8058", name: "Theo", colour: "blue", symbol: "triangle" },
+};
 
 function fakeStorage(): SessionStorage {
   const items = new Map<string, string>();
@@ -19,11 +23,18 @@ const unauthenticated = {
   status: 401,
 };
 
+const serverUrl = "http://192.168.1.20:8080";
+
 function mockServer({ signedIn = true } = {}) {
   return jest.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-    switch (`${init?.method} ${input}`) {
-      case "POST /api/sessions/v1":
-        return Response.json({ token, user }, { status: 201 });
+    const path = String(input).replace(serverUrl, "");
+    switch (`${init?.method ?? "GET"} ${path}`) {
+      case "GET /actuator/info/v1":
+        return Response.json({ build: { name: "selfless", version: "0.1.0" } });
+      case "POST /api/sessions/v1": {
+        const signedIn = [{ token, user }, theo].find(({ user }) => user.name === JSON.parse(String(init?.body)).name);
+        return Response.json(signedIn, { status: 201 });
+      }
       case "GET /api/me/v1":
         return signedIn ? Response.json(user) : Response.json(unauthenticated, { status: 401 });
       case "DELETE /api/sessions/current/v1":
@@ -94,4 +105,111 @@ test("API calls send no Authorization header before anyone signs in", async () =
   await getMe();
 
   expect(sentHeaders(fetch, "/api/me/v1").has("Authorization")).toBe(false);
+});
+
+test("the TV checks the server address with /actuator/info/v1, remembers it and calls the API there", async () => {
+  const fetch = mockServer();
+  const storage = fakeStorage();
+
+  const connected = await startTvSession(storage, "appleTv").connect(" 192.168.1.20:8080/ ");
+  const restarted = startTvSession(storage, "appleTv");
+  await getMe();
+
+  expect(connected).toBe(true);
+  expect(restarted.state().serverUrl).toBe(serverUrl);
+  expect(fetch.mock.calls.map(([input]) => input)).toEqual([`${serverUrl}/actuator/info/v1`, `${serverUrl}/api/me/v1`]);
+});
+
+test("the TV doesn't remember an address where no selfless server answers", async () => {
+  jest.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+    if (String(input).startsWith("http://192.168.1.21:8080/")) {
+      return new Response("Not found", { status: 404 });
+    }
+    throw new TypeError("Network request failed");
+  });
+  const storage = fakeStorage();
+  const session = startTvSession(storage, "appleTv");
+
+  const unreachable = await session.connect("192.168.1.99:8080");
+  const notSelfless = await session.connect("192.168.1.21:8080");
+
+  expect([unreachable, notSelfless]).toEqual([false, false]);
+  expect(startTvSession(storage, "appleTv").state().serverUrl).toBeUndefined();
+});
+
+async function connectedTv(storage = fakeStorage(), clientKind: "appleTv" | "googleTv" = "appleTv") {
+  const session = startTvSession(storage, clientKind);
+  await session.connect(serverUrl);
+  return session;
+}
+
+test("signing in on a TV sends its client kind and device name, and adds the user to the TV's picker list", async () => {
+  const fetch = mockServer();
+  const storage = fakeStorage();
+  const session = await connectedTv(storage, "googleTv");
+
+  await session.signIn("Noor", "correct horse", "Living Room");
+
+  const signInCall = fetch.mock.calls.find(([input]) => input === `${serverUrl}/api/sessions/v1`);
+  expect(JSON.parse(String(signInCall?.[1]?.body))).toEqual({
+    name: "Noor",
+    password: "correct horse",
+    clientKind: "googleTv",
+    deviceName: "Living Room",
+  });
+  expect(startTvSession(storage, "googleTv").state().users).toEqual([{ token, ...user }]);
+});
+
+test("each user who signs in on the TV joins its picker list", async () => {
+  mockServer();
+  const storage = fakeStorage();
+  const session = await connectedTv(storage);
+
+  await session.signIn("Noor", "correct horse", "Living Room");
+  await session.signIn("Theo", "battery staple", "Living Room");
+
+  expect(startTvSession(storage, "appleTv").state().users).toEqual([
+    { token, ...user },
+    { token: theo.token, ...theo.user },
+  ]);
+});
+
+test("on a cold start nobody is picked, and picking a user needs no password and makes API calls as them", async () => {
+  const fetch = mockServer();
+  const storage = fakeStorage();
+  const signedIn = await connectedTv(storage);
+  await signedIn.signIn("Noor", "correct horse", "Living Room");
+  await signedIn.signIn("Theo", "battery staple", "Living Room");
+
+  const session = startTvSession(storage, "appleTv");
+  const pickedAtStart = session.state().currentUserId;
+  session.pick(theo.user.id);
+  await getMe();
+
+  expect(pickedAtStart).toBeUndefined();
+  expect(session.state().currentUserId).toBe(theo.user.id);
+  expect(sentHeaders(fetch, `${serverUrl}/api/me/v1`).get("Authorization")).toBe(`Bearer ${theo.token}`);
+});
+
+test("a user who signs in on the TV opens the app as them", async () => {
+  mockServer();
+  const session = await connectedTv();
+
+  await session.signIn("Theo", "battery staple", "Living Room");
+
+  expect(session.state().currentUserId).toBe(theo.user.id);
+  expect(session.token()).toBe(theo.token);
+});
+
+test("switching user returns to the picker without ending any session", async () => {
+  const fetch = mockServer();
+  const storage = fakeStorage();
+  const session = await connectedTv(storage);
+  await session.signIn("Noor", "correct horse", "Living Room");
+
+  session.switchUser();
+
+  expect(session.state().currentUserId).toBeUndefined();
+  expect(session.state().users).toEqual([{ token, ...user }]);
+  expect(fetch.mock.calls.some(([, init]) => init?.method === "DELETE")).toBe(false);
 });

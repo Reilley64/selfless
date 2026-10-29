@@ -9,11 +9,12 @@ import {
 } from "@opentelemetry/semantic-conventions";
 
 export interface Session {
+  serverUrl(): string;
   token(): string | undefined;
   ended(token: string): void;
 }
 
-let session: Session = { token: () => undefined, ended: () => {} };
+let session: Session = { serverUrl: () => "", token: () => undefined, ended: () => {} };
 
 export function provideSession(provided: Session) {
   session = provided;
@@ -25,7 +26,7 @@ export function authorizationHeaders(token = session.token()): Record<string, st
 
 export async function tracedFetch<T>(url: string, options: RequestInit): Promise<T> {
   const method = options.method ?? "GET";
-  const href = `${process.env.EXPO_PUBLIC_SERVER_URL ?? ""}${url}`;
+  const href = `${session.serverUrl()}${url}`;
   const target = new URL(href, globalThis.location?.href);
   const span = trace.getTracer("@selfless/api-client").startSpan(method, {
     kind: SpanKind.CLIENT,

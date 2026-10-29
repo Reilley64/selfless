@@ -45,6 +45,16 @@ export default {
         },
       ],
     },
+    symbols: {
+      buildPath: "theme/",
+      files: [
+        {
+          destination: "symbols.json",
+          format: "json/nested",
+          filter: (token) => token.path[0] === "symbol",
+        },
+      ],
+    },
     fonts: {
       transforms: ["name/tailwind", "fontFamily/first"],
       buildPath: "theme/",
