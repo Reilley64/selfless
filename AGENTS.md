@@ -8,7 +8,7 @@ Issues live in Plane Cloud (workspace `reilley`, project `selfless`), reached th
 
 ### Triage labels
 
-The five default triage labels. See `docs/agents/triage-labels.md`.
+The five triage roles are Plane states, not labels: set the state instead of applying a label. See `docs/agents/triage-labels.md`.
 
 ### Domain docs
 

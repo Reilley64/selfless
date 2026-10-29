@@ -10,17 +10,20 @@ Plane calls issues "work items". Tools that take a UUID (`state`, `labels`, `ass
 
 ## States and the board
 
-The board columns are the project's states. Move a work item by updating its `state`.
+The board columns are the project's states. Move a work item by updating its `state`. The triage roles the skills talk about are states here, not labels; see `docs/agents/triage-labels.md`.
 
 | State | Group | Meaning |
 | --- | --- | --- |
-| Backlog | backlog | Open, not ready to start. The default for new work items. |
-| Todo | unstarted | Open and ready to start. |
-| In Progress | started | Claimed and being worked on. |
+| Needs triage | backlog | New bug or request, waiting for `/triage`. The default for new work items. |
+| Needs info | backlog | Waiting on the reporter for more information. |
+| Ready for agent | unstarted | Fully specified; an agent can take it. Published specs and tickets start here. |
+| Ready for human | unstarted | Only the owner can do it, such as granting access or approving an apply. |
+| In progress | started | Claimed (assigned) and being worked on. A spec is In progress while `/implement-spec` builds it. |
+| In review | started | A spec whose integration branch is in `/code-review`. |
 | Done | completed | Resolved. |
-| Cancelled | cancelled | Will not be done, or ruled out of scope. |
+| Won't fix | cancelled | Will not be done, or ruled out of scope. |
 
-A work item is **open** while its state group is `backlog`, `unstarted` or `started`, and **closed** once it is `completed` or `cancelled`.
+A work item is **open** while its state group is `backlog`, `unstarted` or `started`, and **closed** once it is `completed` or `cancelled`. **Ready** means Ready for agent with no assignee and no open blocker.
 
 ## Conventions
 
@@ -32,7 +35,7 @@ A work item is **open** while its state group is `backlog`, `unstarted` or `star
 - **Count open blockers**: `workitem_relation list` on the work item returns `dependencies.blocked_by` with each blocker's `state_id`. Count the blockers whose state is in an open group.
 - **Comment on an issue**: `workitem_comment create` with `comment_html`.
 - **Apply / remove labels**: `workitem manage_label` with `add_label_id` or `remove_label_id`. Create a missing label first with `label create`.
-- **Close**: post the explanation with `workitem_comment create`, then `workitem update` with the Done state. Use the Cancelled state instead when the issue will not be done.
+- **Close**: post the explanation with `workitem_comment create`, then `workitem update` with the Done state. Use the Won't fix state instead when the issue will not be done.
 
 ## Specs and tickets
 
@@ -55,7 +58,7 @@ Every ticket description uses two h2 sections:
 
 Descriptions never repeat what Plane fields already hold: no Parent or Blocked by sections. When a spec or ticket changes, edit its description and leave a short comment saying what changed. Don't leave amendments only in comments.
 
-Tickets start in Todo. A ticket is ready when it has no assignee and no open blocker, so don't move tickets between Backlog and Todo by hand. Steps only the owner can do, such as granting access or approving an apply, go in their own ticket labelled `ready-for-human` that blocks the agent tickets that need them.
+Specs and tickets start in Ready for agent, including blocked ones: the blocking links decide what is ready, so don't park blocked tickets in another state. Steps only the owner can do, such as granting access or approving an apply, go in their own ticket in Ready for human that blocks the agent tickets that need them.
 
 ## When a skill says "publish to the issue tracker"
 
@@ -69,10 +72,10 @@ Read it as in **Read an issue** above.
 
 Used by `/wayfinder`. The **map** is a single work item with **child** work items as tickets.
 
-- **Map**: a work item labelled `wayfinder:map`, holding the Destination / Notes / Decisions so far / Not yet specified / Out of scope body. It stays In Progress while the effort runs and moves to Done when the destination is reached.
-- **Child ticket**: a work item whose `parent` is the map. Labels: `wayfinder:<type>` (`research`/`prototype`/`grilling`/`task`). New tickets start in Backlog. Once claimed, the ticket is assigned to the driving dev and moves to In Progress.
+- **Map**: a work item labelled `wayfinder:map`, holding the Destination / Notes / Decisions so far / Not yet specified / Out of scope body. It stays In progress while the effort runs and moves to Done when the destination is reached.
+- **Child ticket**: a work item whose `parent` is the map. Labels: `wayfinder:<type>` (`research`/`prototype`/`grilling`/`task`). New tickets start in Ready for agent. Once claimed, the ticket is assigned to the driving dev and moves to In progress.
 - **Blocking**: see **Blocking** under Conventions. Create every ticket first, then add the relations in a second pass, because relations need ids.
 - **Frontier query**: list the project's open work items with `fields` including `parent` and `assignees`, keep those whose `parent` is the map, drop any with an assignee, then drop any with an open blocker (see **Count open blockers**). The lowest `sequence_id` wins.
-- **Claim**: `workitem update` with `assignees: [<your member id>]` and the In Progress state, as the session's first write. Get the member id from `member me`.
+- **Claim**: `workitem update` with `assignees: [<your member id>]` and the In progress state, as the session's first write. Get the member id from `member me`.
 - **Resolve**: post the answer with `workitem_comment create`, move the ticket to Done, then append a context pointer (gist + link) to the map's Decisions so far with `workitem update` on the map's `description_html`.
-- **Out of scope**: move the ticket to Cancelled and add one line to the map's Out of scope section.
+- **Out of scope**: move the ticket to Won't fix and add one line to the map's Out of scope section.
