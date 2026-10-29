@@ -1,11 +1,7 @@
-mod actuator;
 mod http_server;
-mod invites;
 mod problem;
-mod sessions;
-mod telemetry;
+mod routes;
 mod user_auth;
-mod users;
 mod web;
 
 use infrastructure::AppState;
@@ -45,18 +41,18 @@ pub fn router(
     router
         .app_context(state)
         .app_context(availability)
-        .route(actuator::health)
-        .route(actuator::liveness)
-        .route(actuator::readiness)
-        .route(actuator::info)
-        .route(sessions::sign_in)
-        .route(sessions::sign_out)
-        .route(users::me)
-        .route(users::change_password)
-        .route(invites::accept)
-        .route(telemetry::traces)
-        .route(telemetry::metrics)
-        .route(telemetry::logs)
+        .route(routes::actuator::health::v1::health)
+        .route(routes::actuator::health::v1::liveness)
+        .route(routes::actuator::health::v1::readiness)
+        .route(routes::actuator::info::v1::info)
+        .route(routes::api::sessions::v1::sign_in)
+        .route(routes::api::sessions::v1::sign_out)
+        .route(routes::api::me::v1::me)
+        .route(routes::api::me::v1::change_password)
+        .route(routes::api::invites::v1::accept)
+        .route(routes::api::telemetry::v1::traces)
+        .route(routes::api::telemetry::v1::metrics)
+        .route(routes::api::telemetry::v1::logs)
         .route(web::index)
         .route(web::settings)
         .route(web::invite)

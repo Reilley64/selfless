@@ -1,5 +1,5 @@
 use crate::problem;
-use crate::users::UserBody;
+use crate::routes::api::me::v1::UserBody;
 use infrastructure::AppState;
 use serde::Deserialize;
 use topcoat::context::Cx;
