@@ -370,10 +370,12 @@ async fn admin_pages_send_a_strict_content_security_policy_and_need_no_inline_sc
     for page in [&sign_in, &sync] {
         for script in page.body.split("<script").skip(1) {
             let tag = &script[..script.find('>').unwrap()];
-            assert!(
-                tag.contains(" src=\"/admin/"),
-                "inline script: <script{tag}>"
-            );
+            let start = tag
+                .find(r#" src=""#)
+                .unwrap_or_else(|| panic!("inline script: <script{tag}>"))
+                + r#" src=""#.len();
+            let src = &tag[start..start + tag[start..].find('"').unwrap()];
+            assert_eq!(browser.get(src).await.status, StatusCode::OK, "{src}");
         }
     }
     drop(server);

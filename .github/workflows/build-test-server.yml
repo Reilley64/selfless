@@ -47,13 +47,13 @@ jobs:
       - name: "Source: Check out the repository"
         uses: actions/checkout@v7
 
+      - name: "Setup: Install the Rust toolchain from rust-toolchain.toml"
+        run: rustup toolchain install && rustup default "$(rustup show active-toolchain | cut -d ' ' -f 1)"
+
       - name: "Setup: Install the tools from mise.toml"
         uses: jdx/mise-action@v5
         with:
-          install_args: bun cargo-deny github:open-telemetry/weaver
-
-      - name: "Setup: Install the Rust toolchain from rust-toolchain.toml"
-        run: rustup toolchain install
+          install_args: bun cargo:topcoat-cli cargo-deny github:open-telemetry/weaver
 
       - name: "Setup: Restore the Rust cache"
         uses: Swatinem/rust-cache@v2
@@ -77,6 +77,9 @@ jobs:
 
       - name: "Build: Compile the Rust workspace"
         run: cargo build --locked --workspace --all-targets --all-features
+
+      - name: "Build: Bundle the admin app's assets"
+        run: topcoat asset bundle --bin selfless
 
       - name: "Test: Run the server tests against PostgreSQL"
         run: cargo test --locked --workspace --all-features

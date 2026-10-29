@@ -30,6 +30,10 @@ use components::sidebar::sidebar_provider;
 use components::sidebar::sidebar_trigger;
 use infrastructure::AppState;
 use serde::Deserialize;
+use topcoat::asset::Asset;
+use topcoat::asset::AssetBundle;
+use topcoat::asset::RouterBuilderAssetExt;
+use topcoat::asset::asset;
 use topcoat::context::Cx;
 use topcoat::context::app_context;
 use topcoat::cookie::Cookie;
@@ -39,9 +43,7 @@ use topcoat::cookie::SameSite;
 use topcoat::cookie::cookies;
 use topcoat::icon::icon;
 use topcoat::router::RouterBuilder;
-use topcoat::router::content::Css;
 use topcoat::router::content::Form;
-use topcoat::router::content::Js;
 use topcoat::router::error::SeeOther;
 use topcoat::router::error::forbidden;
 use topcoat::router::error::see_other;
@@ -68,19 +70,23 @@ const CSRF_HEADER: &str = "x-csrf-token";
 const SIDEBAR_ID: &str = "sidebar";
 const ACCOUNT_MENU_ID: &str = "account-menu";
 const SECTIONS: [(&str, &str); 1] = [(SYNC_PATH, "Sync status")];
+const STYLES: Asset = asset!("../dist/styles.css");
+const HTMX: Asset = asset!(
+    "https://cdn.jsdelivr.net/npm/htmx.org@2.0.11/dist/htmx.min.js",
+    checksum: "sha256:d6fdc75f204e6bdefa99b69bf1e6d4ac69b8a364f77929f45c13476b4000f717"
+);
+const LOCAL_TIME_SCRIPT: Asset = asset!("../assets/time.js");
 const HTMX_CONFIG: &str =
     r#"{"includeIndicatorStyles":false,"allowEval":false,"allowScriptTags":false}"#;
 
-pub fn register(router: RouterBuilder) -> RouterBuilder {
+pub fn register(router: RouterBuilder, assets: AssetBundle) -> RouterBuilder {
     router
         .route(home)
         .page(sync)
         .page(sign_in_form)
         .page(sign_in)
         .route(sign_out)
-        .route(styles)
-        .route(htmx)
-        .route(local_time_script)
+        .assets(assets)
         .cookies()
 }
 
@@ -184,21 +190,6 @@ async fn sign_out(cx: &Cx, Form(form): Form<SignOut>) -> topcoat::Result<SeeOthe
         cookies(cx).remove(admin_cookie(SESSION_COOKIE, String::new()));
     }
     Ok(see_other(SIGN_IN_PATH))
-}
-
-#[route(GET "/admin/assets/styles.css")]
-async fn styles() -> topcoat::Result<Css<&'static str>> {
-    Ok(Css(include_str!("../dist/styles.css")))
-}
-
-#[route(GET "/admin/assets/htmx.min.js")]
-async fn htmx() -> topcoat::Result<Js<&'static str>> {
-    Ok(Js(include_str!("../dist/htmx.min.js")))
-}
-
-#[route(GET "/admin/assets/time.js")]
-async fn local_time_script() -> topcoat::Result<Js<&'static str>> {
-    Ok(Js(include_str!("../assets/time.js")))
 }
 
 #[component]
@@ -341,9 +332,9 @@ async fn document(cx: &Cx, #[default] child: Child<'_>) -> topcoat::Result<impl 
                 <meta name="viewport" content="width=device-width, initial-scale=1" />
                 <meta name="htmx-config" content=(HTMX_CONFIG) />
                 <title>"selfless admin"</title>
-                <link rel="stylesheet" href="/admin/assets/styles.css" />
-                <script src="/admin/assets/htmx.min.js" defer=(true)></script>
-                <script src="/admin/assets/time.js" defer=(true)></script>
+                <link rel="stylesheet" href=(STYLES) />
+                <script src=(HTMX) defer=(true)></script>
+                <script src=(LOCAL_TIME_SCRIPT) defer=(true)></script>
             </head>
             <body class="bg-background font-sans text-foreground antialiased" hx-headers=(htmx_headers)>
                 (child)

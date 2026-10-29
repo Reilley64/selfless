@@ -1,6 +1,7 @@
 [tools]
 actionlint = "1.7.12"
 bun = "1.4.4"
+"cargo:topcoat-cli" = "0.11.0"
 cargo-deny = "0.20.2"
 node = "26.13.0"
 vacuum = "0.35.7"
@@ -26,13 +27,18 @@ run = "docker compose up --detach --wait"
 description = "Generate the API client, the TypeScript telemetry constants, the theme and the admin stylesheet"
 run = "bun run generate"
 
+[tasks.bundle]
+description = "Bundle the admin app's assets next to the debug server binary"
+depends = ["generate"]
+run = "topcoat asset bundle --bin selfless"
+
 [tasks.dev]
 description = "Start the server and the web app against the local services"
 depends = ["dev:server", "dev:web"]
 
 [tasks."dev:server"]
 description = "Start the server"
-depends = ["services", "generate"]
+depends = ["services", "bundle"]
 run = "cargo run"
 
 [tasks."dev:web"]
@@ -52,7 +58,7 @@ run = [
 
 [tasks.test]
 description = "Run the server tests against the local PostgreSQL"
-depends = ["services", "generate"]
+depends = ["services", "bundle"]
 run = "cargo test --workspace"
 
 [tasks."build:image"]

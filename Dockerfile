@@ -5,12 +5,12 @@ WORKDIR /app
 ENV MISE_DATA_DIR=/mise MISE_TRUSTED_CONFIG_PATHS=/app PATH=/mise/shims:$PATH
 RUN cargo install cargo-chef --version 0.1.78 --locked
 COPY rust-toolchain.toml ./
-RUN rustup toolchain install
+RUN rustup toolchain install && rustup default "$(rustup show active-toolchain | cut -d ' ' -f 1)"
 
 FROM chef AS tools
 COPY --from=jdxcode/mise:2026.10.22-debian /usr/local/bin/mise /usr/local/bin/mise
 COPY mise.toml ./
-RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN mise install bun github:open-telemetry/weaver
+RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN mise install bun cargo:topcoat-cli github:open-telemetry/weaver
 
 FROM chef AS planner
 COPY . .
@@ -30,7 +30,8 @@ COPY --from=web /app/presentation/admin/dist presentation/admin/dist
 ARG GIT_BRANCH GIT_COMMIT GIT_COMMIT_TIME
 RUN --mount=from=tools,source=/mise,target=/mise \
     --mount=from=tools,source=/usr/local/bin/mise,target=/usr/local/bin/mise \
-    cargo build --locked --release --bin selfless
+    cargo build --locked --release --bin selfless \
+    && topcoat asset bundle --release --bin selfless
 
 FROM scratch AS jellyfin-ffmpeg
 ARG JELLYFIN_FFMPEG_VERSION
@@ -45,6 +46,7 @@ RUN --mount=from=jellyfin-ffmpeg,target=/mnt/jellyfin-ffmpeg \
     && useradd --system --uid 10001 --user-group --no-create-home --shell /usr/sbin/nologin selfless
 WORKDIR /app
 COPY --from=build /app/target/release/selfless ./selfless
+COPY --from=build /app/target/release/assets ./assets
 COPY --from=web /app/presentation/web/dist ./web
 ENV WEB__DIR=/app/web OTEL_SERVICE_NAME=selfless
 USER 10001:10001

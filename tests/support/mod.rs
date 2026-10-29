@@ -17,6 +17,7 @@ use serde_json::Value;
 use serde_json::json;
 use settings::AdminSettings;
 use settings::AppSettings;
+use settings::AssetSettings;
 use settings::DatabaseSettings;
 use settings::HttpSettings;
 use settings::OtlpSettings;
@@ -144,6 +145,16 @@ pub fn settings(database_url: Url) -> AppSettings {
         http: HttpSettings { port: 0 },
         database: DatabaseSettings { url: database_url },
         web: WebSettings::default(),
+        assets: AssetSettings {
+            dir: Some(
+                std::env::current_exe()
+                    .unwrap()
+                    .parent()
+                    .and_then(|x| x.parent())
+                    .unwrap()
+                    .join("assets"),
+            ),
+        },
         admin: AdminSettings {
             username: Some(ADMIN_NAME.to_owned()),
             password: Some(ADMIN_PASSWORD.to_owned()),

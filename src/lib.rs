@@ -9,6 +9,7 @@ use infrastructure::persistence;
 use infrastructure::telemetry;
 use ohno::AppError;
 use ohno::ErrorExt;
+use ohno::IntoAppError;
 use ohno::app_err;
 use settings::AppSettings;
 use std::future::Future;
@@ -16,6 +17,7 @@ use std::io;
 use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::net::TcpListener;
+use topcoat::asset::AssetBundle;
 use topcoat::router::Router;
 
 const DRAIN_PERIOD: Duration = Duration::from_secs(5);
@@ -59,9 +61,14 @@ pub async fn start(
             AppError::new(error)
         }
     })?;
+    let assets = match &settings.assets.dir {
+        Some(dir) => AssetBundle::load_dir(dir),
+        None => AssetBundle::load(),
+    }
+    .into_app_err("failed to load the asset bundle, which `topcoat asset bundle` writes")?;
     let availability = Availability::default();
     let router = api::router(
-        admin::register(Router::builder()),
+        admin::register(Router::builder(), assets),
         state,
         availability.clone(),
         std::path::absolute(&settings.web.dir)?,

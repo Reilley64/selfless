@@ -16,6 +16,8 @@ pub struct AppSettings {
     #[serde(default)]
     pub web: WebSettings,
     #[serde(default)]
+    pub assets: AssetSettings,
+    #[serde(default)]
     pub admin: AdminSettings,
     #[serde(flatten)]
     pub otlp: OtlpSettings,
@@ -56,6 +58,11 @@ impl Default for WebSettings {
             dir: PathBuf::from("presentation/web/dist"),
         }
     }
+}
+
+#[derive(Clone, Default, Deserialize)]
+pub struct AssetSettings {
+    pub dir: Option<PathBuf>,
 }
 
 #[derive(Clone, Default, Deserialize)]
