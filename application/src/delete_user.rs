@@ -1,4 +1,5 @@
 use crate::DbContext;
+use crate::DbScope;
 use domain::Session;
 use domain::User;
 use uuid::Uuid;
@@ -14,12 +15,16 @@ pub struct Error;
 
 pub async fn call(dependencies: impl Into<Dependencies>, id: Uuid) -> Result<(), Error> {
     let mut db_context = dependencies.into().db_context;
-    User::filter_by_id(id)
+    db_context
+        .users()
+        .filter(User::fields().id().eq(id))
         .delete()
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?;
-    Session::filter_by_user_id(id)
+    db_context
+        .sessions()
+        .filter(Session::fields().user_id().eq(id))
         .delete()
         .exec(db_context.executor_mut())
         .await

@@ -1,4 +1,5 @@
 use crate::DbContext;
+use crate::DbScope;
 use domain::Invite;
 
 #[fundle::deps]
@@ -12,7 +13,9 @@ pub struct Error;
 
 pub async fn call(dependencies: impl Into<Dependencies>) -> Result<Vec<Invite>, Error> {
     let mut db_context = dependencies.into().db_context;
-    let mut invites = Invite::all()
+    let mut invites = db_context
+        .invites()
+        .all()
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?;

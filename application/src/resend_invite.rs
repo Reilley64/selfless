@@ -1,4 +1,5 @@
 use crate::DbContext;
+use crate::DbScope;
 use crate::invite_email;
 use crate::ports::Clock;
 use crate::ports::SendEmail;
@@ -27,8 +28,9 @@ pub async fn call(
         clock,
         send_email,
     } = dependencies.into();
-    let Some(mut invite) = Invite::filter_by_id(id)
-        .first()
+    let Some(mut invite) = db_context
+        .invites()
+        .find(id)
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?

@@ -1,4 +1,5 @@
 use crate::DbContext;
+use crate::DbScope;
 
 #[fundle::deps]
 pub struct Dependencies {

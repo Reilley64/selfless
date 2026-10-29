@@ -1,4 +1,5 @@
 use crate::DbContext;
+use crate::DbScope;
 use crate::ports::Clock;
 use crate::tokens;
 use domain::AdminSession;
@@ -24,7 +25,9 @@ pub async fn call(
         clock,
     } = dependencies.into();
     let now = clock.call();
-    let Some(mut session) = AdminSession::filter_by_token_hash(tokens::hash(token))
+    let Some(mut session) = db_context
+        .admin_sessions()
+        .filter(AdminSession::fields().token_hash().eq(tokens::hash(token)))
         .first()
         .exec(db_context.executor_mut())
         .await

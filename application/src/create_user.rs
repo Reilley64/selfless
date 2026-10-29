@@ -1,4 +1,5 @@
 use crate::DbContext;
+use crate::DbScope;
 use crate::passwords;
 use crate::unique_index;
 use domain::Colour;
@@ -27,7 +28,9 @@ pub async fn call(
     email: String,
 ) -> Result<User, Error> {
     let mut db_context = dependencies.into().db_context;
-    let users = User::all()
+    let users = db_context
+        .users()
+        .all()
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?;
@@ -36,19 +39,20 @@ pub async fn call(
     let colour = least_used(&Colour::ALL, &colours);
     let symbol = least_used(&Symbol::ALL, &symbols);
     let password_hash = passwords::hash(password).await.map_err(Error::caused_by)?;
-    toasty::create!(User {
-        name,
-        email,
-        password_hash,
-        colour,
-        symbol,
-    })
-    .exec(db_context.executor_mut())
-    .await
-    .map_err(|error| match unique_index::violated(&error) {
-        Some(NAME_INDEX) => Error::caused_by(NameTaken::new()),
-        _ => Error::caused_by(error),
-    })
+    db_context
+        .users()
+        .create()
+        .name(name)
+        .email(email)
+        .password_hash(password_hash)
+        .colour(colour)
+        .symbol(symbol)
+        .exec(db_context.executor_mut())
+        .await
+        .map_err(|error| match unique_index::violated(&error) {
+            Some(NAME_INDEX) => Error::caused_by(NameTaken::new()),
+            _ => Error::caused_by(error),
+        })
 }
 
 fn least_used<T: Copy + PartialEq>(choices: &[T], used: &[T]) -> T {

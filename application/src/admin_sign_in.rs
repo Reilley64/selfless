@@ -1,10 +1,10 @@
 use crate::DbContext;
+use crate::DbScope;
 use crate::attributes::selfless_auth_client_kind;
 use crate::ports::Clock;
 use crate::sign_ins;
 use crate::tokens;
 use domain::Admin;
-use domain::AdminSession;
 
 #[fundle::deps]
 pub struct Dependencies {
@@ -25,7 +25,9 @@ pub async fn call(
         mut db_context,
         clock,
     } = dependencies.into();
-    let admin = Admin::filter_by_name(name)
+    let admin = db_context
+        .admins()
+        .filter(Admin::fields().name().eq(name))
         .first()
         .exec(db_context.executor_mut())
         .await
@@ -43,14 +45,15 @@ pub async fn call(
     };
     let token = tokens::generate();
     let now = clock.call();
-    toasty::create!(AdminSession {
-        admin_id: admin.id,
-        token_hash: tokens::hash(&token),
-        signed_in_at: now,
-        last_used_at: now,
-    })
-    .exec(db_context.executor_mut())
-    .await
-    .map_err(Error::caused_by)?;
+    db_context
+        .admin_sessions()
+        .create()
+        .admin_id(admin.id)
+        .token_hash(tokens::hash(&token))
+        .signed_in_at(now)
+        .last_used_at(now)
+        .exec(db_context.executor_mut())
+        .await
+        .map_err(Error::caused_by)?;
     Ok(Some(token))
 }

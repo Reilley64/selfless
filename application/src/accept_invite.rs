@@ -1,4 +1,5 @@
 use crate::DbContext;
+use crate::DbScope;
 use crate::create_user;
 use crate::ports::Clock;
 use crate::tokens;
@@ -30,7 +31,9 @@ pub async fn call(
         clock,
     } = dependencies.into();
     let now = clock.call();
-    let Some(invite) = Invite::filter_by_token_hash(tokens::hash(token))
+    let Some(invite) = db_context
+        .invites()
+        .filter(Invite::fields().token_hash().eq(tokens::hash(token)))
         .first()
         .exec(db_context.executor_mut())
         .await
@@ -51,7 +54,9 @@ pub async fn call(
     {
         Ok(user) => user,
         Err(error) => {
-            let accepted = User::filter_by_email(invite.email.clone())
+            let accepted = db_context
+                .users()
+                .filter(User::fields().email().eq(invite.email.clone()))
                 .first()
                 .exec(db_context.executor_mut())
                 .await

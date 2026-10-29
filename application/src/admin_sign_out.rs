@@ -1,4 +1,5 @@
 use crate::DbContext;
+use crate::DbScope;
 use crate::tokens;
 use domain::AdminSession;
 
@@ -13,7 +14,9 @@ pub struct Error;
 
 pub async fn call(dependencies: impl Into<Dependencies>, token: &str) -> Result<(), Error> {
     let mut db_context = dependencies.into().db_context;
-    AdminSession::filter_by_token_hash(tokens::hash(token))
+    db_context
+        .admin_sessions()
+        .filter(AdminSession::fields().token_hash().eq(tokens::hash(token)))
         .delete()
         .exec(db_context.executor_mut())
         .await

@@ -1,5 +1,5 @@
 use crate::DbContext;
-use domain::Admin;
+use crate::DbScope;
 use domain::AdminSession;
 use uuid::Uuid;
 
@@ -27,8 +27,9 @@ pub async fn call(dependencies: impl Into<Dependencies>, id: Uuid) -> Result<(),
     .await
     .map_err(Error::caused_by)?;
     if deleted == 0
-        && Admin::filter_by_id(id)
-            .first()
+        && db_context
+            .admins()
+            .find(id)
             .exec(db_context.executor_mut())
             .await
             .map_err(Error::caused_by)?
@@ -36,7 +37,9 @@ pub async fn call(dependencies: impl Into<Dependencies>, id: Uuid) -> Result<(),
     {
         return Err(Error::caused_by(LastAdmin::new()));
     }
-    AdminSession::filter_by_admin_id(id)
+    db_context
+        .admin_sessions()
+        .filter(AdminSession::fields().admin_id().eq(id))
         .delete()
         .exec(db_context.executor_mut())
         .await

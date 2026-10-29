@@ -1,10 +1,10 @@
 use crate::DbContext;
+use crate::DbScope;
 use crate::attributes::selfless_auth_client_kind;
 use crate::ports::Clock;
 use crate::sign_ins;
 use crate::tokens;
 use domain::ClientKind;
-use domain::Session;
 use domain::User;
 
 #[fundle::deps]
@@ -33,7 +33,9 @@ pub async fn call(
         mut db_context,
         clock,
     } = dependencies.into();
-    let user = User::filter_by_name(name)
+    let user = db_context
+        .users()
+        .filter(User::fields().name().eq(name))
         .first()
         .exec(db_context.executor_mut())
         .await
@@ -55,16 +57,17 @@ pub async fn call(
     };
     let token = tokens::generate();
     let now = clock.call();
-    toasty::create!(Session {
-        user_id: user.id,
-        client_kind,
-        device_name,
-        token_hash: tokens::hash(&token),
-        signed_in_at: now,
-        last_used_at: now,
-    })
-    .exec(db_context.executor_mut())
-    .await
-    .map_err(Error::caused_by)?;
+    db_context
+        .sessions()
+        .create()
+        .user_id(user.id)
+        .client_kind(client_kind)
+        .device_name(device_name)
+        .token_hash(tokens::hash(&token))
+        .signed_in_at(now)
+        .last_used_at(now)
+        .exec(db_context.executor_mut())
+        .await
+        .map_err(Error::caused_by)?;
     Ok(Some(SignedIn { token, user }))
 }

@@ -1,4 +1,5 @@
 use crate::DbContext;
+use crate::DbScope;
 use crate::invite_email;
 use crate::ports::Clock;
 use crate::ports::SendEmail;
@@ -36,7 +37,9 @@ pub async fn call(
         clock,
         send_email,
     } = dependencies.into();
-    let user = User::filter_by_email(email.clone())
+    let user = db_context
+        .users()
+        .filter(User::fields().email().eq(email.clone()))
         .first()
         .exec(db_context.executor_mut())
         .await
@@ -46,19 +49,20 @@ pub async fn call(
     }
     let token = tokens::generate();
     let sent_at = clock.call();
-    toasty::create!(Invite {
-        email: email.clone(),
-        token_hash: tokens::hash(&token),
-        admin_id,
-        sent_at,
-        expires_at: sent_at + Invite::VALID_FOR,
-    })
-    .exec(db_context.executor_mut())
-    .await
-    .map_err(|error| match unique_index::violated(&error) {
-        Some(EMAIL_INDEX) => Error::caused_by(AddressTaken::new()),
-        _ => Error::caused_by(error),
-    })?;
+    db_context
+        .invites()
+        .create()
+        .email(email.clone())
+        .token_hash(tokens::hash(&token))
+        .admin_id(admin_id)
+        .sent_at(sent_at)
+        .expires_at(sent_at + Invite::VALID_FOR)
+        .exec(db_context.executor_mut())
+        .await
+        .map_err(|error| match unique_index::violated(&error) {
+            Some(EMAIL_INDEX) => Error::caused_by(AddressTaken::new()),
+            _ => Error::caused_by(error),
+        })?;
     invite_email::send(&send_email, email, &origin, &token)
         .await
         .map_err(Error::caused_by)
