@@ -8,4 +8,4 @@ export const session = startTvSession(
   Platform.OS === "ios" ? ClientKind.appleTv : ClientKind.googleTv,
 );
 
-startTelemetry("selfless-tv", session);
+startTelemetry("selfless-tv", { serverUrl: session.serverUrl, token: session.telemetryToken });

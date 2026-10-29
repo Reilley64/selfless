@@ -2,6 +2,7 @@ import { type ProxyTracerProvider, logs, metrics, trace } from "@opentelemetry/a
 import type { LoggerProvider } from "@opentelemetry/sdk-logs";
 import type { MeterProvider } from "@opentelemetry/sdk-metrics";
 import type { TracerProvider } from "@opentelemetry/sdk-trace";
+import { getMe } from "@selfless/api-client";
 import { type SessionStorage, startTvSession, startWebSession } from "../session";
 import { startTelemetry } from "./startTelemetry";
 
@@ -17,10 +18,19 @@ function fakeStorage(): SessionStorage {
   };
 }
 
-function mockServer() {
+const theo = {
+  token: "Zt0bX9qL2wR5yV8nH3kM6pJ1sF4dG7aC0eU2iO5lN8Q",
+  user: { id: "01890a5d-ac96-774b-bcce-b302099a8058", name: "Theo", colour: "blue", symbol: "triangle" },
+};
+
+function mockServer({ meStatus = 200 } = {}) {
   return jest.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     if (String(input).endsWith("/api/sessions/v1")) {
-      return Response.json({ token, user }, { status: 201 });
+      const { name } = JSON.parse(String(init?.body));
+      return Response.json(name === "Theo" ? theo : { token, user }, { status: 201 });
+    }
+    if (String(input).endsWith("/api/me/v1")) {
+      return new Response(null, { status: meStatus });
     }
     return new Response(null, { status: init?.method === "DELETE" ? 204 : 200 });
   });
@@ -74,6 +84,18 @@ function sentText(call: [unknown, RequestInit?]) {
   return Buffer.from(call[1]?.body as Uint8Array).toString();
 }
 
+function sentWith(fetch: ReturnType<typeof mockServer>, text: string) {
+  return telemetryCalls(fetch)
+    .filter((call) => sentText(call).includes(text))
+    .map(([input, init]) => [new URL(String(input)).origin, new Headers(init?.headers).get("Authorization")]);
+}
+
+function calls(fetch: ReturnType<typeof mockServer>) {
+  return fetch.mock.calls.map((call) =>
+    String(call[0]).includes("/api/telemetry/") ? sentText(call) : `${call[1]?.method ?? "GET"} ${call[0]}`,
+  );
+}
+
 test("telemetry recorded before sign-in is not sent after sign-in", async () => {
   const fetch = mockServer();
   const session = startWebSession(fakeStorage());
@@ -114,7 +136,7 @@ test("telemetry recorded after sign-in goes out with the session token", async (
 test("after the TV is pointed at another server, telemetry goes to the new server", async () => {
   const fetch = mockServer();
   const session = startTvSession(fakeStorage(), "appleTv");
-  startTelemetry("selfless-tv", session);
+  startTelemetry("selfless-tv", { serverUrl: session.serverUrl, token: session.telemetryToken });
   await session.connect("http://192.168.1.20:8080");
   await session.signIn("Noor", "correct horse", "Living Room");
   record("on the first server");
@@ -126,8 +148,96 @@ test("after the TV is pointed at another server, telemetry goes to the new serve
   record("on the second server");
   await flush();
 
-  expect(telemetryCalls(fetch).map(([input]) => new URL(String(input)).origin)).toEqual([
-    ...Array(3).fill("http://192.168.1.20:8080"),
-    ...Array(3).fill("http://192.168.1.30:8080"),
+  expect(sentWith(fetch, "on the first server")).toEqual([
+    ["http://192.168.1.20:8080", `Bearer ${token}`],
+    ["http://192.168.1.20:8080", `Bearer ${token}`],
+  ]);
+  expect(sentWith(fetch, "on the second server")).toEqual([
+    ["http://192.168.1.30:8080", `Bearer ${token}`],
+    ["http://192.168.1.30:8080", `Bearer ${token}`],
+  ]);
+});
+
+test("telemetry recorded on the TV's user picker goes out with a signed-in user's token", async () => {
+  const fetch = mockServer();
+  const session = startTvSession(fakeStorage(), "appleTv");
+  startTelemetry("selfless-tv", { serverUrl: session.serverUrl, token: session.telemetryToken });
+  await session.connect("http://192.168.1.20:8080");
+  await session.signIn("Noor", "correct horse", "Living Room");
+  session.switchUser();
+
+  record("on the picker");
+  await flush();
+
+  expect(sentWith(fetch, "on the picker")).toEqual([
+    ["http://192.168.1.20:8080", `Bearer ${token}`],
+    ["http://192.168.1.20:8080", `Bearer ${token}`],
+  ]);
+});
+
+test("nothing is sent while every user on the TV's picker is dimmed", async () => {
+  const fetch = mockServer({ meStatus: 401 });
+  const session = startTvSession(fakeStorage(), "appleTv");
+  startTelemetry("selfless-tv", { serverUrl: session.serverUrl, token: session.telemetryToken });
+  await session.connect("http://192.168.1.20:8080");
+  await session.signIn("Noor", "correct horse", "Living Room");
+  await session.refresh();
+
+  record("all dimmed");
+  await flush();
+
+  expect(sentWith(fetch, "all dimmed")).toEqual([]);
+});
+
+test("switching user sends pending telemetry with the old user's token", async () => {
+  const fetch = mockServer();
+  const session = startTvSession(fakeStorage(), "appleTv");
+  startTelemetry("selfless-tv", { serverUrl: session.serverUrl, token: session.telemetryToken });
+  await session.connect("http://192.168.1.20:8080");
+  await session.signIn("Noor", "correct horse", "Living Room");
+  await session.signIn("Theo", "battery staple", "Living Room");
+  record("as Theo");
+
+  session.switchUser();
+  await flush();
+
+  expect(sentWith(fetch, "as Theo")).toEqual([
+    ["http://192.168.1.20:8080", `Bearer ${theo.token}`],
+    ["http://192.168.1.20:8080", `Bearer ${theo.token}`],
+  ]);
+});
+
+test("signing out sends pending telemetry with the token before the session ends", async () => {
+  const fetch = mockServer();
+  const session = startWebSession(fakeStorage());
+  startTelemetry("selfless-web", session);
+  await session.signIn("Noor", "correct horse", "Firefox on macOS");
+  record("before sign-out");
+
+  await session.signOut();
+
+  const sentAt = calls(fetch).findIndex((call) => call.includes("before sign-out"));
+  expect(sentAt).toBeGreaterThan(-1);
+  expect(sentAt).toBeLessThan(calls(fetch).indexOf("DELETE /api/sessions/current/v1"));
+  expect(sentWith(fetch, "before sign-out")).toEqual([
+    ["http://localhost:8081", `Bearer ${token}`],
+    ["http://localhost:8081", `Bearer ${token}`],
+  ]);
+});
+
+test("a 401 sends pending telemetry with the token before clearing it", async () => {
+  const fetch = mockServer({ meStatus: 401 });
+  const session = startWebSession(fakeStorage());
+  startTelemetry("selfless-web", session);
+  await session.signIn("Noor", "correct horse", "Firefox on macOS");
+  record("before the 401");
+
+  await getMe();
+  await flush();
+
+  expect(session.token()).toBeUndefined();
+  expect(sentWith(fetch, "before the 401")).toEqual([
+    ["http://localhost:8081", `Bearer ${token}`],
+    ["http://localhost:8081", `Bearer ${token}`],
   ]);
 });

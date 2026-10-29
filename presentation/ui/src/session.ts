@@ -8,6 +8,7 @@ import {
   signOut,
   type User,
 } from "@selfless/api-client";
+import { flushTelemetry } from "./telemetry/startTelemetry";
 
 export interface SessionStorage {
   getItem(key: string): string | null;
@@ -59,6 +60,7 @@ export function startWebSession(storage: SessionStorage) {
     },
     async signOut() {
       const token = session.token();
+      await flushTelemetry();
       try {
         await signOut();
       } finally {
@@ -88,6 +90,7 @@ export function startTvSession(storage: SessionStorage, clientKind: Exclude<Clie
     update({ users, ...next });
   };
   const endSession = async (token: string) => {
+    await flushTelemetry();
     const response = await signOut({ headers: authorizationHeaders(token) }).catch(() => undefined);
     if (response?.status === 204) {
       session.ended(token);
@@ -99,6 +102,8 @@ export function startTvSession(storage: SessionStorage, clientKind: Exclude<Clie
     subscribe,
     serverUrl: () => state.serverUrl ?? "",
     token: () => state.users.find(({ id }) => id === state.currentUserId)?.token,
+    telemetryToken: () =>
+      (state.users.find(({ id }) => id === state.currentUserId) ?? state.users.find(({ dimmed }) => !dimmed))?.token,
     ended(token: string) {
       const owner = state.users.find((user) => user.token === token);
       if (owner) {
