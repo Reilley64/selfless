@@ -1,0 +1,124 @@
+name: "Build, release and publish: Application"
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/reilley64/selfless
+
+jobs:
+  release-metadata:
+    name: "Release: Prepare or publish release metadata"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    permissions: {}
+
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+
+    steps:
+      - name: "Setup: Create the repository-scoped release app token"
+        id: token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.RELEASE_PLEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write
+
+      - name: "Run: Prepare or publish release metadata"
+        id: release
+        uses: googleapis/release-please-action@v5
+        with:
+          token: ${{ steps.token.outputs.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  build-release-image:
+    name: "Build, test and release: Container image"
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    permissions:
+      contents: read
+      packages: write
+
+    outputs:
+      digest: ${{ steps.publish.outputs.digest }}
+
+    steps:
+      - name: "Source: Check out the repository"
+        uses: actions/checkout@v7
+
+      - name: "Setup: Derive the commit image tag"
+        id: tag
+        run: echo "tag=${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
+
+      - name: "Build and test: Container image"
+        uses: ./.github/actions/build-test-image
+        with:
+          tag: ${{ env.IMAGE }}:${{ steps.tag.outputs.tag }}
+
+      - name: "Setup: Authenticate with the container registry"
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: "Tag and publish: Push the tested image as the commit and latest tags"
+        id: publish
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          docker tag "$IMAGE:$TAG" "$IMAGE:latest"
+          docker push "$IMAGE:$TAG"
+          docker push "$IMAGE:latest"
+          echo "digest=$(docker buildx imagetools inspect "$IMAGE:$TAG" --format '{{.Manifest.Digest}}')" >> "$GITHUB_OUTPUT"
+
+  release-image:
+    name: "Release: Publish the versioned image"
+    needs:
+      - release-metadata
+      - build-release-image
+    if: needs.release-metadata.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    permissions:
+      packages: write
+
+    steps:
+      - name: "Setup: Authenticate with the container registry"
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: "Setup: Configure Docker Buildx"
+        uses: docker/setup-buildx-action@v4
+
+      - name: "Tag and publish: Add the release version and release tags to the existing image"
+        env:
+          TAG_NAME: ${{ needs.release-metadata.outputs.tag_name }}
+          DIGEST: ${{ needs.build-release-image.outputs.digest }}
+        run: >-
+          docker buildx imagetools create
+          --prefer-index=false
+          --tag "$IMAGE:$TAG_NAME"
+          --tag "$IMAGE:release"
+          "$IMAGE@$DIGEST"

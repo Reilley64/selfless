@@ -24,6 +24,10 @@ Install [mise](https://mise.jdx.dev) and Docker, then run `mise install` and `bu
 - The image runs as user 10001. It serves the web export from `/app/web`, and has jellyfin-ffmpeg in `/usr/lib/jellyfin-ffmpeg`. Its license is in `/usr/share/doc/jellyfin-ffmpeg8/copyright`, and `SOURCE` beside it links to the source. The image has no `HEALTHCHECK`. Use the actuator endpoints instead.
 - `cargo run --bin toasty -- migration generate` writes a migration for changed models to `infrastructure/persistence/toasty`. The server applies pending migrations when it starts.
 
+## Releases
+
+Every push to `main` runs "Build, release and publish: Application". It builds the image, smoke tests it and pushes `ghcr.io/reilley64/selfless:<sha8>` and `:latest`. release-please keeps a release pull request open. It reads the conventional commit titles on `main` and sets one version for every crate in `Cargo.toml` and `Cargo.lock` and for `expo.version` in `presentation/web/app.json` and `presentation/tv/app.json`. Merging that pull request creates the `vX.Y.Z` release, and the workflow adds the `vX.Y.Z` and `release` tags to the image it built for that commit. Each crate sets `version` itself, because release-please cannot update `version.workspace = true`.
+
 ## License
 
 selfless is licensed under either of [Apache License 2.0](LICENSE-APACHE) or [MIT license](LICENSE-MIT), at your option.
