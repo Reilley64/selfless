@@ -87,20 +87,13 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
         selfless.reconcile.result = field::Empty,
     );
     let reconciled = async {
-        let failed_metadata_calls = match source {
-            Source::Radarr => record_kodi_metadata(
-                &source_health,
-                source,
-                check_radarr_kodi_metadata.call().await,
-            ),
-            Source::Sonarr => record_kodi_metadata(
-                &source_health,
-                source,
-                check_sonarr_kodi_metadata.call().await,
-            ),
-        };
-        let listing = match source {
-            Source::Radarr => {
+        let (failed_metadata_calls, listing) = match source {
+            Source::Radarr => (
+                record_kodi_metadata(
+                    &source_health,
+                    source,
+                    check_radarr_kodi_metadata.call().await,
+                ),
                 sync_movies(
                     &mut db_context,
                     &media_folder,
@@ -108,9 +101,14 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
                     &source_health,
                     progress,
                 )
-                .await?
-            }
-            Source::Sonarr => {
+                .await?,
+            ),
+            Source::Sonarr => (
+                record_kodi_metadata(
+                    &source_health,
+                    source,
+                    check_sonarr_kodi_metadata.call().await,
+                ),
                 sync_shows(
                     &mut db_context,
                     &media_folder,
@@ -119,8 +117,8 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
                     &source_health,
                     progress,
                 )
-                .await?
-            }
+                .await?,
+            ),
         };
         let failed_calls = failed_metadata_calls + listing.failed_calls;
         if failed_calls == 0 {
