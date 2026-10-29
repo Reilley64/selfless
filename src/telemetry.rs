@@ -10,6 +10,7 @@ use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::logs::SdkLoggerProvider;
 use opentelemetry_sdk::metrics::SdkMeterProvider;
 use opentelemetry_sdk::trace::SdkTracerProvider;
+use std::error::Error;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::filter;
 use tracing_subscriber::fmt;
@@ -77,13 +78,13 @@ pub(crate) fn init() -> Result<Telemetry, AppError> {
 impl Telemetry {
     pub(crate) fn shutdown(self) {
         if let Err(error) = self.tracer_provider.shutdown() {
-            tracing::warn!(%error, "failed to flush spans");
+            tracing::warn!(error = &error as &dyn Error, "failed to flush spans");
         }
         if let Err(error) = self.meter_provider.shutdown() {
-            tracing::warn!(%error, "failed to flush metrics");
+            tracing::warn!(error = &error as &dyn Error, "failed to flush metrics");
         }
         if let Err(error) = self.logger_provider.shutdown() {
-            tracing::warn!(%error, "failed to flush logs");
+            tracing::warn!(error = &error as &dyn Error, "failed to flush logs");
         }
     }
 }
