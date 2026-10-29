@@ -1,8 +1,9 @@
 import type { UserColour } from "@selfless/api-client";
-import { FocusGuide } from "@selfless/ui";
+import { FocusGuide, type PickerUser } from "@selfless/ui";
 import symbols from "@selfless/ui/theme/symbols.json";
 import type { ReactNode } from "react";
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
+import { Alert } from "react-native";
 import { SvgXml } from "react-native-svg";
 import { Pressable, Text, View } from "react-native-css/components";
 import { session } from "../session";
@@ -18,15 +19,17 @@ function PickerButton({
   label,
   className,
   onPress,
+  onLongPress,
   children,
 }: {
   label: string;
   className: string;
   onPress: () => void;
+  onLongPress?: () => void;
   children: ReactNode;
 }) {
   return (
-    <Pressable className="items-center gap-6" onPress={onPress}>
+    <Pressable className="items-center gap-6" onPress={onPress} onLongPress={onLongPress}>
       {({ focused }) => (
         <>
           <View
@@ -43,8 +46,19 @@ function PickerButton({
   );
 }
 
-export function UserPicker({ onAddUser }: { onAddUser: () => void }) {
+function confirmRemove(user: PickerUser) {
+  Alert.alert(user.name, undefined, [
+    { text: "Remove from this TV", style: "destructive", onPress: () => void session.remove(user.id) },
+    { text: "Cancel", style: "cancel" },
+  ]);
+}
+
+export function UserPicker({ onSignIn }: { onSignIn: (name: string) => void }) {
   const { users } = useSyncExternalStore(session.subscribe, session.state);
+
+  useEffect(() => {
+    session.refresh().catch(() => {});
+  }, []);
 
   return (
     <FocusGuide autoFocus className="flex-1 items-center justify-center gap-16 bg-background">
@@ -54,8 +68,9 @@ export function UserPicker({ onAddUser }: { onAddUser: () => void }) {
           <PickerButton
             key={user.id}
             label={user.name}
-            className={colours[user.colour]}
-            onPress={() => session.pick(user.id)}
+            className={`${colours[user.colour]} ${user.signedOut ? "opacity-40" : ""}`}
+            onPress={() => (user.signedOut ? onSignIn(user.name) : session.pick(user.id))}
+            onLongPress={() => confirmRemove(user)}
           >
             <SvgXml
               xml={`<svg viewBox="0 0 200 200">${symbols.symbol[user.symbol]}</svg>`}
@@ -64,7 +79,7 @@ export function UserPicker({ onAddUser }: { onAddUser: () => void }) {
             />
           </PickerButton>
         ))}
-        <PickerButton label="Add user" className="bg-surface-raised" onPress={onAddUser}>
+        <PickerButton label="Add user" className="bg-surface-raised" onPress={() => onSignIn("")}>
           <Text className="font-sans text-tv-display text-text-primary">+</Text>
         </PickerButton>
       </View>

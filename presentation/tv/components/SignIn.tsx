@@ -5,8 +5,8 @@ import { useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native-css/components";
 import { session } from "../session";
 
-export function SignIn({ onDone }: { onDone?: () => void }) {
-  const [name, setName] = useState("");
+export function SignIn({ name: filledIn = "", onDone }: { name?: string; onDone?: () => void }) {
+  const [name, setName] = useState(filledIn);
   const [password, setPassword] = useState("");
   const signIn = useMutation({
     mutationFn: () => session.signIn(name, password, deviceName ?? "TV"),

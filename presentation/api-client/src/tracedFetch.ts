@@ -38,7 +38,7 @@ export async function tracedFetch<T>(url: string, options: RequestInit): Promise
     },
   });
   const headers = new Headers(options.headers);
-  const token = session.token();
+  const token = headers.get("Authorization")?.replace(/^Bearer /, "") ?? session.token();
   for (const [name, value] of Object.entries(authorizationHeaders(token))) {
     headers.set(name, value);
   }

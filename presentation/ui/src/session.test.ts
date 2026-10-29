@@ -25,20 +25,24 @@ const unauthenticated = {
 
 const serverUrl = "http://192.168.1.20:8080";
 
-function mockServer({ signedIn = true } = {}) {
+function mockServer({ signedIn = true, issued = [{ token, user }, theo], ended = [] as string[] } = {}) {
+  const caller = (init?: RequestInit) => {
+    const bearer = new Headers(init?.headers).get("Authorization");
+    return issued.find(({ token }) => bearer === `Bearer ${token}` && !ended.includes(token));
+  };
   return jest.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const path = String(input).replace(serverUrl, "");
     switch (`${init?.method ?? "GET"} ${path}`) {
       case "GET /actuator/info/v1":
         return Response.json({ build: { name: "selfless", version: "0.1.0" } });
       case "POST /api/sessions/v1": {
-        const signedIn = [{ token, user }, theo].find(({ user }) => user.name === JSON.parse(String(init?.body)).name);
+        const signedIn = issued.find(({ user }) => user.name === JSON.parse(String(init?.body)).name);
         return Response.json(signedIn, { status: 201 });
       }
       case "GET /api/me/v1":
-        return signedIn ? Response.json(user) : Response.json(unauthenticated, { status: 401 });
+        return signedIn && caller(init) ? Response.json(caller(init)?.user) : Response.json(unauthenticated, { status: 401 });
       case "DELETE /api/sessions/current/v1":
-        return new Response(null, { status: 204 });
+        return caller(init) ? new Response(null, { status: 204 }) : Response.json(unauthenticated, { status: 401 });
       default:
         return new Response(null, { status: 404 });
     }
@@ -212,4 +216,110 @@ test("switching user returns to the picker without ending any session", async ()
   expect(session.state().currentUserId).toBeUndefined();
   expect(session.state().users).toEqual([{ token, ...user }]);
   expect(fetch.mock.calls.some(([, init]) => init?.method === "DELETE")).toBe(false);
+});
+
+test("signing in again as a user on the picker replaces their entry and ends their old session", async () => {
+  const fetch = mockServer();
+  const storage = fakeStorage();
+  const session = await connectedTv(storage);
+  await session.signIn("Noor", "correct horse", "Living Room");
+  await session.signIn("Theo", "battery staple", "Living Room");
+  const newToken = "Hn4cT7vB1xK9sW3eR6yU0iP2oL5aZ8dF1gJ4mQ7wE0r";
+  mockServer({ issued: [{ token: newToken, user }, theo] });
+
+  await session.signIn("Noor", "correct horse", "Living Room");
+
+  expect(startTvSession(storage, "appleTv").state().users).toEqual([
+    { token: newToken, ...user },
+    { token: theo.token, ...theo.user },
+  ]);
+  expect(sentHeaders(fetch, `${serverUrl}/api/sessions/current/v1`).get("Authorization")).toBe(`Bearer ${token}`);
+});
+
+test("removing a user ends their session and takes them off the picker", async () => {
+  const fetch = mockServer();
+  const storage = fakeStorage();
+  const session = await connectedTv(storage);
+  await session.signIn("Noor", "correct horse", "Living Room");
+  await session.signIn("Theo", "battery staple", "Living Room");
+  session.switchUser();
+
+  await session.remove(user.id);
+
+  expect(sentHeaders(fetch, `${serverUrl}/api/sessions/current/v1`).get("Authorization")).toBe(`Bearer ${token}`);
+  expect(startTvSession(storage, "appleTv").state()).toEqual({
+    serverUrl,
+    users: [{ token: theo.token, ...theo.user }],
+    currentUserId: undefined,
+  });
+});
+
+test("removing the last user forgets the server address", async () => {
+  const fetch = mockServer();
+  const storage = fakeStorage();
+  const session = await connectedTv(storage);
+  await session.signIn("Noor", "correct horse", "Living Room");
+  await session.signIn("Theo", "battery staple", "Living Room");
+  session.switchUser();
+
+  await session.remove(user.id);
+  await session.remove(theo.user.id);
+
+  expect(sentHeaders(fetch, `${serverUrl}/api/sessions/current/v1`).get("Authorization")).toBe(`Bearer ${theo.token}`);
+  expect(session.state()).toEqual({ serverUrl: undefined, users: [], currentUserId: undefined });
+  expect(startTvSession(storage, "appleTv").state()).toEqual(session.state());
+});
+
+test("a 401 during use returns to the picker with that user dimmed", async () => {
+  mockServer({ ended: [theo.token] });
+  const storage = fakeStorage();
+  const session = await connectedTv(storage);
+  await session.signIn("Noor", "correct horse", "Living Room");
+  await session.signIn("Theo", "battery staple", "Living Room");
+
+  const response = await getMe();
+
+  expect(response.status).toBe(401);
+  expect(session.state().currentUserId).toBeUndefined();
+  expect(startTvSession(storage, "appleTv").state().users).toEqual([
+    { token, ...user },
+    { token: theo.token, ...theo.user, signedOut: true },
+  ]);
+});
+
+test("refreshing the picker updates each user from the server and dims those whose sign-in has ended", async () => {
+  const fetch = mockServer();
+  const storage = fakeStorage();
+  const session = await connectedTv(storage);
+  await session.signIn("Noor", "correct horse", "Living Room");
+  await session.signIn("Theo", "battery staple", "Living Room");
+  session.switchUser();
+  const renamed = { ...user, name: "Noor A." };
+  mockServer({ issued: [{ token, user: renamed }, theo], ended: [theo.token] });
+
+  await session.refresh();
+
+  const meCalls = fetch.mock.calls.filter(([input]) => input === `${serverUrl}/api/me/v1`);
+  expect(meCalls.map(([, init]) => new Headers(init?.headers).get("Authorization"))).toEqual([
+    `Bearer ${token}`,
+    `Bearer ${theo.token}`,
+  ]);
+  expect(startTvSession(storage, "appleTv").state().users).toEqual([
+    { token, ...renamed },
+    { token: theo.token, ...theo.user, signedOut: true },
+  ]);
+});
+
+test("a dimmed user can be removed too", async () => {
+  mockServer({ ended: [token] });
+  const storage = fakeStorage();
+  const session = await connectedTv(storage);
+  await session.signIn("Noor", "correct horse", "Living Room");
+  await session.signIn("Theo", "battery staple", "Living Room");
+  session.switchUser();
+  await session.refresh();
+
+  await session.remove(user.id);
+
+  expect(startTvSession(storage, "appleTv").state().users).toEqual([{ token: theo.token, ...theo.user }]);
 });
