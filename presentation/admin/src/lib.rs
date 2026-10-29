@@ -75,6 +75,7 @@ const CSRF_COOKIE: &str = "csrf";
 const CSRF_HEADER: &str = "x-csrf-token";
 const SIDEBAR_ID: &str = "sidebar";
 const ACCOUNT_MENU_ID: &str = "account-menu";
+const PAGE_TITLE_ID: &str = "page-title";
 const SECTIONS: [(&str, &str); 3] = [
     (SYNC_PATH, "Sync status"),
     (users::USERS_PATH, "Users"),
@@ -316,7 +317,7 @@ async fn admin_page(
                                 command="show-modal"
                             }
                         )
-                        <h1 class="text-base font-semibold">(title)</h1>
+                        <h1 id=(PAGE_TITLE_ID) class="text-base font-semibold">(title)</h1>
                     )
                     <div class="flex flex-col gap-6 p-6">(child)</div>
                 )

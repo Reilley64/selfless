@@ -6,7 +6,7 @@ use domain::Colour;
 use domain::Symbol;
 use domain::User;
 
-const NAME_INDEX: &str = "index_users_by_name";
+pub(crate) const NAME_INDEX: &str = "index_users_by_name";
 
 #[fundle::deps]
 pub struct Dependencies {
