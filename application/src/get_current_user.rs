@@ -6,7 +6,6 @@ use domain::Session;
 use domain::User;
 use jiff::SignedDuration;
 
-const WEB_IDLE_TIMEOUT: SignedDuration = SignedDuration::from_hours(30 * 24);
 const LAST_USED_PRECISION: SignedDuration = SignedDuration::from_hours(1);
 
 #[fundle::deps]
@@ -35,7 +34,7 @@ pub async fn call(
         .map_err(Error::caused_by)?
         .filter(|x| {
             x.client_kind != ClientKind::Web
-                || now.duration_since(x.last_used_at) < WEB_IDLE_TIMEOUT
+                || now.duration_since(x.last_used_at) < Session::WEB_IDLE_TIMEOUT
         })
     else {
         return Ok(None);

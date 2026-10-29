@@ -5,7 +5,6 @@ use domain::AdminSession;
 use jiff::SignedDuration;
 use uuid::Uuid;
 
-const IDLE_TIMEOUT: SignedDuration = SignedDuration::from_hours(12);
 const LAST_USED_PRECISION: SignedDuration = SignedDuration::from_hours(1);
 
 #[fundle::deps]
@@ -32,7 +31,7 @@ pub async fn call(
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?
-        .filter(|x| now.duration_since(x.last_used_at) < IDLE_TIMEOUT)
+        .filter(|x| now.duration_since(x.last_used_at) < AdminSession::IDLE_TIMEOUT)
     else {
         return Ok(None);
     };

@@ -6,6 +6,7 @@ pub mod check_database;
 pub mod create_admin;
 pub mod create_user;
 pub mod delete_admin;
+pub mod delete_expired_sessions;
 pub mod delete_user;
 pub mod end_session;
 pub mod end_user_sessions;

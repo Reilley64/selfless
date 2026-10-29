@@ -93,6 +93,7 @@ opentelemetry_sdk = { workspace = true }
 settings = { workspace = true }
 toasty-cli = { workspace = true }
 tokio = { workspace = true }
+tokio-util = { workspace = true }
 topcoat = { workspace = true }
 tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }

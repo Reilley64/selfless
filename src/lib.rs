@@ -16,6 +16,7 @@ use std::io;
 use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::net::TcpListener;
+use tokio_util::sync::CancellationToken;
 use topcoat::router::Router;
 
 const DRAIN_PERIOD: Duration = Duration::from_secs(5);
@@ -24,6 +25,7 @@ pub struct Server {
     listener: TcpListener,
     router: Router,
     availability: Availability,
+    state: AppState,
 }
 
 pub async fn start(
@@ -62,7 +64,7 @@ pub async fn start(
     let availability = Availability::default();
     let router = api::router(
         admin::register(Router::builder()),
-        state,
+        state.clone(),
         availability.clone(),
         std::path::absolute(&settings.web.dir)?,
     );
@@ -71,6 +73,7 @@ pub async fn start(
         listener,
         router,
         availability,
+        state,
     })
 }
 
@@ -81,6 +84,8 @@ impl Server {
 
     pub async fn serve(self, shutdown: impl Future<Output = ()>) -> Result<(), AppError> {
         let availability = self.availability;
+        let stop_workers = CancellationToken::new();
+        let workers = tokio::spawn(workers::serve(self.state, stop_workers.clone()));
         availability.accept_traffic();
         tracing::info!(
             server.port = self.listener.local_addr()?.port(),
@@ -89,10 +94,12 @@ impl Server {
         topcoat::serve_until(self.listener, self.router, async {
             shutdown.await;
             tracing::info!("shutdown started, refusing traffic");
+            stop_workers.cancel();
             availability.refuse_traffic();
             tokio::time::sleep(DRAIN_PERIOD).await;
         })
         .await?;
+        workers.await?;
         Ok(())
     }
 }
