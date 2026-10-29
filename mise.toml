@@ -24,7 +24,7 @@ depends = ["dev:server", "dev:web"]
 
 [tasks."dev:server"]
 description = "Start the server"
-depends = ["services"]
+depends = ["services", "generate"]
 run = "cargo run"
 
 [tasks."dev:web"]
@@ -35,6 +35,7 @@ run = "bun run start"
 
 [tasks.check]
 description = "Check formatting, lints and crate direction"
+depends = ["generate"]
 run = [
   "cargo fmt --all --check",
   "cargo clippy --workspace --all-targets --all-features -- -D warnings",
@@ -43,7 +44,7 @@ run = [
 
 [tasks.test]
 description = "Run the server tests against the local PostgreSQL"
-depends = ["services"]
+depends = ["services", "generate"]
 run = "cargo test --workspace"
 
 [tasks."lint:openapi"]
