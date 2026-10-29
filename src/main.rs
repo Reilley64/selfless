@@ -1,6 +1,5 @@
 mod telemetry;
 
-use infrastructure::email;
 use ohno::AppError;
 use ohno::IntoAppError;
 use settings::AppSettings;

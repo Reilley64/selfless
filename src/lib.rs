@@ -5,8 +5,6 @@ use application::ports::Clock;
 use application::ports::SendEmail;
 use application::ports::persistence::DbContext;
 use infrastructure::AppState;
-use infrastructure::persistence;
-use infrastructure::telemetry;
 use ohno::AppError;
 use ohno::ErrorExt;
 use ohno::app_err;

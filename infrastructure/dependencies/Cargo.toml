@@ -7,8 +7,5 @@ publish.workspace = true
 
 [dependencies]
 application = { workspace = true }
-email = { workspace = true }
 fundle = { workspace = true }
 jiff = { workspace = true }
-persistence = { workspace = true }
-telemetry = { workspace = true }

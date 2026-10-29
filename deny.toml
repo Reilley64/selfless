@@ -8,9 +8,9 @@ deny = [
     { name = "domain", wrappers = ["application", "api"] },
     { name = "application", wrappers = ["selfless", "infrastructure", "email", "persistence", "telemetry", "api", "admin", "workers"] },
 
-    { name = "email", wrappers = ["infrastructure", "settings"] },
-    { name = "persistence", wrappers = ["infrastructure", "settings"] },
-    { name = "telemetry", wrappers = ["infrastructure", "settings"] },
+    { name = "email", wrappers = ["selfless", "settings"] },
+    { name = "persistence", wrappers = ["selfless", "settings"] },
+    { name = "telemetry", wrappers = ["selfless", "settings"] },
     { name = "settings", wrappers = ["selfless"] },
     { name = "infrastructure", wrappers = ["selfless", "api", "admin", "workers"] },
 

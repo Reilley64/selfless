@@ -5,10 +5,6 @@ use application::ports::SendEmail;
 use application::ports::persistence::DbContext;
 use jiff::Timestamp;
 
-pub use email;
-pub use persistence;
-pub use telemetry;
-
 #[fundle::bundle]
 #[derive(Clone)]
 pub struct AppState {

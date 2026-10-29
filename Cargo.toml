@@ -83,6 +83,7 @@ default-run = "selfless"
 admin = { workspace = true }
 api = { workspace = true }
 application = { workspace = true }
+email = { workspace = true }
 infrastructure = { workspace = true }
 ohno = { workspace = true, features = ["app-err"] }
 opentelemetry = { workspace = true }
@@ -90,7 +91,9 @@ opentelemetry-appender-tracing = { workspace = true }
 opentelemetry-instrumentation-process = { workspace = true }
 opentelemetry-otlp = { workspace = true }
 opentelemetry_sdk = { workspace = true }
+persistence = { workspace = true }
 settings = { workspace = true }
+telemetry = { workspace = true }
 toasty-cli = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }

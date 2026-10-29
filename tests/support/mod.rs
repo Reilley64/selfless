@@ -3,7 +3,6 @@
 use application::ports::Clock;
 use application::ports::SendEmail;
 use application::ports::persistence::DbContext;
-use infrastructure::persistence;
 use jiff::SignedDuration;
 use jiff::Timestamp;
 use jiff::Unit;

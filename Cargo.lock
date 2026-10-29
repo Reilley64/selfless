@@ -2108,11 +2108,8 @@ name = "infrastructure"
 version = "0.1.0"
 dependencies = [
  "application",
- "email",
  "fundle",
  "jiff",
- "persistence",
- "telemetry",
 ]
 
 [[package]]
@@ -3802,6 +3799,7 @@ dependencies = [
  "api",
  "application",
  "base64 0.22.1",
+ "email",
  "infrastructure",
  "jiff",
  "jsonschema",
@@ -3812,12 +3810,14 @@ dependencies = [
  "opentelemetry-otlp",
  "opentelemetry-proto",
  "opentelemetry_sdk",
+ "persistence",
  "prost",
  "reqwest",
  "serde-saphyr",
  "serde_json",
  "settings",
  "sha2 0.11.1",
+ "telemetry",
  "toasty-cli",
  "tokio",
  "tokio-postgres",
