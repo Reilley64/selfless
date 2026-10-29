@@ -98,9 +98,7 @@ impl TestServer {
     async fn start_with_otlp(database_url: Url, otlp: OtlpSettings) -> Self {
         let server = selfless::start(AppSettings {
             http: HttpSettings { port: 0 },
-            database: DatabaseSettings {
-                url: database_url.to_string(),
-            },
+            database: DatabaseSettings { url: database_url },
             web: WebSettings::default(),
             otlp,
         })
@@ -222,11 +220,11 @@ pub struct Proxy {
 
 impl Proxy {
     pub async fn start(target: &Url) -> Self {
-        let target = format!(
-            "{}:{}",
-            target.host_str().unwrap(),
-            target.port().unwrap_or(5432)
-        );
+        let location = DatabaseSettings {
+            url: target.clone(),
+        }
+        .location();
+        let target = format!("{}:{}", location.address, location.port);
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let task = tokio::spawn(async move {

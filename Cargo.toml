@@ -89,7 +89,6 @@ topcoat = { workspace = true }
 tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true }
-url = { workspace = true }
 uuid = { workspace = true }
 webhooks = { workspace = true }
 workers = { workspace = true }

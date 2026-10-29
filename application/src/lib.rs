@@ -25,7 +25,7 @@ use tracing::Span;
 use tracing::field;
 
 #[derive(Clone)]
-pub struct DbServer {
+pub struct DbLocation {
     pub database: String,
     pub address: String,
     pub port: u16,
@@ -46,11 +46,11 @@ pub struct DbContext {
 }
 
 impl DbContext {
-    pub fn new(db: toasty::Db, server: DbServer) -> Self {
+    pub fn new(db: toasty::Db, location: DbLocation) -> Self {
         Self {
             executor: InstrumentedDb {
                 db,
-                server,
+                location,
                 duration: global::meter("selfless")
                     .f64_histogram("db.client.operation.duration")
                     .with_unit("s")
@@ -68,7 +68,7 @@ impl DbContext {
 #[derive(Clone)]
 struct InstrumentedDb {
     db: toasty::Db,
-    server: DbServer,
+    location: DbLocation,
     duration: Histogram<f64>,
 }
 
@@ -104,26 +104,16 @@ impl toasty::Executor for InstrumentedDb {
             Statement::Delete(x) => ("DELETE", x.from.as_model().map(|x| x.id)),
         };
         let collection = model.map(|x| self.db.schema().table_for(x).name.clone());
-        instrument(
-            &self.server,
-            &self.duration,
-            Some(operation),
-            collection,
-            None,
-            self.db.exec_untyped(stmt),
-        )
+        self.instrument(Some(operation), collection, None, async |db| {
+            db.exec_untyped(stmt).await
+        })
         .await
     }
 
     async fn exec_raw_sql(&mut self, raw: RawSql) -> toasty::Result<ExecResponse> {
-        instrument(
-            &self.server,
-            &self.duration,
-            None,
-            None,
-            Some(raw.sql.clone()),
-            self.db.exec_raw_sql(raw),
-        )
+        self.instrument(None, None, Some(raw.sql.clone()), async |db| {
+            db.exec_raw_sql(raw).await
+        })
         .await
     }
 
@@ -136,61 +126,63 @@ impl toasty::Executor for InstrumentedDb {
     }
 }
 
-async fn instrument(
-    server: &DbServer,
-    duration: &Histogram<f64>,
-    operation: Option<&'static str>,
-    collection: Option<String>,
-    query_text: Option<String>,
-    execution: impl Future<Output = toasty::Result<ExecResponse>>,
-) -> toasty::Result<ExecResponse> {
-    let start = Instant::now();
-    let target = collection.as_deref().unwrap_or(&server.database);
-    let span = if Span::current().is_none() {
-        Span::none()
-    } else {
-        tracing::info_span!(
-            "db_operation",
-            otel.name = %operation.map_or_else(|| target.to_owned(), |x| format!("{x} {target}")),
-            otel.kind = "client",
-            otel.status_code = field::Empty,
-            db.system.name = "postgresql",
-            db.namespace = server.database,
-            db.operation.name = operation,
-            db.collection.name = collection,
-            db.query.text = query_text,
-            server.address = server.address,
-            server.port = server.port,
-            error.type = field::Empty,
-        )
-    };
-    let result = execution.instrument(span.clone()).await;
-    let mut attributes = vec![
-        KeyValue::new("db.system.name", "postgresql"),
-        KeyValue::new("db.namespace", server.database.clone()),
-        KeyValue::new("server.address", server.address.clone()),
-        KeyValue::new("server.port", i64::from(server.port)),
-    ];
-    if let Some(operation) = operation {
-        attributes.push(KeyValue::new("db.operation.name", operation));
-    }
-    if let Some(collection) = collection {
-        attributes.push(KeyValue::new("db.collection.name", collection));
-    }
-    if let Err(error) = &result {
-        let error_type = if error.is_connection_lost() {
-            "connection_lost"
-        } else if error.is_connection_pool() {
-            "connection_pool"
-        } else if error.is_transaction_timeout() {
-            "timeout"
+impl InstrumentedDb {
+    async fn instrument(
+        &mut self,
+        operation: Option<&'static str>,
+        collection: Option<String>,
+        query_text: Option<String>,
+        execute: impl AsyncFnOnce(&mut toasty::Db) -> toasty::Result<ExecResponse>,
+    ) -> toasty::Result<ExecResponse> {
+        let start = Instant::now();
+        let target = collection.as_deref().unwrap_or(&self.location.database);
+        let span = if Span::current().is_none() {
+            Span::none()
         } else {
-            "_OTHER"
+            tracing::info_span!(
+                "db_operation",
+                otel.name = %operation.map_or_else(|| target.to_owned(), |x| format!("{x} {target}")),
+                otel.kind = "client",
+                otel.status_code = field::Empty,
+                db.system.name = "postgresql",
+                db.namespace = self.location.database,
+                db.operation.name = operation,
+                db.collection.name = collection,
+                db.query.text = query_text,
+                server.address = self.location.address,
+                server.port = self.location.port,
+                error.type = field::Empty,
+            )
         };
-        span.record("otel.status_code", "ERROR");
-        span.record("error.type", error_type);
-        attributes.push(KeyValue::new("error.type", error_type));
+        let result = execute(&mut self.db).instrument(span.clone()).await;
+        let mut attributes = vec![
+            KeyValue::new("db.system.name", "postgresql"),
+            KeyValue::new("db.namespace", self.location.database.clone()),
+            KeyValue::new("server.address", self.location.address.clone()),
+            KeyValue::new("server.port", i64::from(self.location.port)),
+        ];
+        if let Some(operation) = operation {
+            attributes.push(KeyValue::new("db.operation.name", operation));
+        }
+        if let Some(collection) = collection {
+            attributes.push(KeyValue::new("db.collection.name", collection));
+        }
+        if let Err(error) = &result {
+            let error_type = if error.is_connection_lost() {
+                "connection_lost"
+            } else if error.is_connection_pool() {
+                "connection_pool"
+            } else if error.is_transaction_timeout() {
+                "timeout"
+            } else {
+                "_OTHER"
+            };
+            span.record("otel.status_code", "ERROR");
+            span.record("error.type", error_type);
+            attributes.push(KeyValue::new("error.type", error_type));
+        }
+        self.duration
+            .record(start.elapsed().as_secs_f64(), &attributes);
+        result
     }
-    duration.record(start.elapsed().as_secs_f64(), &attributes);
-    result
 }

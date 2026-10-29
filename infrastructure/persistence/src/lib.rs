@@ -1,9 +1,21 @@
+use application::DbLocation;
 use serde::Deserialize;
 use std::time::Duration;
+use url::Url;
 
 #[derive(Clone, Deserialize)]
 pub struct DatabaseSettings {
-    pub url: String,
+    pub url: Url,
+}
+
+impl DatabaseSettings {
+    pub fn location(&self) -> DbLocation {
+        DbLocation {
+            database: self.url.path().trim_start_matches('/').to_owned(),
+            address: self.url.host_str().unwrap_or_default().to_owned(),
+            port: self.url.port().unwrap_or(5432),
+        }
+    }
 }
 
 #[ohno::error]
@@ -17,7 +29,7 @@ pub struct ConnectError;
 pub struct MigrateError;
 
 pub async fn connect(settings: &DatabaseSettings) -> Result<toasty::Db, ConnectError> {
-    let driver = toasty_driver_postgresql::PostgreSQL::new(&settings.url)?;
+    let driver = toasty_driver_postgresql::PostgreSQL::new(settings.url.as_str())?;
     Ok(toasty::Db::builder()
         .pool_create_timeout(Some(Duration::from_secs(1)))
         .pool_wait_timeout(Some(Duration::from_secs(1)))
