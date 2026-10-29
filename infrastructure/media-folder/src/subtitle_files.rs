@@ -54,16 +54,31 @@ fn subtitle_file(folder: &Path, stem: &str, name: &str) -> Option<SubtitleFile> 
     };
     for part in parts {
         match part.to_ascii_lowercase().as_str() {
-            "hi" => subtitle_file.hearing_impaired = true,
+            "hi" | "sdh" => subtitle_file.hearing_impaired = true,
             "forced" => subtitle_file.forced = true,
-            code if subtitle_file.language.is_none()
-                && (2..=3).contains(&code.len())
-                && code.bytes().all(|x| x.is_ascii_lowercase()) =>
-            {
-                subtitle_file.language = Some(code.to_owned());
+            tag if subtitle_file.language.is_none() => {
+                subtitle_file.language = Some(language(tag)?);
             }
             _ => return None,
         }
     }
     Some(subtitle_file)
+}
+
+fn language(tag: &str) -> Option<String> {
+    let (code, region) = match tag.split_once('-') {
+        Some((code, region)) => (code, Some(region)),
+        None => (tag, None),
+    };
+    let letters = |x: &str| x.bytes().all(|x| x.is_ascii_lowercase());
+    if !(2..=3).contains(&code.len()) || !letters(code) {
+        return None;
+    }
+    match region {
+        None => Some(code.to_owned()),
+        Some(region) if region.len() == 2 && letters(region) => {
+            Some(format!("{code}-{}", region.to_ascii_uppercase()))
+        }
+        Some(_) => None,
+    }
 }

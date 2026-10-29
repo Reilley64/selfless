@@ -328,6 +328,9 @@ async fn subtitle_files_count_when_their_name_is_the_video_name_then_a_language_
         beside(&video, ".en.hi.srt"),
         beside(&video, ".hi.srt"),
         beside(&video, ".fr.forced.ass"),
+        beside(&video, ".pt-BR.srt"),
+        beside(&video, ".en.sdh.srt"),
+        beside(&video, ".sdh.srt"),
         beside(&video, ".nfo"),
         orphan,
     ] {
@@ -339,9 +342,12 @@ async fn subtitle_files_count_when_their_name_is_the_video_name_then_a_language_
         fixture.movie_file().await.subtitle_files,
         [
             subtitle_file(beside(&video, ".en.hi.srt"), Some("en"), true, false),
+            subtitle_file(beside(&video, ".en.sdh.srt"), Some("en"), true, false),
             subtitle_file(beside(&video, ".en.srt"), Some("en"), false, false),
             subtitle_file(beside(&video, ".fr.forced.ass"), Some("fr"), false, true),
             subtitle_file(beside(&video, ".hi.srt"), None, true, false),
+            subtitle_file(beside(&video, ".pt-BR.srt"), Some("pt-BR"), false, false),
+            subtitle_file(beside(&video, ".sdh.srt"), None, true, false),
         ]
     );
     fixture.stop().await;
