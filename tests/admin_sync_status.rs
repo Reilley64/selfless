@@ -485,7 +485,14 @@ async fn a_failed_delivery_opens_a_dialog_with_each_attempt_and_the_body_as_form
             &body.lines().map(str::trim).collect::<String>(),
         )
         .await;
-    eventually(async || (fixture.radarr.movie_requests(ARRIVAL).await == 1).then_some(())).await;
+    let retry_at = attempted_at[0] + SignedDuration::from_mins(1);
+    eventually(async || {
+        let next = application::next_inbox_attempt::call(&fixture.server.state)
+            .await
+            .unwrap();
+        (next == Some(retry_at)).then_some(())
+    })
+    .await;
     for delay in [1, 5, 15, 30] {
         if delay == 30 {
             fixture
@@ -498,9 +505,11 @@ async fn a_failed_delivery_opens_a_dialog_with_each_attempt_and_the_body_as_form
             .clock
             .advance(SignedDuration::from_mins(delay));
         attempted_at.push(fixture.server.clock.now());
-        application::process_inbox_row::call(&fixture.server.state)
-            .await
-            .unwrap();
+        assert!(
+            application::process_inbox_row::call(&fixture.server.state)
+                .await
+                .unwrap()
+        );
     }
     let attempted_at: Vec<String> = attempted_at
         .iter()
