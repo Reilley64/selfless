@@ -1,5 +1,9 @@
 pub mod check_database;
 
+pub mod attributes {
+    include!(concat!(env!("OUT_DIR"), "/attributes.rs"));
+}
+
 use async_trait::async_trait;
 use opentelemetry::KeyValue;
 use opentelemetry::global;

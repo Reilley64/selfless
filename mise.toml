@@ -31,6 +31,14 @@ run = "cargo test --workspace"
 description = "Lint the OpenAPI file"
 run = "vacuum lint --details openapi.yaml"
 
+[tasks."lint:telemetry"]
+description = "Check the Weaver registry"
+run = "weaver registry check --future --registry telemetry/registry"
+
+[tasks."generate:telemetry"]
+description = "Generate the TypeScript telemetry constants from the Weaver registry"
+run = "weaver registry generate --quiet --registry telemetry/registry --templates telemetry/templates ts presentation/ui/src/telemetry"
+
 [tasks."lint:workflows"]
 description = "Lint the GitHub workflows"
 run = "actionlint"
