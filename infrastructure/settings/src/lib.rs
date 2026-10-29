@@ -14,6 +14,8 @@ pub struct AppSettings {
     pub database: DatabaseSettings,
     #[serde(default)]
     pub web: WebSettings,
+    #[serde(default)]
+    pub admin: AdminSettings,
     #[serde(flatten)]
     pub otlp: OtlpSettings,
 }
@@ -51,4 +53,10 @@ impl Default for WebSettings {
             dir: PathBuf::from("presentation/web/dist"),
         }
     }
+}
+
+#[derive(Clone, Default, Deserialize)]
+pub struct AdminSettings {
+    pub username: Option<String>,
+    pub password: Option<String>,
 }

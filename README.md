@@ -10,6 +10,7 @@ Install [mise](https://mise.jdx.dev) and Docker, then run `mise install` and `bu
 
 - `mise run services` starts PostgreSQL and grafana/otel-lgtm from `compose.yaml`. Grafana runs at http://localhost:3000.
 - `cargo run` starts the server. It reads `DATABASE__URL` (set in `mise.toml`) and `HTTP__PORT` (default 8080). It serves the web export from `WEB__DIR` (default `presentation/web/dist`) at `/`. It sends traces, metrics and logs over OTLP gRPC to `localhost:4317`. The standard `OTEL_*` variables change this, and `mise.toml` sets `OTEL_SERVICE_NAME`.
+- The admin app is at `/admin`. When the database has no admin, the server creates one from `ADMIN__USERNAME` and `ADMIN__PASSWORD` at startup, and exits with an error if either is missing. Once an admin exists, it ignores them. `mise.toml` sets both to `admin` for development. An admin session ends after 12 hours without use.
 - The server relays app telemetry. It takes OTLP/HTTP protobuf at `/api/telemetry/traces/v1`, `/api/telemetry/metrics/v1` and `/api/telemetry/logs/v1` and forwards it over gRPC to the same OTLP endpoint its own exporters use. It checks no token yet.
 - The web app reports as `selfless-web` and sends its traces, metrics and logs to the relay. Each API call gets a client span and a `traceparent` header, so a trace in Grafana starts in the web app and continues on the server.
 - `mise run dev` starts PostgreSQL, the server and the web app's dev server on port 8081. The dev server sends `/actuator` and `/api` requests to the server.

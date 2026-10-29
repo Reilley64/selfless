@@ -19,9 +19,9 @@ const PARENT_SPAN_ID: &str = "00f067aa0ba902b7";
 #[tokio::test]
 async fn readiness_with_a_traceparent_exports_an_http_span_with_a_child_database_span() {
     let exporter = InMemorySpanExporter::default();
-    let _tracing = trace_into(&exporter);
     let database = TestDatabase::create().await;
     let server = TestServer::start(database.url()).await;
+    let _tracing = trace_into(&exporter);
 
     server
         .get_with_traceparent(
@@ -60,9 +60,9 @@ async fn readiness_with_a_traceparent_exports_an_http_span_with_a_child_database
 #[tokio::test]
 async fn liveness_probe_exports_no_span() {
     let exporter = InMemorySpanExporter::default();
-    let _tracing = trace_into(&exporter);
     let database = TestDatabase::create().await;
     let server = TestServer::start(database.url()).await;
+    let _tracing = trace_into(&exporter);
 
     server.get("/actuator/health/liveness/v1").await;
 
@@ -74,9 +74,9 @@ async fn liveness_probe_exports_no_span() {
 #[tokio::test]
 async fn readiness_probe_without_a_traceparent_exports_no_span() {
     let exporter = InMemorySpanExporter::default();
-    let _tracing = trace_into(&exporter);
     let database = TestDatabase::create().await;
     let server = TestServer::start(database.url()).await;
+    let _tracing = trace_into(&exporter);
 
     server.get("/actuator/health/readiness/v1").await;
 

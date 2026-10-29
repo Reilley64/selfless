@@ -1,10 +1,14 @@
 use api::Availability;
 use application::BuildInfo;
 use application::DbContext;
+use application::bootstrap_first_admin::MissingFirstAdmin;
+use application::ports::Clock;
 use infrastructure::AppState;
 use infrastructure::persistence;
 use infrastructure::telemetry;
 use ohno::AppError;
+use ohno::ErrorExt;
+use ohno::app_err;
 use settings::AppSettings;
 use std::future::Future;
 use std::io;
@@ -21,7 +25,7 @@ pub struct Server {
     availability: Availability,
 }
 
-pub async fn start(settings: AppSettings) -> Result<Server, AppError> {
+pub async fn start(settings: AppSettings, clock: Clock) -> Result<Server, AppError> {
     let db = persistence::connect(&settings.database).await?;
     persistence::migrate(&db).await?;
     let state = AppState::builder()
@@ -32,9 +36,23 @@ pub async fn start(settings: AppSettings) -> Result<Server, AppError> {
             git_commit_id: env!("GIT_COMMIT"),
             git_commit_time: env!("GIT_COMMIT_TIME"),
         })
+        .clock(|_| clock.clone())
         .db_context(|_| DbContext::new(db.clone(), settings.database.location()))
         .export_telemetry_try(|_| telemetry::export_telemetry(&settings.otlp))?
         .build();
+    application::bootstrap_first_admin::call(
+        &state,
+        settings.admin.username,
+        settings.admin.password,
+    )
+    .await
+    .map_err(|error| {
+        if error.find_source::<MissingFirstAdmin>().is_some() {
+            app_err!("no admin exists, so set ADMIN__USERNAME and ADMIN__PASSWORD to create the first one")
+        } else {
+            AppError::new(error)
+        }
+    })?;
     let availability = Availability::default();
     let router = api::router(
         admin::register(Router::builder()),

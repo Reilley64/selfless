@@ -8,6 +8,8 @@ yq = "4.54.1"
 "github:open-telemetry/weaver" = "0.28.0"
 
 [env]
+ADMIN__USERNAME = "admin"
+ADMIN__PASSWORD = "admin"
 DATABASE__URL = "postgres://selfless:selfless@localhost:5432/selfless"
 OTEL_SERVICE_NAME = "selfless"
 

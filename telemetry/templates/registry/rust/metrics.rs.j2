@@ -1,0 +1,3 @@
+{% for metric in ctx.metrics %}
+pub const {{ metric.metric_name | screaming_snake_case }}: &str = "{{ metric.metric_name }}";
+{% endfor %}
