@@ -92,6 +92,7 @@ pub struct User {
     pub password_hash: String,
     pub colour: Colour,
     pub symbol: Symbol,
+    pub created_at: Timestamp,
 }
 
 #[derive(Debug, toasty::Model)]
@@ -113,6 +114,11 @@ pub struct Session {
 
 impl Session {
     pub const WEB_IDLE_TIMEOUT: SignedDuration = SignedDuration::from_hours(30 * 24);
+
+    pub fn expired(&self, now: Timestamp) -> bool {
+        self.client_kind == ClientKind::Web
+            && now.duration_since(self.last_used_at) >= Self::WEB_IDLE_TIMEOUT
+    }
 }
 
 #[derive(Debug, toasty::Model)]
@@ -131,6 +137,10 @@ pub struct Invite {
 
 impl Invite {
     pub const VALID_FOR: SignedDuration = SignedDuration::from_hours(7 * 24);
+
+    pub fn expired(&self, now: Timestamp) -> bool {
+        now >= self.expires_at
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, toasty::Embed)]

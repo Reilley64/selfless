@@ -1,7 +1,6 @@
 use crate::DbContext;
 use crate::ports::Clock;
 use crate::tokens;
-use domain::ClientKind;
 use domain::LAST_USED_PRECISION;
 use domain::Session;
 use domain::User;
@@ -30,10 +29,7 @@ pub async fn call(
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?
-        .filter(|x| {
-            x.client_kind != ClientKind::Web
-                || now.duration_since(x.last_used_at) < Session::WEB_IDLE_TIMEOUT
-        })
+        .filter(|x| !x.expired(now))
     else {
         return Ok(None);
     };

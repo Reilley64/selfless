@@ -18,6 +18,7 @@ dependencies = [
  "jiff",
  "ohno",
  "serde",
+ "serde_json",
  "topcoat",
  "tracing",
  "tracing-opentelemetry",
