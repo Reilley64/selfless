@@ -4,6 +4,7 @@ bun = "1.4.4"
 cargo-deny = "0.20.2"
 node = "26.13.0"
 vacuum = "0.35.7"
+yq = "4.54.1"
 "github:open-telemetry/weaver" = "0.28.0"
 
 [env]
@@ -46,6 +47,22 @@ run = [
 description = "Run the server tests against the local PostgreSQL"
 depends = ["services", "generate"]
 run = "cargo test --workspace"
+
+[tasks."build:image"]
+description = "Build the container image for linux/amd64 as selfless:local"
+run = '''
+docker build --platform linux/amd64 --tag selfless:local \
+  --build-arg GIT_BRANCH="$(git rev-parse --abbrev-ref HEAD)" \
+  --build-arg GIT_COMMIT="$(git rev-parse HEAD)" \
+  --build-arg GIT_COMMIT_TIME="$(TZ=UTC git show --no-patch --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ HEAD)" \
+  --build-arg VERSION="$(yq --input-format toml '.package.version' Cargo.toml)" \
+  .
+'''
+
+[tasks."test:image"]
+description = "Start selfless:local beside PostgreSQL and wait for readiness"
+depends = ["build:image"]
+run = "scripts/smoke-test-image selfless:local"
 
 [tasks."lint:openapi"]
 description = "Lint the OpenAPI file"

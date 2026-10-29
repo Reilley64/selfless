@@ -19,6 +19,8 @@ Install [mise](https://mise.jdx.dev) and Docker, then run `mise install` and `bu
 - `mise run test` runs the server tests against that PostgreSQL. Each test creates its own database.
 - `mise run check` checks formatting, Clippy lints and crate direction.
 - `mise run lint:openapi` lints `openapi.yaml`.
+- `mise run build:image` builds the container image for linux/amd64 as `selfless:local`, with the git values and the version as build arguments. `mise run test:image` also starts it beside PostgreSQL and waits for readiness to return `UP`. CI runs the same check on pull requests. On an arm64 Mac, Docker emulates amd64, and the first build takes about 12 minutes.
+- The image runs as user 10001. It serves the web export from `/app/web`, and has jellyfin-ffmpeg in `/usr/lib/jellyfin-ffmpeg`. Its license is in `/usr/share/doc/jellyfin-ffmpeg8/copyright`, and `SOURCE` beside it links to the source. The image has no `HEALTHCHECK`. Use the actuator endpoints instead.
 - `cargo run --bin toasty -- migration generate` writes a migration for changed models to `infrastructure/persistence/toasty`. The server applies pending migrations when it starts.
 
 ## License
