@@ -294,7 +294,7 @@ test("a 401 during use returns to the picker with that user dimmed", async () =>
   expect(session.state().currentUserId).toBeUndefined();
   expect(startTvSession(storage, "appleTv").state().users).toEqual([
     { token, ...user },
-    { token: theo.token, ...theo.user, signedOut: true },
+    { token: theo.token, ...theo.user, dimmed: true },
   ]);
 });
 
@@ -317,7 +317,7 @@ test("refreshing the picker updates each user from the server and dims those who
   ]);
   expect(startTvSession(storage, "appleTv").state().users).toEqual([
     { token, ...renamed },
-    { token: theo.token, ...theo.user, signedOut: true },
+    { token: theo.token, ...theo.user, dimmed: true },
   ]);
 });
 

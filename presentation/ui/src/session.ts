@@ -21,24 +21,24 @@ const usersKey = "selfless.session.users";
 
 export interface PickerUser extends User {
   token: string;
-  signedOut?: boolean;
+  dimmed?: boolean;
 }
 
-function changes() {
-  const listeners = new Set<() => void>();
+function listeners() {
+  const subscribed = new Set<() => void>();
   return {
-    changed: () => listeners.forEach((listener) => listener()),
+    changed: () => subscribed.forEach((listener) => listener()),
     subscribe(listener: () => void) {
-      listeners.add(listener);
+      subscribed.add(listener);
       return () => {
-        listeners.delete(listener);
+        subscribed.delete(listener);
       };
     },
   };
 }
 
 export function startWebSession(storage: SessionStorage) {
-  const { changed, subscribe } = changes();
+  const { changed, subscribe } = listeners();
   const session = {
     serverUrl: () => "",
     token: () => storage.getItem(tokenKey) ?? undefined,
@@ -73,7 +73,7 @@ export function startWebSession(storage: SessionStorage) {
 }
 
 export function startTvSession(storage: SessionStorage, clientKind: Exclude<ClientKind, typeof ClientKind.web>) {
-  const { changed, subscribe } = changes();
+  const { changed, subscribe } = listeners();
   let state = {
     serverUrl: storage.getItem(serverUrlKey) ?? undefined,
     users: JSON.parse(storage.getItem(usersKey) ?? "[]") as PickerUser[],
@@ -95,7 +95,7 @@ export function startTvSession(storage: SessionStorage, clientKind: Exclude<Clie
     ended(token: string) {
       const owner = state.users.find((user) => user.token === token);
       if (owner) {
-        const users = state.users.map((user) => (user === owner ? { ...user, signedOut: true } : user));
+        const users = state.users.map((user) => (user === owner ? { ...user, dimmed: true } : user));
         updateUsers(users, owner.id === state.currentUserId ? { currentUserId: undefined } : {});
       }
     },
@@ -138,7 +138,7 @@ export function startTvSession(storage: SessionStorage, clientKind: Exclude<Clie
     async refresh() {
       await Promise.all(
         state.users
-          .filter(({ signedOut }) => !signedOut)
+          .filter(({ dimmed }) => !dimmed)
           .map(async ({ id, token }) => {
             const response = await getMe({ headers: authorizationHeaders(token) });
             if (response.status === 200) {

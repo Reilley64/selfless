@@ -13,18 +13,18 @@ session.subscribe(() => queryClient.clear());
 
 function Screen() {
   const { serverUrl, users, currentUserId } = useSyncExternalStore(session.subscribe, session.state);
-  const [signingIn, setSigningIn] = useState<string>();
+  const [signInScreen, setSignInScreen] = useState<{ open: false } | { open: true; name: string }>({ open: false });
   if (!serverUrl) {
     return <ServerAddress />;
   }
   if (users.length === 0) {
     return <SignIn onChangeServer={() => session.forgetServer()} />;
   }
-  if (signingIn !== undefined) {
-    return <SignIn name={signingIn} onDone={() => setSigningIn(undefined)} />;
+  if (signInScreen.open) {
+    return <SignIn name={signInScreen.name} onDone={() => setSignInScreen({ open: false })} />;
   }
   if (!currentUserId) {
-    return <UserPicker onSignIn={setSigningIn} />;
+    return <UserPicker onSignIn={(name) => setSignInScreen({ open: true, name })} />;
   }
   return <Slot />;
 }
