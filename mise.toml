@@ -13,6 +13,25 @@ DATABASE__URL = "postgres://selfless:selfless@localhost:5432/selfless"
 description = "Start PostgreSQL for local development"
 run = "docker compose up --detach --wait"
 
+[tasks.generate]
+description = "Generate the API client from openapi.yaml"
+run = "bun run generate"
+
+[tasks.dev]
+description = "Start the server and the web app against the local services"
+depends = ["dev:server", "dev:web"]
+
+[tasks."dev:server"]
+description = "Start the server"
+depends = ["services"]
+run = "cargo run"
+
+[tasks."dev:web"]
+description = "Start the web app's dev server, which proxies API calls to the server"
+depends = ["generate"]
+dir = "presentation/web"
+run = "bun run start"
+
 [tasks.check]
 description = "Check formatting, lints and crate direction"
 run = [
