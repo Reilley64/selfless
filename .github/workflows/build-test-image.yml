@@ -1,0 +1,30 @@
+name: "Build and test: Container image"
+
+on:
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-test-image-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    name: "Build and test: Container image"
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: "Source: Check out the repository"
+        uses: actions/checkout@v7
+
+      - name: "Build and test: Container image"
+        uses: ./.github/actions/build-test-image
+        with:
+          tag: selfless:test

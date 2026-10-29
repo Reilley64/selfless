@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+image=$1
+name=selfless-smoke-$$
+
+cleanup() {
+  docker rm --force "$name" "$name-postgres" >/dev/null 2>&1 || true
+  docker network rm "$name" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
+docker network create "$name" >/dev/null
+docker run --detach --name "$name-postgres" --network "$name" \
+  --env POSTGRES_USER=selfless \
+  --env POSTGRES_PASSWORD=selfless \
+  --env POSTGRES_DB=selfless \
+  postgres:18.6 >/dev/null
+for _ in $(seq 30); do
+  docker exec "$name-postgres" pg_isready --quiet --host 127.0.0.1 --username selfless && break
+  sleep 1
+done
+
+docker run --detach --name "$name" --network "$name" --publish 127.0.0.1::8080 \
+  --env DATABASE__URL="postgres://selfless:selfless@$name-postgres:5432/selfless" \
+  "$image" >/dev/null
+address=$(docker port "$name" 8080/tcp)
+
+for _ in $(seq 60); do
+  if readiness=$(curl --fail --silent "http://$address/actuator/health/readiness/v1"); then
+    echo "readiness: $readiness"
+    echo "info: $(curl --fail --silent --show-error "http://$address/actuator/info/v1")"
+    exit 0
+  fi
+  [ "$(docker inspect --format '{{.State.Running}}' "$name")" = true ] || break
+  sleep 1
+done
+
+echo "readiness did not return UP" >&2
+docker logs "$name" >&2
+exit 1

@@ -1,0 +1,11 @@
+.DS_Store
+.git
+.github
+docs
+target
+**/node_modules
+presentation/api-client/src/generated
+presentation/ui/src/telemetry/attributes.ts
+presentation/ui/theme
+presentation/web/.expo
+presentation/web/dist
