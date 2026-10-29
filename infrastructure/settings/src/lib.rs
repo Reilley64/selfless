@@ -3,9 +3,12 @@ use config::ConfigError;
 use config::Environment;
 use serde::Deserialize;
 use std::path::PathBuf;
+use std::time::Duration;
 
 pub use email::SmtpSettings;
 pub use persistence::DatabaseSettings;
+pub use radarr::RadarrSettings;
+pub use sonarr::SonarrSettings;
 pub use telemetry::OtlpSettings;
 
 #[derive(Clone, Deserialize)]
@@ -23,6 +26,12 @@ pub struct AppSettings {
     pub otlp: OtlpSettings,
     #[serde(default)]
     pub smtp: SmtpSettings,
+    #[serde(default)]
+    pub radarr: RadarrSettings,
+    #[serde(default)]
+    pub sonarr: SonarrSettings,
+    #[serde(default)]
+    pub library_sync: LibrarySyncSettings,
 }
 
 impl AppSettings {
@@ -69,4 +78,19 @@ pub struct AssetSettings {
 pub struct AdminSettings {
     pub username: Option<String>,
     pub password: Option<String>,
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(default)]
+pub struct LibrarySyncSettings {
+    #[serde(with = "jiff::fmt::serde::unsigned_duration::friendly::compact::required")]
+    pub reconcile_interval: Duration,
+}
+
+impl Default for LibrarySyncSettings {
+    fn default() -> Self {
+        Self {
+            reconcile_interval: Duration::from_secs(3600),
+        }
+    }
 }

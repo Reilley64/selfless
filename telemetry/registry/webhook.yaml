@@ -1,0 +1,82 @@
+groups:
+  - id: registry.selfless.webhook
+    type: attribute_group
+    display_name: Webhook attributes
+    brief: Attributes of webhook deliveries from Radarr and Sonarr.
+    attributes:
+      - id: selfless.webhook.source
+        type:
+          members:
+            - id: radarr
+              value: radarr
+              brief: Radarr sent the delivery.
+              stability: development
+            - id: sonarr
+              value: sonarr
+              brief: Sonarr sent the delivery.
+              stability: development
+        stability: development
+        brief: The app that sent a webhook delivery.
+      - id: selfless.webhook.event_type
+        type: string
+        stability: development
+        brief: The delivery's eventType, as Radarr or Sonarr sent it.
+        examples: ["Download", "Test"]
+      - id: selfless.webhook.outcome
+        type:
+          members:
+            - id: stored
+              value: stored
+              brief: The password matched and the delivery was stored as an inbox row.
+              stability: development
+            - id: rejected
+              value: rejected
+              brief: The password was wrong or missing.
+              stability: development
+            - id: processed
+              value: processed
+              brief: The worker re-synced what the delivery names.
+              stability: development
+            - id: ignored
+              value: ignored
+              brief: Library sync does not use the event.
+              stability: development
+            - id: failed
+              value: failed
+              brief: The worker could not process the delivery.
+              stability: development
+        stability: development
+        brief: What happened to a webhook delivery.
+      - id: selfless.webhook.deleted_deliveries
+        type: int
+        stability: development
+        brief: How many processed, ignored and resolved deliveries one cleanup deleted.
+        examples: [12]
+  - id: metric.selfless.webhook.deliveries
+    type: metric
+    metric_name: selfless.webhook.deliveries
+    brief: Webhook deliveries from Radarr and Sonarr, counted when stored or rejected and again when processed, ignored or failed.
+    instrument: counter
+    unit: "{delivery}"
+    stability: development
+    attributes:
+      - ref: selfless.webhook.source
+        requirement_level: required
+      - ref: selfless.webhook.outcome
+        requirement_level: required
+      - ref: selfless.webhook.event_type
+        requirement_level:
+          conditionally_required: When the delivery was accepted and its eventType could be read.
+  - id: span.selfless.webhook.process
+    type: span
+    span_kind: consumer
+    brief: The inbox worker processing one webhook delivery, linked to the webhook request's span.
+    stability: development
+    attributes:
+      - ref: selfless.webhook.source
+        requirement_level: required
+      - ref: selfless.webhook.outcome
+        requirement_level: required
+      - ref: selfless.webhook.event_type
+        requirement_level:
+          conditionally_required: When the delivery's eventType could be read.

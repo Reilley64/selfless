@@ -78,11 +78,13 @@ async fn a_failed_admin_sign_in_logs_a_warning_without_the_name() {
     let logs = exporter.get_emitted_logs().unwrap();
     let warnings = logs
         .iter()
-        .filter(|x| x.record.severity_number() == Some(Severity::Warn))
+        .filter(|x| {
+            x.record.severity_number() == Some(Severity::Warn)
+                && x.record.body() == Some(&AnyValue::from("admin sign-in failed"))
+        })
         .collect::<Vec<_>>();
     assert_eq!(warnings.len(), 1);
     let record = &warnings[0].record;
-    assert_eq!(record.body(), Some(&AnyValue::from("admin sign-in failed")));
     let attributes = format!("{:?}", record.attributes_iter().collect::<Vec<_>>());
     assert!(!attributes.contains("Noor"), "{attributes}");
     drop(server);

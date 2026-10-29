@@ -48,7 +48,7 @@ WORKDIR /app
 COPY --from=build /app/target/release/selfless ./selfless
 COPY --from=build /app/target/release/assets ./assets
 COPY --from=web /app/presentation/web/dist ./web
-ENV WEB__DIR=/app/web OTEL_SERVICE_NAME=selfless
+ENV WEB__DIR=/app/web OTEL_SERVICE_NAME=selfless PATH=/usr/lib/jellyfin-ffmpeg:$PATH
 USER 10001:10001
 EXPOSE 8080
 ARG GIT_COMMIT VERSION

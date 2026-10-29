@@ -5,10 +5,12 @@ use reqwest::StatusCode;
 use settings::AdminSettings;
 use sha2::Digest;
 use sha2::Sha256;
+use std::time::Duration;
 use support::ADMIN_NAME;
 use support::ADMIN_PASSWORD;
 use support::FakeClock;
 use support::FakeMailer;
+use support::FakeProber;
 use support::TestDatabase;
 use support::TestServer;
 use support::settings;
@@ -262,6 +264,7 @@ async fn the_server_refuses_to_start_without_a_first_admin() {
             settings,
             FakeClock::new().port(),
             FakeMailer::default().send_email(),
+            FakeProber::new().port(),
         )
         .await
         .err()
@@ -313,8 +316,12 @@ async fn an_unknown_name_takes_as_long_as_a_wrong_password() {
         start.elapsed()
     };
 
-    let wrong_password = sign_in_time(ADMIN_NAME).await;
-    let unknown_name = sign_in_time("Noor").await;
+    let mut wrong_password = Duration::MAX;
+    let mut unknown_name = Duration::MAX;
+    for _ in 0..3 {
+        wrong_password = wrong_password.min(sign_in_time(ADMIN_NAME).await);
+        unknown_name = unknown_name.min(sign_in_time("Noor").await);
+    }
 
     assert!(
         unknown_name * 2 > wrong_password,

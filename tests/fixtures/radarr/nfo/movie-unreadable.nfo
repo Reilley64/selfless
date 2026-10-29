@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<movie>
+  <title>Arrival</title>
+  <originaltitle>Arrival</originaltitle>
+  <sorttitle>arrival</sorttitle>
+  <ratings>
+    <rating name="imdb" max="10" default="true">
+      <value>7.9</value>
+      <votes>812345</votes>
+    </rating>
+    <rating name="themoviedb" max="10">
+      <value>7.6</value>
+      <votes>18123</votes>
+    </rating>
+    <rating name="tomatometerallcritics" max="100">
+      <value>94</value>
+    </rating>
+  </ratings>
+  <rating>7.6</rating>
+  <criticrating>94</criticrating>
+  <userrating />
+  <top250 />
+  <outline />
+  <plot>When twelve mysterious spacecraft appear around the world, linguistics professor Louise Banks is tasked with interpreting the language of the apparent alien visitors.</plot>
+  <tagline />
+  <runtime>116</runtime>
+  <mpaa>PG-13

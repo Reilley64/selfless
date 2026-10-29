@@ -5,8 +5,13 @@ members = [
     "domain",
     "infrastructure/dependencies",
     "infrastructure/email",
+    "infrastructure/ffmpeg",
+    "infrastructure/media-folder",
     "infrastructure/persistence",
+    "infrastructure/radarr",
+    "infrastructure/servarr",
     "infrastructure/settings",
+    "infrastructure/sonarr",
     "infrastructure/telemetry",
     "presentation/admin",
     "presentation/api",
@@ -26,6 +31,7 @@ base64 = "0.22.1"
 bytes = "1.12.1"
 config = { version = "0.15.27", default-features = false }
 fundle = "0.4.1"
+futures-util = "0.3.34"
 getrandom = "0.4.3"
 http = "1.5.0"
 jiff = "0.2.38"
@@ -39,11 +45,13 @@ opentelemetry-otlp = { version = "0.33.1", default-features = false, features = 
 opentelemetry-proto = { version = "0.33.1", default-features = false, features = ["gen-tonic", "logs", "metrics", "trace"] }
 opentelemetry_sdk = "0.33.1"
 prost = "0.14.4"
+quick-xml = "0.42.0"
 reqwest = { version = "0.13.5", default-features = false }
 serde = { version = "1.0.229", features = ["derive"] }
 serde-saphyr = "2.0.0"
 serde_json = "1.0.154"
 sha2 = "0.11.1"
+tempfile = "3.27.0"
 toasty = { version = "0.11.0", default-features = false, features = ["migration"] }
 toasty-cli = "0.11.0"
 toasty-core = "0.11.0"
@@ -58,13 +66,19 @@ tracing-opentelemetry = "0.34.0"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["env-filter", "fmt", "registry", "std"] }
 url = "2.5.8"
 uuid = { version = "1.29.0", features = ["v4"] }
+wiremock = "0.6.5"
 
 application = { path = "application" }
 domain = { path = "domain" }
 email = { path = "infrastructure/email" }
 infrastructure = { path = "infrastructure/dependencies" }
+ffmpeg = { path = "infrastructure/ffmpeg" }
+media-folder = { path = "infrastructure/media-folder" }
 persistence = { path = "infrastructure/persistence" }
+radarr = { path = "infrastructure/radarr" }
+servarr = { path = "infrastructure/servarr" }
 settings = { path = "infrastructure/settings" }
+sonarr = { path = "infrastructure/sonarr" }
 telemetry = { path = "infrastructure/telemetry" }
 admin = { path = "presentation/admin" }
 api = { path = "presentation/api" }
@@ -104,6 +118,7 @@ workers = { workspace = true }
 
 [dev-dependencies]
 base64 = { workspace = true }
+domain = { workspace = true }
 jiff = { workspace = true }
 jsonschema = { workspace = true }
 opentelemetry = { workspace = true }
@@ -114,6 +129,7 @@ reqwest = { workspace = true, features = ["json"] }
 serde-saphyr = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
+tempfile = { workspace = true }
 tokio-postgres = { workspace = true }
 tokio-util = { workspace = true }
 tonic = { workspace = true, features = ["codegen", "router", "server"] }
@@ -121,3 +137,4 @@ tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true }
 url = { workspace = true }
+wiremock = { workspace = true }

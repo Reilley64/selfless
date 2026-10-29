@@ -18,6 +18,12 @@ SMTP__PORT = "587"
 SMTP__USERNAME = "selfless"
 SMTP__PASSWORD = "selfless"
 SMTP__FROM = "selfless <selfless@localhost>"
+RADARR__URL = "http://localhost:7878"
+RADARR__API_KEY = "radarr"
+RADARR__WEBHOOK_PASSWORD = "radarr"
+SONARR__URL = "http://localhost:8989"
+SONARR__API_KEY = "sonarr"
+SONARR__WEBHOOK_PASSWORD = "sonarr"
 
 [tasks.services]
 description = "Start PostgreSQL and grafana/otel-lgtm for local development"

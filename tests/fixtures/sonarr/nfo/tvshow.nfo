@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<tvshow>
+  <title>Andor</title>
+  <sorttitle>andor</sorttitle>
+  <rating>8.4</rating>
+  <plot>The tale of the burgeoning rebellion against the Empire and how people and planets became involved. In an era filled with danger, deception and intrigue, Cassian Andor embarks on the path that is destined to turn him into a rebel hero.</plot>
+  <mpaa>TV-14</mpaa>
+  <id>393189</id>
+  <uniqueid type="tvdb" default="true">393189</uniqueid>
+  <uniqueid type="imdb">tt9253284</uniqueid>
+  <uniqueid type="tmdb">83867</uniqueid>
+  <uniqueid type="tvmaze">53452</uniqueid>
+  <genre>Action</genre>
+  <genre>Adventure</genre>
+  <genre>Drama</genre>
+  <genre>Science Fiction</genre>
+  <tag>favourites</tag>
+  <status>Ended</status>
+  <premiered>2022-09-21</premiered>
+  <enddate>2025-05-13</enddate>
+  <studio>Disney+</studio>
+  <actor>
+    <name>Diego Luna</name>
+    <role>Cassian Andor</role>
+    <order>0</order>
+    <thumb>https://artworks.thetvdb.com/banners/v4/actor/312/photo/diego-luna.jpg</thumb>
+  </actor>
+  <actor>
+    <name>Stellan Skarsgård</name>
+    <role>Luthen Rael</role>
+    <order>1</order>
+    <thumb>https://artworks.thetvdb.com/banners/v4/actor/313/photo/stellan-skarsgard.jpg</thumb>
+  </actor>
+  <actor>
+    <name>Genevieve O'Reilly</name>
+    <role>Mon Mothma</role>
+    <order>2</order>
+    <thumb>https://artworks.thetvdb.com/banners/v4/actor/314/photo/genevieve-oreilly.jpg</thumb>
+  </actor>
+  <episodeguide>{"tvdb":"393189","imdb":"tt9253284","tmdb":"83867","tvmaze":"53452"}</episodeguide>
+</tvshow>
+https://www.thetvdb.com/?tab=series&id=393189

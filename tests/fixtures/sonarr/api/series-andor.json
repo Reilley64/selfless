@@ -1,0 +1,82 @@
+{
+  "title": "Andor",
+  "alternateTitles": [],
+  "sortTitle": "andor",
+  "status": "ended",
+  "ended": true,
+  "overview": "The tale of the burgeoning rebellion against the Empire and how people and planets became involved.",
+  "network": "Disney+",
+  "airTime": "18:00",
+  "images": [
+    {
+      "coverType": "poster",
+      "url": "/MediaCover/8/poster.jpg?lastWrite=638975328000000000",
+      "remoteUrl": "https://artworks.thetvdb.com/banners/v4/series/393189/posters/andor.jpg"
+    }
+  ],
+  "originalLanguage": {
+    "id": 1,
+    "name": "English"
+  },
+  "seasons": [
+    {
+      "seasonNumber": 1,
+      "monitored": true,
+      "statistics": {
+        "episodeFileCount": 2,
+        "episodeCount": 2,
+        "totalEpisodeCount": 12,
+        "sizeOnDisk": 6442450944,
+        "releaseGroups": [
+          "FLUX"
+        ],
+        "percentOfEpisodes": 100.0
+      }
+    }
+  ],
+  "year": 2022,
+  "path": "/mnt/media/TV/Andor",
+  "qualityProfileId": 4,
+  "seasonFolder": true,
+  "monitored": true,
+  "monitorNewItems": "all",
+  "useSceneNumbering": false,
+  "runtime": 55,
+  "tvdbId": 393189,
+  "tvRageId": 0,
+  "tvMazeId": 53452,
+  "tmdbId": 83867,
+  "firstAired": "2022-09-21T00:00:00Z",
+  "lastAired": "2025-05-13T00:00:00Z",
+  "seriesType": "standard",
+  "cleanTitle": "andor",
+  "imdbId": "tt9253284",
+  "titleSlug": "andor",
+  "rootFolderPath": "/mnt/media/TV/",
+  "certification": "TV-14",
+  "genres": [
+    "Action",
+    "Adventure",
+    "Drama",
+    "Science Fiction"
+  ],
+  "tags": [],
+  "added": "2022-09-01T10:00:00Z",
+  "ratings": {
+    "votes": 0,
+    "value": 0.0
+  },
+  "statistics": {
+    "seasonCount": 1,
+    "episodeFileCount": 2,
+    "episodeCount": 2,
+    "totalEpisodeCount": 12,
+    "sizeOnDisk": 6442450944,
+    "releaseGroups": [
+      "FLUX"
+    ],
+    "percentOfEpisodes": 100.0
+  },
+  "languageProfileId": 1,
+  "id": 8
+}

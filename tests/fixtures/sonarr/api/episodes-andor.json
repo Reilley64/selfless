@@ -1,0 +1,34 @@
+[
+  {
+    "seriesId": 8,
+    "tvdbId": 8890960,
+    "episodeFileId": 2101,
+    "seasonNumber": 1,
+    "episodeNumber": 1,
+    "title": "Kassa",
+    "airDate": "2022-09-21",
+    "airDateUtc": "2022-09-21T01:00:00Z",
+    "runtime": 40,
+    "overview": "Cassian Andor looks for his missing sister.",
+    "hasFile": true,
+    "monitored": true,
+    "unverifiedSceneNumbering": false,
+    "id": 1101
+  },
+  {
+    "seriesId": 8,
+    "tvdbId": 9241339,
+    "episodeFileId": 2102,
+    "seasonNumber": 1,
+    "episodeNumber": 2,
+    "title": "That Would Be Me",
+    "airDate": "2022-09-21",
+    "airDateUtc": "2022-09-21T01:00:00Z",
+    "runtime": 40,
+    "overview": "Cassian makes plans to flee Ferrix.",
+    "hasFile": true,
+    "monitored": true,
+    "unverifiedSceneNumbering": false,
+    "id": 1102
+  }
+]

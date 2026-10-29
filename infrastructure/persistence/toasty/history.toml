@@ -6,6 +6,51 @@ name = "20261029_101833_admins.sql"
 snapshot_name = "20261029_101833_snapshot.toml"
 
 [[migrations]]
+id = 7970161901788024549
+name = "20261029_111528_inbox.sql"
+snapshot_name = "20261029_111528_snapshot.toml"
+
+[[migrations]]
+id = 9184114027457929078
+name = "20261029_113340_movies.sql"
+snapshot_name = "20261029_113340_snapshot.toml"
+
+[[migrations]]
+id = 4143259819458086914
+name = "20261029_130249_shows.sql"
+snapshot_name = "20261029_130249_snapshot.toml"
+
+[[migrations]]
+id = 182719258117971046
+name = "20261029_132403_reconcile.sql"
+snapshot_name = "20261029_132403_snapshot.toml"
+
+[[migrations]]
+id = 8526660021506937677
+name = "20261029_133709_delivery_retries.sql"
+snapshot_name = "20261029_133709_snapshot.toml"
+
+[[migrations]]
+id = 6166417879876173805
+name = "20261029_134758_movie_nfo.sql"
+snapshot_name = "20261029_134758_snapshot.toml"
+
+[[migrations]]
 id = 5744996336984938147
 name = "20261029_135449_users_and_invites.sql"
 snapshot_name = "20261029_135449_snapshot.toml"
+
+[[migrations]]
+id = 8136365159950297493
+name = "20261029_135507_sync_problem_owners.sql"
+snapshot_name = "20261029_135507_snapshot.toml"
+
+[[migrations]]
+id = 1052469859776271405
+name = "20261029_140219_show_nfo.sql"
+snapshot_name = "20261029_140219_snapshot.toml"
+
+[[migrations]]
+id = 6625847279185020701
+name = "20261029_141235_streams.sql"
+snapshot_name = "20261029_141235_snapshot.toml"

@@ -1,0 +1,192 @@
+version = 1
+
+[schema]
+
+[[schema.tables]]
+id = 0
+name = "source_states"
+primary_key = { columns = [{ table = 0, index = 0 }], index = { table = 0, index = 0 } }
+
+[[schema.tables.columns]]
+id = { table = 0, index = 0 }
+name = "source"
+ty = "String"
+storage_ty = "Text"
+
+[[schema.tables.columns]]
+id = { table = 0, index = 1 }
+name = "last_webhook_at"
+ty = "Timestamp"
+storage_ty = { Timestamp = 6 }
+nullable = true
+
+[[schema.tables.columns]]
+id = { table = 0, index = 2 }
+name = "rejected_webhooks"
+ty = "I64"
+storage_ty = { Integer = 8 }
+
+[[schema.tables.indices]]
+id = { table = 0, index = 0 }
+name = "index_source_states_by_source"
+on = 0
+columns = [{ column = { table = 0, index = 0 }, op = "Eq", scope = "Partition" }]
+unique = true
+primary_key = true
+
+[[schema.tables]]
+id = 1
+name = "inbox_rows"
+primary_key = { columns = [{ table = 1, index = 0 }], index = { table = 1, index = 0 } }
+
+[[schema.tables.columns]]
+id = { table = 1, index = 0 }
+name = "id"
+ty = "Uuid"
+storage_ty = "Uuid"
+
+[[schema.tables.columns]]
+id = { table = 1, index = 1 }
+name = "source"
+ty = "String"
+storage_ty = "Text"
+
+[[schema.tables.columns]]
+id = { table = 1, index = 2 }
+name = "event_type"
+ty = "String"
+storage_ty = "Text"
+nullable = true
+
+[[schema.tables.columns]]
+id = { table = 1, index = 3 }
+name = "body"
+ty = "Bytes"
+storage_ty = "Blob"
+
+[[schema.tables.columns]]
+id = { table = 1, index = 4 }
+name = "received_at"
+ty = "Timestamp"
+storage_ty = { Timestamp = 6 }
+
+[[schema.tables.columns]]
+id = { table = 1, index = 5 }
+name = "traceparent"
+ty = "String"
+storage_ty = "Text"
+nullable = true
+
+[[schema.tables.columns]]
+id = { table = 1, index = 6 }
+name = "status"
+ty = "String"
+storage_ty = "Text"
+
+[[schema.tables.indices]]
+id = { table = 1, index = 0 }
+name = "index_inbox_rows_by_id"
+on = 1
+columns = [{ column = { table = 1, index = 0 }, op = "Eq", scope = "Partition" }]
+unique = true
+primary_key = true
+
+[[schema.tables.indices]]
+id = { table = 1, index = 1 }
+name = "index_inbox_rows_by_status"
+on = 1
+columns = [{ column = { table = 1, index = 6 }, op = "Eq", scope = "Partition" }]
+
+[[schema.tables]]
+id = 2
+name = "admin_sessions"
+primary_key = { columns = [{ table = 2, index = 0 }], index = { table = 2, index = 0 } }
+
+[[schema.tables.columns]]
+id = { table = 2, index = 0 }
+name = "id"
+ty = "Uuid"
+storage_ty = "Uuid"
+
+[[schema.tables.columns]]
+id = { table = 2, index = 1 }
+name = "admin_id"
+ty = "Uuid"
+storage_ty = "Uuid"
+
+[[schema.tables.columns]]
+id = { table = 2, index = 2 }
+name = "token_hash"
+ty = "Bytes"
+storage_ty = "Blob"
+
+[[schema.tables.columns]]
+id = { table = 2, index = 3 }
+name = "signed_in_at"
+ty = "Timestamp"
+storage_ty = { Timestamp = 6 }
+
+[[schema.tables.columns]]
+id = { table = 2, index = 4 }
+name = "last_used_at"
+ty = "Timestamp"
+storage_ty = { Timestamp = 6 }
+
+[[schema.tables.indices]]
+id = { table = 2, index = 0 }
+name = "index_admin_sessions_by_id"
+on = 2
+columns = [{ column = { table = 2, index = 0 }, op = "Eq", scope = "Partition" }]
+unique = true
+primary_key = true
+
+[[schema.tables.indices]]
+id = { table = 2, index = 1 }
+name = "index_admin_sessions_by_admin_id"
+on = 2
+columns = [{ column = { table = 2, index = 1 }, op = "Eq", scope = "Partition" }]
+
+[[schema.tables.indices]]
+id = { table = 2, index = 2 }
+name = "index_admin_sessions_by_token_hash"
+on = 2
+columns = [{ column = { table = 2, index = 2 }, op = "Eq", scope = "Partition" }]
+unique = true
+
+[[schema.tables]]
+id = 3
+name = "admins"
+primary_key = { columns = [{ table = 3, index = 0 }], index = { table = 3, index = 0 } }
+
+[[schema.tables.columns]]
+id = { table = 3, index = 0 }
+name = "id"
+ty = "Uuid"
+storage_ty = "Uuid"
+
+[[schema.tables.columns]]
+id = { table = 3, index = 1 }
+name = "name"
+ty = "String"
+storage_ty = "Text"
+
+[[schema.tables.columns]]
+id = { table = 3, index = 2 }
+name = "password_hash"
+ty = "String"
+storage_ty = "Text"
+
+[[schema.tables.indices]]
+id = { table = 3, index = 0 }
+name = "index_admins_by_id"
+on = 3
+columns = [{ column = { table = 3, index = 0 }, op = "Eq", scope = "Partition" }]
+unique = true
+primary_key = true
+
+[[schema.tables.indices]]
+id = { table = 3, index = 1 }
+name = "index_admins_by_name"
+on = 3
+columns = [{ column = { table = 3, index = 1 }, op = "Eq", scope = "Partition" }]
+unique = true
