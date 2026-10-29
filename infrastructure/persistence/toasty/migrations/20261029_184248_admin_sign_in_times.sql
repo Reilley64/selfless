@@ -1,0 +1,3 @@
+ALTER TABLE "admins" ADD COLUMN "last_signed_in_at" TIMESTAMPTZ(6);
+ALTER TABLE "admins" ADD COLUMN "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT now();
+ALTER TABLE "admins" ALTER COLUMN "created_at" DROP DEFAULT;

@@ -1,10 +1,12 @@
 use crate::DbContext;
 use crate::passwords;
+use crate::ports::Clock;
 use domain::Admin;
 
 #[fundle::deps]
 pub struct Dependencies {
     pub db_context: DbContext,
+    pub clock: Clock,
 }
 
 #[ohno::error]
@@ -20,7 +22,10 @@ pub async fn call(
     name: Option<String>,
     password: Option<String>,
 ) -> Result<(), Error> {
-    let mut db_context = dependencies.into().db_context;
+    let Dependencies {
+        mut db_context,
+        clock,
+    } = dependencies.into();
     if Admin::all()
         .first()
         .exec(db_context.executor_mut())
@@ -39,7 +44,8 @@ pub async fn call(
     let password_hash = passwords::hash(password).await.map_err(Error::caused_by)?;
     toasty::create!(Admin {
         name,
-        password_hash
+        password_hash,
+        created_at: clock.call(),
     })
     .exec(db_context.executor_mut())
     .await

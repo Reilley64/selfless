@@ -1337,12 +1337,6 @@ name = "symbol"
 ty = "String"
 storage_ty = { Enum = { name = "symbol", variants = [{ name = "ring" }, { name = "triangle" }, { name = "star" }, { name = "waves" }] } }
 
-[[schema.tables.columns]]
-id = { table = 17, index = 6 }
-name = "created_at"
-ty = "Timestamp"
-storage_ty = { Timestamp = 6 }
-
 [[schema.tables.indices]]
 id = { table = 17, index = 0 }
 name = "index_users_by_id"
@@ -1443,6 +1437,19 @@ id = { table = 19, index = 2 }
 name = "password_hash"
 ty = "String"
 storage_ty = "Text"
+
+[[schema.tables.columns]]
+id = { table = 19, index = 3 }
+name = "created_at"
+ty = "Timestamp"
+storage_ty = { Timestamp = 6 }
+
+[[schema.tables.columns]]
+id = { table = 19, index = 4 }
+name = "last_signed_in_at"
+ty = "Timestamp"
+storage_ty = { Timestamp = 6 }
+nullable = true
 
 [[schema.tables.indices]]
 id = { table = 19, index = 0 }

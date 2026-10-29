@@ -37,12 +37,18 @@ pub async fn call(
     )
     .await
     .map_err(Error::caused_by)?;
-    let Some(admin) = admin.filter(|_| matches) else {
+    let Some(mut admin) = admin.filter(|_| matches) else {
         tracing::warn!("admin sign-in failed");
         return Ok(None);
     };
     let token = tokens::generate();
     let now = clock.call();
+    admin
+        .update()
+        .last_signed_in_at(now)
+        .exec(db_context.executor_mut())
+        .await
+        .map_err(Error::caused_by)?;
     toasty::create!(AdminSession {
         admin_id: admin.id,
         token_hash: tokens::hash(&token),
