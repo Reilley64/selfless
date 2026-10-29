@@ -3,6 +3,7 @@ use config::ConfigError;
 use config::Environment;
 use serde::Deserialize;
 use std::path::PathBuf;
+use std::time::Duration;
 
 pub use persistence::DatabaseSettings;
 pub use radarr::RadarrSettings;
@@ -22,6 +23,8 @@ pub struct AppSettings {
     pub radarr: RadarrSettings,
     #[serde(default)]
     pub sonarr: SonarrSettings,
+    #[serde(default)]
+    pub library_sync: LibrarySyncSettings,
 }
 
 impl AppSettings {
@@ -55,6 +58,21 @@ impl Default for WebSettings {
     fn default() -> Self {
         Self {
             dir: PathBuf::from("presentation/web/dist"),
+        }
+    }
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(default)]
+pub struct LibrarySyncSettings {
+    #[serde(with = "jiff::fmt::serde::unsigned_duration::friendly::compact::required")]
+    pub reconcile_interval: Duration,
+}
+
+impl Default for LibrarySyncSettings {
+    fn default() -> Self {
+        Self {
+            reconcile_interval: Duration::from_secs(3600),
         }
     }
 }

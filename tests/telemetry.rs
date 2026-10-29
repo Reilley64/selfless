@@ -7,6 +7,8 @@ use opentelemetry::trace::TraceId;
 use opentelemetry::trace::TracerProvider;
 use opentelemetry_sdk::trace::InMemorySpanExporter;
 use opentelemetry_sdk::trace::SdkTracerProvider;
+use opentelemetry_sdk::trace::SpanData;
+use std::collections::HashSet;
 use support::RADARR_WEBHOOK_PASSWORD;
 use support::TestDatabase;
 use support::TestServer;
@@ -25,6 +27,7 @@ async fn readiness_with_a_traceparent_exports_an_http_span_with_a_child_database
     let _tracing = trace_into(&exporter);
     let database = TestDatabase::create().await;
     let server = TestServer::start(database.url()).await;
+    let reconciles = startup_reconciles(&exporter).await;
 
     server
         .get_with_traceparent(
@@ -33,7 +36,7 @@ async fn readiness_with_a_traceparent_exports_an_http_span_with_a_child_database
         )
         .await;
 
-    let spans = exporter.get_finished_spans().unwrap();
+    let spans = spans_outside(&exporter, &reconciles);
     let http = spans
         .iter()
         .find(|x| x.span_kind == SpanKind::Server)
@@ -66,10 +69,11 @@ async fn liveness_probe_exports_no_span() {
     let _tracing = trace_into(&exporter);
     let database = TestDatabase::create().await;
     let server = TestServer::start(database.url()).await;
+    let reconciles = startup_reconciles(&exporter).await;
 
     server.get("/actuator/health/liveness/v1").await;
 
-    assert!(exporter.get_finished_spans().unwrap().is_empty());
+    assert!(spans_outside(&exporter, &reconciles).is_empty());
     drop(server);
     database.drop().await;
 }
@@ -80,10 +84,11 @@ async fn readiness_probe_without_a_traceparent_exports_no_span() {
     let _tracing = trace_into(&exporter);
     let database = TestDatabase::create().await;
     let server = TestServer::start(database.url()).await;
+    let reconciles = startup_reconciles(&exporter).await;
 
     server.get("/actuator/health/readiness/v1").await;
 
-    assert!(exporter.get_finished_spans().unwrap().is_empty());
+    assert!(spans_outside(&exporter, &reconciles).is_empty());
     drop(server);
     database.drop().await;
 }
@@ -140,6 +145,29 @@ async fn the_inbox_worker_links_its_span_to_the_webhook_request() {
     );
     drop(server);
     database.drop().await;
+}
+
+async fn startup_reconciles(exporter: &InMemorySpanExporter) -> HashSet<TraceId> {
+    eventually(async || {
+        let traces = exporter
+            .get_finished_spans()
+            .unwrap()
+            .into_iter()
+            .filter(|x| x.name.starts_with("reconcile "))
+            .map(|x| x.span_context.trace_id())
+            .collect::<HashSet<_>>();
+        (traces.len() == 2).then_some(traces)
+    })
+    .await
+}
+
+fn spans_outside(exporter: &InMemorySpanExporter, traces: &HashSet<TraceId>) -> Vec<SpanData> {
+    exporter
+        .get_finished_spans()
+        .unwrap()
+        .into_iter()
+        .filter(|x| !traces.contains(&x.span_context.trace_id()))
+        .collect()
 }
 
 fn trace_into(exporter: &InMemorySpanExporter) -> DefaultGuard {

@@ -1,14 +1,19 @@
 pub mod check_database;
+pub mod confirm_held_removal;
+mod library_items;
 pub mod list_episodes;
 pub mod list_movies;
 pub mod list_seasons;
 pub mod list_shows;
+mod media_files;
 pub mod ports;
 pub mod process_inbox_row;
+pub mod reconcile;
 pub mod relay_telemetry;
 pub mod release_inbox_rows;
 pub mod store_webhook_delivery;
 pub mod sync_movie;
+pub mod sync_now;
 pub mod sync_show;
 pub mod sync_status;
 mod unsampled;
@@ -23,11 +28,14 @@ pub mod metrics {
 }
 
 use async_trait::async_trait;
+use domain::Source;
 use opentelemetry::KeyValue;
 use opentelemetry::global;
 use opentelemetry::metrics::Histogram;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::Instant;
+use sync_status::ReconcileProgress;
 use toasty_core::Schema;
 use toasty_core::driver::Capability;
 use toasty_core::driver::ExecResponse;
@@ -76,6 +84,36 @@ impl InboxWakeup {
 
     fn wake(&self) {
         self.0.notify_one();
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct Reconciles {
+    requested: Arc<Notify>,
+    radarr: SourceReconcile,
+    sonarr: SourceReconcile,
+}
+
+#[derive(Clone, Default)]
+struct SourceReconcile {
+    running: Arc<tokio::sync::Mutex<()>>,
+    progress: Arc<Mutex<Option<ReconcileProgress>>>,
+}
+
+impl Reconciles {
+    pub async fn requested(&self) {
+        self.requested.notified().await;
+    }
+
+    fn request(&self) {
+        self.requested.notify_one();
+    }
+
+    fn source(&self, source: Source) -> &SourceReconcile {
+        match source {
+            Source::Radarr => &self.radarr,
+            Source::Sonarr => &self.sonarr,
+        }
     }
 }
 

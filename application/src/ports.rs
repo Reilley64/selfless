@@ -3,7 +3,6 @@ use jiff::Timestamp;
 use jiff::civil::Date;
 use std::error::Error;
 use std::fmt;
-use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
 
@@ -84,6 +83,7 @@ impl Clock {
 
 #[derive(Clone, Debug)]
 pub struct RadarrMovie {
+    pub radarr_id: i64,
     pub tmdb_id: i64,
     pub title: String,
     pub year: i64,
@@ -94,7 +94,7 @@ pub struct RadarrMovie {
 
 #[derive(Clone, Debug)]
 pub struct RadarrMovieFile {
-    pub path: PathBuf,
+    pub path: String,
     pub date_added: Timestamp,
 }
 
@@ -116,6 +116,24 @@ impl GetRadarrMovie {
     }
 }
 
+type ListRadarrMoviesFn =
+    dyn Fn() -> PortFuture<Result<Vec<RadarrMovie>, RadarrError>> + Send + Sync;
+
+#[derive(Clone)]
+pub struct ListRadarrMovies(Arc<ListRadarrMoviesFn>);
+
+impl ListRadarrMovies {
+    pub fn new(
+        f: impl Fn() -> PortFuture<Result<Vec<RadarrMovie>, RadarrError>> + Send + Sync + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self) -> PortFuture<Result<Vec<RadarrMovie>, RadarrError>> {
+        (self.0)()
+    }
+}
+
 #[derive(ohno::Error, Default)]
 #[no_constructors]
 #[display("failed to call the Radarr API")]
@@ -131,12 +149,17 @@ impl RadarrError {
     }
 }
 
-pub struct SonarrShow {
+pub struct SonarrSeries {
+    pub sonarr_id: i64,
     pub tvdb_id: i64,
     pub title: String,
     pub year: Option<i64>,
     pub genres: Vec<String>,
     pub overview: Option<String>,
+}
+
+pub struct SonarrShow {
+    pub series: SonarrSeries,
     pub episodes: Vec<SonarrEpisode>,
 }
 
@@ -169,6 +192,42 @@ impl GetSonarrShow {
     }
 
     pub fn call(&self, sonarr_id: i64) -> PortFuture<Result<Option<SonarrShow>, SonarrError>> {
+        (self.0)(sonarr_id)
+    }
+}
+
+type ListSonarrSeriesFn =
+    dyn Fn() -> PortFuture<Result<Vec<SonarrSeries>, SonarrError>> + Send + Sync;
+
+#[derive(Clone)]
+pub struct ListSonarrSeries(Arc<ListSonarrSeriesFn>);
+
+impl ListSonarrSeries {
+    pub fn new(
+        f: impl Fn() -> PortFuture<Result<Vec<SonarrSeries>, SonarrError>> + Send + Sync + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self) -> PortFuture<Result<Vec<SonarrSeries>, SonarrError>> {
+        (self.0)()
+    }
+}
+
+type GetSonarrEpisodesFn =
+    dyn Fn(i64) -> PortFuture<Result<Vec<SonarrEpisode>, SonarrError>> + Send + Sync;
+
+#[derive(Clone)]
+pub struct GetSonarrEpisodes(Arc<GetSonarrEpisodesFn>);
+
+impl GetSonarrEpisodes {
+    pub fn new(
+        f: impl Fn(i64) -> PortFuture<Result<Vec<SonarrEpisode>, SonarrError>> + Send + Sync + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self, sonarr_id: i64) -> PortFuture<Result<Vec<SonarrEpisode>, SonarrError>> {
         (self.0)(sonarr_id)
     }
 }

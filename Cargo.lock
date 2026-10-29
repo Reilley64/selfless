@@ -3941,6 +3941,7 @@ dependencies = [
  "admin",
  "api",
  "application",
+ "domain",
  "infrastructure",
  "jiff",
  "jsonschema",
@@ -4086,6 +4087,7 @@ name = "settings"
 version = "0.1.0"
 dependencies = [
  "config",
+ "jiff",
  "persistence",
  "radarr",
  "serde",
@@ -6320,7 +6322,9 @@ name = "workers"
 version = "0.1.0"
 dependencies = [
  "application",
+ "domain",
  "infrastructure",
+ "tokio",
  "tracing",
 ]
 

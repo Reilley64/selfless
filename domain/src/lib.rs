@@ -42,12 +42,29 @@ pub struct InboxRow {
     pub status: InboxRowStatus,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, toasty::Embed)]
+#[column(type = text)]
+pub enum ReconcileResult {
+    Succeeded,
+    Failed,
+}
+
 #[derive(Debug, toasty::Model)]
 pub struct SourceState {
     #[key]
     pub source: Source,
     pub last_webhook_at: Option<Timestamp>,
     pub rejected_webhooks: i64,
+    pub last_reconcile_started_at: Option<Timestamp>,
+    pub last_reconcile_duration_ms: Option<i64>,
+    pub last_reconcile_result: Option<ReconcileResult>,
+}
+
+#[derive(Debug, toasty::Model)]
+pub struct HeldRemoval {
+    #[key]
+    pub source: Source,
+    pub item_ids: Vec<Uuid>,
 }
 
 #[derive(Debug, toasty::Model)]
@@ -64,6 +81,10 @@ pub struct Movie {
     pub overview: Option<String>,
     pub genres: Vec<String>,
     pub added_at: Option<Timestamp>,
+    #[index]
+    pub media_file_id: Option<Uuid>,
+    #[belongs_to(key = media_file_id, references = id)]
+    pub media_file: toasty::Deferred<Option<MediaFile>>,
     pub visible: bool,
 }
 
@@ -128,6 +149,10 @@ pub struct MediaFile {
     pub id: Uuid,
     #[unique]
     pub path: String,
+    pub size: Option<i64>,
+    pub modified_at: Option<Timestamp>,
+    #[has_many]
+    pub movies: toasty::Deferred<Vec<Movie>>,
     #[has_many]
     pub episodes: toasty::Deferred<Vec<Episode>>,
 }

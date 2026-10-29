@@ -1,13 +1,19 @@
 use crate::DbContext;
+use crate::library_items;
+use crate::library_items::Change;
+use crate::media_files;
+use crate::media_files::OnDisk;
 use crate::ports::GetSonarrShow;
 use crate::ports::SonarrShow;
 use domain::Episode;
 use domain::MediaFile;
 use domain::Season;
 use domain::Show;
+use domain::Source;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use tracing::Instrument;
+use tracing::Span;
 use uuid::Uuid;
 
 #[fundle::deps]
@@ -26,82 +32,108 @@ pub async fn call(dependencies: impl Into<Dependencies>, sonarr_id: i64) -> Resu
         get_sonarr_show,
     } = dependencies.into();
     async {
-        let sonarr_show = get_sonarr_show
+        match get_sonarr_show
             .call(sonarr_id)
             .await
-            .map_err(Error::caused_by)?;
-        let mut found = HashSet::new();
-        let paths = sonarr_show
-            .iter()
-            .flat_map(|x| &x.episodes)
-            .filter_map(|x| x.episode_file.as_ref())
-            .map(|x| x.path.clone())
-            .collect::<HashSet<_>>();
-        for path in paths {
-            if matches!(tokio::fs::try_exists(&path).await, Ok(true)) {
-                found.insert(path);
-            }
+            .map_err(Error::caused_by)?
+        {
+            Some(sonarr_show) => save(&mut db_context, sonarr_show).await,
+            None => match Show::filter_by_sonarr_id(sonarr_id)
+                .first()
+                .exec(db_context.executor_mut())
+                .await
+                .map_err(Error::caused_by)?
+            {
+                Some(show) => remove(&mut db_context, show).await,
+                None => Ok(()),
+            },
         }
-        let mut transaction = db_context.transaction().await.map_err(Error::caused_by)?;
-        let db = transaction.executor_mut();
-        match sonarr_show {
-            Some(sonarr_show) => sync(db, sonarr_id, sonarr_show, &found).await?,
-            None => {
-                if let Some(show) = Show::filter_by_sonarr_id(sonarr_id)
-                    .first()
-                    .exec(db)
-                    .await
-                    .map_err(Error::caused_by)?
-                {
-                    delete(db, show).await?;
-                }
-            }
-        }
-        transaction.commit().await.map_err(Error::caused_by)
     }
-    .instrument(tracing::info_span!(
-        "sync_show",
-        otel.name = "sync sonarr show"
-    ))
+    .instrument(span())
     .await
+}
+
+pub(crate) fn span() -> Span {
+    tracing::info_span!("sync_show", otel.name = "sync sonarr show")
+}
+
+pub(crate) async fn save(db_context: &mut DbContext, sonarr_show: SonarrShow) -> Result<(), Error> {
+    let mut on_disk = HashMap::new();
+    for file in sonarr_show
+        .episodes
+        .iter()
+        .filter_map(|x| x.episode_file.as_ref())
+    {
+        if !on_disk.contains_key(&file.path) {
+            on_disk.insert(file.path.clone(), media_files::on_disk(&file.path).await);
+        }
+    }
+    let mut transaction = db_context.transaction().await.map_err(Error::caused_by)?;
+    let change = sync(transaction.executor_mut(), sonarr_show, &on_disk).await?;
+    transaction.commit().await.map_err(Error::caused_by)?;
+    if let Some(change) = change {
+        library_items::count(Source::Sonarr, change);
+    }
+    Ok(())
+}
+
+pub(crate) async fn remove(db_context: &mut DbContext, show: Show) -> Result<(), Error> {
+    let mut transaction = db_context.transaction().await.map_err(Error::caused_by)?;
+    delete(transaction.executor_mut(), show).await?;
+    transaction.commit().await.map_err(Error::caused_by)?;
+    library_items::count(Source::Sonarr, Change::Removed);
+    Ok(())
 }
 
 async fn sync(
     db: &mut dyn toasty::Executor,
-    sonarr_id: i64,
     sonarr_show: SonarrShow,
-    found: &HashSet<String>,
-) -> Result<(), Error> {
-    let show = match Show::filter_by_tvdb_id(sonarr_show.tvdb_id)
+    on_disk: &HashMap<String, Option<OnDisk>>,
+) -> Result<Option<Change>, Error> {
+    let series = sonarr_show.series;
+    let (show, show_change) = match Show::filter_by_tvdb_id(series.tvdb_id)
         .first()
         .exec(db)
         .await
         .map_err(Error::caused_by)?
     {
         Some(mut show) => {
-            show.update()
-                .sonarr_id(sonarr_id)
-                .title(sonarr_show.title)
-                .year(sonarr_show.year)
-                .genres(sonarr_show.genres)
-                .overview(sonarr_show.overview)
-                .exec(db)
-                .await
-                .map_err(Error::caused_by)?;
-            show
+            if show.sonarr_id != series.sonarr_id
+                || show.title != series.title
+                || show.year != series.year
+                || show.genres != series.genres
+                || show.overview != series.overview
+            {
+                show.update()
+                    .sonarr_id(series.sonarr_id)
+                    .title(series.title)
+                    .year(series.year)
+                    .genres(series.genres)
+                    .overview(series.overview)
+                    .exec(db)
+                    .await
+                    .map_err(Error::caused_by)?;
+                (show, Some(Change::Changed))
+            } else {
+                (show, None)
+            }
         }
-        None => toasty::create!(Show {
-            tvdb_id: sonarr_show.tvdb_id,
-            sonarr_id,
-            title: sonarr_show.title,
-            year: sonarr_show.year,
-            genres: sonarr_show.genres,
-            overview: sonarr_show.overview,
-        })
-        .exec(db)
-        .await
-        .map_err(Error::caused_by)?,
+        None => (
+            toasty::create!(Show {
+                tvdb_id: series.tvdb_id,
+                sonarr_id: series.sonarr_id,
+                title: series.title,
+                year: series.year,
+                genres: series.genres,
+                overview: series.overview,
+            })
+            .exec(db)
+            .await
+            .map_err(Error::caused_by)?,
+            Some(Change::Added),
+        ),
     };
+    let mut changed = show_change.is_some();
     let mut seasons = show
         .seasons()
         .exec(db)
@@ -132,6 +164,7 @@ async fn sync(
                 .exec(db)
                 .await
                 .map_err(Error::caused_by)?;
+                changed = true;
                 let id = season.id;
                 seasons.insert(sonarr_episode.season_number, season);
                 id
@@ -140,22 +173,13 @@ async fn sync(
         synced_seasons.insert(sonarr_episode.season_number);
         let (media_file_id, visible) = match &sonarr_episode.episode_file {
             Some(file) => {
-                let media_file = match MediaFile::filter_by_path(&file.path)
-                    .first()
-                    .exec(db)
+                let file_on_disk = on_disk.get(&file.path).copied().flatten();
+                let (id, file_changed) = media_files::save(db, &file.path, file_on_disk)
                     .await
-                    .map_err(Error::caused_by)?
-                {
-                    Some(media_file) => media_file,
-                    None => toasty::create!(MediaFile {
-                        path: file.path.clone()
-                    })
-                    .exec(db)
-                    .await
-                    .map_err(Error::caused_by)?,
-                };
-                media_files.insert(media_file.id);
-                (Some(media_file.id), found.contains(&file.path))
+                    .map_err(Error::caused_by)?;
+                changed |= file_changed;
+                media_files.insert(id);
+                (Some(id), file_on_disk.is_some())
             }
             None => (None, false),
         };
@@ -163,6 +187,18 @@ async fn sync(
         match episodes.remove(&sonarr_episode.tvdb_id) {
             Some(mut episode) => {
                 let added_at = episode.added_at.or(date_added);
+                if episode.season_id == season_id
+                    && episode.number == sonarr_episode.episode_number
+                    && episode.title == sonarr_episode.title
+                    && episode.air_date == sonarr_episode.air_date
+                    && episode.overview == sonarr_episode.overview
+                    && episode.added_at == added_at
+                    && episode.media_file_id == media_file_id
+                    && episode.visible == visible
+                {
+                    continue;
+                }
+                changed = true;
                 episode
                     .update()
                     .season_id(season_id)
@@ -178,6 +214,7 @@ async fn sync(
                     .map_err(Error::caused_by)?;
             }
             None => {
+                changed = true;
                 toasty::create!(Episode {
                     season_id,
                     tvdb_id: sonarr_episode.tvdb_id,
@@ -195,21 +232,21 @@ async fn sync(
             }
         }
     }
-    delete_episodes(db, episodes.into_values().map(|x| x.id).collect()).await?;
-    delete_seasons(
-        db,
-        seasons
-            .into_values()
-            .filter(|x| !synced_seasons.contains(&x.number))
-            .map(|x| x.id)
-            .collect(),
-    )
-    .await?;
-    delete_media_files(
-        db,
-        old_media_files.difference(&media_files).copied().collect(),
-    )
-    .await
+    let episodes = episodes.into_values().map(|x| x.id).collect::<Vec<_>>();
+    let seasons = seasons
+        .into_values()
+        .filter(|x| !synced_seasons.contains(&x.number))
+        .map(|x| x.id)
+        .collect::<Vec<_>>();
+    let media_files = old_media_files
+        .difference(&media_files)
+        .copied()
+        .collect::<Vec<_>>();
+    changed |= !episodes.is_empty() || !seasons.is_empty() || !media_files.is_empty();
+    delete_episodes(db, episodes).await?;
+    delete_seasons(db, seasons).await?;
+    delete_media_files(db, media_files).await?;
+    Ok(show_change.or(changed.then_some(Change::Changed)))
 }
 
 async fn delete(db: &mut dyn toasty::Executor, show: Show) -> Result<(), Error> {

@@ -1,11 +1,15 @@
 use application::BuildInfo;
 use application::DbContext;
 use application::InboxWakeup;
+use application::Reconciles;
 use application::WebhookPasswords;
 use application::ports::Clock;
 use application::ports::ExportTelemetry;
 use application::ports::GetRadarrMovie;
+use application::ports::GetSonarrEpisodes;
 use application::ports::GetSonarrShow;
+use application::ports::ListRadarrMovies;
+use application::ports::ListSonarrSeries;
 use jiff::Timestamp;
 
 pub use persistence;
@@ -21,8 +25,12 @@ pub struct AppState {
     pub db_context: DbContext,
     pub export_telemetry: ExportTelemetry,
     pub get_radarr_movie: GetRadarrMovie,
+    pub get_sonarr_episodes: GetSonarrEpisodes,
     pub get_sonarr_show: GetSonarrShow,
     pub inbox_wakeup: InboxWakeup,
+    pub list_radarr_movies: ListRadarrMovies,
+    pub list_sonarr_series: ListSonarrSeries,
+    pub reconciles: Reconciles,
     pub webhook_passwords: WebhookPasswords,
 }
 

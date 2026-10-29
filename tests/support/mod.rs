@@ -2,6 +2,7 @@
 
 use application::ports::Clock;
 use infrastructure::AppState;
+use jiff::SignedDuration;
 use jiff::Timestamp;
 use jiff::Unit;
 use jsonschema::Registry;
@@ -14,16 +15,19 @@ use serde_json::json;
 use settings::AppSettings;
 use settings::DatabaseSettings;
 use settings::HttpSettings;
+use settings::LibrarySyncSettings;
 use settings::OtlpSettings;
 use settings::RadarrSettings;
 use settings::SonarrSettings;
 use settings::WebSettings;
 use std::net::SocketAddr;
+use std::path::Path;
 use std::sync::Arc;
 use std::sync::LazyLock;
 use std::sync::Mutex;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 use std::time::SystemTime;
 use tempfile::TempDir;
 use tokio::net::TcpListener;
@@ -122,6 +126,7 @@ pub fn settings(database_url: Url) -> AppSettings {
             api_key: Some(SONARR_API_KEY.to_owned()),
             webhook_password: Some(SONARR_WEBHOOK_PASSWORD.to_owned()),
         },
+        library_sync: LibrarySyncSettings::default(),
     }
 }
 
@@ -137,6 +142,11 @@ impl FakeClock {
 
     pub fn now(&self) -> Timestamp {
         *self.0.lock().unwrap()
+    }
+
+    pub fn advance(&self, by: SignedDuration) {
+        let mut now = self.0.lock().unwrap();
+        *now += by;
     }
 
     pub fn port(&self) -> Clock {
@@ -413,6 +423,19 @@ impl StubRadarr {
             .mount(&self.0)
             .await;
     }
+
+    pub async fn serve_movies(&self, status: StatusCode, body: &str) {
+        self.0.reset().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v3/movie"))
+            .and(header("X-Api-Key", RADARR_API_KEY))
+            .respond_with(
+                ResponseTemplate::new(status.as_u16())
+                    .set_body_raw(body.to_owned(), "application/json"),
+            )
+            .mount(&self.0)
+            .await;
+    }
 }
 
 pub struct StubSonarr(MockServer);
@@ -457,6 +480,47 @@ impl StubSonarr {
         .await;
     }
 
+    pub async fn serve_series_list(&self, series: &str) {
+        self.0.reset().await;
+        self.mount("/api/v3/series", None, StatusCode::OK, series)
+            .await;
+    }
+
+    pub async fn serve_episodes(
+        &self,
+        series_id: i64,
+        episodes: &str,
+        episode_files: &str,
+        delay: Duration,
+    ) {
+        for (url_path, body) in [
+            ("/api/v3/episode", episodes),
+            ("/api/v3/episodefile", episode_files),
+        ] {
+            Mock::given(method("GET"))
+                .and(path(url_path))
+                .and(header("X-Api-Key", SONARR_API_KEY))
+                .and(query_param("seriesId", series_id.to_string()))
+                .respond_with(
+                    ResponseTemplate::new(StatusCode::OK.as_u16())
+                        .set_body_raw(body.to_owned(), "application/json")
+                        .set_delay(delay),
+                )
+                .mount(&self.0)
+                .await;
+        }
+    }
+
+    pub async fn fail_episodes(&self, series_id: i64) {
+        self.mount(
+            "/api/v3/episode",
+            Some(series_id),
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "{}",
+        )
+        .await;
+    }
+
     async fn mount(&self, url_path: &str, series_id: Option<i64>, status: StatusCode, body: &str) {
         let mut mock = Mock::given(method("GET"))
             .and(path(url_path))
@@ -484,6 +548,20 @@ impl MediaFolder {
         let path = self.0.path().join(relative_path);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(path, []).unwrap();
+    }
+
+    pub fn create_absolute(&self, path: &str) {
+        self.create(
+            Path::new(path)
+                .strip_prefix(self.0.path())
+                .unwrap()
+                .to_str()
+                .unwrap(),
+        );
+    }
+
+    pub fn change_absolute(&self, path: &str) {
+        std::fs::write(path, "changed").unwrap();
     }
 
     pub fn remove(&self, relative_path: &str) {

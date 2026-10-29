@@ -1,7 +1,10 @@
+use application::ports::GetSonarrEpisodes;
 use application::ports::GetSonarrShow;
+use application::ports::ListSonarrSeries;
 use application::ports::SonarrEpisode;
 use application::ports::SonarrEpisodeFile;
 use application::ports::SonarrError;
+use application::ports::SonarrSeries;
 use application::ports::SonarrShow;
 use jiff::Timestamp;
 use jiff::civil::Date;
@@ -35,7 +38,43 @@ impl SonarrSettings {
     }
 
     pub fn get_show(&self) -> Result<GetSonarrShow, MissingSetting> {
-        let api = Api {
+        let api = self.api()?;
+        Ok(GetSonarrShow::new(move |sonarr_id| {
+            let api = api.clone();
+            Box::pin(async move { api.show(sonarr_id).await.map_err(SonarrError::caused_by) })
+        }))
+    }
+
+    pub fn list_series(&self) -> Result<ListSonarrSeries, MissingSetting> {
+        let api = self.api()?;
+        Ok(ListSonarrSeries::new(move || {
+            let api = api.clone();
+            Box::pin(async move {
+                Ok(api
+                    .get::<Vec<Series>>("/api/v3/series", &["series"], None)
+                    .await
+                    .map_err(SonarrError::caused_by)?
+                    .into_iter()
+                    .map(SonarrSeries::from)
+                    .collect())
+            })
+        }))
+    }
+
+    pub fn get_episodes(&self) -> Result<GetSonarrEpisodes, MissingSetting> {
+        let api = self.api()?;
+        Ok(GetSonarrEpisodes::new(move |sonarr_id| {
+            let api = api.clone();
+            Box::pin(async move {
+                api.episodes(sonarr_id)
+                    .await
+                    .map_err(SonarrError::caused_by)
+            })
+        }))
+    }
+
+    fn api(&self) -> Result<Api, MissingSetting> {
+        Ok(Api {
             client: reqwest::Client::new(),
             url: self
                 .url
@@ -45,11 +84,7 @@ impl SonarrSettings {
                 .api_key
                 .clone()
                 .ok_or_else(|| MissingSetting::new("SONARR__API_KEY"))?,
-        };
-        Ok(GetSonarrShow::new(move |sonarr_id| {
-            let api = api.clone();
-            Box::pin(async move { api.show(sonarr_id).await.map_err(SonarrError::caused_by) })
-        }))
+        })
     }
 }
 
@@ -63,6 +98,7 @@ struct Api {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Series {
+    id: i64,
     tvdb_id: i64,
     title: String,
     year: i64,
@@ -92,14 +128,25 @@ struct EpisodeFile {
 
 impl Api {
     async fn show(&self, sonarr_id: i64) -> Result<Option<SonarrShow>, reqwest::Error> {
-        let id = sonarr_id.to_string();
         let series = match self
-            .get::<Series>("/api/v3/series/{id}", &["series", &id], None)
+            .get::<Series>(
+                "/api/v3/series/{id}",
+                &["series", &sonarr_id.to_string()],
+                None,
+            )
             .await
         {
             Err(error) if error.status() == Some(StatusCode::NOT_FOUND) => return Ok(None),
             series => series?,
         };
+        Ok(Some(SonarrShow {
+            series: series.into(),
+            episodes: self.episodes(sonarr_id).await?,
+        }))
+    }
+
+    async fn episodes(&self, sonarr_id: i64) -> Result<Vec<SonarrEpisode>, reqwest::Error> {
+        let id = sonarr_id.to_string();
         let query = Some(("seriesId", id.as_str()));
         let episodes = self
             .get::<Vec<Episode>>("/api/v3/episode", &["episode"], query)
@@ -110,28 +157,21 @@ impl Api {
             .into_iter()
             .map(|x| (x.id, x))
             .collect::<HashMap<_, _>>();
-        Ok(Some(SonarrShow {
-            tvdb_id: series.tvdb_id,
-            title: series.title,
-            year: (series.year != 0).then_some(series.year),
-            genres: series.genres,
-            overview: series.overview,
-            episodes: episodes
-                .into_iter()
-                .map(|x| SonarrEpisode {
-                    tvdb_id: x.tvdb_id,
-                    season_number: x.season_number,
-                    episode_number: x.episode_number,
-                    title: x.title,
-                    air_date: x.air_date,
-                    overview: x.overview,
-                    episode_file: files.get(&x.episode_file_id).map(|x| SonarrEpisodeFile {
-                        path: x.path.clone(),
-                        date_added: x.date_added,
-                    }),
-                })
-                .collect(),
-        }))
+        Ok(episodes
+            .into_iter()
+            .map(|x| SonarrEpisode {
+                tvdb_id: x.tvdb_id,
+                season_number: x.season_number,
+                episode_number: x.episode_number,
+                title: x.title,
+                air_date: x.air_date,
+                overview: x.overview,
+                episode_file: files.get(&x.episode_file_id).map(|x| SonarrEpisodeFile {
+                    path: x.path.clone(),
+                    date_added: x.date_added,
+                }),
+            })
+            .collect())
     }
 
     async fn get<T: DeserializeOwned>(
@@ -183,5 +223,18 @@ impl Api {
                     .map_or_else(|| "_OTHER".to_owned(), |x| x.as_u16().to_string()),
             );
         })
+    }
+}
+
+impl From<Series> for SonarrSeries {
+    fn from(series: Series) -> Self {
+        SonarrSeries {
+            sonarr_id: series.id,
+            tvdb_id: series.tvdb_id,
+            title: series.title,
+            year: (series.year != 0).then_some(series.year),
+            genres: series.genres,
+            overview: series.overview,
+        }
     }
 }
