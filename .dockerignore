@@ -7,5 +7,8 @@ target
 presentation/api-client/src/generated
 presentation/ui/src/telemetry/attributes.ts
 presentation/ui/theme
+presentation/tv/.expo
+presentation/tv/android
+presentation/tv/ios
 presentation/web/.expo
 presentation/web/dist
