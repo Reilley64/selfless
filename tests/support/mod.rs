@@ -824,6 +824,26 @@ impl Page {
         let length = tag[start..].find('"').unwrap();
         tag[start..start + length].to_owned()
     }
+
+    pub fn dialog_text(&self, button: &str) -> String {
+        let button_at = self
+            .body
+            .find(&format!(">{button}<"))
+            .unwrap_or_else(|| panic!("the page has no {button:?} button\n{}", self.body));
+        let tag = &self.body[self.body[..button_at].rfind("<button").unwrap()..button_at];
+        let start = tag
+            .find(r#"commandfor=""#)
+            .unwrap_or_else(|| panic!("{button:?} opens no dialog: {tag}"))
+            + r#"commandfor=""#.len();
+        let id = &tag[start..start + tag[start..].find('"').unwrap()];
+        let id_at = self
+            .body
+            .find(&format!(r#" id="{id}""#))
+            .unwrap_or_else(|| panic!("the page has no dialog {id:?}\n{}", self.body));
+        let start = self.body[..id_at].rfind("<dialog").unwrap();
+        let end = start + self.body[start..].find("</dialog>").unwrap();
+        visible_text(&self.body[start..end])
+    }
 }
 
 fn visible_text(html: &str) -> String {

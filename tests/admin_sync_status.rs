@@ -218,6 +218,16 @@ fn attributes<const N: usize>(pairs: [(&str, &str); N]) -> BTreeMap<String, Stri
         .collect()
 }
 
+fn assert_in_order(text: &str, expected: &[&str]) {
+    let mut rest = text;
+    for expected in expected {
+        let at = rest
+            .find(expected)
+            .unwrap_or_else(|| panic!("{expected:?} in order in {text}"));
+        rest = &rest[at + expected.len()..];
+    }
+}
+
 #[tokio::test]
 async fn each_source_card_shows_api_health_webhooks_the_last_reconcile_and_counts() {
     let mut fixture = Fixture::start().await;
@@ -458,6 +468,97 @@ async fn retry_on_a_failed_delivery_processes_it_again() {
             ("selfless.admin.target.id", failed.id.to_string().as_str()),
         ])]
     );
+    fixture.stop().await;
+}
+
+#[tokio::test]
+async fn a_failed_delivery_opens_a_dialog_with_each_attempt_and_the_body_as_formatted_json() {
+    let mut fixture = Fixture::start().await;
+    fixture.radarr.fail_movie(ARRIVAL).await;
+    let body = support::fixture("radarr/webhooks/download.json");
+    let mut attempted_at = vec![fixture.server.clock.now()];
+    fixture
+        .server
+        .send_radarr_webhook(
+            Method::POST,
+            Some(("radarr", RADARR_WEBHOOK_PASSWORD)),
+            &body.lines().map(str::trim).collect::<String>(),
+        )
+        .await;
+    eventually(async || (fixture.radarr.movie_requests(ARRIVAL).await == 1).then_some(())).await;
+    for delay in [1, 5, 15, 30] {
+        if delay == 30 {
+            fixture
+                .radarr
+                .serve_movie(ARRIVAL, StatusCode::SERVICE_UNAVAILABLE, "")
+                .await;
+        }
+        fixture
+            .server
+            .clock
+            .advance(SignedDuration::from_mins(delay));
+        attempted_at.push(fixture.server.clock.now());
+        application::process_inbox_row::call(&fixture.server.state)
+            .await
+            .unwrap();
+    }
+    let attempted_at: Vec<String> = attempted_at
+        .iter()
+        .map(|x| x.strftime("%Y-%m-%d %H:%M UTC").to_string())
+        .collect();
+
+    let dialog = fixture.sync_page().await.dialog_text("Download");
+
+    assert_in_order(
+        &dialog,
+        &[
+            "Last error",
+            "503",
+            "Attempts",
+            &attempted_at[0],
+            "500",
+            &attempted_at[1],
+            "500",
+            &attempted_at[2],
+            "500",
+            &attempted_at[3],
+            "500",
+            &attempted_at[4],
+            "503",
+            "Body",
+            body.trim_end(),
+        ],
+    );
+    fixture.stop().await;
+}
+
+#[tokio::test]
+async fn a_failed_delivery_whose_body_is_not_json_shows_the_body_as_text() {
+    let mut fixture = Fixture::start().await;
+    fixture
+        .server
+        .send_radarr_webhook(
+            Method::POST,
+            Some(("radarr", RADARR_WEBHOOK_PASSWORD)),
+            "not json",
+        )
+        .await;
+    eventually(async || {
+        fixture.server.clock.advance(SignedDuration::from_hours(1));
+        application::process_inbox_row::call(&fixture.server.state)
+            .await
+            .unwrap();
+        application::sync_status::call(&fixture.server.state)
+            .await
+            .unwrap()
+            .failed_rows
+            .pop()
+    })
+    .await;
+
+    let dialog = fixture.sync_page().await.dialog_text("Unknown");
+
+    assert_in_order(&dialog, &["Body", "not json"]);
     fixture.stop().await;
 }
 

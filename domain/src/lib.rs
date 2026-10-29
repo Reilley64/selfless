@@ -176,6 +176,21 @@ pub struct InboxRow {
     pub next_attempt_at: Timestamp,
     pub error: Option<String>,
     pub source_item_id: Option<i64>,
+    #[has_many]
+    pub attempt_log: Deferred<Vec<InboxAttempt>>,
+}
+
+#[derive(Debug, toasty::Model)]
+pub struct InboxAttempt {
+    #[key]
+    #[auto]
+    pub id: Uuid,
+    #[index]
+    pub inbox_row_id: Uuid,
+    #[belongs_to(key = inbox_row_id, references = id)]
+    pub inbox_row: Deferred<InboxRow>,
+    pub attempted_at: Timestamp,
+    pub error: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, toasty::Embed)]

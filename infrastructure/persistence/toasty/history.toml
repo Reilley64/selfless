@@ -59,3 +59,8 @@ snapshot_name = "20261029_141235_snapshot.toml"
 id = 6665036974824412014
 name = "20261029_184248_admin_sign_in_times.sql"
 snapshot_name = "20261029_184248_snapshot.toml"
+
+[[migrations]]
+id = 1464726603378879150
+name = "20261029_192644_inbox_attempts.sql"
+snapshot_name = "20261029_192644_snapshot.toml"

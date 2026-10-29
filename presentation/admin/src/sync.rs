@@ -16,6 +16,7 @@ use crate::components::card::card_content;
 use crate::components::card::card_description;
 use crate::components::card::card_header;
 use crate::components::card::card_title;
+use crate::components::dialog::dialog;
 use crate::components::dialog::dialog_content;
 use crate::components::dialog::dialog_description;
 use crate::components::dialog::dialog_footer;
@@ -457,10 +458,20 @@ async fn failed_deliveries(rows: &[FailedRow]) -> topcoat::Result<impl View> {
                             #[key(row.id.as_u128())]
                             for row in rows {
                                 table_row(
+                                    attrs: attributes! { class="relative" },
                                     table_cell((source_label(row.source)))
-                                    table_cell((row.event_type.as_deref().unwrap_or("Unknown")))
                                     table_cell(
-                                        attrs: attributes! { class="max-w-sm truncate" title=(&row.error) },
+                                        <button
+                                            type="button"
+                                            commandfor=(failed_delivery_dialog_id(row))
+                                            command="show-modal"
+                                            class="cursor-pointer font-medium underline-offset-4 outline-none after:absolute after:inset-0 hover:underline focus-visible:underline"
+                                        >
+                                            (event_label(row))
+                                        </button>
+                                    )
+                                    table_cell(
+                                        attrs: attributes! { class="max-w-sm truncate" },
                                         (&row.error)
                                     )
                                     table_cell((row.attempts.to_string()))
@@ -472,6 +483,7 @@ async fn failed_deliveries(rows: &[FailedRow]) -> topcoat::Result<impl View> {
                                             size: ButtonSize::Sm,
                                             attrs: attributes! {
                                                 type="button"
+                                                class="relative z-10"
                                                 hx-post=(href!(retry, DeliveryId(row.id)))
                                                 hx-target=(SYNC_STATUS_TARGET)
                                                 hx-swap="outerHTML"
@@ -484,8 +496,84 @@ async fn failed_deliveries(rows: &[FailedRow]) -> topcoat::Result<impl View> {
                         )
                     )
                 )
+                #[key(row.id.as_u128())]
+                for row in rows {
+                    failed_delivery_dialog(row: row)
+                }
             }
         </section>
+    })
+}
+
+#[component]
+async fn failed_delivery_dialog(row: &FailedRow) -> topcoat::Result<impl View> {
+    let dialog_id = failed_delivery_dialog_id(row);
+    let title_id = format!("{dialog_id}-title");
+    let body = serde_json::from_slice::<serde_json::Value>(&row.body)
+        .and_then(|x| serde_json::to_string_pretty(&x))
+        .unwrap_or_else(|_| String::from_utf8_lossy(&row.body).into_owned());
+    Ok(view! {
+        dialog(
+            open: false,
+            attrs: attributes! { id=(&dialog_id) aria-labelledby=(&title_id) },
+            dialog_content(
+                attrs: attributes! { class="[&]:max-w-3xl" },
+                dialog_header(
+                    dialog_title(
+                        attrs: attributes! { id=(&title_id) },
+                        (format!("{} from {}", event_label(row), source_label(row.source)))
+                    )
+                    dialog_description(
+                        "Received " local_time(at: row.received_at, format: TimeFormat::Absolute)
+                    )
+                )
+                <div class="flex flex-col gap-2">
+                    <h3 class="text-sm font-medium">"Last error"</h3>
+                    <pre class="rounded-md bg-foreground/5 p-3 font-mono text-xs break-words whitespace-pre-wrap">(&row.error)</pre>
+                </div>
+                <div class="flex flex-col gap-2">
+                    <h3 class="text-sm font-medium">"Attempts"</h3>
+                    table(
+                        table_header(
+                            table_row(
+                                table_head("Time")
+                                table_head("Error")
+                            )
+                        )
+                        table_body(
+                            #[key(index)]
+                            for (index, attempt) in row.attempt_log.iter().enumerate() {
+                                table_row(
+                                    table_cell(local_time(at: attempt.attempted_at, format: TimeFormat::Absolute))
+                                    table_cell(
+                                        attrs: attributes! { class="break-words [&]:whitespace-pre-wrap" },
+                                        match &attempt.error {
+                                            Some(error) => (error),
+                                            None => "No error",
+                                        }
+                                    )
+                                )
+                            }
+                        )
+                    )
+                </div>
+                <div class="flex flex-col gap-2">
+                    <h3 class="text-sm font-medium">"Body"</h3>
+                    <pre class="max-h-96 overflow-auto rounded-md bg-foreground/5 p-3 font-mono text-xs">(body)</pre>
+                </div>
+                dialog_footer(
+                    button(
+                        variant: ButtonVariant::Outline,
+                        attrs: attributes! {
+                            type="button"
+                            commandfor=(&dialog_id)
+                            command="close"
+                        },
+                        "Close"
+                    )
+                )
+            )
+        )
     })
 }
 
@@ -531,6 +619,14 @@ fn source_label(source: Source) -> &'static str {
         Source::Radarr => "Radarr",
         Source::Sonarr => "Sonarr",
     }
+}
+
+fn failed_delivery_dialog_id(row: &FailedRow) -> String {
+    format!("failed-delivery-{}", row.id)
+}
+
+fn event_label(row: &FailedRow) -> &str {
+    row.event_type.as_deref().unwrap_or("Unknown")
 }
 
 fn source_items(source: Source, items: usize) -> String {
