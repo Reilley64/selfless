@@ -70,3 +70,7 @@ _Avoid_: New, latest
 **Popular now**:
 The movies and shows the most different users have played in the last 14 days.
 _Avoid_: Trending
+
+**Now playing**:
+The movies and episodes users are playing at this moment, and the device each one plays on.
+_Avoid_: Active sessions, streams, activity
