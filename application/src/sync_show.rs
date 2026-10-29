@@ -175,7 +175,10 @@ impl EpisodeMetadata {
         stored: Option<&EpisodeMetadata>,
     ) -> Self {
         match (nfo, stored) {
-            (Nfo::Unchanged, Some(stored)) => stored.clone(),
+            (Nfo::Unchanged, Some(stored)) => Self {
+                number: sonarr_episode.episode_number,
+                ..stored.clone()
+            },
             (Nfo::Read(nfo, modified_at), _) => Self {
                 number: sonarr_episode.episode_number,
                 title: nfo

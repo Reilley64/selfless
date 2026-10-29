@@ -95,6 +95,16 @@ impl Fixture {
     }
 
     async fn reconcile(&self, series: &SonarrSeries) -> Show {
+        self.reconcile_with_episodes(
+            series,
+            &self
+                .media
+                .fixture(&format!("sonarr/api/{}.json", series.episodes)),
+        )
+        .await
+    }
+
+    async fn reconcile_with_episodes(&self, series: &SonarrSeries, episodes: &str) -> Show {
         self.sonarr
             .serve_series_list(&format!(
                 "[{}]",
@@ -105,9 +115,7 @@ impl Fixture {
         self.sonarr
             .serve_episodes(
                 series.sonarr_id,
-                &self
-                    .media
-                    .fixture(&format!("sonarr/api/{}.json", series.episodes)),
+                episodes,
                 &self
                     .media
                     .fixture(&format!("sonarr/api/{}.json", series.episode_files)),
@@ -343,6 +351,34 @@ async fn an_episode_nfo_matches_by_sonarr_uniqueid_then_by_season_and_episode_nu
             .map(|x| (x.number, x.title.as_str(), x.rating))
             .collect::<Vec<_>>(),
         [(1, "Inside the Episode", Some(7.2))]
+    );
+    fixture.stop().await;
+}
+
+#[tokio::test]
+async fn an_unchanged_episode_nfo_takes_sonarrs_new_episode_number() {
+    let fixture = Fixture::start().await;
+    fixture.create_files(&ANDOR);
+    fixture.write_nfo(&format!("{KASSA}.nfo"), "episode");
+    fixture.reconcile(&ANDOR).await;
+
+    let show = fixture
+        .reconcile_with_episodes(
+            &ANDOR,
+            &fixture
+                .media
+                .fixture("sonarr/api/episodes-andor.json")
+                .replacen("\"episodeNumber\": 1,", "\"episodeNumber\": 3,", 1),
+        )
+        .await;
+
+    let episodes = fixture.episodes(show.id, 1).await;
+    assert_eq!(
+        episodes
+            .iter()
+            .map(|x| (x.number, x.title.as_str(), x.rating))
+            .collect::<Vec<_>>(),
+        [(2, "That Would Be Me", None), (3, "Kassa", Some(7.5))]
     );
     fixture.stop().await;
 }
