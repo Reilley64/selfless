@@ -15,7 +15,7 @@ description = "Start PostgreSQL and grafana/otel-lgtm for local development"
 run = "docker compose up --detach --wait"
 
 [tasks.generate]
-description = "Generate the API client from openapi.yaml"
+description = "Generate the API client and the TypeScript telemetry constants"
 run = "bun run generate"
 
 [tasks.dev]
@@ -53,10 +53,6 @@ run = "vacuum lint --details openapi.yaml"
 [tasks."lint:telemetry"]
 description = "Check the Weaver registry"
 run = "weaver registry check --future --registry telemetry/registry"
-
-[tasks."generate:telemetry"]
-description = "Generate the TypeScript telemetry constants from the Weaver registry"
-run = "weaver registry generate --quiet --registry telemetry/registry --templates telemetry/templates ts presentation/ui/src/telemetry"
 
 [tasks."lint:workflows"]
 description = "Lint the GitHub workflows"

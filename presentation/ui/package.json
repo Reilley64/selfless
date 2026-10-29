@@ -4,6 +4,7 @@
   "license": "MIT OR Apache-2.0",
   "main": "src/index.ts",
   "scripts": {
+    "generate": "weaver registry generate --quiet --registry ../../telemetry/registry --templates ../../telemetry/templates ts src/telemetry",
     "typecheck": "tsc --noEmit",
     "test": "jest"
   },

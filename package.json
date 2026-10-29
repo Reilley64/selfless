@@ -18,7 +18,7 @@
     }
   },
   "scripts": {
-    "generate": "bun run --filter @selfless/api-client generate",
+    "generate": "bun run --filter '*' generate",
     "typecheck": "bun run --filter '*' typecheck",
     "lint": "eslint .",
     "test": "bun run --filter '*' test",
