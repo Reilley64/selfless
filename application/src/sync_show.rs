@@ -31,7 +31,6 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use tracing::Instrument;
 use tracing::Span;
-use uuid::Uuid;
 
 #[fundle::deps]
 pub struct Dependencies {
@@ -573,8 +572,20 @@ async fn write(
         .copied()
         .collect::<Vec<_>>();
     changed |= !episodes.is_empty() || !seasons.is_empty() || !removed_media_files.is_empty();
-    delete_episodes(db, episodes).await?;
-    delete_seasons(db, seasons).await?;
+    if !episodes.is_empty() {
+        Episode::filter(Episode::fields().id().in_list(episodes))
+            .delete()
+            .exec(db)
+            .await
+            .map_err(Error::caused_by)?;
+    }
+    if !seasons.is_empty() {
+        Season::filter(Season::fields().id().in_list(seasons))
+            .delete()
+            .exec(db)
+            .await
+            .map_err(Error::caused_by)?;
+    }
     media_files::delete(db, removed_media_files)
         .await
         .map_err(Error::caused_by)?;
@@ -600,26 +611,4 @@ async fn write(
     .await
     .map_err(Error::caused_by)?;
     Ok(show_change.or(changed.then_some(Change::Changed)))
-}
-
-async fn delete_episodes(db: &mut dyn toasty::Executor, ids: Vec<Uuid>) -> Result<(), Error> {
-    if ids.is_empty() {
-        return Ok(());
-    }
-    Episode::filter(Episode::fields().id().in_list(ids))
-        .delete()
-        .exec(db)
-        .await
-        .map_err(Error::caused_by)
-}
-
-async fn delete_seasons(db: &mut dyn toasty::Executor, ids: Vec<Uuid>) -> Result<(), Error> {
-    if ids.is_empty() {
-        return Ok(());
-    }
-    Season::filter(Season::fields().id().in_list(ids))
-        .delete()
-        .exec(db)
-        .await
-        .map_err(Error::caused_by)
 }
