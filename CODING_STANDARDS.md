@@ -21,6 +21,7 @@ The `code-review` step applies these rules to each diff. Each rule is a judgemen
 - Application groups use cases by capability. Each use case is `<use_case>.rs` with `call`, and its `Dependencies`, `Output` and `Error` sit in `<use_case>/dependencies.rs`, `output.rs` and `error.rs`. A marker error that only one use case returns goes in its `error.rs`. See `application/src/users/create_user.rs`.
 - Ports live in `application/src/ports/`. `persistence.rs` holds the `DbContext`, and `mod.rs` holds the callable ports in alphabetical order.
 - Domain has one file per type, re-exported from `lib.rs`.
+- Unit tests go in a `#[cfg(test)] mod tests` at the bottom of the file they test.
 - API routes live in `presentation/api/src/routes/`, one file per resource and version, such as `routes/api/sessions/v1.rs`. The admin app splits its views into `pages/`, `templates/` and `atoms/`.
 
 ## Logging and telemetry
@@ -35,5 +36,5 @@ The `code-review` step applies these rules to each diff. Each rule is a judgemen
 
 ## Tests
 
-- Tests sit at the seams the spec's Testing Decisions name: the whole server in process against PostgreSQL over HTTP, with every JSON response checked against `openapi.yaml`, and the shared app components with a mocked fetch. Each test checks behavior a spec asks for.
+- Test each behaviour at the smallest component that owns it: a domain type's rule in a unit test in the same file; a use case against PostgreSQL through `TestServer`'s `DbContext` and fake ports; a route over HTTP with every JSON response checked against `openapi.yaml`; an app component with a mocked fetch. Each test checks behaviour a spec asks for, and its name says which.
 - Do not test a dependency's behavior on its own.
