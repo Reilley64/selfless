@@ -1,7 +1,7 @@
 use crate::problem;
 use crate::problem::EMPTY_PASSWORD;
 use crate::problem::INVALID_IDEMPOTENCY_KEY;
-use crate::routes::api::me::v1::UserBody;
+use crate::routes::api::user::UserBody;
 use domain::Password;
 use infrastructure::AppState;
 use serde::Deserialize;

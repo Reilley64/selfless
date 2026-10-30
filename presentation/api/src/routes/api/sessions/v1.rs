@@ -1,5 +1,5 @@
 use crate::problem::WRONG_NAME_OR_PASSWORD;
-use crate::routes::api::me::v1::UserBody;
+use crate::routes::api::user::UserBody;
 use crate::user_auth::CurrentSession;
 use infrastructure::AppState;
 use serde::Deserialize;

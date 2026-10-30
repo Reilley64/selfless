@@ -1,5 +1,5 @@
 use crate::problem::UNAUTHENTICATED;
-use crate::routes::api::me::v1::UserBody;
+use crate::routes::api::user::UserBody;
 use application::sessions::get_current_user;
 use infrastructure::AppState;
 use topcoat::context::Cx;
