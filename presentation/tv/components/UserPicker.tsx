@@ -52,13 +52,6 @@ async function remove(user: PickerUser) {
   }
 }
 
-function confirmRemove(user: PickerUser) {
-  Alert.alert(user.name, undefined, [
-    { text: "Remove from this TV", style: "destructive", onPress: () => void remove(user) },
-    { text: "Cancel", style: "cancel" },
-  ]);
-}
-
 export function UserPicker({ onSignIn }: { onSignIn: (name: string) => void }) {
   const { users } = useSyncExternalStore(session.subscribe, session.state);
 
@@ -76,7 +69,12 @@ export function UserPicker({ onSignIn }: { onSignIn: (name: string) => void }) {
             label={user.name}
             className={`${colours[user.colour]} ${user.dimmed ? "opacity-40" : ""}`}
             onPress={() => (user.dimmed ? onSignIn(user.name) : session.pick(user.id))}
-            onLongPress={() => confirmRemove(user)}
+            onLongPress={() =>
+              Alert.alert(user.name, undefined, [
+                { text: "Remove from this TV", style: "destructive", onPress: () => void remove(user) },
+                { text: "Cancel", style: "cancel" },
+              ])
+            }
           >
             <SvgXml
               xml={`<svg viewBox="0 0 200 200">${symbols.symbol[user.symbol]}</svg>`}
