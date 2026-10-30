@@ -1,7 +1,14 @@
-use domain::User;
+use domain::Colour;
+use domain::Symbol;
+use uuid::Uuid;
 
 #[derive(Debug)]
 pub enum Output {
-    SignedIn { user: User },
+    SignedIn {
+        id: Uuid,
+        name: String,
+        colour: Colour,
+        symbol: Symbol,
+    },
     NotSignedIn,
 }

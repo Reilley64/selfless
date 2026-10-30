@@ -27,7 +27,7 @@ async fn create_admin(
         password.to_owned(),
     )
     .await
-    .map(|x| x.admin.id)
+    .map(|x| x.id)
 }
 
 async fn delete_admin(

@@ -7,6 +7,5 @@ publish.workspace = true
 
 [dependencies]
 jiff = { workspace = true }
-serde = { workspace = true }
 toasty = { workspace = true, features = ["jiff"] }
 uuid = { workspace = true }

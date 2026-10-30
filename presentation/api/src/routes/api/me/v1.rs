@@ -1,8 +1,5 @@
 use crate::problem;
 use crate::user_auth::CurrentSession;
-use domain::Colour;
-use domain::Symbol;
-use domain::User;
 use infrastructure::AppState;
 use serde::Deserialize;
 use serde::Serialize;
@@ -18,26 +15,55 @@ use uuid::Uuid;
 
 #[derive(Serialize)]
 pub(crate) struct UserBody {
-    id: Uuid,
-    name: String,
-    colour: Colour,
-    symbol: Symbol,
+    pub(crate) id: Uuid,
+    pub(crate) name: String,
+    pub(crate) colour: Colour,
+    pub(crate) symbol: Symbol,
 }
 
-impl From<&User> for UserBody {
-    fn from(user: &User) -> Self {
-        Self {
-            id: user.id,
-            name: user.name.clone(),
-            colour: user.colour,
-            symbol: user.symbol,
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum Colour {
+    Amber,
+    Blue,
+    Pink,
+    Emerald,
+}
+
+impl From<domain::Colour> for Colour {
+    fn from(colour: domain::Colour) -> Self {
+        match colour {
+            domain::Colour::Amber => Self::Amber,
+            domain::Colour::Blue => Self::Blue,
+            domain::Colour::Pink => Self::Pink,
+            domain::Colour::Emerald => Self::Emerald,
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum Symbol {
+    Ring,
+    Triangle,
+    Star,
+    Waves,
+}
+
+impl From<domain::Symbol> for Symbol {
+    fn from(symbol: domain::Symbol) -> Self {
+        match symbol {
+            domain::Symbol::Ring => Self::Ring,
+            domain::Symbol::Triangle => Self::Triangle,
+            domain::Symbol::Star => Self::Star,
+            domain::Symbol::Waves => Self::Waves,
         }
     }
 }
 
 #[route(GET "/api/(user)/me/v1")]
 pub(crate) async fn me(cx: &Cx) -> topcoat::Result<Response> {
-    Json(UserBody::from(&request_context::<CurrentSession>(cx).user)).into_response(cx)
+    Json(&request_context::<CurrentSession>(cx).user).into_response(cx)
 }
 
 #[derive(Deserialize)]

@@ -60,5 +60,11 @@ pub async fn call(
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?;
-    Ok(Output::SignedIn { token, user })
+    Ok(Output::SignedIn {
+        token,
+        user_id: user.id,
+        name: user.name,
+        colour: user.colour,
+        symbol: user.symbol,
+    })
 }

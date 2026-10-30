@@ -260,7 +260,7 @@ impl TestServer {
             format!("{}@example.com", name.to_lowercase()),
         )
         .await
-        .map(|x| x.user.id)
+        .map(|x| x.id)
     }
 
     pub async fn sign_in(

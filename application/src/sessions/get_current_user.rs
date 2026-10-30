@@ -41,5 +41,10 @@ pub async fn call(dependencies: impl Into<Dependencies>, token: &str) -> Result<
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?;
-    Ok(user.map_or(Output::NotSignedIn, |user| Output::SignedIn { user }))
+    Ok(user.map_or(Output::NotSignedIn, |user| Output::SignedIn {
+        id: user.id,
+        name: user.name,
+        colour: user.colour,
+        symbol: user.symbol,
+    }))
 }

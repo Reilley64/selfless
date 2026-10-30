@@ -62,5 +62,10 @@ pub async fn call(
         .await
         .map_err(Error::caused_by)?;
     transaction.commit().await.map_err(Error::caused_by)?;
-    Ok(Output { user })
+    Ok(Output {
+        id: user.id,
+        name: user.name,
+        colour: user.colour,
+        symbol: user.symbol,
+    })
 }

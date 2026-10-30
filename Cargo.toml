@@ -107,6 +107,7 @@ workers = { workspace = true }
 
 [dev-dependencies]
 base64 = { workspace = true }
+domain = { workspace = true }
 jiff = { workspace = true }
 jsonschema = { workspace = true }
 opentelemetry = { workspace = true }

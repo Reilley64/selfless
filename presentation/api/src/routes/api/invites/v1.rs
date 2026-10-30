@@ -30,7 +30,16 @@ pub(crate) async fn accept(
     )
     .await
     {
-        Ok(output) => (StatusCode::CREATED, Json(UserBody::from(&output.user))).into_response(cx),
+        Ok(output) => (
+            StatusCode::CREATED,
+            Json(UserBody {
+                id: output.id,
+                name: output.name,
+                colour: output.colour.into(),
+                symbol: output.symbol.into(),
+            }),
+        )
+            .into_response(cx),
         Err(error) => problem::from_error(cx, error),
     }
 }

@@ -1178,7 +1178,6 @@ name = "domain"
 version = "0.1.0"
 dependencies = [
  "jiff",
- "serde",
  "toasty",
  "uuid",
 ]
@@ -3799,6 +3798,7 @@ dependencies = [
  "api",
  "application",
  "base64 0.22.1",
+ "domain",
  "email",
  "infrastructure",
  "jiff",

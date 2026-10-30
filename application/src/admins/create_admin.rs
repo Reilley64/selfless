@@ -31,5 +31,5 @@ pub async fn call(
             Some(NAME_INDEX) => Error::caused_by(NameTaken::new()),
             _ => Error::caused_by(error),
         })?;
-    Ok(Output { admin })
+    Ok(Output { id: admin.id })
 }

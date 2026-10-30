@@ -1,6 +1,7 @@
 mod support;
 
 use application::EmptyPassword;
+use domain::ClientKind;
 use jiff::SignedDuration;
 use ohno::ErrorExt;
 use reqwest::Method;
@@ -52,7 +53,11 @@ async fn list_sessions(server: &TestServer, user_id: Uuid) -> Vec<Value> {
     .into_iter()
     .map(|x| {
         json!({
-            "clientKind": x.client_kind,
+            "clientKind": match x.client_kind {
+                ClientKind::Web => "web",
+                ClientKind::AppleTv => "appleTv",
+                ClientKind::GoogleTv => "googleTv",
+            },
             "deviceName": x.device_name,
             "signedInAt": x.signed_in_at.to_string(),
             "lastUsedAt": x.last_used_at.to_string(),

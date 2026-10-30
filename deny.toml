@@ -5,7 +5,7 @@ deny = [
     { name = "native-tls" },
     { name = "tokio-postgres", deny-multiple-versions = true },
 
-    { name = "domain", wrappers = ["application", "api"] },
+    { name = "domain", wrappers = ["selfless", "application", "api"] },
     { name = "application", wrappers = ["selfless", "infrastructure", "email", "persistence", "telemetry", "api", "admin", "workers"] },
 
     { name = "email", wrappers = ["selfless", "settings"] },

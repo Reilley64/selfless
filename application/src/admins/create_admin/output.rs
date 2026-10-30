@@ -1,6 +1,6 @@
-use domain::Admin;
+use uuid::Uuid;
 
 #[derive(Debug)]
 pub struct Output {
-    pub admin: Admin,
+    pub id: Uuid,
 }

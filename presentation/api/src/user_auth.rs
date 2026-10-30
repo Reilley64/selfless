@@ -1,4 +1,5 @@
 use crate::problem::UNAUTHENTICATED;
+use crate::routes::api::me::v1::UserBody;
 use application::sessions::get_current_user;
 use infrastructure::AppState;
 use topcoat::context::Cx;
@@ -16,7 +17,7 @@ use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 pub(crate) struct CurrentSession {
     pub(crate) token: String,
-    pub(crate) user: domain::User,
+    pub(crate) user: UserBody,
 }
 
 pub(crate) struct UserAuthLayer;
@@ -35,15 +36,24 @@ impl Layer for UserAuthLayer {
             else {
                 return UNAUTHENTICATED.into_response(cx);
             };
-            let get_current_user::Output::SignedIn { user } =
-                get_current_user::call(app_context::<AppState>(cx), token).await?
+            let get_current_user::Output::SignedIn {
+                id,
+                name,
+                colour,
+                symbol,
+            } = get_current_user::call(app_context::<AppState>(cx), token).await?
             else {
                 return UNAUTHENTICATED.into_response(cx);
             };
-            Span::current().set_attribute("user.id", user.id.to_string());
+            Span::current().set_attribute("user.id", id.to_string());
             let session = CurrentSession {
                 token: token.to_owned(),
-                user,
+                user: UserBody {
+                    id,
+                    name,
+                    colour: colour.into(),
+                    symbol: symbol.into(),
+                },
             };
             next.run(&cx.with(session), body).await
         })

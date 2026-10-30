@@ -1,7 +1,6 @@
 use crate::problem::WRONG_NAME_OR_PASSWORD;
 use crate::routes::api::me::v1::UserBody;
 use crate::user_auth::CurrentSession;
-use domain::ClientKind;
 use infrastructure::AppState;
 use serde::Deserialize;
 use serde::Serialize;
@@ -23,6 +22,24 @@ struct SignIn {
     device_name: String,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+enum ClientKind {
+    Web,
+    AppleTv,
+    GoogleTv,
+}
+
+impl From<ClientKind> for domain::ClientKind {
+    fn from(client_kind: ClientKind) -> Self {
+        match client_kind {
+            ClientKind::Web => Self::Web,
+            ClientKind::AppleTv => Self::AppleTv,
+            ClientKind::GoogleTv => Self::GoogleTv,
+        }
+    }
+}
+
 #[derive(Serialize)]
 struct SignedIn {
     token: String,
@@ -31,15 +48,20 @@ struct SignedIn {
 
 #[route(POST "/api/(public)/sessions/v1")]
 pub(crate) async fn sign_in(cx: &Cx, Json(request): Json<SignIn>) -> topcoat::Result<Response> {
-    let application::sessions::sign_in::Output::SignedIn { token, user } =
-        application::sessions::sign_in::call(
-            app_context::<AppState>(cx),
-            request.name,
-            request.password,
-            request.client_kind,
-            request.device_name,
-        )
-        .await?
+    let application::sessions::sign_in::Output::SignedIn {
+        token,
+        user_id,
+        name,
+        colour,
+        symbol,
+    } = application::sessions::sign_in::call(
+        app_context::<AppState>(cx),
+        request.name,
+        request.password,
+        request.client_kind.into(),
+        request.device_name,
+    )
+    .await?
     else {
         return WRONG_NAME_OR_PASSWORD.into_response(cx);
     };
@@ -47,7 +69,12 @@ pub(crate) async fn sign_in(cx: &Cx, Json(request): Json<SignIn>) -> topcoat::Re
         StatusCode::CREATED,
         Json(SignedIn {
             token,
-            user: UserBody::from(&user),
+            user: UserBody {
+                id: user_id,
+                name,
+                colour: colour.into(),
+                symbol: symbol.into(),
+            },
         }),
     )
         .into_response(cx)

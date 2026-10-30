@@ -24,7 +24,7 @@ pub async fn call(
 ) -> Result<Output, Error> {
     let mut db_context = dependencies.into().db_context;
     let user = create(&mut db_context, name, password, email).await?;
-    Ok(Output { user })
+    Ok(Output { id: user.id })
 }
 
 pub(crate) async fn create(
