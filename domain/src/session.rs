@@ -6,6 +6,7 @@ use toasty::Deferred;
 use uuid::Uuid;
 
 #[derive(Debug, toasty::Model)]
+#[unique(user_id, client_id)]
 pub struct Session {
     #[key]
     #[auto]
@@ -14,6 +15,7 @@ pub struct Session {
     pub user_id: Uuid,
     #[belongs_to]
     pub user: Deferred<User>,
+    pub client_id: Uuid,
     pub client_kind: ClientKind,
     pub device_name: String,
     #[unique]
@@ -54,6 +56,7 @@ mod tests {
             id: Uuid::nil(),
             user_id: Uuid::nil(),
             user: Deferred::default(),
+            client_id: Uuid::nil(),
             client_kind,
             device_name: "Living room".to_owned(),
             token_hash: Vec::new(),

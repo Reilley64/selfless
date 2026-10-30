@@ -14,3 +14,8 @@ snapshot_name = "20261029_135449_snapshot.toml"
 id = 1175823576652747194
 name = "20261030_014308_users_idempotency_key.sql"
 snapshot_name = "20261030_014308_snapshot.toml"
+
+[[migrations]]
+id = 3630059236774545864
+name = "20261030_050531_sessions_client_id.sql"
+snapshot_name = "20261030_050531_snapshot.toml"

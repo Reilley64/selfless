@@ -8,6 +8,7 @@ import {
   signOut,
   type User,
 } from "@selfless/api-client";
+import { clientId } from "./clientId";
 import { flushTelemetry } from "./telemetry/startTelemetry";
 
 export interface SessionStorage {
@@ -51,7 +52,13 @@ export function startWebSession(storage: SessionStorage) {
     },
     subscribe,
     async signIn(name: string, password: string, deviceName: string) {
-      const response = await signIn({ name, password, clientKind: ClientKind.web, deviceName });
+      const response = await signIn({
+        name,
+        password,
+        clientKind: ClientKind.web,
+        deviceName,
+        clientId: clientId(storage),
+      });
       if (response.status === 201) {
         storage.setItem(tokenKey, response.data.token);
         changed();
@@ -133,11 +140,10 @@ export function startTvSession(storage: SessionStorage, clientKind: Exclude<Clie
       update({ serverUrl: undefined });
     },
     async signIn(name: string, password: string, deviceName: string) {
-      const replaces = state.users.length > 0 ? state.users.map(({ token }) => token) : undefined;
-      if (replaces) {
+      if (state.users.length > 0) {
         await flushTelemetry();
       }
-      const response = await signIn({ name, password, clientKind, deviceName, replaces });
+      const response = await signIn({ name, password, clientKind, deviceName, clientId: clientId(storage) });
       if (response.status === 201) {
         const signedIn = { token: response.data.token, ...response.data.user };
         const previous = state.users.find(({ id }) => id === signedIn.id);

@@ -280,6 +280,7 @@ impl TestServer {
                 "password": password,
                 "clientKind": client_kind,
                 "deviceName": "Living Room",
+                "clientId": Uuid::new_v4(),
             })),
         )
         .await

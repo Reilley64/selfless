@@ -12,6 +12,7 @@ use topcoat::router::content::Json;
 use topcoat::router::response::IntoResponse;
 use topcoat::router::response::Response;
 use topcoat::router::route;
+use uuid::Uuid;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -20,8 +21,7 @@ struct SignIn {
     password: String,
     client_kind: ClientKind,
     device_name: String,
-    #[serde(default)]
-    replaces: Vec<String>,
+    client_id: Uuid,
 }
 
 #[derive(Deserialize)]
@@ -62,7 +62,7 @@ pub(crate) async fn sign_in(cx: &Cx, Json(request): Json<SignIn>) -> topcoat::Re
         request.password,
         request.client_kind.into(),
         request.device_name,
-        request.replaces,
+        request.client_id,
     )
     .await?
     else {

@@ -102,7 +102,7 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/SignInRequest"
-            example: {"name":"Noor","password":"a long passphrase about tea","clientKind":"web","deviceName":"Firefox on macOS"}
+            example: {"name":"Noor","password":"a long passphrase about tea","clientKind":"web","deviceName":"Firefox on macOS","clientId":"0f8e3c2a-5b7d-4e19-9a64-2c1d8b7f6e30"}
       responses:
         "201":
           description: The user is signed in.
@@ -510,7 +510,7 @@ components:
     SignInRequest:
       description: A user's name and password, and the client they sign in on.
       type: object
-      required: [name, password, clientKind, deviceName]
+      required: [name, password, clientKind, deviceName, clientId]
       properties:
         name:
           description: The user's name, in any capitals.
@@ -526,12 +526,11 @@ components:
           description: A name for the device, shown to admins in the user's sessions.
           type: string
           examples: [Firefox on macOS]
-        replaces:
-          description: Tokens this device holds. The server ends whichever of them belongs to the user who signs in and ignores the rest.
-          type: array
-          items:
-            type: string
-          examples: [[q2Xz8kQ0mJ3Hc1yF5bR7tVw9nL4pA6sD0eG2iK8uO1M]]
+        clientId:
+          description: A random id the app makes once per install or browser and sends with every sign-in. Signing in again as the same user with the same id replaces that user's earlier session from it.
+          type: string
+          format: uuid
+          examples: [0f8e3c2a-5b7d-4e19-9a64-2c1d8b7f6e30]
     SignedIn:
       description: A new session's token and the user it belongs to.
       type: object

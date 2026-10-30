@@ -27,6 +27,7 @@
     "react": "catalog:",
     "react-native": "catalog:",
     "react-native-css": "catalog:",
+    "react-native-get-random-values": "^2.1.0",
     "react-native-safe-area-context": "~5.10.1",
     "react-native-screens": "~4.30.0",
     "react-native-svg": "15.16.0"

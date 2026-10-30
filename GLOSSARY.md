@@ -48,6 +48,10 @@ _Avoid_: Invitation code, sign-up link, registration
 An account that runs the server through the admin app. An admin is not a user, cannot watch, and never appears in the user picker.
 _Avoid_: Account, administrator, owner
 
+**Client id**:
+A random id each app install or browser makes once and sends with every sign-in, so signing in again as the same user from it replaces that user's earlier session from it.
+_Avoid_: Device id, install id
+
 ## TVs
 
 **User picker**:

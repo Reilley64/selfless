@@ -1,9 +1,11 @@
 mod support;
 
+use application::ports::persistence::DbScope;
 use application::sessions::sign_in;
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use domain::ClientKind;
+use domain::Session;
 use jiff::SignedDuration;
 use reqwest::Method;
 use reqwest::StatusCode;
@@ -22,6 +24,7 @@ use tokio::time::Instant;
 use uuid::Uuid;
 
 const UNAUTHENTICATED: &str = "urn:selfless:problem:unauthenticated";
+const CLIENT_ID: &str = "0f8e3c2a-5b7d-4e19-9a64-2c1d8b7f6e30";
 
 async fn sign_in(server: &TestServer, name: &str, password: &str) -> (StatusCode, Value) {
     server.sign_in(name, password, "web").await
@@ -340,8 +343,10 @@ async fn a_sign_in_body_without_a_field_or_with_an_unknown_client_kind_returns_a
     let server = TestServer::start(database.url()).await;
 
     for body in [
-        json!({ "name": NAME, "password": PASSWORD, "deviceName": "Living Room" }),
-        json!({ "name": NAME, "password": PASSWORD, "clientKind": "toaster", "deviceName": "Kitchen" }),
+        json!({ "name": NAME, "password": PASSWORD, "deviceName": "Living Room", "clientId": CLIENT_ID }),
+        json!({ "name": NAME, "password": PASSWORD, "clientKind": "toaster", "deviceName": "Kitchen", "clientId": CLIENT_ID }),
+        json!({ "name": NAME, "password": PASSWORD, "clientKind": "appleTv", "deviceName": "Living Room" }),
+        json!({ "name": NAME, "password": PASSWORD, "clientKind": "appleTv", "deviceName": "Living Room", "clientId": "living-room" }),
     ] {
         let (status, problem) = server
             .request(Method::POST, "/api/sessions/v1", None, Some(body))
@@ -354,45 +359,12 @@ async fn a_sign_in_body_without_a_field_or_with_an_unknown_client_kind_returns_a
     database.drop().await;
 }
 
-#[tokio::test]
-async fn signing_in_with_replaces_ends_the_old_session() {
-    let database = TestDatabase::create().await;
-    let server = TestServer::start(database.url()).await;
-    server.create_user(NAME, PASSWORD).await;
-    let (_, old) = server.sign_in(NAME, PASSWORD, "appleTv").await;
-    let old = old["token"].as_str().unwrap();
-
-    let (status, new) = server
-        .request(
-            Method::POST,
-            "/api/sessions/v1",
-            None,
-            Some(json!({
-                "name": NAME,
-                "password": PASSWORD,
-                "clientKind": "appleTv",
-                "deviceName": "Living Room",
-                "replaces": [old],
-            })),
-        )
-        .await;
-
-    assert_eq!(status, StatusCode::CREATED);
-    assert_eq!(me(&server, old).await, StatusCode::UNAUTHORIZED);
-    assert_eq!(
-        me(&server, new["token"].as_str().unwrap()).await,
-        StatusCode::OK
-    );
-    assert_eq!(database.query("SELECT 1 FROM sessions").await.len(), 1);
-    drop(server);
-    database.drop().await;
-}
-
 async fn sign_in_on_tv(
     server: &TestServer,
     name: &str,
     password: &str,
-    replaces: Vec<String>,
+    client_id: Uuid,
+    device_name: &str,
 ) -> sign_in::Output {
     sign_in::call(
         sign_in::Dependencies {
@@ -402,8 +374,8 @@ async fn sign_in_on_tv(
         name.to_owned(),
         password.to_owned(),
         ClientKind::AppleTv,
-        "Living Room".to_owned(),
-        replaces,
+        device_name.to_owned(),
+        client_id,
     )
     .await
     .unwrap()
@@ -416,36 +388,124 @@ fn token(output: sign_in::Output) -> String {
     }
 }
 
+async fn sessions(server: &TestServer) -> Vec<Session> {
+    let mut db_context = server.db_context().await;
+    db_context
+        .sessions()
+        .all()
+        .exec(db_context.executor_mut())
+        .await
+        .unwrap()
+}
+
 #[tokio::test]
-async fn a_replaces_token_of_another_user_is_ignored() {
+async fn signing_in_again_as_the_same_user_with_the_same_client_id_replaces_the_session() {
     let database = TestDatabase::create().await;
     let server = TestServer::start(database.url()).await;
-    server.create_user(NAME, PASSWORD).await;
-    server.create_user("Theo", "battery staple").await;
-    let theo = token(sign_in_on_tv(&server, "Theo", "battery staple", vec![]).await);
-    let unknown = "q2Xz8kQ0mJ3Hc1yF5bR7tVw9nL4pA6sD0eG2iK8uO1M".to_owned();
+    let user_id = server.create_user(NAME, PASSWORD).await;
+    let client_id = Uuid::new_v4();
+    let old = token(sign_in_on_tv(&server, NAME, PASSWORD, client_id, "Living Room").await);
+    let [first] = sessions(&server).await.try_into().unwrap();
+    server.clock.advance(SignedDuration::from_hours(2));
 
-    let output = sign_in_on_tv(&server, NAME, PASSWORD, vec![theo.clone(), unknown]).await;
+    let new = token(sign_in_on_tv(&server, NAME, PASSWORD, client_id, "Bedroom").await);
 
-    assert_eq!(me(&server, &token(output)).await, StatusCode::OK);
-    assert_eq!(me(&server, &theo).await, StatusCode::OK);
-    assert_eq!(database.query("SELECT 1 FROM sessions").await.len(), 2);
+    let [session] = sessions(&server).await.try_into().unwrap();
+    assert_eq!(session.id, first.id);
+    assert_eq!(session.user_id, user_id);
+    assert_eq!(session.client_id, client_id);
+    assert_eq!(session.device_name, "Bedroom");
+    assert_eq!(session.token_hash, Sha256::digest(new.as_bytes()).to_vec());
+    assert_eq!(session.signed_in_at, server.clock.now());
+    assert_eq!(session.last_used_at, server.clock.now());
+    assert_eq!(me(&server, &old).await, StatusCode::UNAUTHORIZED);
+    assert_eq!(me(&server, &new).await, StatusCode::OK);
     drop(server);
     database.drop().await;
 }
 
 #[tokio::test]
-async fn a_wrong_password_with_replaces_ends_nothing() {
+async fn signing_in_with_a_different_client_id_keeps_both_sessions() {
     let database = TestDatabase::create().await;
     let server = TestServer::start(database.url()).await;
     server.create_user(NAME, PASSWORD).await;
-    let old = token(sign_in_on_tv(&server, NAME, PASSWORD, vec![]).await);
+    let living_room =
+        token(sign_in_on_tv(&server, NAME, PASSWORD, Uuid::new_v4(), "Living Room").await);
 
-    let output = sign_in_on_tv(&server, NAME, "wrong", vec![old.clone()]).await;
+    let bedroom = token(sign_in_on_tv(&server, NAME, PASSWORD, Uuid::new_v4(), "Bedroom").await);
+
+    assert_eq!(sessions(&server).await.len(), 2);
+    assert_eq!(me(&server, &living_room).await, StatusCode::OK);
+    assert_eq!(me(&server, &bedroom).await, StatusCode::OK);
+    drop(server);
+    database.drop().await;
+}
+
+#[tokio::test]
+async fn another_user_signing_in_with_the_same_client_id_keeps_both_sessions() {
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+    server.create_user(NAME, PASSWORD).await;
+    server.create_user("Theo", "battery staple").await;
+    let client_id = Uuid::new_v4();
+    let noor = token(sign_in_on_tv(&server, NAME, PASSWORD, client_id, "Living Room").await);
+
+    let theo =
+        token(sign_in_on_tv(&server, "Theo", "battery staple", client_id, "Living Room").await);
+
+    assert_eq!(sessions(&server).await.len(), 2);
+    assert_eq!(me(&server, &noor).await, StatusCode::OK);
+    assert_eq!(me(&server, &theo).await, StatusCode::OK);
+    drop(server);
+    database.drop().await;
+}
+
+#[tokio::test]
+async fn two_sign_ins_at_once_with_one_client_id_leave_one_session() {
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+    let user_id = server.create_user(NAME, PASSWORD).await;
+
+    for _ in 0..10 {
+        let client_id = Uuid::new_v4();
+        tokio::join!(
+            sign_in_on_tv(&server, NAME, PASSWORD, client_id, "Living Room"),
+            sign_in_on_tv(&server, NAME, PASSWORD, client_id, "Living Room"),
+        );
+
+        let from_client = sessions(&server)
+            .await
+            .into_iter()
+            .filter(|x| x.user_id == user_id && x.client_id == client_id)
+            .count();
+        assert_eq!(from_client, 1);
+    }
+    drop(server);
+    database.drop().await;
+}
+
+#[tokio::test]
+async fn a_wrong_password_changes_no_session() {
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+    server.create_user(NAME, PASSWORD).await;
+    let client_id = Uuid::new_v4();
+    let old = token(sign_in_on_tv(&server, NAME, PASSWORD, client_id, "Living Room").await);
+    let rows = async || {
+        sessions(&server)
+            .await
+            .into_iter()
+            .map(|x| (x.id, x.device_name, x.token_hash, x.signed_in_at))
+            .collect::<Vec<_>>()
+    };
+    let before = rows().await;
+    server.clock.advance(SignedDuration::from_hours(2));
+
+    let output = sign_in_on_tv(&server, NAME, "wrong", client_id, "Bedroom").await;
 
     assert!(matches!(output, sign_in::Output::WrongNameOrPassword));
+    assert_eq!(rows().await, before);
     assert_eq!(me(&server, &old).await, StatusCode::OK);
-    assert_eq!(database.query("SELECT 1 FROM sessions").await.len(), 1);
     drop(server);
     database.drop().await;
 }
@@ -466,6 +526,7 @@ async fn a_sign_in_body_with_an_extra_field_signs_in() {
                 "password": PASSWORD,
                 "clientKind": "web",
                 "deviceName": "Firefox on macOS",
+                "clientId": CLIENT_ID,
                 "theme": "dark",
             })),
         )

@@ -13,6 +13,7 @@ use crate::tokens;
 use domain::ClientKind;
 use domain::Session;
 use domain::User;
+use uuid::Uuid;
 
 pub async fn call(
     dependencies: impl Into<Dependencies>,
@@ -20,7 +21,7 @@ pub async fn call(
     password: String,
     client_kind: ClientKind,
     device_name: String,
-    replaces: Vec<String>,
+    client_id: Uuid,
 ) -> Result<Output, Error> {
     let Dependencies {
         mut db_context,
@@ -50,33 +51,15 @@ pub async fn call(
     };
     let token = tokens::generate();
     let now = clock.call();
-    let mut transaction = db_context.transaction().await.map_err(Error::caused_by)?;
-    transaction
-        .sessions()
-        .create()
-        .user_id(user.id)
+    Session::upsert_by_user_id_and_client_id(user.id, client_id)
         .client_kind(client_kind)
         .device_name(device_name)
         .token_hash(tokens::hash(&token))
         .signed_in_at(now)
         .last_used_at(now)
-        .exec(transaction.executor_mut())
+        .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?;
-    transaction
-        .sessions()
-        .filter(
-            Session::fields().user_id().eq(user.id).and(
-                Session::fields()
-                    .token_hash()
-                    .in_list(replaces.iter().map(|x| tokens::hash(x)).collect::<Vec<_>>()),
-            ),
-        )
-        .delete()
-        .exec(transaction.executor_mut())
-        .await
-        .map_err(Error::caused_by)?;
-    transaction.commit().await.map_err(Error::caused_by)?;
     Ok(Output::SignedIn {
         token,
         user_id: user.id,

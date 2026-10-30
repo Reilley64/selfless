@@ -1,3 +1,4 @@
+import "react-native-get-random-values";
 import { ClientKind } from "@selfless/api-client";
 import { startTelemetry, startTvSession } from "@selfless/ui";
 import { deleteItemAsync, getItem, setItem } from "expo-secure-store";

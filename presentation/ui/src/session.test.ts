@@ -73,6 +73,14 @@ function mockServer({
   });
 }
 
+function signInBodies(fetch: ReturnType<typeof mockServer>) {
+  return fetch.mock.calls
+    .filter(([input]) => String(input).endsWith("/api/sessions/v1"))
+    .map(([, init]) => JSON.parse(String(init?.body)));
+}
+
+const storedClientId = "0f8e3c2a-5b7d-4e19-9a64-2c1d8b7f6e30";
+
 function sentHeaders(fetch: ReturnType<typeof mockServer>, path: string) {
   const call = fetch.mock.calls.findLast(([input]) => input === path);
   return new Headers(call?.[1]?.headers);
@@ -96,6 +104,17 @@ test("signing in keeps the token in storage, and API calls send it after a reloa
 
   expect(reloaded.token()).toBe(token);
   expect(sentHeaders(fetch, "/api/me/v1").get("Authorization")).toBe(`Bearer ${token}`);
+});
+
+test("the web session sends the browser's client id with every sign-in, also after a reload", async () => {
+  const fetch = mockServer();
+  const storage = fakeStorage();
+  storage.setItem("selfless.client.id", storedClientId);
+  await startWebSession(storage).signIn("Noor", "correct horse", "Firefox on macOS");
+
+  await startWebSession(storage).signIn("Theo", "battery staple", "Firefox on macOS");
+
+  expect(signInBodies(fetch).map(({ clientId }) => clientId)).toEqual([storedClientId, storedClientId]);
 });
 
 test("a 401 clears the token and tells the app before the call returns", async () => {
@@ -174,17 +193,20 @@ async function connectedTv(storage = fakeStorage(), clientKind: Parameters<typeo
 test("signing in on a TV sends its client kind and device name, and adds the user to the TV's picker list", async () => {
   const fetch = mockServer();
   const storage = fakeStorage();
+  storage.setItem("selfless.client.id", storedClientId);
   const session = await connectedTv(storage, "googleTv");
 
   await session.signIn("Noor", "correct horse", "Living Room");
 
-  const signInCall = fetch.mock.calls.find(([input]) => input === `${serverUrl}/api/sessions/v1`);
-  expect(JSON.parse(String(signInCall?.[1]?.body))).toEqual({
-    name: "Noor",
-    password: "correct horse",
-    clientKind: "googleTv",
-    deviceName: "Living Room",
-  });
+  expect(signInBodies(fetch)).toEqual([
+    {
+      name: "Noor",
+      password: "correct horse",
+      clientKind: "googleTv",
+      deviceName: "Living Room",
+      clientId: storedClientId,
+    },
+  ]);
   expect(startTvSession(storage, "googleTv").state().users).toEqual([{ token, ...user }]);
 });
 
@@ -242,12 +264,13 @@ test("switching user returns to the picker without ending any session", async ()
   expect(fetch.mock.calls.some(([, init]) => init?.method === "DELETE")).toBe(false);
 });
 
-test("signing in again as a user on the picker sends every picker token as replaces and keeps one entry with the new token", async () => {
-  mockServer();
+test("signing in again as a user on the picker sends the TV's client id again and keeps one entry with the new token", async () => {
+  const firstFetch = mockServer();
   const storage = fakeStorage();
   const session = await connectedTv(storage);
   await session.signIn("Noor", "correct horse", "Living Room");
   await session.signIn("Theo", "battery staple", "Living Room");
+  const [first, second] = signInBodies(firstFetch).map(({ clientId }) => clientId);
   session.switchUser();
   const newToken = "Hn4cT7vB1xK9sW3eR6yU0iP2oL5aZ8dF1gJ4mQ7wE0r";
   const fetch = mockServer({ issued: [{ token: newToken, user }, theo] });
@@ -255,8 +278,10 @@ test("signing in again as a user on the picker sends every picker token as repla
 
   await session.signIn("noor", "correct horse", "Living Room");
 
-  const [, signInInit] = fetch.mock.calls.find(([input]) => input === `${serverUrl}/api/sessions/v1`) ?? [];
-  expect(JSON.parse(String(signInInit?.body)).replaces).toEqual([token, theo.token]);
+  const [again] = signInBodies(fetch);
+  expect(first).toMatch(/^[0-9a-f-]{36}$/);
+  expect([second, again.clientId]).toEqual([first, first]);
+  expect(again).not.toHaveProperty("replaces");
   expect(fetch.mock.calls.some(([, init]) => init?.method === "DELETE")).toBe(false);
   expect(startTvSession(storage, "appleTv").state().users).toEqual([
     { token: newToken, ...user },

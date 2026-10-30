@@ -11,6 +11,7 @@ use support::TestDatabase;
 use support::TestServer;
 use support::USER_NAME;
 use support::USER_PASSWORD;
+use uuid::Uuid;
 
 async fn sign_in(server: &TestServer, client_kind: &str, device_name: &str) {
     let (status, _) = server
@@ -23,6 +24,7 @@ async fn sign_in(server: &TestServer, client_kind: &str, device_name: &str) {
                 "password": USER_PASSWORD,
                 "clientKind": client_kind,
                 "deviceName": device_name,
+                "clientId": Uuid::new_v4(),
             })),
         )
         .await;

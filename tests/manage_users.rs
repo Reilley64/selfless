@@ -31,6 +31,7 @@ async fn sign_in(server: &TestServer, client_kind: &str, device_name: &str) -> S
                 "password": PASSWORD,
                 "clientKind": client_kind,
                 "deviceName": device_name,
+                "clientId": Uuid::new_v4(),
             })),
         )
         .await;
