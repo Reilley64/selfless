@@ -110,7 +110,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SignedIn"
-              example: {"token":"q2Xz8kQ0mJ3Hc1yF5bR7tVw9nL4pA6sD0eG2iK8uO1M","user":{"id":"01890a5d-ac96-774b-bcce-b302099a8057","name":"Noor","colour":"amber","symbol":"ring"}}
+              example: {"token":"q2Xz8kQ0mJ3Hc1yF5bR7tVw9nL4pA6sD0eG2iK8uO1M","user":{"id":"01890a5d-ac96-774b-bcce-b302099a8057","name":"Noor","colour":"amber"}}
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -141,7 +141,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/User"
-              example: {"id":"01890a5d-ac96-774b-bcce-b302099a8057","name":"Noor","colour":"amber","symbol":"ring"}
+              example: {"id":"01890a5d-ac96-774b-bcce-b302099a8057","name":"Noor","colour":"amber"}
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "500":
@@ -204,7 +204,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/User"
-              example: {"id":"01890a5d-ac96-774b-bcce-b302099a8057","name":"Noor","colour":"amber","symbol":"ring"}
+              example: {"id":"01890a5d-ac96-774b-bcce-b302099a8057","name":"Noor","colour":"amber"}
         "400":
           $ref: "#/components/responses/BadRequestOrInvalidIdempotencyKey"
         "404":
@@ -483,15 +483,10 @@ components:
       type: string
       enum: [amber, blue, pink, emerald]
       examples: [amber]
-    UserSymbol:
-      description: The user's symbol, a design token name from the user picker.
-      type: string
-      enum: [ring, triangle, star, waves]
-      examples: [ring]
     User:
       description: A household member who watches.
       type: object
-      required: [id, name, colour, symbol]
+      required: [id, name, colour]
       properties:
         id:
           description: The user's ID, a UUID v7.
@@ -504,8 +499,6 @@ components:
           examples: [Noor]
         colour:
           $ref: "#/components/schemas/UserColour"
-        symbol:
-          $ref: "#/components/schemas/UserSymbol"
       additionalProperties: false
     SignInRequest:
       description: A user's name and password, and the client they sign in on.

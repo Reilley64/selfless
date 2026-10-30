@@ -1,5 +1,6 @@
 export { clientId } from "./clientId";
 export { FocusGuide } from "./FocusGuide";
+export { initials } from "./initials";
 export { forgetInviteIdempotencyKey, inviteIdempotencyKey } from "./inviteIdempotencyKey";
 export { serverUnreachable } from "./messages";
 export { randomUuid } from "./randomUuid";

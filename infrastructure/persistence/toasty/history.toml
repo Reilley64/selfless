@@ -19,3 +19,8 @@ snapshot_name = "20261030_014308_snapshot.toml"
 id = 3630059236774545864
 name = "20261030_050531_sessions_client_id.sql"
 snapshot_name = "20261030_050531_snapshot.toml"
+
+[[migrations]]
+id = 8359466337098228346
+name = "20261030_065714_users_drop_colour_and_symbol.sql"
+snapshot_name = "20261030_065714_snapshot.toml"

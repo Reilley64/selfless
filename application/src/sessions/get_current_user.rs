@@ -43,8 +43,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, token: &str) -> Result<
         .map_err(Error::caused_by)?;
     Ok(user.map_or(Output::NotSignedIn, |user| Output::SignedIn {
         id: user.id,
+        colour: user.colour(),
         name: user.name,
-        colour: user.colour,
-        symbol: user.symbol,
     }))
 }

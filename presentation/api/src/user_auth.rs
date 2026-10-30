@@ -36,12 +36,8 @@ impl Layer for UserAuthLayer {
             else {
                 return UNAUTHENTICATED.into_response(cx);
             };
-            let get_current_user::Output::SignedIn {
-                id,
-                name,
-                colour,
-                symbol,
-            } = get_current_user::call(app_context::<AppState>(cx), token).await?
+            let get_current_user::Output::SignedIn { id, name, colour } =
+                get_current_user::call(app_context::<AppState>(cx), token).await?
             else {
                 return UNAUTHENTICATED.into_response(cx);
             };
@@ -52,7 +48,6 @@ impl Layer for UserAuthLayer {
                     id,
                     name,
                     colour: colour.into(),
-                    symbol: symbol.into(),
                 },
             };
             next.run(&cx.with(session), body).await

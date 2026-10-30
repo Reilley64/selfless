@@ -63,9 +63,8 @@ pub async fn call(
     Ok(Output::SignedIn {
         token,
         user_id: user.id,
+        colour: user.colour(),
         name: user.name,
-        colour: user.colour,
-        symbol: user.symbol,
     })
 }
 

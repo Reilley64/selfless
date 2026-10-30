@@ -33,9 +33,7 @@ mod tests {
     use super::*;
     use application::ports::persistence::DbScope;
     use domain::ClientKind;
-    use domain::Colour;
     use domain::EmailAddress;
-    use domain::Symbol;
     use jiff::SignedDuration;
     use test_app::TestApp;
     use uuid::Uuid;
@@ -50,8 +48,6 @@ mod tests {
             .name("Noor")
             .email(EmailAddress::new("noor@example.com".to_owned()).unwrap())
             .password_hash("hash")
-            .colour(Colour::Amber)
-            .symbol(Symbol::Ring)
             .exec(db_context.executor_mut())
             .await
             .unwrap();

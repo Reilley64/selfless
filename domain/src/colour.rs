@@ -1,5 +1,4 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq, toasty::Embed)]
-#[column(rename_all = "camelCase")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Colour {
     Amber,
     Blue,

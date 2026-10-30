@@ -55,7 +55,6 @@ pub(crate) async fn sign_in(cx: &Cx, Json(request): Json<SignIn>) -> topcoat::Re
         user_id,
         name,
         colour,
-        symbol,
     } = application::sessions::sign_in::call(
         app_context::<AppState>(cx),
         request.name,
@@ -76,7 +75,6 @@ pub(crate) async fn sign_in(cx: &Cx, Json(request): Json<SignIn>) -> topcoat::Re
                 id: user_id,
                 name,
                 colour: colour.into(),
-                symbol: symbol.into(),
             },
         }),
     )

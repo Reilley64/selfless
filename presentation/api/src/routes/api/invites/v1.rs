@@ -52,7 +52,6 @@ pub(crate) async fn accept(
                 id: output.id,
                 name: output.name,
                 colour: output.colour.into(),
-                symbol: output.symbol.into(),
             }),
         )
             .into_response(cx),

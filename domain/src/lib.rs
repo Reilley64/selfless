@@ -9,7 +9,6 @@ mod invite;
 mod last_admin;
 mod password;
 mod session;
-mod symbol;
 mod user;
 
 pub use admin::Admin;
@@ -23,5 +22,4 @@ pub use invite::Invite;
 pub use last_admin::LastAdmin;
 pub use password::Password;
 pub use session::Session;
-pub use symbol::Symbol;
 pub use user::User;

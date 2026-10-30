@@ -2,10 +2,10 @@ import { getMe } from "@selfless/api-client";
 import { type SessionStorage, startTvSession, startWebSession } from "./session";
 
 const token = "q2Xz8kQ0mJ3Hc1yF5bR7tVw9nL4pA6sD0eG2iK8uO1M";
-const user = { id: "01890a5d-ac96-774b-bcce-b302099a8057", name: "Noor", colour: "amber", symbol: "ring" };
+const user = { id: "01890a5d-ac96-774b-bcce-b302099a8057", name: "Noor", colour: "amber" };
 const theo = {
   token: "Zt0bX9qL2wR5yV8nH3kM6pJ1sF4dG7aC0eU2iO5lN8Q",
-  user: { id: "01890a5d-ac96-774b-bcce-b302099a8058", name: "Theo", colour: "blue", symbol: "triangle" },
+  user: { id: "01890a5d-ac96-774b-bcce-b302099a8058", name: "Theo", colour: "blue" },
 };
 
 function fakeStorage(): SessionStorage {

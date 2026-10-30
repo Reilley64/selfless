@@ -1,10 +1,8 @@
 import type { UserColour } from "@selfless/api-client";
-import { FocusGuide, type PickerUser, serverUnreachable } from "@selfless/ui";
-import symbols from "@selfless/ui/theme/symbols.json";
+import { FocusGuide, initials, type PickerUser, serverUnreachable } from "@selfless/ui";
 import type { ReactNode } from "react";
 import { useEffect, useSyncExternalStore } from "react";
 import { Alert } from "react-native";
-import { SvgXml } from "react-native-svg";
 import { Pressable, Text, View } from "react-native-css/components";
 import { session } from "../session";
 
@@ -76,11 +74,7 @@ export function UserPicker({ onSignIn }: { onSignIn: (name: string) => void }) {
               ])
             }
           >
-            <SvgXml
-              xml={`<svg viewBox="0 0 200 200">${symbols.symbol[user.symbol]}</svg>`}
-              width="100%"
-              height="100%"
-            />
+            <Text className="font-sans font-bold text-tv-display text-text-primary">{initials(user.name)}</Text>
           </PickerButton>
         ))}
         <PickerButton label="Add user" className="bg-surface-raised" onPress={() => onSignIn("")}>

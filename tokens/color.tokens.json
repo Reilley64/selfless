@@ -175,7 +175,7 @@
       }
     },
     "user": {
-      "$description": "User picker colours. The server gives each new user the one the fewest users have.",
+      "$description": "User picker colours. A user's colour comes from their ID.",
       "amber": {
         "$value": {
           "colorSpace": "srgb",

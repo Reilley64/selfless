@@ -47,9 +47,8 @@ pub async fn call(
     {
         return Ok(Output {
             id: user.id,
+            colour: user.colour(),
             name: user.name,
-            colour: user.colour,
-            symbol: user.symbol,
         });
     }
     let now = clock.call();
@@ -100,8 +99,7 @@ pub async fn call(
     transaction.commit().await.map_err(Error::caused_by)?;
     Ok(Output {
         id: user.id,
+        colour: user.colour(),
         name: user.name,
-        colour: user.colour,
-        symbol: user.symbol,
     })
 }

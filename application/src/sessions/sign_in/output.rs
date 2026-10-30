@@ -1,5 +1,4 @@
 use domain::Colour;
-use domain::Symbol;
 use uuid::Uuid;
 
 pub enum Output {
@@ -8,7 +7,6 @@ pub enum Output {
         user_id: Uuid,
         name: String,
         colour: Colour,
-        symbol: Symbol,
     },
     WrongNameOrPassword,
 }
