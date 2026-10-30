@@ -3026,6 +3026,7 @@ version = "0.1.0"
 dependencies = [
  "application",
  "domain",
+ "locking",
  "ohno",
  "serde",
  "test-fixtures",
@@ -3033,6 +3034,7 @@ dependencies = [
  "toasty-driver-postgresql",
  "tokio",
  "url",
+ "uuid",
 ]
 
 [[package]]

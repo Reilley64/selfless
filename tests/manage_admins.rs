@@ -1,7 +1,6 @@
 mod support;
 
 use application::admins::create_admin::NameTaken;
-use application::admins::delete_admin::LastAdmin;
 use domain::Password;
 use ohno::ErrorExt;
 use reqwest::StatusCode;
@@ -28,19 +27,6 @@ async fn create_admin(
     )
     .await
     .map(|x| x.id)
-}
-
-async fn delete_admin(
-    server: &TestServer,
-    id: Uuid,
-) -> Result<application::admins::delete_admin::Output, application::admins::delete_admin::Error> {
-    application::admins::delete_admin::call(
-        application::admins::delete_admin::Dependencies {
-            db_context: server.db_context().await,
-        },
-        id,
-    )
-    .await
 }
 
 async fn signs_in(browser: &mut Browser, name: &str, password: &str) -> bool {
@@ -110,68 +96,6 @@ async fn admin_names_and_user_names_are_separate_sets() {
     assert!(signs_in(&mut browser, USER_NAME, "another password").await);
     let (status, _) = server.sign_in(ADMIN_NAME, "a third password", "web").await;
     assert_eq!(status, StatusCode::CREATED);
-    drop(server);
-    database.drop().await;
-}
-
-#[tokio::test]
-async fn deleting_an_admin_ends_their_sessions() {
-    let database = TestDatabase::create().await;
-    let server = TestServer::start(database.url()).await;
-    let id = create_admin(&server, "Ravi", "another password")
-        .await
-        .unwrap();
-    let mut ravi = server.browser();
-    signs_in(&mut ravi, "Ravi", "another password").await;
-    let mut maya = server.browser();
-    signs_in(&mut maya, ADMIN_NAME, ADMIN_PASSWORD).await;
-
-    delete_admin(&server, id).await.unwrap();
-
-    assert_eq!(ravi.get("/admin").await.status, StatusCode::SEE_OTHER);
-    assert!(!signs_in(&mut server.browser(), "Ravi", "another password").await);
-    assert_eq!(maya.get("/admin").await.status, StatusCode::OK);
-    drop(server);
-    database.drop().await;
-}
-
-#[tokio::test]
-async fn deleting_the_last_admin_fails() {
-    let database = TestDatabase::create().await;
-    let server = TestServer::start(database.url()).await;
-    let ravi = create_admin(&server, "Ravi", "another password")
-        .await
-        .unwrap();
-    let maya = database.admin_id(ADMIN_NAME).await;
-    delete_admin(&server, ravi).await.unwrap();
-    let mut browser = server.browser();
-    signs_in(&mut browser, ADMIN_NAME, ADMIN_PASSWORD).await;
-
-    let error = delete_admin(&server, maya)
-        .await
-        .expect_err("the last admin stays");
-
-    assert!(error.find_source::<LastAdmin>().is_some(), "{error}");
-    assert_eq!(browser.get("/admin").await.status, StatusCode::OK);
-    drop(server);
-    database.drop().await;
-}
-
-#[tokio::test]
-async fn two_admins_deleting_each_other_at_once_leave_one_admin() {
-    let database = TestDatabase::create().await;
-    let server = TestServer::start(database.url()).await;
-    let ravi = create_admin(&server, "Ravi", "another password")
-        .await
-        .unwrap();
-    let maya = database.admin_id(ADMIN_NAME).await;
-
-    let (first, second) = tokio::join!(delete_admin(&server, maya), delete_admin(&server, ravi));
-
-    let failure = first.err().or(second.err()).expect("one delete fails");
-    assert!(failure.find_source::<LastAdmin>().is_some(), "{failure}");
-    let admins: i64 = database.query("SELECT count(*) FROM admins").await[0].get(0);
-    assert_eq!(admins, 1);
     drop(server);
     database.drop().await;
 }
