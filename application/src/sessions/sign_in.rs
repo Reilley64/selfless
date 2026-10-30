@@ -11,6 +11,7 @@ use crate::ports::persistence::DbScope;
 use crate::sessions::sign_in_attempts;
 use crate::tokens;
 use domain::ClientKind;
+use domain::Session;
 use domain::User;
 
 pub async fn call(
@@ -19,6 +20,7 @@ pub async fn call(
     password: String,
     client_kind: ClientKind,
     device_name: String,
+    replaces: Vec<String>,
 ) -> Result<Output, Error> {
     let Dependencies {
         mut db_context,
@@ -48,7 +50,8 @@ pub async fn call(
     };
     let token = tokens::generate();
     let now = clock.call();
-    db_context
+    let mut transaction = db_context.transaction().await.map_err(Error::caused_by)?;
+    transaction
         .sessions()
         .create()
         .user_id(user.id)
@@ -57,9 +60,23 @@ pub async fn call(
         .token_hash(tokens::hash(&token))
         .signed_in_at(now)
         .last_used_at(now)
-        .exec(db_context.executor_mut())
+        .exec(transaction.executor_mut())
         .await
         .map_err(Error::caused_by)?;
+    transaction
+        .sessions()
+        .filter(
+            Session::fields().user_id().eq(user.id).and(
+                Session::fields()
+                    .token_hash()
+                    .in_list(replaces.iter().map(|x| tokens::hash(x)).collect::<Vec<_>>()),
+            ),
+        )
+        .delete()
+        .exec(transaction.executor_mut())
+        .await
+        .map_err(Error::caused_by)?;
+    transaction.commit().await.map_err(Error::caused_by)?;
     Ok(Output::SignedIn {
         token,
         user_id: user.id,

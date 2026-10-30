@@ -133,14 +133,14 @@ export function startTvSession(storage: SessionStorage, clientKind: Exclude<Clie
       update({ serverUrl: undefined });
     },
     async signIn(name: string, password: string, deviceName: string) {
-      const response = await signIn({ name, password, clientKind, deviceName });
+      const replaces = state.users.length > 0 ? state.users.map(({ token }) => token) : undefined;
+      if (replaces) {
+        await flushTelemetry();
+      }
+      const response = await signIn({ name, password, clientKind, deviceName, replaces });
       if (response.status === 201) {
         const signedIn = { token: response.data.token, ...response.data.user };
         const previous = state.users.find(({ id }) => id === signedIn.id);
-        if (previous && !(await endSession(previous.token))) {
-          await endSession(signedIn.token);
-          throw new Error("The old session could not be ended");
-        }
         const users = previous
           ? state.users.map((user) => (user.id === signedIn.id ? signedIn : user))
           : [...state.users, signedIn];

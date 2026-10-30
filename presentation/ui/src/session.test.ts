@@ -242,58 +242,27 @@ test("switching user returns to the picker without ending any session", async ()
   expect(fetch.mock.calls.some(([, init]) => init?.method === "DELETE")).toBe(false);
 });
 
-test("signing in again as a user on the picker replaces their entry and ends their old session", async () => {
-  const fetch = mockServer();
+test("signing in again as a user on the picker sends every picker token as replaces and keeps one entry with the new token", async () => {
+  mockServer();
   const storage = fakeStorage();
   const session = await connectedTv(storage);
   await session.signIn("Noor", "correct horse", "Living Room");
   await session.signIn("Theo", "battery staple", "Living Room");
+  session.switchUser();
   const newToken = "Hn4cT7vB1xK9sW3eR6yU0iP2oL5aZ8dF1gJ4mQ7wE0r";
-  mockServer({ issued: [{ token: newToken, user }, theo] });
+  const fetch = mockServer({ issued: [{ token: newToken, user }, theo] });
+  fetch.mockClear();
 
   await session.signIn("noor", "correct horse", "Living Room");
 
+  const [, signInInit] = fetch.mock.calls.find(([input]) => input === `${serverUrl}/api/sessions/v1`) ?? [];
+  expect(JSON.parse(String(signInInit?.body)).replaces).toEqual([token, theo.token]);
+  expect(fetch.mock.calls.some(([, init]) => init?.method === "DELETE")).toBe(false);
   expect(startTvSession(storage, "appleTv").state().users).toEqual([
     { token: newToken, ...user },
     { token: theo.token, ...theo.user },
   ]);
-  expect(sentHeaders(fetch, `${serverUrl}/api/sessions/current/v1`).get("Authorization")).toBe(`Bearer ${token}`);
 });
-
-test("signing in again ends the old session after the new sign-in succeeds", async () => {
-  mockServer();
-  const session = await connectedTv();
-  await session.signIn("Noor", "correct horse", "Living Room");
-  const fetch = mockServer();
-  fetch.mockClear();
-
-  await session.signIn("Noor", "correct horse", "Living Room");
-
-  expect(fetch.mock.calls.map(([input, init]) => `${init?.method ?? "GET"} ${input}`)).toEqual([
-    `POST ${serverUrl}/api/sessions/v1`,
-    `DELETE ${serverUrl}/api/sessions/current/v1`,
-  ]);
-});
-
-test.each([
-  { ending: "fails", what: "the server returns an error" },
-  { ending: "unreachable", what: "the server can't be reached" },
-] as const)(
-  "when $what while ending the old session, signing in again fails and keeps the old entry",
-  async ({ ending }) => {
-    mockServer();
-    const storage = fakeStorage();
-    const session = await connectedTv(storage);
-    await session.signIn("Noor", "correct horse", "Living Room");
-    session.switchUser();
-    const fetch = mockServer({ ending });
-    fetch.mockClear();
-
-    await expect(session.signIn("Noor", "correct horse", "Living Room")).rejects.toThrow();
-
-    expect(startTvSession(storage, "appleTv").state().users).toEqual([{ token, ...user }]);
-  },
-);
 
 test("a wrong password when signing in again leaves the old entry and its session alone", async () => {
   mockServer();

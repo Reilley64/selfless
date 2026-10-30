@@ -241,3 +241,23 @@ test("a 401 sends pending telemetry with the token before clearing it", async ()
     ["http://localhost:8081", `Bearer ${token}`],
   ]);
 });
+
+test("signing in again on the TV sends pending telemetry with the old token before the sign-in ends it", async () => {
+  const fetch = mockServer();
+  const session = startTvSession(fakeStorage(), "appleTv");
+  startTelemetry("selfless-tv", { serverUrl: session.serverUrl, token: session.telemetryToken });
+  await session.connect("http://192.168.1.20:8080");
+  await session.signIn("Noor", "correct horse", "Living Room");
+  session.switchUser();
+  record("before signing in again");
+
+  await session.signIn("Noor", "correct horse", "Living Room");
+
+  const sentAt = calls(fetch).findIndex((call) => call.includes("before signing in again"));
+  expect(sentAt).toBeGreaterThan(-1);
+  expect(sentAt).toBeLessThan(calls(fetch).lastIndexOf("POST http://192.168.1.20:8080/api/sessions/v1"));
+  expect(sentWith(fetch, "before signing in again")).toEqual([
+    ["http://192.168.1.20:8080", `Bearer ${token}`],
+    ["http://192.168.1.20:8080", `Bearer ${token}`],
+  ]);
+});

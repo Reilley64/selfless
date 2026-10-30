@@ -1,7 +1,9 @@
 mod support;
 
+use application::sessions::sign_in;
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use domain::ClientKind;
 use jiff::SignedDuration;
 use reqwest::Method;
 use reqwest::StatusCode;
@@ -348,6 +350,102 @@ async fn a_sign_in_body_without_a_field_or_with_an_unknown_client_kind_returns_a
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(problem["type"], "urn:selfless:problem:bad-request");
     }
+    drop(server);
+    database.drop().await;
+}
+
+#[tokio::test]
+async fn signing_in_with_replaces_ends_the_old_session() {
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+    server.create_user(NAME, PASSWORD).await;
+    let (_, old) = server.sign_in(NAME, PASSWORD, "appleTv").await;
+    let old = old["token"].as_str().unwrap();
+
+    let (status, new) = server
+        .request(
+            Method::POST,
+            "/api/sessions/v1",
+            None,
+            Some(json!({
+                "name": NAME,
+                "password": PASSWORD,
+                "clientKind": "appleTv",
+                "deviceName": "Living Room",
+                "replaces": [old],
+            })),
+        )
+        .await;
+
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(me(&server, old).await, StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        me(&server, new["token"].as_str().unwrap()).await,
+        StatusCode::OK
+    );
+    assert_eq!(database.query("SELECT 1 FROM sessions").await.len(), 1);
+    drop(server);
+    database.drop().await;
+}
+
+async fn sign_in_on_tv(
+    server: &TestServer,
+    name: &str,
+    password: &str,
+    replaces: Vec<String>,
+) -> sign_in::Output {
+    sign_in::call(
+        sign_in::Dependencies {
+            db_context: server.db_context().await,
+            clock: server.clock.port(),
+        },
+        name.to_owned(),
+        password.to_owned(),
+        ClientKind::AppleTv,
+        "Living Room".to_owned(),
+        replaces,
+    )
+    .await
+    .unwrap()
+}
+
+fn token(output: sign_in::Output) -> String {
+    match output {
+        sign_in::Output::SignedIn { token, .. } => token,
+        sign_in::Output::WrongNameOrPassword => panic!("wrong name or password"),
+    }
+}
+
+#[tokio::test]
+async fn a_replaces_token_of_another_user_is_ignored() {
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+    server.create_user(NAME, PASSWORD).await;
+    server.create_user("Theo", "battery staple").await;
+    let theo = token(sign_in_on_tv(&server, "Theo", "battery staple", vec![]).await);
+    let unknown = "q2Xz8kQ0mJ3Hc1yF5bR7tVw9nL4pA6sD0eG2iK8uO1M".to_owned();
+
+    let output = sign_in_on_tv(&server, NAME, PASSWORD, vec![theo.clone(), unknown]).await;
+
+    assert_eq!(me(&server, &token(output)).await, StatusCode::OK);
+    assert_eq!(me(&server, &theo).await, StatusCode::OK);
+    assert_eq!(database.query("SELECT 1 FROM sessions").await.len(), 2);
+    drop(server);
+    database.drop().await;
+}
+
+#[tokio::test]
+async fn a_wrong_password_with_replaces_ends_nothing() {
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+    server.create_user(NAME, PASSWORD).await;
+    let old = token(sign_in_on_tv(&server, NAME, PASSWORD, vec![]).await);
+
+    let output = sign_in_on_tv(&server, NAME, "wrong", vec![old.clone()]).await;
+
+    assert!(matches!(output, sign_in::Output::WrongNameOrPassword));
+    assert_eq!(me(&server, &old).await, StatusCode::OK);
+    assert_eq!(database.query("SELECT 1 FROM sessions").await.len(), 1);
     drop(server);
     database.drop().await;
 }

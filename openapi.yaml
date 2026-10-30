@@ -509,6 +509,12 @@ components:
           description: A name for the device, shown to admins in the user's sessions.
           type: string
           examples: [Firefox on macOS]
+        replaces:
+          description: Tokens this device holds. The server ends whichever of them belongs to the user who signs in and ignores the rest.
+          type: array
+          items:
+            type: string
+          examples: [[q2Xz8kQ0mJ3Hc1yF5bR7tVw9nL4pA6sD0eG2iK8uO1M]]
       additionalProperties: false
     SignedIn:
       description: A new session's token and the user it belongs to.

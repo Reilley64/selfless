@@ -20,6 +20,8 @@ struct SignIn {
     password: String,
     client_kind: ClientKind,
     device_name: String,
+    #[serde(default)]
+    replaces: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -60,6 +62,7 @@ pub(crate) async fn sign_in(cx: &Cx, Json(request): Json<SignIn>) -> topcoat::Re
         request.password,
         request.client_kind.into(),
         request.device_name,
+        request.replaces,
     )
     .await?
     else {
