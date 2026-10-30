@@ -134,3 +134,7 @@ tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true }
 url = { workspace = true }
+
+# Dependencies build without debug info to keep dev target dirs small. Workspace crates keep theirs.
+[profile.dev.package."*"]
+debug = false
