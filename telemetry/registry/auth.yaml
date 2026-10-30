@@ -1,0 +1,62 @@
+groups:
+  - id: registry.selfless.admin
+    type: attribute_group
+    display_name: Admin attributes
+    brief: Attributes of the admin app.
+    attributes:
+      - id: selfless.admin.id
+        type: string
+        stability: development
+        brief: The ID of the admin who made the request.
+        examples: ["01890a5d-ac96-774b-bcce-b302099a8057"]
+  - id: registry.selfless.auth
+    type: attribute_group
+    display_name: Sign-in attributes
+    brief: Attributes of user and admin sign-ins.
+    attributes:
+      - id: selfless.auth.outcome
+        type:
+          members:
+            - id: succeeded
+              value: succeeded
+              brief: The name and password matched.
+              stability: development
+            - id: failed
+              value: failed
+              brief: The name or password was wrong.
+              stability: development
+        stability: development
+        brief: Whether a sign-in succeeded.
+      - id: selfless.auth.client_kind
+        type:
+          members:
+            - id: web
+              value: web
+              brief: The web app.
+              stability: development
+            - id: apple_tv
+              value: appleTv
+              brief: The TV app on tvOS.
+              stability: development
+            - id: google_tv
+              value: googleTv
+              brief: The TV app on Google TV.
+              stability: development
+            - id: admin
+              value: admin
+              brief: The admin app.
+              stability: development
+        stability: development
+        brief: The kind of client a user or admin signed in on.
+  - id: metric.selfless.auth.sign_ins
+    type: metric
+    metric_name: selfless.auth.sign_ins
+    brief: Sign-ins by users and admins.
+    instrument: counter
+    unit: "{sign_in}"
+    stability: development
+    attributes:
+      - ref: selfless.auth.outcome
+        requirement_level: required
+      - ref: selfless.auth.client_kind
+        requirement_level: required

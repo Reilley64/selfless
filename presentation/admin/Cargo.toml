@@ -6,5 +6,16 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+application = { workspace = true }
 infrastructure = { workspace = true }
+serde = { workspace = true }
 topcoat = { workspace = true }
+tracing = { workspace = true }
+tracing-opentelemetry = { workspace = true }
+
+[dev-dependencies]
+domain = { workspace = true }
+http = { workspace = true }
+test-app = { workspace = true }
+test-fixtures = { workspace = true }
+tokio = { workspace = true }

@@ -10,5 +10,12 @@ application = { workspace = true }
 ohno = { workspace = true }
 serde = { workspace = true }
 toasty = { workspace = true }
-toasty-driver-postgresql = { workspace = true }
+toasty-driver-postgresql = { workspace = true, features = ["jiff"] }
 url = { workspace = true, features = ["serde"] }
+
+[dev-dependencies]
+domain = { workspace = true }
+locking = { workspace = true }
+test-fixtures = { workspace = true }
+tokio = { workspace = true }
+uuid = { workspace = true }

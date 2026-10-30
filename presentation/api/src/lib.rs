@@ -1,7 +1,12 @@
-mod actuator;
 mod http_server;
-mod telemetry;
+mod problem;
+mod routes;
+mod user_auth;
 mod web;
+
+#[cfg(test)]
+#[path = "../../../test/api.rs"]
+mod test;
 
 use infrastructure::AppState;
 use std::path::PathBuf;
@@ -40,15 +45,25 @@ pub fn router(
     router
         .app_context(state)
         .app_context(availability)
-        .route(actuator::health)
-        .route(actuator::liveness)
-        .route(actuator::readiness)
-        .route(actuator::info)
-        .route(telemetry::traces)
-        .route(telemetry::metrics)
-        .route(telemetry::logs)
+        .route(routes::actuator::health::v1::health)
+        .route(routes::actuator::health::v1::liveness)
+        .route(routes::actuator::health::v1::readiness)
+        .route(routes::actuator::info::v1::info)
+        .route(routes::api::sessions::v1::sign_in)
+        .route(routes::api::sessions::v1::sign_out)
+        .route(routes::api::me::v1::me)
+        .route(routes::api::me::v1::change_password)
+        .route(routes::api::invites::v1::accept)
+        .route(routes::api::telemetry::v1::traces)
+        .route(routes::api::telemetry::v1::metrics)
+        .route(routes::api::telemetry::v1::logs)
         .route(web::index)
-        .public_dir(web_dir)
+        .route(web::settings)
+        .route(web::invite)
+        .serve_dir(web::FILES, web_dir)
+        .layer(web::ContentSecurityPolicyLayer)
+        .layer(problem::ProblemLayer)
+        .layer(user_auth::UserAuthLayer)
         .layer(http_server::HttpServerLayer::new())
         .build()
 }

@@ -1,0 +1,3 @@
+disallowed-methods = [
+    { path = "toasty::Executor::transaction", reason = "use DbContext::transaction, whose DbTransaction instruments each statement" },
+]

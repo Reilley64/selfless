@@ -1,4 +1,3 @@
-use infrastructure::persistence;
 use ohno::AppError;
 use settings::AppSettings;
 use toasty_cli::Config;

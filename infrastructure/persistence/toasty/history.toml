@@ -1,2 +1,21 @@
 version = 1
-migrations = []
+
+[[migrations]]
+id = 5782652017758155456
+name = "20261029_101833_admins.sql"
+snapshot_name = "20261029_101833_snapshot.toml"
+
+[[migrations]]
+id = 5744996336984938147
+name = "20261029_135449_users_and_invites.sql"
+snapshot_name = "20261029_135449_snapshot.toml"
+
+[[migrations]]
+id = 1175823576652747194
+name = "20261030_014308_users_idempotency_key.sql"
+snapshot_name = "20261030_014308_snapshot.toml"
+
+[[migrations]]
+id = 3630059236774545864
+name = "20261030_050531_sessions_client_id.sql"
+snapshot_name = "20261030_050531_snapshot.toml"

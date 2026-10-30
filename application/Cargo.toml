@@ -6,12 +6,22 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+argon2 = { workspace = true }
 async-trait = { workspace = true }
+base64 = { workspace = true }
 bytes = { workspace = true }
 domain = { workspace = true }
 fundle = { workspace = true }
+getrandom = { workspace = true }
+jiff = { workspace = true }
 ohno = { workspace = true }
 opentelemetry = { workspace = true }
+sha2 = { workspace = true }
 toasty = { workspace = true }
 toasty-core = { workspace = true }
+tokio = { workspace = true }
 tracing = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+test-fixtures = { workspace = true }

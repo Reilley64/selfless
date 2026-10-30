@@ -8,8 +8,15 @@ yq = "4.54.1"
 "github:open-telemetry/weaver" = "0.28.0"
 
 [env]
+ADMIN__USERNAME = "admin"
+ADMIN__PASSWORD = "admin"
 DATABASE__URL = "postgres://selfless:selfless@localhost:5432/selfless"
 OTEL_SERVICE_NAME = "selfless"
+SMTP__HOST = "localhost"
+SMTP__PORT = "587"
+SMTP__USERNAME = "selfless"
+SMTP__PASSWORD = "selfless"
+SMTP__FROM = "selfless <selfless@localhost>"
 
 [tasks.services]
 description = "Start PostgreSQL and grafana/otel-lgtm for local development"

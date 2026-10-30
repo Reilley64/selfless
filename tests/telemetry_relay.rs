@@ -12,6 +12,7 @@ use opentelemetry_proto::tonic::trace::v1::ResourceSpans;
 use opentelemetry_proto::tonic::trace::v1::ScopeSpans;
 use opentelemetry_proto::tonic::trace::v1::Span;
 use prost::Message;
+use reqwest::Method;
 use reqwest::StatusCode;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -30,6 +31,7 @@ async fn relay_forwards_traces_to_the_collector() {
     let collector_url = collector.start().await;
     let database = TestDatabase::create().await;
     let server = TestServer::start_with_collector(database.url(), &collector_url).await;
+    let token = server.signed_in_user().await;
     let request = ExportTraceServiceRequest {
         resource_spans: vec![ResourceSpans {
             resource: Some(Resource {
@@ -56,12 +58,37 @@ async fn relay_forwards_traces_to_the_collector() {
     };
 
     let (status, body) = server
-        .post_protobuf("/api/telemetry/traces/v1", request.encode_to_vec())
+        .post_protobuf("/api/telemetry/traces/v1", &token, request.encode_to_vec())
         .await;
 
     assert_eq!(status, StatusCode::OK);
     ExportTraceServiceResponse::decode(body.as_slice()).unwrap();
     assert_eq!(*collector.requests.lock().unwrap(), vec![request]);
+    drop(server);
+    database.drop().await;
+}
+
+#[tokio::test]
+async fn relay_rejects_requests_without_a_session_token() {
+    let collector = FakeCollector::default();
+    let collector_url = collector.start().await;
+    let database = TestDatabase::create().await;
+    let server = TestServer::start_with_collector(database.url(), &collector_url).await;
+
+    for signal in ["traces", "metrics", "logs"] {
+        let (status, body) = server
+            .request(
+                Method::POST,
+                &format!("/api/telemetry/{signal}/v1"),
+                None,
+                None,
+            )
+            .await;
+
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert_eq!(body["type"], "urn:selfless:problem:unauthenticated");
+    }
+    assert!(collector.requests.lock().unwrap().is_empty());
     drop(server);
     database.drop().await;
 }

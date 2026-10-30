@@ -173,6 +173,53 @@
       "fill": {
         "$value": "{color.accent}"
       }
+    },
+    "user": {
+      "$description": "User picker colours. The server gives each new user the one the fewest users have.",
+      "amber": {
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.851,
+            0.4667,
+            0.0235
+          ],
+          "hex": "#d97706"
+        }
+      },
+      "blue": {
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.1451,
+            0.3882,
+            0.9216
+          ],
+          "hex": "#2563eb"
+        }
+      },
+      "pink": {
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.7451,
+            0.0941,
+            0.3647
+          ],
+          "hex": "#be185d"
+        }
+      },
+      "emerald": {
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.0196,
+            0.5882,
+            0.4118
+          ],
+          "hex": "#059669"
+        }
+      }
     }
   }
 }

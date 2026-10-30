@@ -1,19 +1,27 @@
+[graph]
+exclude-dev = true
+
 [bans]
 multiple-versions = "allow"
 wildcards = "allow"
 deny = [
     { name = "native-tls" },
 
-    { name = "domain", wrappers = ["application"] },
-    { name = "application", wrappers = ["selfless", "infrastructure", "persistence", "telemetry", "api"] },
+    { name = "domain", wrappers = ["application", "api"] },
+    { name = "application", wrappers = ["selfless", "infrastructure", "email", "locking", "persistence", "telemetry", "api", "admin", "workers"] },
 
-    { name = "persistence", wrappers = ["infrastructure", "settings"] },
-    { name = "telemetry", wrappers = ["infrastructure", "settings"] },
+    { name = "email", wrappers = ["selfless", "settings"] },
+    { name = "locking", wrappers = ["selfless"] },
+    { name = "persistence", wrappers = ["selfless", "settings"] },
+    { name = "telemetry", wrappers = ["selfless", "settings"] },
     { name = "settings", wrappers = ["selfless"] },
-    { name = "infrastructure", wrappers = ["selfless", "api", "admin"] },
+    { name = "infrastructure", wrappers = ["selfless", "api", "admin", "workers"] },
 
     { name = "admin", wrappers = ["selfless"] },
     { name = "api", wrappers = ["selfless"] },
     { name = "webhooks", wrappers = ["selfless"] },
     { name = "workers", wrappers = ["selfless"] },
+
+    { name = "test-fixtures" },
+    { name = "test-app" },
 ]

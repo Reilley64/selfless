@@ -36,7 +36,24 @@ export default {
       transformGroup: "css",
       transforms: ["name/tailwind"],
       buildPath: "theme/",
-      files: [{ destination: "theme.css", format: "css/variables", options: { selector: "@theme" } }],
+      files: [
+        {
+          destination: "theme.css",
+          format: "css/variables",
+          filter: (token) => token.path[0] !== "symbol",
+          options: { selector: "@theme" },
+        },
+      ],
+    },
+    symbols: {
+      buildPath: "theme/",
+      files: [
+        {
+          destination: "symbols.json",
+          format: "json/nested",
+          filter: (token) => token.path[0] === "symbol",
+        },
+      ],
     },
     fonts: {
       transforms: ["name/tailwind", "fontFamily/first"],
