@@ -10,6 +10,7 @@ pub use output::Output;
 use crate::invites::invite_email;
 use crate::ports::persistence::DbScope;
 use crate::tokens;
+use domain::EmailAddress;
 use domain::Invite;
 use domain::User;
 use uuid::Uuid;
@@ -17,7 +18,7 @@ use uuid::Uuid;
 pub async fn call(
     dependencies: impl Into<Dependencies>,
     admin_id: Uuid,
-    email: String,
+    email: EmailAddress,
     origin: String,
 ) -> Result<Output, Error> {
     let Dependencies {

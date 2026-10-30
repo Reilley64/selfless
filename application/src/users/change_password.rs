@@ -10,6 +10,7 @@ pub use output::Output;
 use crate::passwords;
 use crate::ports::persistence::DbScope;
 use crate::tokens;
+use domain::Password;
 use domain::Session;
 use domain::User;
 use uuid::Uuid;
@@ -19,7 +20,7 @@ pub async fn call(
     user_id: Uuid,
     token: &str,
     current_password: String,
-    new_password: String,
+    new_password: Password,
 ) -> Result<Output, Error> {
     let mut db_context = dependencies.into().db_context;
     let user = db_context

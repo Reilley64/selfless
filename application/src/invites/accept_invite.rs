@@ -12,6 +12,7 @@ use crate::ports::persistence::DbScope;
 use crate::tokens;
 use crate::users::create_user;
 use domain::Invite;
+use domain::Password;
 use domain::User;
 use uuid::Uuid;
 
@@ -19,7 +20,7 @@ pub async fn call(
     dependencies: impl Into<Dependencies>,
     token: &str,
     name: String,
-    password: String,
+    password: Password,
     idempotency_key: Uuid,
 ) -> Result<Output, Error> {
     let Dependencies {

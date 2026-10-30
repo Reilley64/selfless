@@ -10,11 +10,12 @@ pub use output::Output;
 use crate::passwords;
 use crate::ports::persistence::DbScope;
 use domain::Admin;
+use domain::Password;
 
 pub async fn call(
     dependencies: impl Into<Dependencies>,
     name: String,
-    password: String,
+    password: Password,
 ) -> Result<Output, Error> {
     let mut db_context = dependencies.into().db_context;
     let password_hash = passwords::hash(password).await.map_err(Error::caused_by)?;

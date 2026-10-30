@@ -1,4 +1,3 @@
-mod errors;
 mod passwords;
 mod tokens;
 
@@ -9,8 +8,6 @@ pub mod ports;
 pub mod sessions;
 pub mod telemetry;
 pub mod users;
-
-pub use errors::EmptyPassword;
 
 pub mod attributes {
     include!(concat!(env!("OUT_DIR"), "/attributes.rs"));

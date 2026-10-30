@@ -1176,7 +1176,9 @@ dependencies = [
 name = "domain"
 version = "0.1.0"
 dependencies = [
+ "email_address",
  "jiff",
+ "ohno",
  "toasty",
  "uuid",
 ]
@@ -1207,6 +1209,7 @@ name = "email"
 version = "0.1.0"
 dependencies = [
  "application",
+ "domain",
  "lettre",
  "ohno",
  "opentelemetry",

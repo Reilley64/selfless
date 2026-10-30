@@ -21,7 +21,7 @@ async fn sends_a_plain_text_message_from_the_configured_sender() {
     let send_email = email::send_email_through(transport.clone(), FROM.parse().unwrap());
 
     send_email
-        .call(RECIPIENT.to_owned(), SUBJECT.to_owned(), BODY.to_owned())
+        .call(recipient(), SUBJECT.to_owned(), BODY.to_owned())
         .await
         .unwrap();
 
@@ -59,7 +59,7 @@ async fn a_sent_email_is_one_span_with_the_outcome_and_without_the_message() {
     let send_email = email::send_email_through(AsyncStubTransport::new_ok(), FROM.parse().unwrap());
 
     send_email
-        .call(RECIPIENT.to_owned(), SUBJECT.to_owned(), BODY.to_owned())
+        .call(recipient(), SUBJECT.to_owned(), BODY.to_owned())
         .await
         .unwrap();
 
@@ -82,7 +82,7 @@ async fn a_failed_send_is_one_span_with_the_outcome_and_without_the_message() {
         email::send_email_through(AsyncStubTransport::new_error(), FROM.parse().unwrap());
 
     let result = send_email
-        .call(RECIPIENT.to_owned(), SUBJECT.to_owned(), BODY.to_owned())
+        .call(recipient(), SUBJECT.to_owned(), BODY.to_owned())
         .await;
 
     assert!(result.is_err());
@@ -102,6 +102,10 @@ async fn a_failed_send_is_one_span_with_the_outcome_and_without_the_message() {
         "{span:?}"
     );
     assert_without_the_message(&span);
+}
+
+fn recipient() -> domain::EmailAddress {
+    domain::EmailAddress::new(RECIPIENT.to_owned()).unwrap()
 }
 
 fn trace_into(exporter: &InMemorySpanExporter) -> DefaultGuard {

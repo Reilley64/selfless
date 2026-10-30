@@ -1,4 +1,5 @@
 use bytes::Bytes;
+use domain::EmailAddress;
 use jiff::Timestamp;
 use std::error::Error;
 use std::fmt;
@@ -139,14 +140,14 @@ pub enum TelemetrySignal {
 }
 
 type SendEmailFn =
-    dyn Fn(String, String, String) -> PortFuture<Result<(), SendEmailError>> + Send + Sync;
+    dyn Fn(EmailAddress, String, String) -> PortFuture<Result<(), SendEmailError>> + Send + Sync;
 
 #[derive(Clone)]
 pub struct SendEmail(Arc<SendEmailFn>);
 
 impl SendEmail {
     pub fn new(
-        f: impl Fn(String, String, String) -> PortFuture<Result<(), SendEmailError>>
+        f: impl Fn(EmailAddress, String, String) -> PortFuture<Result<(), SendEmailError>>
         + Send
         + Sync
         + 'static,
@@ -156,7 +157,7 @@ impl SendEmail {
 
     pub fn call(
         &self,
-        recipient: String,
+        recipient: EmailAddress,
         subject: String,
         body: String,
     ) -> PortFuture<Result<(), SendEmailError>> {

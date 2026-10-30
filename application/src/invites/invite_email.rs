@@ -1,11 +1,12 @@
 use crate::ports::PortFuture;
 use crate::ports::SendEmail;
 use crate::ports::SendEmailError;
+use domain::EmailAddress;
 use domain::Invite;
 
 pub(crate) fn send(
     send_email: &SendEmail,
-    recipient: String,
+    recipient: EmailAddress,
     origin: &str,
     token: &str,
 ) -> PortFuture<Result<(), SendEmailError>> {

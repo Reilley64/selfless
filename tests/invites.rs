@@ -5,6 +5,7 @@ use application::ports::SendEmail;
 use application::ports::SendEmailError;
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use domain::EmailAddress;
 use jiff::SignedDuration;
 use jiff::Timestamp;
 use ohno::ErrorExt;
@@ -49,7 +50,7 @@ async fn invite_with(
             send_email,
         },
         database.admin_id(ADMIN_NAME).await,
-        email.to_owned(),
+        EmailAddress::new(email.to_owned()).unwrap(),
         ORIGIN.to_owned(),
     )
     .await

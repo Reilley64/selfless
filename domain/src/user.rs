@@ -1,4 +1,5 @@
 use crate::Colour;
+use crate::EmailAddress;
 use crate::Symbol;
 use uuid::Uuid;
 
@@ -10,7 +11,7 @@ pub struct User {
     #[unique]
     pub name: String,
     #[unique]
-    pub email: String,
+    pub email: EmailAddress,
     pub password_hash: String,
     pub colour: Colour,
     pub symbol: Symbol,

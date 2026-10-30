@@ -9,6 +9,7 @@ pub use output::Output;
 
 use crate::passwords;
 use crate::ports::persistence::DbScope;
+use domain::Password;
 
 pub async fn call(
     dependencies: impl Into<Dependencies>,
@@ -29,7 +30,7 @@ pub async fn call(
     }
     let (Some(name), Some(password)) = (
         name.filter(|x| !x.is_empty()),
-        password.filter(|x| !x.is_empty()),
+        password.and_then(|x| Password::new(x).ok()),
     ) else {
         return Err(Error::caused_by(MissingFirstAdmin::new()));
     };

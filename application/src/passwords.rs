@@ -1,9 +1,9 @@
-use crate::errors::EmptyPassword;
 use argon2::Argon2;
 use argon2::password_hash::Error as HashError;
 use argon2::password_hash::PasswordHasher;
 use argon2::password_hash::PasswordVerifier;
 use argon2::password_hash::phc::PasswordHash;
+use domain::Password;
 use tokio::task;
 
 const DUMMY_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$RcmBi3W1jo5bbjttQ9AnKQ$n5F4769mUJJfdOy7Iso26OAbwVCeTssL1oMeWYKepGk";
@@ -12,13 +12,10 @@ const DUMMY_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$RcmBi3W1jo5bbjttQ9AnKQ$
 #[display("failed to hash a password")]
 pub(crate) struct PasswordError;
 
-pub(crate) async fn hash(password: String) -> Result<String, PasswordError> {
-    if password.is_empty() {
-        return Err(PasswordError::caused_by(EmptyPassword::new()));
-    }
+pub(crate) async fn hash(password: Password) -> Result<String, PasswordError> {
     task::spawn_blocking(move || {
         Argon2::default()
-            .hash_password(password.as_bytes())
+            .hash_password(password.expose().as_bytes())
             .map(|x: PasswordHash| x.to_string())
             .map_err(PasswordError::caused_by)
     })

@@ -1,4 +1,3 @@
-use application::EmptyPassword;
 use application::invites::accept_invite::InviteNotFound;
 use application::users::change_password::WrongCurrentPassword;
 use application::users::create_user::NameTaken;
@@ -31,8 +30,6 @@ where
 {
     if error.find_source::<WrongCurrentPassword>().is_some() {
         WRONG_CURRENT_PASSWORD.into_response(cx)
-    } else if error.find_source::<EmptyPassword>().is_some() {
-        EMPTY_PASSWORD.into_response(cx)
     } else if error.find_source::<InviteNotFound>().is_some() {
         INVITE_NOT_FOUND.into_response(cx)
     } else if error.find_source::<NameTaken>().is_some() {
@@ -72,7 +69,7 @@ const WRONG_CURRENT_PASSWORD: Problem = Problem {
     status: StatusCode::FORBIDDEN,
 };
 
-const EMPTY_PASSWORD: Problem = Problem {
+pub(crate) const EMPTY_PASSWORD: Problem = Problem {
     problem_type: "urn:selfless:problem:empty-password",
     title: "The password is empty.",
     status: StatusCode::UNPROCESSABLE_ENTITY,

@@ -22,7 +22,7 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<Output, Error
             .into_iter()
             .map(|x| output::Invite {
                 id: x.id,
-                email: x.email,
+                email: x.email.to_string(),
                 sent_at: x.sent_at,
                 expires_at: x.expires_at,
             })

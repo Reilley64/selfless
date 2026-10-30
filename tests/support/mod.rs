@@ -3,6 +3,8 @@
 use application::ports::Clock;
 use application::ports::SendEmail;
 use application::ports::persistence::DbContext;
+use domain::EmailAddress;
+use domain::Password;
 use jiff::SignedDuration;
 use jiff::Timestamp;
 use jiff::Unit;
@@ -139,7 +141,7 @@ impl FakeMailer {
         let sent = self.sent.clone();
         SendEmail::new(move |recipient, subject, body| {
             sent.lock().unwrap().push(SentEmail {
-                recipient,
+                recipient: recipient.to_string(),
                 subject,
                 body,
             });
@@ -256,8 +258,8 @@ impl TestServer {
                 db_context: self.db_context().await,
             },
             name.to_owned(),
-            password.to_owned(),
-            format!("{}@example.com", name.to_lowercase()),
+            Password::new(password.to_owned()).unwrap(),
+            EmailAddress::new(format!("{}@example.com", name.to_lowercase())).unwrap(),
         )
         .await
         .map(|x| x.id)

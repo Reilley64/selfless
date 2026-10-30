@@ -10,6 +10,8 @@ pub use output::Output;
 use crate::passwords;
 use crate::ports::persistence::DbScope;
 use domain::Colour;
+use domain::EmailAddress;
+use domain::Password;
 use domain::Symbol;
 use domain::User;
 use uuid::Uuid;
@@ -17,8 +19,8 @@ use uuid::Uuid;
 pub async fn call(
     dependencies: impl Into<Dependencies>,
     name: String,
-    password: String,
-    email: String,
+    password: Password,
+    email: EmailAddress,
 ) -> Result<Output, Error> {
     let mut db_context = dependencies.into().db_context;
     let user = create(&mut db_context, name, password, email, None).await?;
@@ -28,8 +30,8 @@ pub async fn call(
 pub(crate) async fn create(
     scope: &mut impl DbScope,
     name: String,
-    password: String,
-    email: String,
+    password: Password,
+    email: EmailAddress,
     idempotency_key: Option<Uuid>,
 ) -> Result<User, Error> {
     let password_hash = passwords::hash(password).await.map_err(Error::caused_by)?;

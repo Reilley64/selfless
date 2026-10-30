@@ -1,5 +1,6 @@
 use crate::problem;
 use crate::user_auth::CurrentSession;
+use domain::Password;
 use infrastructure::AppState;
 use serde::Deserialize;
 use serde::Serialize;
@@ -79,12 +80,15 @@ pub(crate) async fn change_password(
     Json(request): Json<ChangePassword>,
 ) -> topcoat::Result<Response> {
     let session = request_context::<CurrentSession>(cx);
+    let Ok(new_password) = Password::new(request.new_password) else {
+        return problem::EMPTY_PASSWORD.into_response(cx);
+    };
     match application::users::change_password::call(
         app_context::<AppState>(cx),
         session.user.id,
         &session.token,
         request.current_password,
-        request.new_password,
+        new_password,
     )
     .await
     {

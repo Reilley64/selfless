@@ -90,7 +90,10 @@ where
             let result = async {
                 let message = Message::builder()
                     .from(from)
-                    .to(recipient.parse().map_err(SendEmailError::caused_by)?)
+                    .to(recipient
+                        .as_str()
+                        .parse()
+                        .map_err(SendEmailError::caused_by)?)
                     .subject(subject)
                     .header(ContentType::TEXT_PLAIN)
                     .body(body)

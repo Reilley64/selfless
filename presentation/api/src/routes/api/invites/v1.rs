@@ -1,6 +1,8 @@
 use crate::problem;
 use crate::problem::BAD_REQUEST;
+use crate::problem::EMPTY_PASSWORD;
 use crate::routes::api::me::v1::UserBody;
+use domain::Password;
 use infrastructure::AppState;
 use serde::Deserialize;
 use topcoat::context::Cx;
@@ -32,11 +34,14 @@ pub(crate) async fn accept(
     else {
         return BAD_REQUEST.into_response(cx);
     };
+    let Ok(password) = Password::new(request.password) else {
+        return EMPTY_PASSWORD.into_response(cx);
+    };
     match application::invites::accept_invite::call(
         app_context::<AppState>(cx),
         &request.token,
         request.name,
-        request.password,
+        password,
         idempotency_key,
     )
     .await

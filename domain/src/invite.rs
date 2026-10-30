@@ -1,3 +1,4 @@
+use crate::EmailAddress;
 use jiff::SignedDuration;
 use jiff::Timestamp;
 use uuid::Uuid;
@@ -8,7 +9,7 @@ pub struct Invite {
     #[auto]
     pub id: Uuid,
     #[unique]
-    pub email: String,
+    pub email: EmailAddress,
     #[unique]
     pub token_hash: Vec<u8>,
     pub admin_id: Uuid,
