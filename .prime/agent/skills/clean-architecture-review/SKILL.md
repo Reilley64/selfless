@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 Audit where rules live in this workspace, measured against Robert C. Martin's *Clean Architecture*, Vaughn Vernon's *Implementing Domain-Driven Design*, `CODING_STANDARDS.md` and this repo's ADRs. The output is a self-contained HTML report, then, for the candidate the user picks, a grilled design, published tickets, a ticket review, and an implementation handoff.
 
-Use the vocabulary in [references/clean-architecture.md](references/clean-architecture.md) and [references/domain-driven-design.md](references/domain-driven-design.md) for every finding, and cite their quotes. Use the `codebase-design` vocabulary (module, interface, depth, seam, adapter, leverage, locality) for candidate cards.
+Use the vocabulary in [references/clean-architecture.md](references/clean-architecture.md) and [references/domain-driven-design.md](references/domain-driven-design.md) for every finding, and quote them as evidence. Use the `codebase-design` vocabulary (module, interface, depth, seam, adapter, leverage, locality) for candidate cards.
 
 ## 1. Scope and context
 
