@@ -14,9 +14,19 @@ If `GLOSSARY.md` doesn't exist or there are no ADR pages yet, **proceed silently
 
 This repo is single-context: one `GLOSSARY.md` at the repo root. ADRs are Plane pages, numbered in order. To write one, create a child page of **Architecture decisions** with the Plane MCP `page create` action and `parent_id`, using the next free number, then attach it to the work item that decided it with `attach_to_workitem`.
 
+## Context map
+
+- selfless is one bounded context. Its crates are layers, not contexts, and the web and TV apps sit inside it.
+- Radarr, Sonarr, Kodi NFO files and the SMTP server are upstream systems. selfless adapts to them, and the crate that talks to each one translates its data into glossary terms (`CODING_STANDARDS.md`, "Use cases and adapters").
+- The library, playback and watching are the core, and get the most modeling effort. Accounts, email, locking, telemetry and settings are generic. Keep them plain, and add a pattern, port or layer there only to remove a risk you can name.
+
 ## Use the glossary's vocabulary
 
 When your output names a domain concept (in an issue title, a refactor proposal, a hypothesis, a test name), use the term as defined in `GLOSSARY.md`. Don't drift to synonyms the glossary explicitly avoids.
+
+Code names follow the glossary too: capability folders, use cases, domain types, `DbSet` roots, tables, routes and tests. A name the glossary lists under _Avoid_ needs a rename or its own glossary entry. An upstream system's names, such as a Radarr movie, appear only in the crate that talks to it.
+
+Work that finishes later gets glossary terms for the states a user or admin can see. A queued item is named as a request in the imperative, such as `SendInviteEmail`, and a recorded fact in the past tense, such as `InviteAccepted`.
 
 If the concept you need isn't in the glossary yet, that's a signal: either you're inventing language the project doesn't use (reconsider) or there's a real gap (note it for `/domain-modeling`).
 
