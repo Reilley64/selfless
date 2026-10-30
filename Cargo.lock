@@ -250,7 +250,6 @@ dependencies = [
  "toasty",
  "toasty-core",
  "tokio",
- "tokio-postgres",
  "tracing",
  "uuid",
 ]

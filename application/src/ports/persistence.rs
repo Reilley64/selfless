@@ -22,8 +22,6 @@ use toasty_core::stmt::Statement;
 use tracing::Instrument;
 use tracing::field;
 
-pub(crate) mod unique_index;
-
 pub fn models() -> toasty::ModelSet {
     toasty::models!(domain::*)
 }

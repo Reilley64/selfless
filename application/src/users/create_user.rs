@@ -9,12 +9,9 @@ pub use output::Output;
 
 use crate::passwords;
 use crate::ports::persistence::DbScope;
-use crate::ports::persistence::unique_index;
 use domain::Colour;
 use domain::Symbol;
 use domain::User;
-
-const NAME_INDEX: &str = "index_users_by_name";
 
 pub async fn call(
     dependencies: impl Into<Dependencies>,
@@ -42,20 +39,16 @@ pub(crate) async fn create(
         .map_err(Error::caused_by)?;
     let colours = users.iter().map(|x| x.colour).collect::<Vec<_>>();
     let symbols = users.iter().map(|x| x.symbol).collect::<Vec<_>>();
-    scope
-        .users()
-        .create()
-        .name(name)
+    User::upsert_by_name(name)
         .email(email)
         .password_hash(password_hash)
         .colour(least_used(&Colour::ALL, &colours))
         .symbol(least_used(&Symbol::ALL, &symbols))
+        .or_ignore()
         .exec(scope.executor_mut())
         .await
-        .map_err(|error| match unique_index::violated(&error) {
-            Some(NAME_INDEX) => Error::caused_by(NameTaken::new()),
-            _ => Error::caused_by(error),
-        })
+        .map_err(Error::caused_by)?
+        .ok_or_else(|| Error::caused_by(NameTaken::new()))
 }
 
 fn least_used<T: Copy + PartialEq>(choices: &[T], used: &[T]) -> T {

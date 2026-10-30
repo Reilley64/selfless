@@ -3,7 +3,6 @@ multiple-versions = "allow"
 wildcards = "allow"
 deny = [
     { name = "native-tls" },
-    { name = "tokio-postgres", deny-multiple-versions = true },
 
     { name = "domain", wrappers = ["selfless", "application", "api"] },
     { name = "application", wrappers = ["selfless", "infrastructure", "email", "persistence", "telemetry", "api", "admin", "workers"] },
