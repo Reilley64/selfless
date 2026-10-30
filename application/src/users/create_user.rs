@@ -12,6 +12,7 @@ use crate::ports::persistence::DbScope;
 use domain::Colour;
 use domain::Symbol;
 use domain::User;
+use uuid::Uuid;
 
 pub async fn call(
     dependencies: impl Into<Dependencies>,
@@ -20,7 +21,7 @@ pub async fn call(
     email: String,
 ) -> Result<Output, Error> {
     let mut db_context = dependencies.into().db_context;
-    let user = create(&mut db_context, name, password, email).await?;
+    let user = create(&mut db_context, name, password, email, None).await?;
     Ok(Output { id: user.id })
 }
 
@@ -29,6 +30,7 @@ pub(crate) async fn create(
     name: String,
     password: String,
     email: String,
+    idempotency_key: Option<Uuid>,
 ) -> Result<User, Error> {
     let password_hash = passwords::hash(password).await.map_err(Error::caused_by)?;
     let users = scope
@@ -44,6 +46,7 @@ pub(crate) async fn create(
         .password_hash(password_hash)
         .colour(least_used(&Colour::ALL, &colours))
         .symbol(least_used(&Symbol::ALL, &symbols))
+        .idempotency_key(idempotency_key)
         .or_ignore()
         .exec(scope.executor_mut())
         .await

@@ -2483,6 +2483,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "locking"
+version = "0.1.0"
+dependencies = [
+ "application",
+ "tokio",
+]
+
+[[package]]
 name = "log"
 version = "0.4.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3802,6 +3810,7 @@ dependencies = [
  "infrastructure",
  "jiff",
  "jsonschema",
+ "locking",
  "ohno",
  "opentelemetry",
  "opentelemetry-appender-tracing",

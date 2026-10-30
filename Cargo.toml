@@ -5,6 +5,7 @@ members = [
     "domain",
     "infrastructure/dependencies",
     "infrastructure/email",
+    "infrastructure/locking",
     "infrastructure/persistence",
     "infrastructure/settings",
     "infrastructure/telemetry",
@@ -63,6 +64,7 @@ application = { path = "application" }
 domain = { path = "domain" }
 email = { path = "infrastructure/email" }
 infrastructure = { path = "infrastructure/dependencies" }
+locking = { path = "infrastructure/locking" }
 persistence = { path = "infrastructure/persistence" }
 settings = { path = "infrastructure/settings" }
 telemetry = { path = "infrastructure/telemetry" }
@@ -85,6 +87,7 @@ api = { workspace = true }
 application = { workspace = true }
 email = { workspace = true }
 infrastructure = { workspace = true }
+locking = { workspace = true }
 ohno = { workspace = true, features = ["app-err"] }
 opentelemetry = { workspace = true }
 opentelemetry-appender-tracing = { workspace = true }

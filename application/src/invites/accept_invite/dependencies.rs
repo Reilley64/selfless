@@ -1,3 +1,4 @@
+use crate::ports::AcquireLock;
 use crate::ports::Clock;
 use crate::ports::persistence::DbContext;
 
@@ -5,4 +6,5 @@ use crate::ports::persistence::DbContext;
 pub struct Dependencies {
     pub db_context: DbContext,
     pub clock: Clock,
+    pub acquire_lock: AcquireLock,
 }

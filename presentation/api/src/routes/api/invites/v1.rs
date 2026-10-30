@@ -1,4 +1,5 @@
 use crate::problem;
+use crate::problem::BAD_REQUEST;
 use crate::routes::api::me::v1::UserBody;
 use infrastructure::AppState;
 use serde::Deserialize;
@@ -6,9 +7,11 @@ use topcoat::context::Cx;
 use topcoat::context::app_context;
 use topcoat::router::StatusCode;
 use topcoat::router::content::Json;
+use topcoat::router::request::headers;
 use topcoat::router::response::IntoResponse;
 use topcoat::router::response::Response;
 use topcoat::router::route;
+use uuid::Uuid;
 
 #[derive(Deserialize)]
 struct AcceptInvite {
@@ -22,11 +25,19 @@ pub(crate) async fn accept(
     cx: &Cx,
     Json(request): Json<AcceptInvite>,
 ) -> topcoat::Result<Response> {
+    let Some(idempotency_key) = headers(cx)
+        .get("idempotency-key")
+        .and_then(|x| x.to_str().ok())
+        .and_then(|x| Uuid::try_parse(x).ok())
+    else {
+        return BAD_REQUEST.into_response(cx);
+    };
     match application::invites::accept_invite::call(
         app_context::<AppState>(cx),
         &request.token,
         request.name,
         request.password,
+        idempotency_key,
     )
     .await
     {

@@ -297,7 +297,21 @@ impl TestServer {
         token: Option<&str>,
         body: Option<Value>,
     ) -> (StatusCode, Value) {
-        let mut request = reqwest::Client::new().request(method.clone(), self.url(path));
+        self.request_with_headers(method, path, token, HeaderMap::new(), body)
+            .await
+    }
+
+    pub async fn request_with_headers(
+        &self,
+        method: Method,
+        path: &str,
+        token: Option<&str>,
+        headers: HeaderMap,
+        body: Option<Value>,
+    ) -> (StatusCode, Value) {
+        let mut request = reqwest::Client::new()
+            .request(method.clone(), self.url(path))
+            .headers(headers);
         if let Some(token) = token {
             request = request.header(AUTHORIZATION, format!("Bearer {token}"));
         }

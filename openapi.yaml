@@ -172,6 +172,15 @@ paths:
       description: The invite token authorizes the call, so it needs no session token. It creates the user with the invite's email address and ends the invite. Sign the new user in with POST /api/sessions/v1.
       tags: [invites]
       security: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: A UUID the web app creates once per invite page load and sends with every accept from it. A repeat with the same key and name returns the user the first accept created.
+          schema:
+            type: string
+            format: uuid
+          example: 0f8e2c4a-6b1d-4e3f-9a7c-5d2b8e1f4a6c
       requestBody:
         description: The token from the invite link, and the name and password the person chose.
         required: true
@@ -309,7 +318,7 @@ components:
     CollectorFailed:
       description: The collector did not accept the request. The app may retry.
     BadRequest:
-      description: The body is not JSON, or it lacks a field or has one of the wrong type. Nothing changes.
+      description: The body is not JSON, or it lacks a field or has one of the wrong type, or a required header is missing or invalid. Nothing changes.
       content:
         application/problem+json:
           schema:

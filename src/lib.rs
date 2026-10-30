@@ -34,6 +34,7 @@ pub async fn start(
     let db = persistence::connect(&settings.database).await?;
     persistence::migrate(&db).await?;
     let state = AppState::builder()
+        .acquire_lock(|_| locking::acquire_lock())
         .build_info(|_| BuildInfo {
             name: env!("CARGO_PKG_NAME"),
             version: env!("CARGO_PKG_VERSION"),

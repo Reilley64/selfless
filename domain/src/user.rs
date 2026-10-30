@@ -14,4 +14,5 @@ pub struct User {
     pub password_hash: String,
     pub colour: Colour,
     pub symbol: Symbol,
+    pub idempotency_key: Option<Uuid>,
 }

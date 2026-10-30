@@ -9,6 +9,62 @@ pub mod persistence;
 
 pub type PortFuture<T> = Pin<Box<dyn Future<Output = T> + Send + 'static>>;
 
+type AcquireLockFn = dyn Fn(String) -> PortFuture<LockGuard> + Send + Sync;
+
+#[derive(Clone)]
+pub struct AcquireLock(Arc<AcquireLockFn>);
+
+impl AcquireLock {
+    pub fn new(f: impl Fn(String) -> PortFuture<LockGuard> + Send + Sync + 'static) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self, key: String) -> PortFuture<LockGuard> {
+        (self.0)(key)
+    }
+
+    pub fn key(
+        domain: &str,
+        operation: &str,
+        version: u8,
+        parts: impl IntoIterator<Item = String>,
+    ) -> String {
+        let mut key = String::new();
+        push_key_part(&mut key, domain);
+        key.push(':');
+        push_key_part(&mut key, operation);
+        key.push_str(&format!(":v{version}"));
+        for part in parts {
+            key.push(':');
+            push_key_part(&mut key, &part);
+        }
+        key
+    }
+}
+
+fn push_key_part(key: &mut String, part: &str) {
+    for character in part.chars() {
+        match character {
+            '%' => key.push_str("%25"),
+            ':' => key.push_str("%3A"),
+            _ => key.push(character),
+        }
+    }
+}
+
+#[must_use = "the lock is held only while this guard is alive"]
+pub struct LockGuard {
+    _held: Box<dyn Send>,
+}
+
+impl LockGuard {
+    pub fn new(held: impl Send + 'static) -> Self {
+        Self {
+            _held: Box::new(held),
+        }
+    }
+}
+
 type ClockFn = dyn Fn() -> Timestamp + Send + Sync;
 
 #[derive(Clone)]

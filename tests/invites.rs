@@ -10,6 +10,7 @@ use jiff::Timestamp;
 use ohno::ErrorExt;
 use reqwest::Method;
 use reqwest::StatusCode;
+use reqwest::header::HeaderMap;
 use serde_json::Value;
 use serde_json::json;
 use sha2::Digest;
@@ -146,11 +147,24 @@ async fn accept_with_password(
     name: &str,
     password: &str,
 ) -> (StatusCode, Value) {
+    accept_with_key(server, token, name, password, &Uuid::new_v4().to_string()).await
+}
+
+async fn accept_with_key(
+    server: &TestServer,
+    token: &str,
+    name: &str,
+    password: &str,
+    idempotency_key: &str,
+) -> (StatusCode, Value) {
+    let mut headers = HeaderMap::new();
+    headers.insert("idempotency-key", idempotency_key.parse().unwrap());
     server
-        .request(
+        .request_with_headers(
             Method::POST,
             "/api/invites/accept/v1",
             None,
+            headers,
             Some(json!({ "token": token, "name": name, "password": password })),
         )
         .await
@@ -550,6 +564,70 @@ async fn accepting_without_a_password_returns_a_bad_request_problem() {
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(problem["type"], "urn:selfless:problem:bad-request");
+    drop(server);
+    database.drop().await;
+}
+
+#[tokio::test]
+async fn an_accept_without_a_uuid_idempotency_key_returns_a_bad_request_problem() {
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+    invite(&server, &database, EMAIL).await.unwrap();
+    let token = token_from_last_email(&server);
+
+    let (missing, problem) = server
+        .request(
+            Method::POST,
+            "/api/invites/accept/v1",
+            None,
+            Some(json!({ "token": token, "name": NAME, "password": PASSWORD })),
+        )
+        .await;
+    let not_uuid = accept_with_key(&server, &token, NAME, PASSWORD, "not-a-uuid").await;
+    let accepted = accept(&server, &token, NAME).await;
+
+    assert_eq!(missing, StatusCode::BAD_REQUEST);
+    assert_eq!(problem["type"], "urn:selfless:problem:bad-request");
+    assert_eq!(not_uuid.0, StatusCode::BAD_REQUEST);
+    assert_eq!(not_uuid.1["type"], "urn:selfless:problem:bad-request");
+    assert_eq!(accepted.0, StatusCode::CREATED);
+    drop(server);
+    database.drop().await;
+}
+
+#[tokio::test]
+async fn repeating_an_accept_with_the_same_key_returns_the_same_user() {
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+    invite(&server, &database, EMAIL).await.unwrap();
+    let token = token_from_last_email(&server);
+    let key = Uuid::new_v4().to_string();
+
+    let first = accept_with_key(&server, &token, NAME, PASSWORD, &key).await;
+    let repeat = accept_with_key(&server, &token, NAME, PASSWORD, &key).await;
+
+    assert_eq!(first.0, StatusCode::CREATED);
+    assert_eq!(repeat, first);
+    drop(server);
+    database.drop().await;
+}
+
+#[tokio::test]
+async fn two_accepts_at_once_with_the_same_key_both_return_the_same_user() {
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+    invite(&server, &database, EMAIL).await.unwrap();
+    let token = token_from_last_email(&server);
+    let key = Uuid::new_v4().to_string();
+
+    let (first, second) = tokio::join!(
+        accept_with_key(&server, &token, NAME, PASSWORD, &key),
+        accept_with_key(&server, &token, NAME, PASSWORD, &key)
+    );
+
+    assert_eq!(first.0, StatusCode::CREATED);
+    assert_eq!(second, first);
+    assert_eq!(database.query("SELECT id FROM users").await.len(), 1);
     drop(server);
     database.drop().await;
 }
