@@ -1,6 +1,6 @@
 use crate::problem;
-use crate::problem::BAD_REQUEST;
 use crate::problem::EMPTY_PASSWORD;
+use crate::problem::INVALID_IDEMPOTENCY_KEY;
 use crate::routes::api::me::v1::UserBody;
 use domain::Password;
 use infrastructure::AppState;
@@ -32,7 +32,7 @@ pub(crate) async fn accept(
         .and_then(|x| x.to_str().ok())
         .and_then(|x| Uuid::try_parse(x).ok())
     else {
-        return BAD_REQUEST.into_response(cx);
+        return INVALID_IDEMPOTENCY_KEY.into_response(cx);
     };
     let Ok(password) = Password::new(request.password) else {
         return EMPTY_PASSWORD.into_response(cx);

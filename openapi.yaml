@@ -184,7 +184,7 @@ paths:
         - name: Idempotency-Key
           in: header
           required: true
-          description: A UUID the web app creates once per invite page load and sends with every accept from it. A repeat with the same key and name returns the user the first accept created.
+          description: A UUID the web app keeps per invite token until sign-in succeeds and sends with every accept from it. A repeat with the same key and name returns the user the first accept created.
           schema:
             type: string
             format: uuid
@@ -206,7 +206,7 @@ paths:
                 $ref: "#/components/schemas/User"
               example: {"id":"01890a5d-ac96-774b-bcce-b302099a8057","name":"Noor","colour":"amber","symbol":"ring"}
         "400":
-          $ref: "#/components/responses/BadRequest"
+          $ref: "#/components/responses/BadRequestOrInvalidIdempotencyKey"
         "404":
           $ref: "#/components/responses/InviteNotFound"
         "409":
@@ -334,7 +334,7 @@ components:
     CollectorFailed:
       description: The collector did not accept the request. The app may retry.
     BadRequest:
-      description: The body is not JSON, or it lacks a field or has one of the wrong type, or a required header is missing or invalid. Nothing changes.
+      description: The body is not JSON, or it lacks a field or has one of the wrong type. Nothing changes.
       content:
         application/problem+json:
           schema:
@@ -346,6 +346,23 @@ components:
                   status:
                     const: 400
           example: {"type":"urn:selfless:problem:bad-request","title":"The request body is not valid.","status":400}
+    BadRequestOrInvalidIdempotencyKey:
+      description: The body is not JSON, or it lacks a field or has one of the wrong type, or the Idempotency-Key header is missing or not a UUID. Each has its own problem type. Nothing changes.
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Problem"
+              - properties:
+                  type:
+                    enum: [urn:selfless:problem:bad-request, urn:selfless:problem:invalid-idempotency-key]
+                  status:
+                    const: 400
+          examples:
+            badRequest:
+              value: {"type":"urn:selfless:problem:bad-request","title":"The request body is not valid.","status":400}
+            invalidIdempotencyKey:
+              value: {"type":"urn:selfless:problem:invalid-idempotency-key","title":"The Idempotency-Key header is not valid.","status":400}
     Unauthenticated:
       description: The request has no Authorization header with a Bearer token, or the token is unknown or its session has ended.
       content:
@@ -515,7 +532,6 @@ components:
           items:
             type: string
           examples: [[q2Xz8kQ0mJ3Hc1yF5bR7tVw9nL4pA6sD0eG2iK8uO1M]]
-      additionalProperties: false
     SignedIn:
       description: A new session's token and the user it belongs to.
       type: object
@@ -543,7 +559,6 @@ components:
           type: string
           minLength: 1
           examples: [a longer passphrase about coffee]
-      additionalProperties: false
     AcceptInviteRequest:
       description: The token from an invite link, and the name and password the invited person chose.
       type: object
@@ -562,7 +577,6 @@ components:
           type: string
           minLength: 1
           examples: [a long passphrase about tea]
-      additionalProperties: false
     HealthStatus:
       description: The status of a health group or component, as in Spring Boot Actuator.
       type: string

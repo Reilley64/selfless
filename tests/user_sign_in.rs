@@ -449,3 +449,30 @@ async fn a_wrong_password_with_replaces_ends_nothing() {
     drop(server);
     database.drop().await;
 }
+
+#[tokio::test]
+async fn a_sign_in_body_with_an_extra_field_signs_in() {
+    let database = TestDatabase::create().await;
+    let server = TestServer::start(database.url()).await;
+    server.create_user(NAME, PASSWORD).await;
+
+    let (status, body) = server
+        .request(
+            Method::POST,
+            "/api/sessions/v1",
+            None,
+            Some(json!({
+                "name": NAME,
+                "password": PASSWORD,
+                "clientKind": "web",
+                "deviceName": "Firefox on macOS",
+                "theme": "dark",
+            })),
+        )
+        .await;
+
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(body["user"]["name"], NAME);
+    drop(server);
+    database.drop().await;
+}

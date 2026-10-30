@@ -570,7 +570,7 @@ async fn accepting_without_a_password_returns_a_bad_request_problem() {
 }
 
 #[tokio::test]
-async fn an_accept_without_a_uuid_idempotency_key_returns_a_bad_request_problem() {
+async fn an_accept_without_a_uuid_idempotency_key_returns_an_invalid_idempotency_key_problem() {
     let database = TestDatabase::create().await;
     let server = TestServer::start(database.url()).await;
     invite(&server, &database, EMAIL).await.unwrap();
@@ -588,9 +588,15 @@ async fn an_accept_without_a_uuid_idempotency_key_returns_a_bad_request_problem(
     let accepted = accept(&server, &token, NAME).await;
 
     assert_eq!(missing, StatusCode::BAD_REQUEST);
-    assert_eq!(problem["type"], "urn:selfless:problem:bad-request");
+    assert_eq!(
+        problem["type"],
+        "urn:selfless:problem:invalid-idempotency-key"
+    );
     assert_eq!(not_uuid.0, StatusCode::BAD_REQUEST);
-    assert_eq!(not_uuid.1["type"], "urn:selfless:problem:bad-request");
+    assert_eq!(
+        not_uuid.1["type"],
+        "urn:selfless:problem:invalid-idempotency-key"
+    );
     assert_eq!(accepted.0, StatusCode::CREATED);
     drop(server);
     database.drop().await;

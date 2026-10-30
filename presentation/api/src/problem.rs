@@ -39,9 +39,15 @@ where
     }
 }
 
-pub(crate) const BAD_REQUEST: Problem = Problem {
+const BAD_REQUEST: Problem = Problem {
     problem_type: "urn:selfless:problem:bad-request",
     title: "The request body is not valid.",
+    status: StatusCode::BAD_REQUEST,
+};
+
+pub(crate) const INVALID_IDEMPOTENCY_KEY: Problem = Problem {
+    problem_type: "urn:selfless:problem:invalid-idempotency-key",
+    title: "The Idempotency-Key header is not valid.",
     status: StatusCode::BAD_REQUEST,
 };
 
