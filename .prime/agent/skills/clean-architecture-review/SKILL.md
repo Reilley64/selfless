@@ -1,22 +1,23 @@
 ---
 name: clean-architecture-review
-description: Review this repo against Clean Architecture, render an HTML report, grill a chosen candidate, then publish and review tickets for it.
+description: Review this repo against Clean Architecture and Domain-Driven Design, render an HTML report, grill a chosen candidate, then publish and review tickets for it.
 disable-model-invocation: true
 ---
 
 # Clean Architecture review
 
-Audit where rules live in this workspace, measured against Robert Martin's Clean Architecture and this repo's ADRs. The output is a self-contained HTML report, then, for the candidate the user picks, a grilled design, published tickets, a ticket review, and an implementation handoff.
+Audit where rules live in this workspace, measured against Robert C. Martin's *Clean Architecture*, Vaughn Vernon's *Implementing Domain-Driven Design*, `CODING_STANDARDS.md` and this repo's ADRs. The output is a self-contained HTML report, then, for the candidate the user picks, a grilled design, published tickets, a ticket review, and an implementation handoff.
 
-Use the vocabulary in [references/clean-architecture.md](references/clean-architecture.md) for every finding. Use the `codebase-design` vocabulary (module, interface, depth, seam, adapter, leverage, locality) for candidate cards.
+Use the vocabulary in [references/clean-architecture.md](references/clean-architecture.md) and [references/domain-driven-design.md](references/domain-driven-design.md) for every finding, and cite their quotes. Use the `codebase-design` vocabulary (module, interface, depth, seam, adapter, leverage, locality) for candidate cards.
 
 ## 1. Scope and context
 
 - Take the area the user names; otherwise review the whole workspace.
 - Read `AGENTS.md`, `CODING_STANDARDS.md`, `GLOSSARY.md`, `docs/agents/*.md`, and every ADR. ADRs are Plane pages, not files: list them with the Plane MCP `page` tool as `docs/agents/domain.md` describes, and save each page as Markdown in the run directory so reviewers can read it. ADRs 0001 and 0006 are **sanctioned deviations**: report them as sanctioned, and raise one only with concrete friction it causes.
 - Map the crate graph with `cargo metadata --format-version 1 --no-deps` (normal dependencies between workspace crates) and read the wrapper rules in `deny.toml`.
+- Compute fan-in, fan-out and instability for every workspace crate, and estimate abstractness, as "Crate metrics" in [references/clean-architecture.md](references/clean-architecture.md) describes. List every edge that points to a higher instability.
 
-Done when you hold the crate edge list, the sanctioned deviations, and the scoped guides for the area.
+Done when you hold the crate edge list with each crate's metrics, the sanctioned deviations, and the scoped guides for the area.
 
 ## 2. Fan out layer reviewers
 
@@ -44,6 +45,7 @@ Run the `grilling` skill on the candidate, in rounds over the **frontier**.
 - Before recommending any change that narrows or widens behavior, read the affected spec and tickets in Plane (`docs/agents/issue-tracker.md`). A rule a spec states is a spec change, never "no behavior change".
 - Record every settled decision in a `decisions.md` file in the run directory as it lands.
 - Update `GLOSSARY.md` the moment a term is resolved, following the `domain-modeling` skill.
+- Give each decision that sets a lasting rule a home, and name it in `decisions.md`. A rule a reviewer can check against one diff goes in `CODING_STANDARDS.md`. A rule about domain language goes in `docs/agents/domain.md`. A hard-to-reverse trade-off goes in an ADR. The ticket that lands the code also lands the line.
 
 Done when the frontier is empty and the user confirms the summarised plan.
 
