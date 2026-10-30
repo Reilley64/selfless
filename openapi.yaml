@@ -115,6 +115,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/WrongNameOrPassword"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /api/sessions/current/v1:
     delete:
       operationId: signOut
@@ -125,6 +127,8 @@ paths:
           description: The session has ended, and its token no longer works.
         "401":
           $ref: "#/components/responses/Unauthenticated"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /api/me/v1:
     get:
       operationId: getMe
@@ -140,6 +144,8 @@ paths:
               example: {"id":"01890a5d-ac96-774b-bcce-b302099a8057","name":"Noor","colour":"amber","symbol":"ring"}
         "401":
           $ref: "#/components/responses/Unauthenticated"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /api/me/password/v1:
     put:
       operationId: changePassword
@@ -165,6 +171,8 @@ paths:
           $ref: "#/components/responses/WrongCurrentPassword"
         "422":
           $ref: "#/components/responses/EmptyPassword"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /api/invites/accept/v1:
     post:
       operationId: acceptInvite
@@ -205,6 +213,8 @@ paths:
           $ref: "#/components/responses/NameTaken"
         "422":
           $ref: "#/components/responses/EmptyPassword"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /api/telemetry/traces/v1:
     post:
       operationId: relayTraces
@@ -233,6 +243,8 @@ paths:
           $ref: "#/components/responses/MalformedTelemetry"
         "401":
           $ref: "#/components/responses/Unauthenticated"
+        "500":
+          $ref: "#/components/responses/InternalError"
         "502":
           $ref: "#/components/responses/CollectorFailed"
   /api/telemetry/metrics/v1:
@@ -263,6 +275,8 @@ paths:
           $ref: "#/components/responses/MalformedTelemetry"
         "401":
           $ref: "#/components/responses/Unauthenticated"
+        "500":
+          $ref: "#/components/responses/InternalError"
         "502":
           $ref: "#/components/responses/CollectorFailed"
   /api/telemetry/logs/v1:
@@ -293,6 +307,8 @@ paths:
           $ref: "#/components/responses/MalformedTelemetry"
         "401":
           $ref: "#/components/responses/Unauthenticated"
+        "500":
+          $ref: "#/components/responses/InternalError"
         "502":
           $ref: "#/components/responses/CollectorFailed"
 tags:
@@ -408,6 +424,19 @@ components:
                   status:
                     const: 404
           example: {"type":"urn:selfless:problem:invite-not-found","title":"The invite link no longer works.","status":404}
+    InternalError:
+      description: The server failed. The body holds no error details, and the server logs the error.
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Problem"
+              - properties:
+                  type:
+                    const: urn:selfless:problem:internal-error
+                  status:
+                    const: 500
+          example: {"type":"urn:selfless:problem:internal-error","title":"Something went wrong on the server.","status":500}
   schemas:
     Problem:
       description: An RFC 9457 problem details object. The type is stable and identifies the problem.

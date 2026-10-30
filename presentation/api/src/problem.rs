@@ -4,6 +4,7 @@ use application::users::change_password::WrongCurrentPassword;
 use application::users::create_user::NameTaken;
 use ohno::ErrorExt;
 use serde_json::json;
+use std::error::Error;
 use topcoat::context::Cx;
 use topcoat::router::Body;
 use topcoat::router::Layer;
@@ -12,9 +13,11 @@ use topcoat::router::Next;
 use topcoat::router::Path;
 use topcoat::router::StatusCode;
 use topcoat::router::error::BadRequestError;
+use topcoat::router::error::RewriteError;
 use topcoat::router::header::CONTENT_TYPE;
 use topcoat::router::response::IntoResponse;
 use topcoat::router::response::Response;
+use topcoat::router::try_endpoint;
 
 pub(crate) struct Problem {
     problem_type: &'static str,
@@ -43,6 +46,12 @@ pub(crate) const BAD_REQUEST: Problem = Problem {
     problem_type: "urn:selfless:problem:bad-request",
     title: "The request body is not valid.",
     status: StatusCode::BAD_REQUEST,
+};
+
+const INTERNAL_ERROR: Problem = Problem {
+    problem_type: "urn:selfless:problem:internal-error",
+    title: "Something went wrong on the server.",
+    status: StatusCode::INTERNAL_SERVER_ERROR,
 };
 
 pub(crate) const WRONG_NAME_OR_PASSWORD: Problem = Problem {
@@ -97,20 +106,31 @@ impl IntoResponse for Problem {
     }
 }
 
-pub(crate) struct BadRequestProblemLayer;
+pub(crate) struct ProblemLayer;
 
-impl Layer for BadRequestProblemLayer {
+impl Layer for ProblemLayer {
     fn path(&self) -> Option<&Path> {
-        Some(Path::new("/api"))
+        None
     }
 
     fn handle<'a>(&'a self, cx: &'a Cx, body: Body, next: Next<'a>) -> LayerFuture<'a> {
         Box::pin(async move {
-            match next.run(cx, body).await {
-                Err(error) if error.downcast_ref::<BadRequestError>().is_some() => {
-                    BAD_REQUEST.into_response(cx)
-                }
-                result => result,
+            let error = match next.run(cx, body).await {
+                Err(error) if !error.is::<RewriteError>() => error,
+                result => return result,
+            };
+            let api = try_endpoint(cx).is_some_and(|x| x.path().starts_with(Path::new("/api")));
+            if api && error.is::<BadRequestError>() {
+                return BAD_REQUEST.into_response(cx);
+            }
+            if error.clone().into_response(cx)?.status() != StatusCode::INTERNAL_SERVER_ERROR {
+                return Err(error);
+            }
+            tracing::error!(error = &*error as &dyn Error, "request failed");
+            if api {
+                INTERNAL_ERROR.into_response(cx)
+            } else {
+                Err(error)
             }
         })
     }
