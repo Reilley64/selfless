@@ -22,3 +22,6 @@ toasty-core = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true }
+
+[dev-dependencies]
+test-fixtures = { workspace = true }

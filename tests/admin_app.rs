@@ -15,29 +15,6 @@ use support::settings;
 use tokio::time::Instant;
 
 #[tokio::test]
-async fn the_first_admin_signs_in_and_sees_the_admin_app() {
-    let database = TestDatabase::create().await;
-    let server = TestServer::start(database.url()).await;
-    let mut browser = server.browser();
-
-    let signed_in = browser.sign_in(ADMIN_NAME, ADMIN_PASSWORD).await;
-    let home = browser.get("/admin").await;
-
-    assert_eq!(signed_in.status, StatusCode::SEE_OTHER);
-    assert_eq!(signed_in.location.as_deref(), Some("/admin"));
-    assert_eq!(home.status, StatusCode::OK);
-    assert!(home.body.contains(">selfless<"), "{}", home.body);
-    assert!(
-        home.body
-            .contains(&format!(">{}<", env!("CARGO_PKG_VERSION"))),
-        "{}",
-        home.body
-    );
-    drop(server);
-    database.drop().await;
-}
-
-#[tokio::test]
 async fn admin_pages_redirect_to_sign_in_without_an_admin_session() {
     let database = TestDatabase::create().await;
     let server = TestServer::start(database.url()).await;

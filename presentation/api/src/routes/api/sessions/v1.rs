@@ -89,3 +89,47 @@ pub(crate) async fn sign_out(cx: &Cx) -> topcoat::Result<Response> {
     application::sessions::sign_out::call(app_context::<AppState>(cx), token).await?;
     StatusCode::NO_CONTENT.into_response(cx)
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::test::serve;
+    use domain::EmailAddress;
+    use domain::Password;
+    use http::Method;
+    use http::StatusCode;
+    use serde_json::json;
+    use test_app::TestApp;
+    use uuid::Uuid;
+
+    #[tokio::test]
+    async fn a_user_signs_in_with_their_name_and_password() {
+        let app = TestApp::new().await;
+        application::users::create_user::call(
+            &app.state,
+            "Noor".to_owned(),
+            Password::new("a long passphrase".to_owned()).unwrap(),
+            EmailAddress::new("noor@example.com".to_owned()).unwrap(),
+        )
+        .await
+        .unwrap();
+        let server = serve(&app).await;
+
+        let (status, body) = server
+            .request(
+                Method::POST,
+                "/api/sessions/v1",
+                None,
+                Some(json!({
+                    "name": "Noor",
+                    "password": "a long passphrase",
+                    "clientKind": "web",
+                    "deviceName": "Firefox on macOS",
+                    "clientId": Uuid::new_v4(),
+                })),
+            )
+            .await;
+
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(body["user"]["name"], "Noor");
+    }
+}

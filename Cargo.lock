@@ -13,8 +13,13 @@ name = "admin"
 version = "0.1.0"
 dependencies = [
  "application",
+ "domain",
+ "http",
  "infrastructure",
  "serde",
+ "test-app",
+ "test-fixtures",
+ "tokio",
  "topcoat",
  "tracing",
  "tracing-opentelemetry",
@@ -226,6 +231,9 @@ dependencies = [
  "opentelemetry_sdk",
  "serde",
  "serde_json",
+ "test-app",
+ "test-fixtures",
+ "tokio",
  "topcoat",
  "tracing",
  "tracing-opentelemetry",
@@ -247,6 +255,7 @@ dependencies = [
  "ohno",
  "opentelemetry",
  "sha2 0.11.1",
+ "test-fixtures",
  "toasty",
  "toasty-core",
  "tokio",
@@ -3016,10 +3025,13 @@ name = "persistence"
 version = "0.1.0"
 dependencies = [
  "application",
+ "domain",
  "ohno",
  "serde",
+ "test-fixtures",
  "toasty",
  "toasty-driver-postgresql",
+ "tokio",
  "url",
 ]
 
@@ -3829,6 +3841,7 @@ dependencies = [
  "settings",
  "sha2 0.11.1",
  "telemetry",
+ "test-fixtures",
  "toasty-cli",
  "tokio",
  "tokio-postgres",
@@ -4386,6 +4399,32 @@ dependencies = [
  "once_cell",
  "rustix 1.1.6",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "test-app"
+version = "0.1.0"
+dependencies = [
+ "application",
+ "infrastructure",
+ "test-fixtures",
+]
+
+[[package]]
+name = "test-fixtures"
+version = "0.1.0"
+dependencies = [
+ "jiff",
+ "jsonschema",
+ "reqwest",
+ "serde-saphyr",
+ "serde_json",
+ "toasty",
+ "tokio",
+ "tokio-postgres",
+ "tokio-util",
+ "topcoat",
+ "url",
 ]
 
 [[package]]
@@ -6147,10 +6186,14 @@ name = "workers"
 version = "0.1.0"
 dependencies = [
  "application",
+ "domain",
  "infrastructure",
+ "jiff",
+ "test-app",
  "tokio",
  "tokio-util",
  "tracing",
+ "uuid",
 ]
 
 [[package]]

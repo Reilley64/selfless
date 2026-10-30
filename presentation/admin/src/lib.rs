@@ -2,6 +2,10 @@ mod atoms;
 mod pages;
 mod templates;
 
+#[cfg(test)]
+#[path = "../../../test/admin.rs"]
+mod test;
+
 use crate::pages::home::home;
 use crate::pages::sign_in::sign_in;
 use crate::pages::sign_in::sign_in_form;

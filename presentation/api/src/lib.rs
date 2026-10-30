@@ -4,6 +4,10 @@ mod routes;
 mod user_auth;
 mod web;
 
+#[cfg(test)]
+#[path = "../../../test/api.rs"]
+mod test;
+
 use infrastructure::AppState;
 use std::path::PathBuf;
 use std::sync::Arc;

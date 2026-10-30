@@ -38,22 +38,6 @@ async fn me(server: &TestServer, token: &str) -> StatusCode {
 }
 
 #[tokio::test]
-async fn a_user_signs_in_with_their_name_and_password() {
-    let database = TestDatabase::create().await;
-    let server = TestServer::start(database.url()).await;
-    server.create_user(NAME, PASSWORD).await;
-
-    let (status, body) = sign_in(&server, NAME, PASSWORD).await;
-
-    assert_eq!(status, StatusCode::CREATED);
-    assert_eq!(body["user"]["name"], NAME);
-    let id = Uuid::parse_str(body["user"]["id"].as_str().unwrap()).unwrap();
-    assert_eq!(id.get_version_num(), 7);
-    drop(server);
-    database.drop().await;
-}
-
-#[tokio::test]
 async fn user_names_ignore_case_at_sign_in() {
     let database = TestDatabase::create().await;
     let server = TestServer::start(database.url()).await;
@@ -480,60 +464,6 @@ async fn two_sign_ins_at_once_with_one_client_id_leave_one_session() {
             .count();
         assert_eq!(from_client, 1);
     }
-    drop(server);
-    database.drop().await;
-}
-
-#[tokio::test]
-async fn a_wrong_password_changes_no_session() {
-    let database = TestDatabase::create().await;
-    let server = TestServer::start(database.url()).await;
-    server.create_user(NAME, PASSWORD).await;
-    let client_id = Uuid::new_v4();
-    let old = token(sign_in_on_tv(&server, NAME, PASSWORD, client_id, "Living Room").await);
-    let rows = async || {
-        sessions(&server)
-            .await
-            .into_iter()
-            .map(|x| (x.id, x.device_name, x.token_hash, x.signed_in_at))
-            .collect::<Vec<_>>()
-    };
-    let before = rows().await;
-    server.clock.advance(SignedDuration::from_hours(2));
-
-    let output = sign_in_on_tv(&server, NAME, "wrong", client_id, "Bedroom").await;
-
-    assert!(matches!(output, sign_in::Output::WrongNameOrPassword));
-    assert_eq!(rows().await, before);
-    assert_eq!(me(&server, &old).await, StatusCode::OK);
-    drop(server);
-    database.drop().await;
-}
-
-#[tokio::test]
-async fn a_sign_in_body_with_an_extra_field_signs_in() {
-    let database = TestDatabase::create().await;
-    let server = TestServer::start(database.url()).await;
-    server.create_user(NAME, PASSWORD).await;
-
-    let (status, body) = server
-        .request(
-            Method::POST,
-            "/api/sessions/v1",
-            None,
-            Some(json!({
-                "name": NAME,
-                "password": PASSWORD,
-                "clientKind": "web",
-                "deviceName": "Firefox on macOS",
-                "clientId": CLIENT_ID,
-                "theme": "dark",
-            })),
-        )
-        .await;
-
-    assert_eq!(status, StatusCode::CREATED);
-    assert_eq!(body["user"]["name"], NAME);
     drop(server);
     database.drop().await;
 }

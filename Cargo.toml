@@ -13,6 +13,8 @@ members = [
     "presentation/api",
     "presentation/webhooks",
     "presentation/workers",
+    "test/app",
+    "test/fixtures",
 ]
 
 [workspace.package]
@@ -73,6 +75,8 @@ admin = { path = "presentation/admin" }
 api = { path = "presentation/api" }
 webhooks = { path = "presentation/webhooks" }
 workers = { path = "presentation/workers" }
+test-app = { path = "test/app" }
+test-fixtures = { path = "test/fixtures" }
 
 [package]
 name = "selfless"
@@ -122,6 +126,7 @@ reqwest = { workspace = true, features = ["json"] }
 serde-saphyr = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
+test-fixtures = { workspace = true }
 tokio-postgres = { workspace = true }
 tokio-util = { workspace = true }
 tonic = { workspace = true, features = ["codegen", "router", "server"] }

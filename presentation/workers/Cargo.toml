@@ -11,3 +11,9 @@ infrastructure = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
+
+[dev-dependencies]
+domain = { workspace = true }
+jiff = { workspace = true }
+test-app = { workspace = true }
+uuid = { workspace = true }

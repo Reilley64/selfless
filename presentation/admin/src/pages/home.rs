@@ -25,3 +25,38 @@ pub(crate) async fn home(cx: &Cx) -> topcoat::Result<impl View> {
         )
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::test::serve;
+    use domain::Password;
+    use http::StatusCode;
+    use test_app::TestApp;
+
+    #[tokio::test]
+    async fn the_first_admin_signs_in_and_sees_the_admin_app() {
+        let app = TestApp::new().await;
+        application::admins::create_admin::call(
+            &app.state,
+            "Maya".to_owned(),
+            Password::new("correct horse battery staple".to_owned()).unwrap(),
+        )
+        .await
+        .unwrap();
+        let server = serve(&app).await;
+        let mut browser = server.browser();
+
+        let signed_in = browser
+            .sign_in("Maya", "correct horse battery staple")
+            .await;
+        let home = browser.get("/admin").await;
+
+        assert_eq!(signed_in.status, StatusCode::SEE_OTHER);
+        assert_eq!(signed_in.location.as_deref(), Some("/admin"));
+        assert_eq!(home.status, StatusCode::OK);
+        let build_info = &app.state.build_info;
+        for shown in [build_info.name, build_info.version] {
+            assert!(home.body.contains(&format!(">{shown}<")), "{}", home.body);
+        }
+    }
+}

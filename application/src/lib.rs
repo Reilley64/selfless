@@ -9,6 +9,10 @@ pub mod sessions;
 pub mod telemetry;
 pub mod users;
 
+#[cfg(test)]
+#[path = "../../test/application.rs"]
+mod test;
+
 pub mod attributes {
     include!(concat!(env!("OUT_DIR"), "/attributes.rs"));
 }
