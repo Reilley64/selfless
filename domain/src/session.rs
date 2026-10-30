@@ -38,3 +38,62 @@ impl Session {
         now.duration_since(self.last_used_at) >= Self::LAST_USED_PRECISION
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const NOW: &str = "2026-06-01T12:00:00Z";
+
+    fn at(timestamp: &str) -> Timestamp {
+        timestamp.parse().expect("the timestamp is valid")
+    }
+
+    fn session(client_kind: ClientKind, last_used_at: &str) -> Session {
+        Session {
+            id: Uuid::nil(),
+            user_id: Uuid::nil(),
+            user: Deferred::default(),
+            client_kind,
+            device_name: "Living room".to_owned(),
+            token_hash: Vec::new(),
+            signed_in_at: at("2026-01-01T00:00:00Z"),
+            last_used_at: at(last_used_at),
+        }
+    }
+
+    #[test]
+    fn a_web_session_idle_for_thirty_days_has_expired() {
+        assert!(session(ClientKind::Web, "2026-05-02T12:00:00Z").expired(at(NOW)));
+    }
+
+    #[test]
+    fn a_web_session_idle_for_less_than_thirty_days_has_not_expired() {
+        assert!(!session(ClientKind::Web, "2026-05-02T12:00:01Z").expired(at(NOW)));
+    }
+
+    #[test]
+    fn a_tv_session_never_expires() {
+        for client_kind in [ClientKind::AppleTv, ClientKind::GoogleTv] {
+            assert!(!session(client_kind, "2025-06-01T12:00:00Z").expired(at(NOW)));
+        }
+    }
+
+    #[test]
+    fn the_web_idle_cutoff_is_thirty_days_before_now() {
+        assert_eq!(
+            Session::web_idle_cutoff(at(NOW)),
+            at("2026-05-02T12:00:00Z")
+        );
+    }
+
+    #[test]
+    fn last_used_an_hour_ago_is_stale() {
+        assert!(session(ClientKind::Web, "2026-06-01T11:00:00Z").last_used_is_stale(at(NOW)));
+    }
+
+    #[test]
+    fn last_used_less_than_an_hour_ago_is_not_stale() {
+        assert!(!session(ClientKind::Web, "2026-06-01T11:00:01Z").last_used_is_stale(at(NOW)));
+    }
+}
