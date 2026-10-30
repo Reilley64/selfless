@@ -11,9 +11,10 @@ The `code-review` step applies these rules to each diff. Each rule is a judgemen
 
 - Dependencies point inward: domain, application, infrastructure, presentation, then the binary. `deny.toml` lists each crate's allowed dependents. A new edge needs a reason the diff makes clear.
 - A port is a newtype over `Arc<dyn Fn>` with a `call` method that takes named parameters. Application owns the port, and an infrastructure crate builds it.
-- Use case Outputs carry plain data, never Toasty models.
+- Use case Outputs carry plain data, never Toasty models. Each use case defines its own Output. Outputs are never shared between use cases.
 - Settings come only from environment variables, with no prefix and `__` for nesting. Each adapter crate owns its settings type, and `AppSettings::load()` in `infrastructure/settings` composes them.
 - Every database call goes through the `DbContext`, including hand-written SQL through `toasty::sql`. Hand-written SQL runs on PostgreSQL 14, the homelab's version.
+- An insert that must not fail on a unique clash uses Toasty's upsert, `Model::upsert_by_*()`, with `.or_ignore()` when the existing row must stay, because Toasty's `DbSet` has no upsert. Every other insert starts from a `DbSet` root, such as `db_context.users().create()`. Bulk upserts stay in `toasty::sql`, as ADR 0001 says.
 - Rustls is the only TLS stack. A dependency with a choice of TLS backend sets `default-features = false` and picks Rustls by name.
 
 ## Files
