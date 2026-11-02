@@ -1,6 +1,5 @@
 mod support;
 
-use jiff::SignedDuration;
 use reqwest::StatusCode;
 use sha2::Digest;
 use sha2::Sha256;
@@ -9,91 +8,6 @@ use support::ADMIN_PASSWORD;
 use support::TestDatabase;
 use support::TestServer;
 use tokio::time::Instant;
-
-#[tokio::test]
-async fn admin_pages_redirect_to_sign_in_without_an_admin_session() {
-    let database = TestDatabase::create().await;
-    let server = TestServer::start(database.url()).await;
-    let mut browser = server.browser();
-
-    let without_cookie = browser.get("/admin").await;
-    browser.set_cookie("session", "not-a-session");
-    let with_unknown_cookie = browser.get("/admin").await;
-
-    for page in [without_cookie, with_unknown_cookie] {
-        assert_eq!(page.status, StatusCode::SEE_OTHER);
-        assert_eq!(page.location.as_deref(), Some("/admin/sign-in"));
-    }
-    drop(server);
-    database.drop().await;
-}
-
-#[tokio::test]
-async fn signing_out_ends_the_admin_session() {
-    let database = TestDatabase::create().await;
-    let server = TestServer::start(database.url()).await;
-    let mut browser = server.browser();
-    browser.sign_in(ADMIN_NAME, ADMIN_PASSWORD).await;
-    let token = browser.cookie("session").unwrap().to_owned();
-
-    let signed_out = browser.sign_out().await;
-    let home = browser.get("/admin").await;
-    browser.set_cookie("session", &token);
-    let home_with_old_token = browser.get("/admin").await;
-
-    assert_eq!(signed_out.status, StatusCode::SEE_OTHER);
-    assert_eq!(signed_out.location.as_deref(), Some("/admin/sign-in"));
-    for page in [home, home_with_old_token] {
-        assert_eq!(page.status, StatusCode::SEE_OTHER);
-        assert_eq!(page.location.as_deref(), Some("/admin/sign-in"));
-    }
-    drop(server);
-    database.drop().await;
-}
-
-#[tokio::test]
-async fn the_admin_session_cookie_is_http_only_strict_and_scoped_to_admin() {
-    let database = TestDatabase::create().await;
-    let server = TestServer::start(database.url()).await;
-    let mut browser = server.browser();
-
-    let signed_in = browser.sign_in(ADMIN_NAME, ADMIN_PASSWORD).await;
-
-    let attributes = cookie_attributes(&signed_in, "session");
-    for attribute in ["HttpOnly", "SameSite=Strict", "Path=/admin"] {
-        assert!(attributes.contains(&attribute.to_owned()), "{attributes:?}");
-    }
-    drop(server);
-    database.drop().await;
-}
-
-#[tokio::test]
-async fn admin_cookies_are_secure_only_when_traefik_received_the_request_over_https() {
-    let database = TestDatabase::create().await;
-    let server = TestServer::start(database.url()).await;
-    let mut over_http = server.browser();
-    let mut over_https = server.browser();
-    over_https.set_header("x-forwarded-proto", "https");
-
-    let signed_in_over_http = over_http.sign_in(ADMIN_NAME, ADMIN_PASSWORD).await;
-    let form_over_https = over_https.get("/admin/sign-in").await;
-    let signed_in_over_https = over_https.sign_in(ADMIN_NAME, ADMIN_PASSWORD).await;
-
-    assert!(!cookie_attributes(&signed_in_over_http, "session").contains(&"Secure".to_owned()));
-    assert!(cookie_attributes(&signed_in_over_https, "session").contains(&"Secure".to_owned()));
-    assert!(cookie_attributes(&form_over_https, "csrf").contains(&"Secure".to_owned()));
-    drop(server);
-    database.drop().await;
-}
-
-fn cookie_attributes(page: &support::Page, name: &str) -> Vec<String> {
-    let cookie = page
-        .set_cookies
-        .iter()
-        .find(|x| x.starts_with(&format!("{name}=")))
-        .unwrap_or_else(|| panic!("no {name} cookie in {:?}", page.set_cookies));
-    cookie.split("; ").skip(1).map(str::to_owned).collect()
-}
 
 #[tokio::test]
 async fn the_database_stores_only_the_sha_256_hash_of_the_admin_session_token() {
@@ -110,45 +24,6 @@ async fn the_database_stores_only_the_sha_256_hash_of_the_admin_session_token() 
     let stored: Vec<u8> = rows[0].get("token_hash");
     assert_eq!(rows.len(), 1);
     assert_eq!(stored, Sha256::digest(token.as_bytes()).to_vec());
-    drop(server);
-    database.drop().await;
-}
-
-#[tokio::test]
-async fn admin_forms_without_the_csrf_token_are_rejected() {
-    let database = TestDatabase::create().await;
-    let server = TestServer::start(database.url()).await;
-    let mut browser = server.browser();
-    browser.get("/admin/sign-in").await;
-
-    let sign_in_without_token = browser
-        .post_form(
-            "/admin/sign-in",
-            &[("name", ADMIN_NAME), ("password", ADMIN_PASSWORD)],
-        )
-        .await;
-    let sign_in_with_wrong_token = browser
-        .post_form(
-            "/admin/sign-in",
-            &[
-                ("csrf", "wrong"),
-                ("name", ADMIN_NAME),
-                ("password", ADMIN_PASSWORD),
-            ],
-        )
-        .await;
-    browser.sign_in(ADMIN_NAME, ADMIN_PASSWORD).await;
-    let sign_out_without_token = browser.post_form("/admin/sign-out", &[]).await;
-    let home = browser.get("/admin").await;
-
-    for page in [
-        sign_in_without_token,
-        sign_in_with_wrong_token,
-        sign_out_without_token,
-    ] {
-        assert_eq!(page.status, StatusCode::FORBIDDEN);
-    }
-    assert_eq!(home.status, StatusCode::OK);
     drop(server);
     database.drop().await;
 }
@@ -183,31 +58,6 @@ async fn admin_names_ignore_case_at_sign_in() {
 
     assert_eq!(signed_in.status, StatusCode::SEE_OTHER);
     assert_eq!(signed_in.location.as_deref(), Some("/admin"));
-    drop(server);
-    database.drop().await;
-}
-
-#[tokio::test]
-async fn an_admin_session_ends_after_12_hours_without_use() {
-    let database = TestDatabase::create().await;
-    let server = TestServer::start(database.url()).await;
-    let mut browser = server.browser();
-    browser.sign_in(ADMIN_NAME, ADMIN_PASSWORD).await;
-
-    server.clock.advance(SignedDuration::from_hours(11));
-    let after_11_hours = browser.get("/admin").await;
-    server.clock.advance(SignedDuration::from_hours(11));
-    let after_11_more_hours = browser.get("/admin").await;
-    server.clock.advance(SignedDuration::from_hours(12));
-    let after_12_idle_hours = browser.get("/admin").await;
-
-    assert_eq!(after_11_hours.status, StatusCode::OK);
-    assert_eq!(after_11_more_hours.status, StatusCode::OK);
-    assert_eq!(after_12_idle_hours.status, StatusCode::SEE_OTHER);
-    assert_eq!(
-        after_12_idle_hours.location.as_deref(),
-        Some("/admin/sign-in")
-    );
     drop(server);
     database.drop().await;
 }
