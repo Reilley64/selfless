@@ -200,7 +200,7 @@ mod tests {
         let provider = SdkLoggerProvider::builder()
             .with_simple_exporter(exporter.clone())
             .build();
-        tracing::subscriber::set_default(
+        test_fixtures::set_default_subscriber(
             tracing_subscriber::registry()
                 .with(LevelFilter::INFO)
                 .with(OpenTelemetryTracingBridge::new(&provider)),

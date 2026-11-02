@@ -80,7 +80,7 @@ struct Logs(Arc<Mutex<Vec<u8>>>);
 impl Logs {
     fn capture(&self) -> tracing::subscriber::DefaultGuard {
         let logs = self.clone();
-        tracing::subscriber::set_default(
+        test_fixtures::set_default_subscriber(
             tracing_subscriber::fmt()
                 .with_ansi(false)
                 .with_writer(move || logs.clone())
