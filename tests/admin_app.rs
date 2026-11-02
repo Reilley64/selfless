@@ -2,16 +2,12 @@ mod support;
 
 use jiff::SignedDuration;
 use reqwest::StatusCode;
-use settings::AdminSettings;
 use sha2::Digest;
 use sha2::Sha256;
 use support::ADMIN_NAME;
 use support::ADMIN_PASSWORD;
-use support::FakeClock;
-use support::FakeMailer;
 use support::TestDatabase;
 use support::TestServer;
-use support::settings;
 use tokio::time::Instant;
 
 #[tokio::test]
@@ -212,65 +208,6 @@ async fn an_admin_session_ends_after_12_hours_without_use() {
         after_12_idle_hours.location.as_deref(),
         Some("/admin/sign-in")
     );
-    drop(server);
-    database.drop().await;
-}
-
-#[tokio::test]
-async fn the_server_refuses_to_start_without_a_first_admin() {
-    let database = TestDatabase::create().await;
-
-    for admin in [
-        AdminSettings {
-            username: None,
-            password: None,
-        },
-        AdminSettings {
-            username: Some(ADMIN_NAME.to_owned()),
-            password: None,
-        },
-        AdminSettings {
-            username: None,
-            password: Some(ADMIN_PASSWORD.to_owned()),
-        },
-    ] {
-        let mut settings = settings(database.url());
-        settings.admin = admin;
-
-        let error = selfless::start(
-            settings,
-            FakeClock::new().port(),
-            FakeMailer::default().send_email(),
-        )
-        .await
-        .err()
-        .expect("the server refuses to start");
-
-        let message = error.to_string();
-        assert!(message.contains("ADMIN__USERNAME"), "{message}");
-        assert!(message.contains("ADMIN__PASSWORD"), "{message}");
-    }
-    database.drop().await;
-}
-
-#[tokio::test]
-async fn the_first_admin_variables_are_ignored_once_an_admin_exists() {
-    let database = TestDatabase::create().await;
-    drop(TestServer::start(database.url()).await);
-    let mut settings = settings(database.url());
-    settings.admin = AdminSettings {
-        username: Some("Noor".to_owned()),
-        password: Some("another password".to_owned()),
-    };
-    let server = TestServer::start_with(settings, FakeClock::new()).await;
-    let mut browser = server.browser();
-
-    let new_admin = browser.sign_in("Noor", "another password").await;
-    let first_admin = browser.sign_in(ADMIN_NAME, ADMIN_PASSWORD).await;
-
-    assert_eq!(new_admin.status, StatusCode::OK);
-    assert!(new_admin.body.contains("Wrong name or password."));
-    assert_eq!(first_admin.status, StatusCode::SEE_OTHER);
     drop(server);
     database.drop().await;
 }

@@ -13,8 +13,7 @@ use domain::Password;
 
 pub async fn call(
     dependencies: impl Into<Dependencies>,
-    name: Option<String>,
-    password: Option<String>,
+    first_admin: Option<(String, Password)>,
 ) -> Result<Output, Error> {
     let mut db_context = dependencies.into().db_context;
     if db_context
@@ -28,10 +27,7 @@ pub async fn call(
     {
         return Ok(Output);
     }
-    let (Some(name), Some(password)) = (
-        name.filter(|x| !x.is_empty()),
-        password.and_then(|x| Password::new(x).ok()),
-    ) else {
+    let Some((name, password)) = first_admin else {
         return Err(Error::caused_by(MissingFirstAdmin::new()));
     };
     let password_hash = passwords::hash(password).await.map_err(Error::caused_by)?;
@@ -44,4 +40,107 @@ pub async fn call(
         .await
         .map_err(Error::caused_by)?;
     Ok(Output)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ports::persistence::DbContext;
+    use crate::test::mock_db_context;
+    use ohno::ErrorExt;
+
+    fn maya() -> Option<(String, Password)> {
+        Some((
+            "Maya".to_owned(),
+            Password::new("correct horse".to_owned()).unwrap(),
+        ))
+    }
+
+    async fn admins(db_context: &mut DbContext) -> Vec<(String, bool)> {
+        let mut admins = Vec::new();
+        for admin in db_context
+            .admins()
+            .all()
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap()
+        {
+            let verified = passwords::verify("correct horse".to_owned(), Some(admin.password_hash))
+                .await
+                .unwrap();
+            admins.push((admin.name, verified));
+        }
+        admins
+    }
+
+    #[tokio::test]
+    async fn without_an_admin_the_given_name_and_password_become_the_first_admin() {
+        let mut db_context = mock_db_context().await;
+
+        call(
+            Dependencies {
+                db_context: db_context.clone(),
+            },
+            maya(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(admins(&mut db_context).await, [("Maya".to_owned(), true)]);
+    }
+
+    #[tokio::test]
+    async fn without_an_admin_or_a_first_admin_it_fails_with_missing_first_admin() {
+        let mut db_context = mock_db_context().await;
+
+        let error = call(
+            Dependencies {
+                db_context: db_context.clone(),
+            },
+            None,
+        )
+        .await
+        .expect_err("there is no admin to create");
+
+        assert!(
+            error.find_source::<MissingFirstAdmin>().is_some(),
+            "{error}"
+        );
+        assert!(admins(&mut db_context).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn once_an_admin_exists_the_first_admin_is_ignored() {
+        let mut db_context = mock_db_context().await;
+        db_context
+            .admins()
+            .create()
+            .name("Ravi")
+            .password_hash("hash")
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap();
+
+        for first_admin in [maya(), None] {
+            call(
+                Dependencies {
+                    db_context: db_context.clone(),
+                },
+                first_admin,
+            )
+            .await
+            .unwrap();
+        }
+
+        let names = db_context
+            .admins()
+            .all()
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|x| x.name)
+            .collect::<Vec<_>>();
+        assert_eq!(names, ["Ravi"]);
+    }
 }

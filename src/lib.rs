@@ -4,6 +4,7 @@ use application::admins::bootstrap_first_admin::MissingFirstAdmin;
 use application::ports::Clock;
 use application::ports::SendEmail;
 use application::ports::persistence::DbContext;
+use domain::Password;
 use infrastructure::AppState;
 use ohno::AppError;
 use ohno::ErrorExt;
@@ -47,11 +48,14 @@ pub async fn start(
         .export_telemetry_try(|_| telemetry::export_telemetry(&settings.otlp))?
         .send_email(|_| send_email.clone())
         .build();
-    application::admins::bootstrap_first_admin::call(
-        &state,
-        settings.admin.username,
-        settings.admin.password,
-    )
+    let first_admin = match (
+        settings.admin.username.filter(|x| !x.is_empty()),
+        settings.admin.password.map(Password::new),
+    ) {
+        (Some(name), Some(Ok(password))) => Some((name, password)),
+        _ => None,
+    };
+    application::admins::bootstrap_first_admin::call(&state, first_admin)
     .await
     .map_err(|error| {
         if error.find_source::<MissingFirstAdmin>().is_some() {

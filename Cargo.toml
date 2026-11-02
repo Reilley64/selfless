@@ -90,6 +90,7 @@ default-run = "selfless"
 admin = { workspace = true }
 api = { workspace = true }
 application = { workspace = true }
+domain = { workspace = true }
 email = { workspace = true }
 infrastructure = { workspace = true }
 locking = { workspace = true }
@@ -115,7 +116,6 @@ workers = { workspace = true }
 
 [dev-dependencies]
 base64 = { workspace = true }
-domain = { workspace = true }
 jiff = { workspace = true }
 jsonschema = { workspace = true }
 opentelemetry = { workspace = true }
