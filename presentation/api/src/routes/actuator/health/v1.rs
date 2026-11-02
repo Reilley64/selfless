@@ -95,3 +95,72 @@ fn respond<const N: usize>(
         .collect();
     (status_code, Json(Health { status, components })).into_response(cx)
 }
+
+
+#[cfg(test)]
+mod tests {
+    use crate::test::serve;
+    use http::StatusCode;
+    use serde_json::json;
+    use test_app::TestApp;
+
+    #[tokio::test]
+    async fn health_is_up_when_the_database_is_reachable() {
+        let app = TestApp::new().await;
+        let server = serve(&app).await;
+
+        let (status, body) = server.get("/actuator/health/v1").await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            body,
+            json!({
+                "status": "UP",
+                "components": {
+                    "db": { "status": "UP" },
+                    "livenessState": { "status": "UP" },
+                    "readinessState": { "status": "UP" },
+                },
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn liveness_is_up() {
+        let app = TestApp::new().await;
+        let server = serve(&app).await;
+
+        let (status, body) = server.get("/actuator/health/liveness/v1").await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            body,
+            json!({
+                "status": "UP",
+                "components": {
+                    "livenessState": { "status": "UP" },
+                },
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn readiness_is_up_when_the_database_is_reachable() {
+        let app = TestApp::new().await;
+        let server = serve(&app).await;
+
+        let (status, body) = server.get("/actuator/health/readiness/v1").await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            body,
+            json!({
+                "status": "UP",
+                "components": {
+                    "db": { "status": "UP" },
+                    "readinessState": { "status": "UP" },
+                },
+            })
+        );
+    }
+}

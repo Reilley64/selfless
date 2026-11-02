@@ -45,3 +45,92 @@ async fn relay(cx: &Cx, signal: TelemetrySignal, request: Bytes) -> topcoat::Res
         }
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use crate::test::serve;
+    use crate::test::signed_in_user;
+    use application::ports::ExportTelemetry;
+    use application::ports::TelemetrySignal;
+    use http::Method;
+    use http::StatusCode;
+    use std::sync::Arc;
+    use std::sync::Mutex;
+    use test_app::TestApp;
+    use topcoat::router::request::Bytes;
+
+    const SIGNALS: [(&str, TelemetrySignal); 3] = [
+        ("traces", TelemetrySignal::Traces),
+        ("metrics", TelemetrySignal::Metrics),
+        ("logs", TelemetrySignal::Logs),
+    ];
+    const REPLY: &[u8] = b"the collector's reply";
+
+    #[derive(Clone, Default)]
+    struct RecordingExporter {
+        calls: Arc<Mutex<Vec<(TelemetrySignal, Bytes)>>>,
+    }
+
+    impl RecordingExporter {
+        fn port(&self) -> ExportTelemetry {
+            let calls = self.calls.clone();
+            ExportTelemetry::new(move |signal, request| {
+                calls.lock().unwrap().push((signal, request));
+                Box::pin(async { Ok(Bytes::from_static(REPLY)) })
+            })
+        }
+
+        fn take(&self) -> Vec<(TelemetrySignal, Bytes)> {
+            std::mem::take(&mut self.calls.lock().unwrap())
+        }
+    }
+
+    #[tokio::test]
+    async fn relay_passes_the_request_to_the_exporter_and_returns_its_reply() {
+        let mut app = TestApp::new().await;
+        let exporter = RecordingExporter::default();
+        app.state.export_telemetry = exporter.port();
+        let (_, token) = signed_in_user(&app, "Noor", "a long passphrase about tea").await;
+        let server = serve(&app).await;
+
+        for (path, signal) in SIGNALS {
+            let request = format!("a {path} export request").into_bytes();
+
+            let (status, body) = server
+                .post_protobuf(
+                    &format!("/api/telemetry/{path}/v1"),
+                    &token,
+                    request.clone(),
+                )
+                .await;
+
+            assert_eq!(status, StatusCode::OK);
+            assert_eq!(body, REPLY);
+            assert_eq!(exporter.take(), [(signal, Bytes::from(request))]);
+        }
+    }
+
+    #[tokio::test]
+    async fn relay_rejects_requests_without_a_session_token() {
+        let mut app = TestApp::new().await;
+        let exporter = RecordingExporter::default();
+        app.state.export_telemetry = exporter.port();
+        let server = serve(&app).await;
+
+        for (path, _) in SIGNALS {
+            let (status, problem) = server
+                .request(
+                    Method::POST,
+                    &format!("/api/telemetry/{path}/v1"),
+                    None,
+                    None,
+                )
+                .await;
+
+            assert_eq!(status, StatusCode::UNAUTHORIZED);
+            assert_eq!(problem["type"], "urn:selfless:problem:unauthenticated");
+        }
+        assert_eq!(exporter.take(), []);
+    }
+}

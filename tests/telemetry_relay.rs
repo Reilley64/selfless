@@ -68,31 +68,6 @@ async fn relay_forwards_traces_to_the_collector() {
     database.drop().await;
 }
 
-#[tokio::test]
-async fn relay_rejects_requests_without_a_session_token() {
-    let collector = FakeCollector::default();
-    let collector_url = collector.start().await;
-    let database = TestDatabase::create().await;
-    let server = TestServer::start_with_collector(database.url(), &collector_url).await;
-
-    for signal in ["traces", "metrics", "logs"] {
-        let (status, body) = server
-            .request(
-                Method::POST,
-                &format!("/api/telemetry/{signal}/v1"),
-                None,
-                None,
-            )
-            .await;
-
-        assert_eq!(status, StatusCode::UNAUTHORIZED);
-        assert_eq!(body["type"], "urn:selfless:problem:unauthenticated");
-    }
-    assert!(collector.requests.lock().unwrap().is_empty());
-    drop(server);
-    database.drop().await;
-}
-
 #[derive(Clone, Default)]
 struct FakeCollector {
     requests: Arc<Mutex<Vec<ExportTraceServiceRequest>>>,
