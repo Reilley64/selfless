@@ -1,10 +1,13 @@
+#[path = "../../../test/persistence.rs"]
+mod persistence_test;
+
 use application::ports::persistence::DbContext;
 use application::ports::persistence::DbScope;
 use domain::OutboxData;
-use persistence::DatabaseSettings;
 use persistence::HandleOutboxError;
 use persistence::QueuePauses;
 use persistence::consume_outbox;
+use persistence_test::db_context;
 use std::io;
 use std::io::Write;
 use std::sync::Arc;
@@ -19,15 +22,6 @@ const PAUSES: QueuePauses = QueuePauses {
     idle: Duration::from_millis(5),
     after_failure: Duration::from_millis(5),
 };
-
-async fn db_context(database: &TestDatabase) -> DbContext {
-    let settings = DatabaseSettings {
-        url: database.url(),
-    };
-    let db = persistence::connect(&settings).await.unwrap();
-    persistence::migrate(&db).await.unwrap();
-    DbContext::new(db, settings.location())
-}
 
 async fn enqueue(db_context: &DbContext, count: usize) -> Vec<Uuid> {
     let mut db_context = db_context.clone();

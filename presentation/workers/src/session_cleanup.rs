@@ -38,9 +38,7 @@ mod tests {
     use test_app::TestApp;
     use uuid::Uuid;
 
-    #[tokio::test]
-    async fn starting_deletes_expired_sessions() {
-        let app = TestApp::new().await;
+    async fn seed_web_and_tv_sessions(app: &TestApp) {
         let mut db_context = app.state.db_context.clone();
         let user = db_context
             .users()
@@ -69,11 +67,11 @@ mod tests {
                 .await
                 .unwrap();
         }
-        app.clock.advance(SignedDuration::from_hours(30 * 24 + 1));
+    }
 
-        start(&app.state).await.unwrap();
-
-        let devices = db_context
+    async fn devices(app: &TestApp) -> Vec<String> {
+        let mut db_context = app.state.db_context.clone();
+        let mut devices = db_context
             .sessions()
             .all()
             .exec(db_context.executor_mut())
@@ -82,6 +80,43 @@ mod tests {
             .into_iter()
             .map(|x| x.device_name)
             .collect::<Vec<_>>();
-        assert_eq!(devices, ["Living Room"]);
+        devices.sort();
+        devices
+    }
+
+    #[tokio::test]
+    async fn starting_deletes_expired_sessions() {
+        let app = TestApp::new().await;
+        seed_web_and_tv_sessions(&app).await;
+        app.clock.advance(SignedDuration::from_hours(30 * 24 + 1));
+
+        start(&app.state).await.unwrap();
+
+        assert_eq!(devices(&app).await, ["Living Room"]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn serving_deletes_expired_sessions_once_a_day() {
+        let app = TestApp::new().await;
+        seed_web_and_tv_sessions(&app).await;
+        app.clock
+            .advance(SignedDuration::from_hours(30 * 24) + SignedDuration::from_secs(1));
+        let cancellation = CancellationToken::new();
+        let serving = tokio::spawn(serve(app.state.clone(), cancellation.clone()));
+        // `serve` reads the start of its interval when it first runs.
+        tokio::task::yield_now().await;
+
+        tokio::time::advance(PERIOD - Duration::from_secs(1)).await;
+        // A tick that came early would start its delete here, before the read.
+        tokio::task::yield_now().await;
+        let before_a_day = devices(&app).await;
+        tokio::time::advance(Duration::from_secs(1)).await;
+        // `serve` finishes a due tick's delete before it sees the cancellation.
+        cancellation.cancel();
+        serving.await.unwrap();
+        let after_a_day = devices(&app).await;
+
+        assert_eq!(before_a_day, ["Living Room", "Old laptop"]);
+        assert_eq!(after_a_day, ["Living Room"]);
     }
 }

@@ -1,3 +1,6 @@
+#[path = "../../../test/persistence.rs"]
+mod persistence_test;
+
 use application::invites::accept_invite;
 use application::invites::create_invite;
 use application::invites::send_invite_email;
@@ -10,22 +13,13 @@ use application::users::create_user;
 use domain::EmailAddress;
 use domain::Password;
 use ohno::ErrorExt;
-use persistence::DatabaseSettings;
+use persistence_test::db_context;
 use test_fixtures::FakeClock;
 use test_fixtures::FakeMailer;
 use test_fixtures::TestDatabase;
 use uuid::Uuid;
 
 const ORIGIN: &str = "https://selfless.example";
-
-async fn db_context(database: &TestDatabase) -> DbContext {
-    let settings = DatabaseSettings {
-        url: database.url(),
-    };
-    let db = persistence::connect(&settings).await.unwrap();
-    persistence::migrate(&db).await.unwrap();
-    DbContext::new(db, settings.location())
-}
 
 struct Invites {
     db_context: DbContext,

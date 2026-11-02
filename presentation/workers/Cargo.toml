@@ -18,3 +18,4 @@ uuid = { workspace = true }
 [dev-dependencies]
 jiff = { workspace = true }
 test-app = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
