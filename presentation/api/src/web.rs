@@ -55,3 +55,68 @@ impl Layer for ContentSecurityPolicyLayer {
         next.run(cx, body)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::test::serve_web_app;
+    use http::StatusCode;
+    use http::header::CONTENT_SECURITY_POLICY;
+    use std::collections::HashMap;
+    use test_app::TestApp;
+
+    fn directives(policy: &str) -> HashMap<&str, Vec<&str>> {
+        policy
+            .split(';')
+            .filter_map(|directive| {
+                let mut parts = directive.split_whitespace();
+                Some((parts.next()?, parts.collect()))
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn the_web_app_comes_with_a_strict_content_security_policy() {
+        let app = TestApp::new().await;
+        let (server, web_dir) = serve_web_app(&app).await;
+
+        let (status, headers, html) = server.get_text("/").await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert!(html.contains("<title>selfless</title>"), "{html}");
+        let policy = headers[CONTENT_SECURITY_POLICY].to_str().unwrap();
+        let directives = directives(policy);
+        assert_eq!(directives["default-src"], ["'self'"], "{policy}");
+        assert_eq!(directives["script-src"], ["'self'"], "{policy}");
+        assert_eq!(directives["object-src"], ["'none'"], "{policy}");
+        assert_eq!(directives["base-uri"], ["'none'"], "{policy}");
+        assert_eq!(directives["frame-ancestors"], ["'none'"], "{policy}");
+        assert!(!policy.contains("'unsafe-"), "{policy}");
+        std::fs::remove_dir_all(web_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn the_invite_screen_loads_from_the_invite_link() {
+        let app = TestApp::new().await;
+        let (server, web_dir) = serve_web_app(&app).await;
+
+        let (status, headers, html) = server.get_text("/invite").await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert!(html.contains("<title>selfless</title>"), "{html}");
+        assert!(headers.contains_key(CONTENT_SECURITY_POLICY));
+        std::fs::remove_dir_all(web_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn the_settings_screen_loads_from_its_own_address() {
+        let app = TestApp::new().await;
+        let (server, web_dir) = serve_web_app(&app).await;
+
+        let (status, headers, html) = server.get_text("/settings").await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert!(html.contains("<title>selfless</title>"), "{html}");
+        assert!(headers.contains_key(CONTENT_SECURITY_POLICY));
+        std::fs::remove_dir_all(web_dir).unwrap();
+    }
+}

@@ -234,15 +234,18 @@ dependencies = [
  "jiff",
  "ohno",
  "opentelemetry",
+ "opentelemetry-appender-tracing",
  "opentelemetry_sdk",
  "serde",
  "serde_json",
  "test-app",
  "test-fixtures",
+ "toasty",
  "tokio",
  "topcoat",
  "tracing",
  "tracing-opentelemetry",
+ "tracing-subscriber",
  "uuid",
 ]
 
