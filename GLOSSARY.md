@@ -45,7 +45,7 @@ The colour from a fixed list that marks a user in the apps. It never changes, an
 _Avoid_: Avatar colour, profile colour
 
 **Invite**:
-An email an admin sends to add a user. Its link lets the person choose their username and password. It works once and expires after 7 days.
+An email an admin sends to add a user. Its link lets the person choose their username and password. It works once and expires 7 days after the email is sent.
 _Avoid_: Invitation code, sign-up link, registration
 
 **Admin**:
