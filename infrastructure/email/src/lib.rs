@@ -1,6 +1,7 @@
 use application::attributes::SELFLESS_EMAIL_OUTCOME;
 use application::attributes::SELFLESS_EMAIL_SMTP_REPLY_CODE;
 use application::attributes::selfless_email_outcome;
+use application::ports::EmailRejected;
 use application::ports::SendEmail;
 use application::ports::SendEmailError;
 use application::spans::SELFLESS_EMAIL_SEND;
@@ -93,7 +94,7 @@ where
                     .to(recipient
                         .as_str()
                         .parse()
-                        .map_err(SendEmailError::caused_by)?)
+                        .map_err(|_| SendEmailError::caused_by(EmailRejected::new()))?)
                     .subject(subject)
                     .header(ContentType::TEXT_PLAIN)
                     .body(body)
@@ -106,7 +107,11 @@ where
                         Some(code) => {
                             Span::current()
                                 .record(SELFLESS_EMAIL_SMTP_REPLY_CODE, i64::from(u16::from(code)));
-                            SendEmailError::caused_by(SmtpReply(code))
+                            if matches!(u16::from(code), 550 | 551 | 553 | 554) {
+                                SendEmailError::caused_by(EmailRejected::caused_by(SmtpReply(code)))
+                            } else {
+                                SendEmailError::caused_by(SmtpReply(code))
+                            }
                         }
                         None => SendEmailError::caused_by(error),
                     }
@@ -152,6 +157,7 @@ impl Error for MissingSettings {}
 mod tests {
     use super::*;
     use lettre::transport::stub::AsyncStubTransport;
+    use ohno::ErrorExt;
     use opentelemetry::KeyValue;
     use opentelemetry::trace::SpanKind;
     use opentelemetry::trace::Status;
@@ -159,6 +165,7 @@ mod tests {
     use opentelemetry_sdk::trace::InMemorySpanExporter;
     use opentelemetry_sdk::trace::SdkTracerProvider;
     use opentelemetry_sdk::trace::SpanData;
+    use test_fixtures::ScriptedSmtpServer;
     use tracing::level_filters::LevelFilter;
     use tracing::subscriber::DefaultGuard;
     use tracing_subscriber::layer::SubscriberExt;
@@ -231,8 +238,7 @@ mod tests {
     async fn a_failed_send_is_one_span_with_the_outcome_and_without_the_message() {
         let exporter = InMemorySpanExporter::default();
         let _tracing = trace_into(&exporter);
-        let send_email =
-            send_email_through(AsyncStubTransport::new_error(), FROM.parse().unwrap());
+        let send_email = send_email_through(AsyncStubTransport::new_error(), FROM.parse().unwrap());
 
         let result = send_email
             .call(recipient(), SUBJECT.to_owned(), BODY.to_owned())
@@ -271,7 +277,105 @@ mod tests {
             .source()
             .and_then(|x| x.downcast_ref::<MissingSettings>())
             .unwrap();
-        assert_eq!(missing.0, ["SMTP__USERNAME", "SMTP__PASSWORD", "SMTP__FROM"]);
+        assert_eq!(
+            missing.0,
+            ["SMTP__USERNAME", "SMTP__PASSWORD", "SMTP__FROM"]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_mailbox_refusal_marks_the_email_rejected() {
+        for (command, code) in [
+            ("RCPT", 550),
+            ("RCPT", 551),
+            ("RCPT", 553),
+            ("RCPT", 554),
+            ("MAIL", 550),
+            (".", 550),
+        ] {
+            let server = ScriptedSmtpServer::refusing(
+                command,
+                format!("{code} 5.1.1 <{RECIPIENT}> refused"),
+            )
+            .await;
+
+            let error = send_through(server.port(), None).await.unwrap_err();
+
+            let chain = chain(&error);
+            let rejected = error
+                .find_source::<EmailRejected>()
+                .unwrap_or_else(|| panic!("{command} {code} is not a refusal: {chain}"));
+            let reply = rejected
+                .source()
+                .and_then(|x| x.downcast_ref::<SmtpReply>())
+                .unwrap_or_else(|| panic!("{command} {code}: {chain}"));
+            assert_eq!(u16::from(reply.0), code, "{command}: {chain}");
+            assert!(!chain.contains(RECIPIENT), "{command} {code}: {chain}");
+            assert!(!chain.contains("5.1.1"), "{command} {code}: {chain}");
+        }
+    }
+
+    #[tokio::test]
+    async fn other_replies_are_not_a_refusal() {
+        for (command, code, credentials) in [
+            ("RCPT", 452, false),
+            ("AUTH", 535, true),
+            ("MAIL", 530, false),
+        ] {
+            let server =
+                ScriptedSmtpServer::refusing(command, format!("{code} <{RECIPIENT}> try later"))
+                    .await;
+            let credentials =
+                credentials.then(|| Credentials::new("selfless".to_owned(), "secret".to_owned()));
+
+            let error = send_through(server.port(), credentials).await.unwrap_err();
+
+            let chain = chain(&error);
+            let reply = error
+                .find_source::<SmtpReply>()
+                .unwrap_or_else(|| panic!("{command} {code}: {chain}"));
+            assert_eq!(u16::from(reply.0), code, "{command}: {chain}");
+            assert!(
+                error.find_source::<EmailRejected>().is_none(),
+                "{command} {code} is a refusal: {chain}"
+            );
+            assert!(!chain.contains(RECIPIENT), "{command} {code}: {chain}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_refused_connection_is_not_a_refusal() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+
+        let error = send_through(port, None).await.unwrap_err();
+
+        assert!(
+            error.find_source::<EmailRejected>().is_none(),
+            "{}",
+            chain(&error)
+        );
+    }
+
+    #[tokio::test]
+    async fn an_address_the_adapter_cannot_parse_marks_the_email_rejected() {
+        let transport = AsyncStubTransport::new_ok();
+        let send_email = send_email_through(transport.clone(), FROM.parse().unwrap());
+
+        let error = send_email
+            .call(
+                domain::EmailAddress::new("\"maya ali\"@example.com".to_owned()).unwrap(),
+                SUBJECT.to_owned(),
+                BODY.to_owned(),
+            )
+            .await
+            .unwrap_err();
+
+        let chain = chain(&error);
+        assert!(error.find_source::<EmailRejected>().is_some(), "{chain}");
+        assert!(!chain.contains("maya ali"), "{chain}");
+        assert_eq!(transport.messages().await, []);
     }
 
     fn recipient() -> domain::EmailAddress {
@@ -300,5 +404,29 @@ mod tests {
         for text in ["maya@example.com", "Open this link", "c2VjcmV0"] {
             assert!(!span.contains(text), "{text} is on the span: {span}");
         }
+    }
+
+    async fn send_through(
+        port: u16,
+        credentials: Option<Credentials>,
+    ) -> Result<(), SendEmailError> {
+        let mut transport =
+            AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous("127.0.0.1").port(port);
+        if let Some(credentials) = credentials {
+            transport = transport.credentials(credentials);
+        }
+        send_email_through(transport.build(), FROM.parse().unwrap())
+            .call(recipient(), SUBJECT.to_owned(), BODY.to_owned())
+            .await
+    }
+
+    fn chain(error: &SendEmailError) -> String {
+        let mut chain = Vec::new();
+        let mut next: Option<&dyn Error> = Some(error);
+        while let Some(error) = next {
+            chain.push(format!("{error} {error:?}"));
+            next = error.source();
+        }
+        chain.join(" / ")
     }
 }

@@ -179,3 +179,22 @@ impl SendEmailError {
         }
     }
 }
+
+#[derive(ohno::Error, Default)]
+#[no_constructors]
+#[display("the mail server refused the email")]
+pub struct EmailRejected {
+    core: ohno::OhnoCore,
+}
+
+impl EmailRejected {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn caused_by(source: impl Into<Box<dyn Error + Send + Sync>>) -> Self {
+        Self {
+            core: ohno::OhnoCore::from(source),
+        }
+    }
+}
