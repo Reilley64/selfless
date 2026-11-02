@@ -6,6 +6,8 @@ use reqwest::StatusCode;
 use reqwest::header::AUTHORIZATION;
 use reqwest::header::CONTENT_TYPE;
 use reqwest::header::COOKIE;
+use reqwest::header::HeaderMap;
+use reqwest::header::HeaderValue;
 use reqwest::header::LOCATION;
 use reqwest::header::SET_COOKIE;
 use reqwest::redirect::Policy;
@@ -46,6 +48,7 @@ impl TestServer {
                 .unwrap(),
             base: self.url(""),
             cookies: BTreeMap::new(),
+            headers: HeaderMap::new(),
         }
     }
 
@@ -56,7 +59,21 @@ impl TestServer {
         token: Option<&str>,
         body: Option<Value>,
     ) -> (StatusCode, Value) {
-        let mut request = reqwest::Client::new().request(method.clone(), self.url(path));
+        self.request_with_headers(method, path, token, HeaderMap::new(), body)
+            .await
+    }
+
+    pub async fn request_with_headers(
+        &self,
+        method: Method,
+        path: &str,
+        token: Option<&str>,
+        headers: HeaderMap,
+        body: Option<Value>,
+    ) -> (StatusCode, Value) {
+        let mut request = reqwest::Client::new()
+            .request(method.clone(), self.url(path))
+            .headers(headers);
         if let Some(token) = token {
             request = request.header(AUTHORIZATION, format!("Bearer {token}"));
         }
@@ -79,6 +96,44 @@ impl TestServer {
 
     pub async fn get(&self, path: &str) -> (StatusCode, Value) {
         self.request(Method::GET, path, None, None).await
+    }
+
+    pub async fn get_text(&self, path: &str) -> (StatusCode, HeaderMap, String) {
+        let response = reqwest::get(self.url(path)).await.unwrap();
+        (
+            response.status(),
+            response.headers().clone(),
+            response.text().await.unwrap(),
+        )
+    }
+
+    pub async fn post_protobuf(
+        &self,
+        path: &str,
+        token: &str,
+        body: Vec<u8>,
+    ) -> (StatusCode, Vec<u8>) {
+        let response = reqwest::Client::new()
+            .post(self.url(path))
+            .header(AUTHORIZATION, format!("Bearer {token}"))
+            .header(CONTENT_TYPE, openapi::PROTOBUF)
+            .body(body)
+            .send()
+            .await
+            .unwrap();
+        let status = response.status();
+        let content_type = media_type(&response);
+        openapi::check_protobuf(
+            Method::POST.as_str(),
+            path,
+            status.as_u16(),
+            content_type.as_deref(),
+        );
+        (status, response.bytes().await.unwrap().to_vec())
+    }
+
+    pub fn shut_down(&self) {
+        self.shutdown.cancel();
     }
 
     fn url(&self, path: &str) -> String {
@@ -108,11 +163,13 @@ pub struct Browser {
     client: reqwest::Client,
     base: String,
     cookies: BTreeMap<String, String>,
+    headers: HeaderMap,
 }
 
 pub struct Page {
     pub status: StatusCode,
     pub location: Option<String>,
+    pub set_cookies: Vec<String>,
     pub body: String,
 }
 
@@ -160,7 +217,26 @@ impl Browser {
         .await
     }
 
+    pub async fn sign_out(&mut self) -> Page {
+        let home = self.get("/admin").await;
+        self.post_form("/admin/sign-out", &[("csrf", &home.csrf_token())])
+            .await
+    }
+
+    pub fn cookie(&self, name: &str) -> Option<&str> {
+        self.cookies.get(name).map(String::as_str)
+    }
+
+    pub fn set_cookie(&mut self, name: &str, value: &str) {
+        self.cookies.insert(name.to_owned(), value.to_owned());
+    }
+
+    pub fn set_header(&mut self, name: &'static str, value: &'static str) {
+        self.headers.insert(name, HeaderValue::from_static(value));
+    }
+
     async fn send(&mut self, method: Method, path: &str, mut request: RequestBuilder) -> Page {
+        request = request.headers(self.headers.clone());
         if !self.cookies.is_empty() {
             let header = self
                 .cookies
@@ -171,8 +247,13 @@ impl Browser {
             request = request.header(COOKIE, header);
         }
         let response = request.send().await.unwrap();
-        for set_cookie in response.headers().get_all(SET_COOKIE) {
-            let set_cookie = set_cookie.to_str().unwrap();
+        let set_cookies = response
+            .headers()
+            .get_all(SET_COOKIE)
+            .iter()
+            .map(|x| x.to_str().unwrap().to_owned())
+            .collect::<Vec<_>>();
+        for set_cookie in &set_cookies {
             let (pair, attributes) = set_cookie.split_once(';').unwrap_or((set_cookie, ""));
             let (name, value) = pair.split_once('=').unwrap();
             if attributes.contains("Max-Age=0") {
@@ -200,6 +281,7 @@ impl Browser {
         Page {
             status,
             location,
+            set_cookies,
             body,
         }
     }
