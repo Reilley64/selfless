@@ -16,7 +16,7 @@ async fn a_failed_admin_sign_in_logs_a_warning_without_the_name() {
     let provider = SdkLoggerProvider::builder()
         .with_simple_exporter(exporter.clone())
         .build();
-    let _tracing = tracing::subscriber::set_default(
+    let _tracing = test_fixtures::set_default_subscriber(
         tracing_subscriber::registry()
             .with(LevelFilter::INFO)
             .with(OpenTelemetryTracingBridge::new(&provider)),
