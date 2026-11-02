@@ -48,7 +48,7 @@ fn trace(exporter: &InMemorySpanExporter) -> DefaultGuard {
     let provider = SdkTracerProvider::builder()
         .with_simple_exporter(exporter.clone())
         .build();
-    tracing::subscriber::set_default(
+    test_fixtures::set_default_subscriber(
         tracing_subscriber::registry()
             .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("test"))),
     )
@@ -59,7 +59,7 @@ fn trace_and_log(exporter: &InMemorySpanExporter, logs: &Logs) -> DefaultGuard {
         .with_simple_exporter(exporter.clone())
         .build();
     let logs = logs.clone();
-    tracing::subscriber::set_default(
+    test_fixtures::set_default_subscriber(
         tracing_subscriber::registry()
             .with(EnvFilter::new("info"))
             .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("test")))
