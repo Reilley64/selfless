@@ -317,7 +317,7 @@ mod tests {
         let invite_id = invites.queue().await;
         let logs = Logs::default();
         let writer = logs.clone();
-        let _logging = tracing::subscriber::set_default(
+        let _logging = test_fixtures::set_default_subscriber(
             tracing_subscriber::registry().with(LevelFilter::INFO).with(
                 tracing_subscriber::fmt::layer()
                     .with_ansi(false)
