@@ -7,15 +7,24 @@ publish.workspace = true
 
 [dependencies]
 application = { workspace = true }
+domain = { workspace = true }
 ohno = { workspace = true }
+opentelemetry = { workspace = true }
+opentelemetry_sdk = { workspace = true }
 serde = { workspace = true }
 toasty = { workspace = true }
 toasty-driver-postgresql = { workspace = true, features = ["jiff"] }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+tracing-opentelemetry = { workspace = true }
 url = { workspace = true, features = ["serde"] }
+uuid = { workspace = true }
 
 [dev-dependencies]
-domain = { workspace = true }
+email = { workspace = true }
+lettre = { workspace = true, features = ["builder", "hostname", "ring", "rustls-platform-verifier", "serde", "smtp-transport", "tokio1-rustls"] }
 locking = { workspace = true }
+opentelemetry_sdk = { workspace = true, features = ["testing"] }
 test-fixtures = { workspace = true }
-tokio = { workspace = true }
-uuid = { workspace = true }
+tracing-subscriber = { workspace = true }

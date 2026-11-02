@@ -36,8 +36,14 @@ pub struct DbLocation {
 
 pub struct DbSet<T>(PhantomData<fn() -> T>);
 
+impl<T: Model> Default for DbSet<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T: Model> DbSet<T> {
-    const fn new() -> Self {
+    pub const fn new() -> Self {
         Self(PhantomData)
     }
 
@@ -135,6 +141,10 @@ pub struct DbTransaction<'a> {
 impl DbTransaction<'_> {
     pub async fn commit(self) -> toasty::Result<()> {
         self.executor.inner.commit().await
+    }
+
+    pub async fn rollback(self) -> toasty::Result<()> {
+        self.executor.inner.rollback().await
     }
 }
 

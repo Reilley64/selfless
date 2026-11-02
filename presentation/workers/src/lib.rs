@@ -1,3 +1,4 @@
+mod outbox;
 mod session_cleanup;
 
 use application::sessions::delete_expired_sessions;
@@ -9,5 +10,8 @@ pub async fn start(state: &AppState) -> Result<(), delete_expired_sessions::Erro
 }
 
 pub async fn serve(state: AppState, cancellation: CancellationToken) {
-    session_cleanup::serve(state, cancellation).await;
+    tokio::join!(
+        session_cleanup::serve(state.clone(), cancellation.clone()),
+        outbox::serve(state, cancellation),
+    );
 }
