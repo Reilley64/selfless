@@ -6,6 +6,7 @@ use std::sync::LazyLock;
 static OPENAPI: LazyLock<Value> =
     LazyLock::new(|| serde_saphyr::from_str(include_str!("../../../openapi.yaml")).unwrap());
 const OPENAPI_URI: &str = "urn:selfless:openapi";
+pub(crate) const PROTOBUF: &str = "application/x-protobuf";
 
 pub(crate) fn check_response(
     method: &str,
@@ -56,6 +57,25 @@ pub(crate) fn check_response(
         "{method} {path} {status} does not match openapi.yaml: {errors:?}\n{body}"
     );
     body
+}
+
+pub(crate) fn check_protobuf(method: &str, path: &str, status: u16, content_type: Option<&str>) {
+    let operation = format!("/paths/{}/{}", escape(path), method.to_lowercase());
+    let media_type = escape(PROTOBUF);
+    for pointer in [
+        format!("{operation}/requestBody/content/{media_type}"),
+        format!("{operation}/responses/{status}/content/{media_type}"),
+    ] {
+        assert!(
+            OPENAPI.pointer(&pointer).is_some(),
+            "openapi.yaml has nothing at {pointer}"
+        );
+    }
+    assert_eq!(
+        content_type,
+        Some(PROTOBUF),
+        "{method} {path} {status} is not {PROTOBUF}"
+    );
 }
 
 fn escape(token: &str) -> String {
