@@ -4392,6 +4392,7 @@ dependencies = [
  "opentelemetry-proto",
  "prost",
  "serde",
+ "tokio",
  "tonic",
 ]
 
