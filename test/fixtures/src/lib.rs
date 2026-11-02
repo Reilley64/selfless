@@ -4,6 +4,7 @@ mod mailer;
 mod mock_database;
 mod openapi;
 mod proxy;
+mod smtp;
 mod test_database;
 
 pub use clock::FakeClock;
@@ -14,4 +15,5 @@ pub use mailer::FakeMailer;
 pub use mailer::SentEmail;
 pub use mock_database::mock_database;
 pub use proxy::Proxy;
+pub use smtp::ScriptedSmtpServer;
 pub use test_database::TestDatabase;

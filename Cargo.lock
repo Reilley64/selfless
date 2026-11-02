@@ -1224,6 +1224,7 @@ dependencies = [
  "opentelemetry",
  "opentelemetry_sdk",
  "serde",
+ "test-fixtures",
  "tokio",
  "tracing",
  "tracing-opentelemetry",
