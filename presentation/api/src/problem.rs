@@ -139,7 +139,6 @@ impl Layer for ProblemLayer {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::ProblemLayer;

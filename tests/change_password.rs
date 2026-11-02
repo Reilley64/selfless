@@ -97,4 +97,3 @@ async fn a_wrong_current_password_is_forbidden_and_changes_nothing() {
     drop(server);
     database.drop().await;
 }
-

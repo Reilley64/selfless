@@ -1,6 +1,5 @@
 mod support;
 
-use opentelemetry::KeyValue;
 use opentelemetry::logs::AnyValue;
 use opentelemetry::logs::Severity;
 use opentelemetry::trace::SpanKind;

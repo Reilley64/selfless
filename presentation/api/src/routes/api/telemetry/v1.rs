@@ -46,7 +46,6 @@ async fn relay(cx: &Cx, signal: TelemetrySignal, request: Bytes) -> topcoat::Res
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use crate::test::serve;

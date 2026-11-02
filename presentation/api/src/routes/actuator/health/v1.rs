@@ -96,7 +96,6 @@ fn respond<const N: usize>(
     (status_code, Json(Health { status, components })).into_response(cx)
 }
 
-
 #[cfg(test)]
 mod tests {
     use crate::test::serve;

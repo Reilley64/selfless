@@ -52,8 +52,7 @@ pub(crate) async fn signed_in_user(app: &TestApp, name: &str, password: &str) ->
         Uuid::new_v4(),
     )
     .await
-    .unwrap()
-    else {
+    .unwrap() else {
         panic!("wrong name or password");
     };
     (user_id, token)

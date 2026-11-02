@@ -55,7 +55,6 @@ impl Layer for UserAuthLayer {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use crate::test::serve;

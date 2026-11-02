@@ -49,7 +49,6 @@ use uuid::Uuid;
 static OPENAPI: LazyLock<Value> =
     LazyLock::new(|| serde_saphyr::from_str(include_str!("../../openapi.yaml")).unwrap());
 const OPENAPI_URI: &str = "urn:selfless:openapi";
-const PROTOBUF: &str = "application/x-protobuf";
 pub const ADMIN_NAME: &str = "Maya";
 pub const ADMIN_PASSWORD: &str = "correct horse battery staple";
 pub const USER_NAME: &str = "Noor";
@@ -199,12 +198,6 @@ impl FakeClock {
 impl TestServer {
     pub async fn start(database_url: Url) -> Self {
         Self::start_with(settings(database_url), FakeClock::new()).await
-    }
-
-    pub async fn start_with_collector(database_url: Url, collector_url: &str) -> Self {
-        let mut settings = settings(database_url);
-        settings.otlp.endpoint = Some(collector_url.to_owned());
-        Self::start_with(settings, FakeClock::new()).await
     }
 
     pub async fn start_with(settings: AppSettings, clock: FakeClock) -> Self {
@@ -368,62 +361,6 @@ impl TestServer {
 
     pub async fn get(&self, path: &str) -> (StatusCode, Value) {
         get_json(reqwest::Client::new().get(self.url(path)), path).await
-    }
-
-    pub async fn get_with_traceparent(&self, path: &str, traceparent: &str) -> (StatusCode, Value) {
-        get_json(
-            reqwest::Client::new()
-                .get(self.url(path))
-                .header("traceparent", traceparent),
-            path,
-        )
-        .await
-    }
-
-    pub async fn get_text(&self, path: &str) -> (StatusCode, HeaderMap, String) {
-        let response = reqwest::get(self.url(path)).await.unwrap();
-        (
-            response.status(),
-            response.headers().clone(),
-            response.text().await.unwrap(),
-        )
-    }
-
-    pub async fn post_protobuf(
-        &self,
-        path: &str,
-        token: &str,
-        body: Vec<u8>,
-    ) -> (StatusCode, Vec<u8>) {
-        let response = reqwest::Client::new()
-            .post(self.url(path))
-            .header(AUTHORIZATION, format!("Bearer {token}"))
-            .header(CONTENT_TYPE, PROTOBUF)
-            .body(body)
-            .send()
-            .await
-            .unwrap();
-        let status = response.status();
-        let content_type = response.headers().get(CONTENT_TYPE).cloned();
-        let body = response.bytes().await.unwrap().to_vec();
-        let operation = operation_pointer(path, "post");
-        for pointer in [
-            format!("{operation}/requestBody/content/application~1x-protobuf"),
-            format!(
-                "{operation}/responses/{}/content/application~1x-protobuf",
-                status.as_u16()
-            ),
-        ] {
-            assert!(
-                OPENAPI.pointer(&pointer).is_some(),
-                "openapi.yaml has nothing at {pointer}"
-            );
-        }
-        assert_eq!(
-            content_type.as_ref().and_then(|x| x.to_str().ok()),
-            Some(PROTOBUF)
-        );
-        (status, body)
     }
 
     fn url(&self, path: &str) -> String {

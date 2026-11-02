@@ -47,7 +47,6 @@ pub(crate) async fn change_password(
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use crate::test::serve;
@@ -117,7 +116,10 @@ mod tests {
         .await;
 
         assert_eq!(status, StatusCode::FORBIDDEN);
-        assert_eq!(problem["type"], "urn:selfless:problem:wrong-current-password");
+        assert_eq!(
+            problem["type"],
+            "urn:selfless:problem:wrong-current-password"
+        );
     }
 
     #[tokio::test]
@@ -143,8 +145,12 @@ mod tests {
         let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;
         let server = serve(&app).await;
 
-        let (status, problem) =
-            change_password(&server, &token, json!({ "newPassword": "a new passphrase" })).await;
+        let (status, problem) = change_password(
+            &server,
+            &token,
+            json!({ "newPassword": "a new passphrase" }),
+        )
+        .await;
 
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(problem["type"], "urn:selfless:problem:bad-request");

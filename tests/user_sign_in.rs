@@ -10,21 +10,14 @@ use jiff::SignedDuration;
 use reqwest::Method;
 use reqwest::StatusCode;
 use serde_json::Value;
-use serde_json::json;
 use sha2::Digest;
 use sha2::Sha256;
-use support::ADMIN_NAME;
-use support::ADMIN_PASSWORD;
-use support::FakeClock;
 use support::TestDatabase;
 use support::TestServer;
 use support::USER_NAME as NAME;
 use support::USER_PASSWORD as PASSWORD;
 use tokio::time::Instant;
 use uuid::Uuid;
-
-const UNAUTHENTICATED: &str = "urn:selfless:problem:unauthenticated";
-const CLIENT_ID: &str = "0f8e3c2a-5b7d-4e19-9a64-2c1d8b7f6e30";
 
 async fn sign_in(server: &TestServer, name: &str, password: &str) -> (StatusCode, Value) {
     server.sign_in(name, password, "web").await

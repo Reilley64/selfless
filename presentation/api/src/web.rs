@@ -56,7 +56,6 @@ impl Layer for ContentSecurityPolicyLayer {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use crate::test::serve_web_app;

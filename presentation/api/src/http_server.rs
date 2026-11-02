@@ -196,7 +196,6 @@ impl Extractor for Traceparent<'_> {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use crate::test::serve;
@@ -237,7 +236,9 @@ mod tests {
         let mut headers = HeaderMap::new();
         headers.insert(
             "traceparent",
-            format!("00-{TRACE_ID}-{PARENT_SPAN_ID}-01").parse().unwrap(),
+            format!("00-{TRACE_ID}-{PARENT_SPAN_ID}-01")
+                .parse()
+                .unwrap(),
         );
 
         server
