@@ -44,11 +44,7 @@ mod tests {
             .id
     }
 
-    async fn add_session(
-        db_context: &mut DbContext,
-        user_id: Uuid,
-        device_name: &str,
-    ) -> Uuid {
+    async fn add_session(db_context: &mut DbContext, user_id: Uuid, device_name: &str) -> Uuid {
         db_context
             .sessions()
             .create()

@@ -161,34 +161,61 @@ mod tests {
         let mut db_context = mock_db_context().await;
         let noor = create_user(&db_context, "Noor").await;
         create_user(&db_context, "Ravi").await;
-        let current = sign_in(&db_context, "Noor", PASSWORD, ClientKind::Web).await.unwrap();
+        let current = sign_in(&db_context, "Noor", PASSWORD, ClientKind::Web)
+            .await
+            .unwrap();
         for client_kind in [ClientKind::Web, ClientKind::AppleTv, ClientKind::GoogleTv] {
-            sign_in(&db_context, "Noor", PASSWORD, client_kind).await.unwrap();
+            sign_in(&db_context, "Noor", PASSWORD, client_kind)
+                .await
+                .unwrap();
         }
-        let ravi = sign_in(&db_context, "Ravi", PASSWORD, ClientKind::Web).await.unwrap();
+        let ravi = sign_in(&db_context, "Ravi", PASSWORD, ClientKind::Web)
+            .await
+            .unwrap();
 
         change_password(&db_context, noor, &current, PASSWORD)
             .await
             .unwrap();
 
-        assert_eq!(token_hashes(&mut db_context).await, hashes([&current, &ravi]));
-        assert_eq!(sign_in(&db_context, "Noor", PASSWORD, ClientKind::Web).await, None);
-        assert!(sign_in(&db_context, "Noor", NEW_PASSWORD, ClientKind::Web).await.is_some());
+        assert_eq!(
+            token_hashes(&mut db_context).await,
+            hashes([&current, &ravi])
+        );
+        assert_eq!(
+            sign_in(&db_context, "Noor", PASSWORD, ClientKind::Web).await,
+            None
+        );
+        assert!(
+            sign_in(&db_context, "Noor", NEW_PASSWORD, ClientKind::Web)
+                .await
+                .is_some()
+        );
     }
 
     #[tokio::test]
     async fn a_wrong_current_password_returns_wrong_current_password_and_changes_nothing() {
         let mut db_context = mock_db_context().await;
         let noor = create_user(&db_context, "Noor").await;
-        let current = sign_in(&db_context, "Noor", PASSWORD, ClientKind::Web).await.unwrap();
-        let tv = sign_in(&db_context, "Noor", PASSWORD, ClientKind::AppleTv).await.unwrap();
+        let current = sign_in(&db_context, "Noor", PASSWORD, ClientKind::Web)
+            .await
+            .unwrap();
+        let tv = sign_in(&db_context, "Noor", PASSWORD, ClientKind::AppleTv)
+            .await
+            .unwrap();
 
         let error = change_password(&db_context, noor, &current, "not the password")
             .await
             .expect_err("the current password is wrong");
 
-        assert!(error.find_source::<WrongCurrentPassword>().is_some(), "{error}");
+        assert!(
+            error.find_source::<WrongCurrentPassword>().is_some(),
+            "{error}"
+        );
         assert_eq!(token_hashes(&mut db_context).await, hashes([&current, &tv]));
-        assert!(sign_in(&db_context, "Noor", PASSWORD, ClientKind::Web).await.is_some());
+        assert!(
+            sign_in(&db_context, "Noor", PASSWORD, ClientKind::Web)
+                .await
+                .is_some()
+        );
     }
 }

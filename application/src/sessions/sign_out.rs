@@ -22,7 +22,6 @@ pub async fn call(dependencies: impl Into<Dependencies>, token: &str) -> Result<
     Ok(Output)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

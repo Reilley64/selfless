@@ -102,9 +102,13 @@ mod tests {
         let noor = create_user(&db_context, "Noor").await;
         create_user(&db_context, "Ravi").await;
         for client_kind in [ClientKind::Web, ClientKind::GoogleTv] {
-            sign_in(&db_context, "Noor", PASSWORD, client_kind).await.unwrap();
+            sign_in(&db_context, "Noor", PASSWORD, client_kind)
+                .await
+                .unwrap();
         }
-        let ravi = sign_in(&db_context, "Ravi", PASSWORD, ClientKind::Web).await.unwrap();
+        let ravi = sign_in(&db_context, "Ravi", PASSWORD, ClientKind::Web)
+            .await
+            .unwrap();
 
         call(
             Dependencies {
@@ -126,7 +130,14 @@ mod tests {
             .map(|x| x.token_hash)
             .collect::<Vec<_>>();
         assert_eq!(sessions, [tokens::hash(&ravi)]);
-        assert_eq!(sign_in(&db_context, "Noor", PASSWORD, ClientKind::Web).await, None);
-        assert!(sign_in(&db_context, "Noor", NEW_PASSWORD, ClientKind::Web).await.is_some());
+        assert_eq!(
+            sign_in(&db_context, "Noor", PASSWORD, ClientKind::Web).await,
+            None
+        );
+        assert!(
+            sign_in(&db_context, "Noor", NEW_PASSWORD, ClientKind::Web)
+                .await
+                .is_some()
+        );
     }
 }

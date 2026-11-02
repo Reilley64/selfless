@@ -74,7 +74,12 @@ mod tests {
             .id
     }
 
-    async fn add_web_session(db_context: &mut DbContext, user_id: Uuid, token: &str, last_used_at: Timestamp) {
+    async fn add_web_session(
+        db_context: &mut DbContext,
+        user_id: Uuid,
+        token: &str,
+        last_used_at: Timestamp,
+    ) {
         db_context
             .sessions()
             .create()
@@ -126,7 +131,10 @@ mod tests {
         let past_the_limit = get_current_user(&db_context, &clock, "idle 30 days").await;
         let inside_the_limit = get_current_user(&db_context, &clock, "idle 29 days").await;
 
-        assert!(matches!(past_the_limit, Output::NotSignedIn), "{past_the_limit:?}");
+        assert!(
+            matches!(past_the_limit, Output::NotSignedIn),
+            "{past_the_limit:?}"
+        );
         assert!(
             matches!(inside_the_limit, Output::SignedIn { id, .. } if id == noor),
             "{inside_the_limit:?}"

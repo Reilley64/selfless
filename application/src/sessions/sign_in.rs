@@ -90,72 +90,74 @@ mod tests {
 
     const PASSWORD: &str = "a long passphrase";
 
-    async fn create_user(db_context: &DbContext, name: &str) {
-        create_user::call(
-            create_user::Dependencies {
-                db_context: db_context.clone(),
-            },
-            name.to_owned(),
-            Password::new(PASSWORD.to_owned()).unwrap(),
-            EmailAddress::new(format!("{name}@example.com")).unwrap(),
-        )
-        .await
-        .unwrap();
+    struct Household {
+        db_context: DbContext,
+        clock: FakeClock,
     }
 
-    async fn sign_in(
-        db_context: &DbContext,
-        clock: &FakeClock,
-        name: &str,
-        password: &str,
-        device_name: &str,
-        client_id: Uuid,
-    ) -> Output {
-        call(
-            Dependencies {
-                db_context: db_context.clone(),
-                clock: Clock::new(clock.reader()),
-            },
-            name.to_owned(),
-            password.to_owned(),
-            ClientKind::AppleTv,
-            device_name.to_owned(),
-            client_id,
-        )
-        .await
-        .unwrap()
-    }
-
-    async fn sessions(db_context: &mut DbContext) -> Vec<(Uuid, String, Vec<u8>, Timestamp)> {
-        db_context
-            .sessions()
-            .all()
-            .exec(db_context.executor_mut())
-            .await
-            .unwrap()
-            .into_iter()
-            .map(|x| (x.id, x.device_name, x.token_hash, x.signed_in_at))
-            .collect()
-    }
-
-    fn token(output: Output) -> String {
-        match output {
-            Output::SignedIn { token, .. } => token,
-            Output::WrongNameOrPassword => panic!("wrong name or password"),
+    impl Household {
+        async fn new() -> Self {
+            Self {
+                db_context: mock_db_context().await,
+                clock: FakeClock::new(),
+            }
         }
-    }
 
-    async fn rows(db_context: &mut DbContext) -> Vec<Session> {
-        db_context
-            .sessions()
-            .all()
-            .exec(db_context.executor_mut())
+        async fn create_user(&self, name: &str) {
+            create_user::call(
+                create_user::Dependencies {
+                    db_context: self.db_context.clone(),
+                },
+                name.to_owned(),
+                Password::new(PASSWORD.to_owned()).unwrap(),
+                EmailAddress::new(format!("{name}@example.com")).unwrap(),
+            )
+            .await
+            .unwrap();
+        }
+
+        async fn sign_in(
+            &self,
+            name: &str,
+            password: &str,
+            device_name: &str,
+            client_id: Uuid,
+        ) -> Output {
+            call(
+                Dependencies {
+                    db_context: self.db_context.clone(),
+                    clock: Clock::new(self.clock.reader()),
+                },
+                name.to_owned(),
+                password.to_owned(),
+                ClientKind::AppleTv,
+                device_name.to_owned(),
+                client_id,
+            )
             .await
             .unwrap()
-    }
+        }
 
-    async fn token_hashes(db_context: &mut DbContext) -> Vec<Vec<u8>> {
-        sorted(rows(db_context).await.into_iter().map(|x| x.token_hash))
+        async fn token(&self, name: &str, device_name: &str, client_id: Uuid) -> String {
+            match self.sign_in(name, PASSWORD, device_name, client_id).await {
+                Output::SignedIn { token, .. } => token,
+                Output::WrongNameOrPassword => panic!("wrong name or password"),
+            }
+        }
+
+        async fn sessions(&self) -> Vec<Session> {
+            let mut db_context = self.db_context.clone();
+            db_context
+                .sessions()
+                .all()
+                .exec(db_context.executor_mut())
+                .await
+                .unwrap()
+        }
+
+        async fn token_hashes(&self) -> Vec<Vec<u8>> {
+            sorted(self.sessions().await.into_iter().map(|x| x.token_hash))
+        }
     }
 
     fn sorted(hashes: impl IntoIterator<Item = Vec<u8>>) -> Vec<Vec<u8>> {
@@ -166,60 +168,66 @@ mod tests {
 
     #[tokio::test]
     async fn a_wrong_password_changes_no_session() {
-        let mut db_context = mock_db_context().await;
-        let clock = FakeClock::new();
-        create_user(&db_context, "Noor").await;
+        let household = Household::new().await;
+        household.create_user("Noor").await;
         let client_id = Uuid::new_v4();
-        sign_in(&db_context, &clock, "Noor", PASSWORD, "Living Room", client_id).await;
-        let before = sessions(&mut db_context).await;
-        clock.advance(SignedDuration::from_hours(2));
+        household.token("Noor", "Living Room", client_id).await;
+        let before = household.sessions().await;
+        household.clock.advance(SignedDuration::from_hours(2));
 
-        let output = sign_in(&db_context, &clock, "Noor", "wrong", "Bedroom", client_id).await;
+        let output = household
+            .sign_in("Noor", "wrong", "Bedroom", client_id)
+            .await;
 
         assert!(matches!(output, Output::WrongNameOrPassword));
-        assert_eq!(sessions(&mut db_context).await, before);
+        let summary = |sessions: Vec<Session>| {
+            sessions
+                .into_iter()
+                .map(|x| (x.id, x.device_name, x.token_hash, x.signed_in_at))
+                .collect::<Vec<(Uuid, String, Vec<u8>, Timestamp)>>()
+        };
+        assert_eq!(summary(household.sessions().await), summary(before));
     }
 
     #[tokio::test]
     async fn an_unknown_name_returns_wrong_name_or_password() {
-        let mut db_context = mock_db_context().await;
-        let clock = FakeClock::new();
-        create_user(&db_context, "Noor").await;
+        let household = Household::new().await;
+        household.create_user("Noor").await;
 
-        let output = sign_in(&db_context, &clock, "Maya", PASSWORD, "Bedroom", Uuid::new_v4()).await;
+        let output = household
+            .sign_in("Maya", PASSWORD, "Bedroom", Uuid::new_v4())
+            .await;
 
         assert!(matches!(output, Output::WrongNameOrPassword));
-        assert!(rows(&mut db_context).await.is_empty());
+        assert!(household.sessions().await.is_empty());
     }
 
     #[tokio::test]
     async fn the_database_stores_only_the_hash_of_the_token() {
-        let mut db_context = mock_db_context().await;
-        let clock = FakeClock::new();
-        create_user(&db_context, "Noor").await;
+        let household = Household::new().await;
+        household.create_user("Noor").await;
 
-        let token = token(
-            sign_in(&db_context, &clock, "Noor", PASSWORD, "Living Room", Uuid::new_v4()).await,
-        );
+        let token = household.token("Noor", "Living Room", Uuid::new_v4()).await;
 
-        let [session] = rows(&mut db_context).await.try_into().unwrap();
-        assert_eq!(session.token_hash, tokens::hash(&token));
+        assert_eq!(household.token_hashes().await, [tokens::hash(&token)]);
     }
 
     #[tokio::test]
     async fn a_failed_sign_in_logs_a_warning_without_the_name() {
-        let db_context = mock_db_context().await;
+        let household = Household::new().await;
         let exporter = InMemoryLogExporter::default();
         let provider = SdkLoggerProvider::builder()
             .with_simple_exporter(exporter.clone())
             .build();
-        let _tracing = tracing::subscriber::set_default(
+        let _tracing = test_fixtures::set_default_subscriber(
             tracing_subscriber::registry()
                 .with(LevelFilter::INFO)
                 .with(OpenTelemetryTracingBridge::new(&provider)),
         );
 
-        sign_in(&db_context, &FakeClock::new(), "Maya", "wrong", "Bedroom", Uuid::new_v4()).await;
+        household
+            .sign_in("Maya", "wrong", "Bedroom", Uuid::new_v4())
+            .await;
 
         let logs = exporter.get_emitted_logs().unwrap();
         let warnings = logs
@@ -239,57 +247,51 @@ mod tests {
 
     #[tokio::test]
     async fn signing_in_again_as_the_same_user_with_the_same_client_id_replaces_the_session() {
-        let mut db_context = mock_db_context().await;
-        let clock = FakeClock::new();
-        create_user(&db_context, "Noor").await;
+        let household = Household::new().await;
+        household.create_user("Noor").await;
         let client_id = Uuid::new_v4();
-        sign_in(&db_context, &clock, "Noor", PASSWORD, "Living Room", client_id).await;
-        let [first] = rows(&mut db_context).await.try_into().unwrap();
-        clock.advance(SignedDuration::from_hours(2));
+        household.token("Noor", "Living Room", client_id).await;
+        let [first] = household.sessions().await.try_into().unwrap();
+        household.clock.advance(SignedDuration::from_hours(2));
 
-        let new = token(sign_in(&db_context, &clock, "Noor", PASSWORD, "Bedroom", client_id).await);
+        let new = household.token("Noor", "Bedroom", client_id).await;
 
-        let [session] = rows(&mut db_context).await.try_into().unwrap();
+        let [session] = household.sessions().await.try_into().unwrap();
         assert_eq!(session.id, first.id);
         assert_eq!(session.user_id, first.user_id);
         assert_eq!(session.client_id, client_id);
         assert_eq!(session.device_name, "Bedroom");
         assert_eq!(session.token_hash, tokens::hash(&new));
-        assert_eq!(session.signed_in_at, clock.now());
-        assert_eq!(session.last_used_at, clock.now());
+        assert_eq!(session.signed_in_at, household.clock.now());
+        assert_eq!(session.last_used_at, household.clock.now());
     }
 
     #[tokio::test]
     async fn signing_in_with_a_different_client_id_keeps_both_sessions() {
-        let mut db_context = mock_db_context().await;
-        let clock = FakeClock::new();
-        create_user(&db_context, "Noor").await;
-        let living_room = token(
-            sign_in(&db_context, &clock, "Noor", PASSWORD, "Living Room", Uuid::new_v4()).await,
-        );
+        let household = Household::new().await;
+        household.create_user("Noor").await;
+        let living_room = household.token("Noor", "Living Room", Uuid::new_v4()).await;
 
-        let bedroom =
-            token(sign_in(&db_context, &clock, "Noor", PASSWORD, "Bedroom", Uuid::new_v4()).await);
+        let bedroom = household.token("Noor", "Bedroom", Uuid::new_v4()).await;
 
         assert_eq!(
-            token_hashes(&mut db_context).await,
+            household.token_hashes().await,
             sorted([tokens::hash(&living_room), tokens::hash(&bedroom)])
         );
     }
 
     #[tokio::test]
     async fn another_user_signing_in_with_the_same_client_id_keeps_both_sessions() {
-        let mut db_context = mock_db_context().await;
-        let clock = FakeClock::new();
-        create_user(&db_context, "Noor").await;
-        create_user(&db_context, "Theo").await;
+        let household = Household::new().await;
+        household.create_user("Noor").await;
+        household.create_user("Theo").await;
         let client_id = Uuid::new_v4();
-        let noor = token(sign_in(&db_context, &clock, "Noor", PASSWORD, "Living Room", client_id).await);
+        let noor = household.token("Noor", "Living Room", client_id).await;
 
-        let theo = token(sign_in(&db_context, &clock, "Theo", PASSWORD, "Living Room", client_id).await);
+        let theo = household.token("Theo", "Living Room", client_id).await;
 
         assert_eq!(
-            token_hashes(&mut db_context).await,
+            household.token_hashes().await,
             sorted([tokens::hash(&noor), tokens::hash(&theo)])
         );
     }

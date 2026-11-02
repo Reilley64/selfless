@@ -269,3 +269,66 @@ impl<E: toasty::Executor> Instrumented<E> {
         result
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test::mock_db_context;
+    use domain::EmailAddress;
+    use opentelemetry::trace::SpanKind;
+    use opentelemetry::trace::TracerProvider;
+    use opentelemetry_sdk::trace::InMemorySpanExporter;
+    use opentelemetry_sdk::trace::SdkTracerProvider;
+    use tracing::level_filters::LevelFilter;
+    use tracing_subscriber::layer::SubscriberExt;
+
+    #[tokio::test]
+    async fn statements_inside_a_transaction_export_database_spans_under_the_current_span() {
+        let mut db_context = mock_db_context().await;
+        let exporter = InMemorySpanExporter::default();
+        let provider = SdkTracerProvider::builder()
+            .with_simple_exporter(exporter.clone())
+            .build();
+        let _tracing = test_fixtures::set_default_subscriber(
+            tracing_subscriber::registry()
+                .with(LevelFilter::INFO)
+                .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("selfless"))),
+        );
+        let request = tracing::info_span!("request");
+
+        async {
+            let mut transaction = db_context.transaction().await.unwrap();
+            transaction
+                .users()
+                .filter(User::fields().name().eq("Noor"))
+                .update()
+                .email(EmailAddress::new("noor@example.com".to_owned()).unwrap())
+                .exec(transaction.executor_mut())
+                .await
+                .unwrap();
+            transaction
+                .sessions()
+                .filter(Session::fields().device_name().eq("Living Room"))
+                .delete()
+                .exec(transaction.executor_mut())
+                .await
+                .unwrap();
+            transaction.commit().await.unwrap();
+        }
+        .instrument(request.clone())
+        .await;
+
+        drop(request);
+        let spans = exporter.get_finished_spans().unwrap();
+        let request = spans.iter().find(|x| x.name == "request").unwrap();
+        let database_spans = spans
+            .iter()
+            .filter(|x| {
+                x.span_kind == SpanKind::Client
+                    && x.parent_span_id == request.span_context.span_id()
+            })
+            .map(|x| x.name.as_ref())
+            .collect::<Vec<_>>();
+        assert_eq!(database_spans, ["UPDATE users", "DELETE sessions"]);
+    }
+}
