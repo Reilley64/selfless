@@ -263,6 +263,7 @@ dependencies = [
  "jiff",
  "ohno",
  "opentelemetry",
+ "opentelemetry-appender-tracing",
  "opentelemetry_sdk",
  "sha2 0.11.1",
  "test-fixtures",
