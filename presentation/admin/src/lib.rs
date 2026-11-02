@@ -285,7 +285,7 @@ mod tests {
         let provider = SdkTracerProvider::builder()
             .with_simple_exporter(exporter.clone())
             .build();
-        let _tracing = tracing::subscriber::set_default(
+        let _tracing = test_fixtures::set_default_subscriber(
             tracing_subscriber::registry()
                 .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("selfless"))),
         );

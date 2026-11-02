@@ -27,7 +27,7 @@ async fn statements_inside_a_transaction_export_database_spans_under_the_request
     let provider = SdkTracerProvider::builder()
         .with_simple_exporter(exporter.clone())
         .build();
-    let _tracing = tracing::subscriber::set_default(
+    let _tracing = test_fixtures::set_default_subscriber(
         tracing_subscriber::registry()
             .with(LevelFilter::INFO)
             .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("selfless"))),
@@ -73,7 +73,7 @@ async fn a_failed_user_sign_in_logs_a_warning_without_the_name() {
         .build();
     let database = TestDatabase::create().await;
     let server = TestServer::start(database.url()).await;
-    let _tracing = tracing::subscriber::set_default(
+    let _tracing = test_fixtures::set_default_subscriber(
         tracing_subscriber::registry()
             .with(LevelFilter::INFO)
             .with(OpenTelemetryTracingBridge::new(&provider)),
