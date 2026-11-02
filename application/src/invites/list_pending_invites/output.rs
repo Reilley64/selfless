@@ -10,6 +10,13 @@ pub struct Output {
 pub struct Invite {
     pub id: Uuid,
     pub email: String,
-    pub sent_at: Timestamp,
-    pub expires_at: Timestamp,
+    pub email_status: EmailStatus,
+    pub expires_at: Option<Timestamp>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EmailStatus {
+    Queued { queued_at: Timestamp },
+    Sent { sent_at: Timestamp },
+    Rejected { rejected_at: Timestamp },
 }

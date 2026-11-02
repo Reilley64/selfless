@@ -7,6 +7,7 @@ pub mod invites;
 pub mod ports;
 pub mod sessions;
 pub mod telemetry;
+pub mod trace_context;
 pub mod users;
 
 #[cfg(test)]

@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use domain::Admin;
 use domain::AdminSession;
 use domain::Invite;
+use domain::Outbox;
 use domain::Session;
 use domain::User;
 use opentelemetry::KeyValue;
@@ -67,6 +68,10 @@ pub trait DbScope {
     }
 
     fn invites(&self) -> DbSet<Invite> {
+        DbSet::new()
+    }
+
+    fn outboxes(&self) -> DbSet<Outbox> {
         DbSet::new()
     }
 

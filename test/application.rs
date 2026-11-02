@@ -1,5 +1,8 @@
 use crate::ports::AcquireLock;
+use crate::ports::EmailRejected;
 use crate::ports::LockGuard;
+use crate::ports::SendEmail;
+use crate::ports::SendEmailError;
 use crate::ports::persistence;
 use crate::ports::persistence::DbContext;
 use crate::ports::persistence::DbLocation;
@@ -34,4 +37,16 @@ impl RecordingLock {
     pub(crate) fn keys(&self) -> Vec<String> {
         self.keys.lock().unwrap().clone()
     }
+}
+
+pub(crate) fn failing_mailer() -> SendEmail {
+    SendEmail::new(|_, _, _| {
+        Box::pin(async { Err(SendEmailError::caused_by("the SMTP server is down")) })
+    })
+}
+
+pub(crate) fn refusing_mailer() -> SendEmail {
+    SendEmail::new(|_, _, _| {
+        Box::pin(async { Err(SendEmailError::caused_by(EmailRejected::new())) })
+    })
 }

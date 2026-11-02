@@ -10,7 +10,7 @@ pub(crate) fn send(
     origin: &str,
     token: &str,
 ) -> PortFuture<Result<(), SendEmailError>> {
-    let days = Invite::VALID_FOR.as_hours() / 24;
+    let days = Invite::VALID_DAYS;
     send_email.call(
         recipient,
         "You're invited to selfless".to_owned(),

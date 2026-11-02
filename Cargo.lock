@@ -226,6 +226,7 @@ dependencies = [
  "domain",
  "http",
  "infrastructure",
+ "jiff",
  "ohno",
  "opentelemetry",
  "opentelemetry_sdk",
@@ -254,12 +255,15 @@ dependencies = [
  "jiff",
  "ohno",
  "opentelemetry",
+ "opentelemetry_sdk",
  "sha2 0.11.1",
  "test-fixtures",
  "toasty",
  "toasty-core",
  "tokio",
  "tracing",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
  "uuid",
 ]
 

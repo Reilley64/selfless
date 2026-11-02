@@ -16,12 +16,16 @@ getrandom = { workspace = true }
 jiff = { workspace = true }
 ohno = { workspace = true }
 opentelemetry = { workspace = true }
+opentelemetry_sdk = { workspace = true }
 sha2 = { workspace = true }
 toasty = { workspace = true }
 toasty-core = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+tracing-opentelemetry = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
+opentelemetry_sdk = { workspace = true, features = ["testing"] }
 test-fixtures = { workspace = true }
+tracing-subscriber = { workspace = true }

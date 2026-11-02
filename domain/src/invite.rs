@@ -1,4 +1,5 @@
 use crate::EmailAddress;
+use crate::InviteEmailStatus;
 use jiff::SignedDuration;
 use jiff::Timestamp;
 use uuid::Uuid;
@@ -11,17 +12,22 @@ pub struct Invite {
     #[unique]
     pub email: EmailAddress,
     #[unique]
-    pub token_hash: Vec<u8>,
+    pub token_hash: Option<Vec<u8>>,
     pub admin_id: Uuid,
-    pub sent_at: Timestamp,
-    pub expires_at: Timestamp,
+    pub email_status: InviteEmailStatus,
+    pub expires_at: Option<Timestamp>,
 }
 
 impl Invite {
-    pub const VALID_FOR: SignedDuration = SignedDuration::from_hours(7 * 24);
+    pub const VALID_DAYS: i64 = 7;
+    pub const VALID_FOR: SignedDuration = SignedDuration::from_hours(Self::VALID_DAYS * 24);
+
+    pub fn expires_at(sent_at: Timestamp) -> Timestamp {
+        sent_at + Self::VALID_FOR
+    }
 
     pub fn expired(&self, now: Timestamp) -> bool {
-        now >= self.expires_at
+        self.expires_at.is_none_or(|x| now >= x)
     }
 }
 
@@ -33,25 +39,40 @@ mod tests {
         timestamp.parse().expect("the timestamp is valid")
     }
 
-    fn invite() -> Invite {
+    fn invite(expires_at: Option<Timestamp>) -> Invite {
         Invite {
             id: Uuid::nil(),
             email: EmailAddress::new("noor@household.example".to_owned())
                 .expect("the address is valid"),
-            token_hash: Vec::new(),
+            token_hash: Some(Vec::new()),
             admin_id: Uuid::nil(),
-            sent_at: at("2026-05-25T12:00:00Z"),
-            expires_at: at("2026-06-01T12:00:00Z"),
+            email_status: InviteEmailStatus::Sent {
+                sent_at: at("2026-05-25T12:00:00Z"),
+            },
+            expires_at,
         }
     }
 
     #[test]
     fn an_invite_has_expired_at_its_expiry_time() {
-        assert!(invite().expired(at("2026-06-01T12:00:00Z")));
+        assert!(invite(Some(at("2026-06-01T12:00:00Z"))).expired(at("2026-06-01T12:00:00Z")));
     }
 
     #[test]
     fn an_invite_has_not_expired_before_its_expiry_time() {
-        assert!(!invite().expired(at("2026-06-01T11:59:59Z")));
+        assert!(!invite(Some(at("2026-06-01T12:00:00Z"))).expired(at("2026-06-01T11:59:59Z")));
+    }
+
+    #[test]
+    fn an_invite_without_an_expiry_has_expired() {
+        assert!(invite(None).expired(at("2026-05-25T12:00:00Z")));
+    }
+
+    #[test]
+    fn an_invite_expires_7_days_after_its_email_is_sent() {
+        assert_eq!(
+            Invite::expires_at(at("2026-05-25T12:00:00Z")),
+            at("2026-06-01T12:00:00Z")
+        );
     }
 }
