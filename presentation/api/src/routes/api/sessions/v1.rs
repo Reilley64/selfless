@@ -91,13 +91,33 @@ pub(crate) async fn sign_out(cx: &Cx) -> topcoat::Result<Response> {
 #[cfg(test)]
 mod tests {
     use crate::test::serve;
+    use crate::test::signed_in_user;
     use domain::EmailAddress;
     use domain::Password;
     use http::Method;
     use http::StatusCode;
+    use serde_json::Value;
     use serde_json::json;
     use test_app::TestApp;
+    use test_fixtures::TestServer;
     use uuid::Uuid;
+
+    async fn sign_in(server: &TestServer, name: &str, password: &str) -> (StatusCode, Value) {
+        server
+            .request(
+                Method::POST,
+                "/api/sessions/v1",
+                None,
+                Some(json!({
+                    "name": name,
+                    "password": password,
+                    "clientKind": "web",
+                    "deviceName": "Firefox on macOS",
+                    "clientId": Uuid::new_v4(),
+                })),
+            )
+            .await
+    }
 
     #[tokio::test]
     async fn a_user_signs_in_with_their_name_and_password() {
@@ -112,7 +132,64 @@ mod tests {
         .unwrap();
         let server = serve(&app).await;
 
-        let (status, body) = server
+        let (status, body) = sign_in(&server, "Noor", "a long passphrase").await;
+
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(body["user"]["name"], "Noor");
+    }
+
+    #[tokio::test]
+    async fn a_wrong_name_and_a_wrong_password_return_the_same_problem() {
+        let app = TestApp::new().await;
+        application::users::create_user::call(
+            &app.state,
+            "Noor".to_owned(),
+            Password::new("a long passphrase".to_owned()).unwrap(),
+            EmailAddress::new("noor@example.com".to_owned()).unwrap(),
+        )
+        .await
+        .unwrap();
+        let server = serve(&app).await;
+
+        let wrong_name = sign_in(&server, "Maya", "a long passphrase").await;
+        let wrong_password = sign_in(&server, "Noor", "wrong").await;
+
+        assert_eq!(wrong_name.0, StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            wrong_name.1["type"],
+            "urn:selfless:problem:wrong-name-or-password"
+        );
+        assert_eq!(wrong_name, wrong_password);
+    }
+
+    #[tokio::test]
+    async fn signing_out_returns_204_and_the_token_stops_working() {
+        let app = TestApp::new().await;
+        let (_, token) = signed_in_user(&app, "Noor", "a long passphrase").await;
+        let server = serve(&app).await;
+
+        let (status, _) = server
+            .request(
+                Method::DELETE,
+                "/api/sessions/current/v1",
+                Some(&token),
+                None,
+            )
+            .await;
+        let (me, _) = server
+            .request(Method::GET, "/api/me/v1", Some(&token), None)
+            .await;
+
+        assert_eq!(status, StatusCode::NO_CONTENT);
+        assert_eq!(me, StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn a_sign_in_body_without_a_field_returns_a_bad_request_problem() {
+        let app = TestApp::new().await;
+        let server = serve(&app).await;
+
+        let (status, problem) = server
             .request(
                 Method::POST,
                 "/api/sessions/v1",
@@ -120,14 +197,13 @@ mod tests {
                 Some(json!({
                     "name": "Noor",
                     "password": "a long passphrase",
-                    "clientKind": "web",
-                    "deviceName": "Firefox on macOS",
-                    "clientId": Uuid::new_v4(),
+                    "clientKind": "appleTv",
+                    "deviceName": "Living Room",
                 })),
             )
             .await;
 
-        assert_eq!(status, StatusCode::CREATED);
-        assert_eq!(body["user"]["name"], "Noor");
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(problem["type"], "urn:selfless:problem:bad-request");
     }
 }

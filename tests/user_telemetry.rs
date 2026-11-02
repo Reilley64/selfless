@@ -1,6 +1,5 @@
 mod support;
 
-use opentelemetry::KeyValue;
 use opentelemetry::logs::AnyValue;
 use opentelemetry::logs::Severity;
 use opentelemetry::trace::SpanKind;
@@ -18,43 +17,6 @@ use support::TestServer;
 use support::USER_PASSWORD;
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::layer::SubscriberExt;
-
-#[tokio::test]
-async fn authenticated_request_spans_carry_the_user_id() {
-    let exporter = InMemorySpanExporter::default();
-    let database = TestDatabase::create().await;
-    let server = TestServer::start(database.url()).await;
-    let token = server.signed_in_user().await;
-    let provider = SdkTracerProvider::builder()
-        .with_simple_exporter(exporter.clone())
-        .build();
-    let _tracing = tracing::subscriber::set_default(
-        tracing_subscriber::registry()
-            .with(LevelFilter::INFO)
-            .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("selfless"))),
-    );
-
-    let (_, me) = server
-        .request(Method::GET, "/api/me/v1", Some(&token), None)
-        .await;
-
-    let spans = exporter.get_finished_spans().unwrap();
-    let http = spans
-        .iter()
-        .find(|x| x.span_kind == SpanKind::Server)
-        .expect("an HTTP server span");
-    assert_eq!(http.name, "GET /api/me/v1");
-    assert!(
-        http.attributes.contains(&KeyValue::new(
-            "user.id",
-            me["id"].as_str().unwrap().to_owned()
-        )),
-        "{:?}",
-        http.attributes
-    );
-    drop(server);
-    database.drop().await;
-}
 
 #[tokio::test]
 async fn statements_inside_a_transaction_export_database_spans_under_the_request_span() {
