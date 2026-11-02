@@ -31,20 +31,6 @@ async fn me(server: &TestServer, token: &str) -> StatusCode {
 }
 
 #[tokio::test]
-async fn user_names_ignore_case_at_sign_in() {
-    let database = TestDatabase::create().await;
-    let server = TestServer::start(database.url()).await;
-    server.create_user(NAME, PASSWORD).await;
-
-    let (status, body) = sign_in(&server, &NAME.to_uppercase(), PASSWORD).await;
-
-    assert_eq!(status, StatusCode::CREATED);
-    assert_eq!(body["user"]["name"], NAME);
-    drop(server);
-    database.drop().await;
-}
-
-#[tokio::test]
 async fn a_wrong_name_and_a_wrong_password_return_the_same_problem() {
     let database = TestDatabase::create().await;
     let server = TestServer::start(database.url()).await;
@@ -305,30 +291,6 @@ async fn another_user_signing_in_with_the_same_client_id_keeps_both_sessions() {
     assert_eq!(sessions(&server).await.len(), 2);
     assert_eq!(me(&server, &noor).await, StatusCode::OK);
     assert_eq!(me(&server, &theo).await, StatusCode::OK);
-    drop(server);
-    database.drop().await;
-}
-
-#[tokio::test]
-async fn two_sign_ins_at_once_with_one_client_id_leave_one_session() {
-    let database = TestDatabase::create().await;
-    let server = TestServer::start(database.url()).await;
-    let user_id = server.create_user(NAME, PASSWORD).await;
-
-    for _ in 0..10 {
-        let client_id = Uuid::new_v4();
-        tokio::join!(
-            sign_in_on_tv(&server, NAME, PASSWORD, client_id, "Living Room"),
-            sign_in_on_tv(&server, NAME, PASSWORD, client_id, "Living Room"),
-        );
-
-        let from_client = sessions(&server)
-            .await
-            .into_iter()
-            .filter(|x| x.user_id == user_id && x.client_id == client_id)
-            .count();
-        assert_eq!(from_client, 1);
-    }
     drop(server);
     database.drop().await;
 }

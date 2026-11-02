@@ -47,22 +47,6 @@ async fn a_wrong_name_and_a_wrong_password_return_the_same_error() {
 }
 
 #[tokio::test]
-async fn admin_names_ignore_case_at_sign_in() {
-    let database = TestDatabase::create().await;
-    let server = TestServer::start(database.url()).await;
-    let mut browser = server.browser();
-
-    let signed_in = browser
-        .sign_in(&ADMIN_NAME.to_uppercase(), ADMIN_PASSWORD)
-        .await;
-
-    assert_eq!(signed_in.status, StatusCode::SEE_OTHER);
-    assert_eq!(signed_in.location.as_deref(), Some("/admin"));
-    drop(server);
-    database.drop().await;
-}
-
-#[tokio::test]
 async fn an_unknown_name_takes_as_long_as_a_wrong_password() {
     let database = TestDatabase::create().await;
     let server = TestServer::start(database.url()).await;

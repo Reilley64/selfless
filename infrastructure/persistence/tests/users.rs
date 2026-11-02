@@ -1,21 +1,20 @@
+#[path = "../../../test/persistence.rs"]
+mod persistence_test;
+
+use application::ports::Clock;
 use application::ports::persistence::DbContext;
 use application::ports::persistence::DbScope;
+use application::sessions::sign_in;
 use application::users::create_user;
+use domain::ClientKind;
 use domain::EmailAddress;
 use domain::Password;
 use domain::User;
 use ohno::ErrorExt;
-use persistence::DatabaseSettings;
+use persistence_test::db_context;
+use test_fixtures::FakeClock;
 use test_fixtures::TestDatabase;
-
-async fn db_context(database: &TestDatabase) -> DbContext {
-    let settings = DatabaseSettings {
-        url: database.url(),
-    };
-    let db = persistence::connect(&settings).await.unwrap();
-    persistence::migrate(&db).await.unwrap();
-    DbContext::new(db, settings.location())
-}
+use uuid::Uuid;
 
 async fn create_user(
     db_context: &DbContext,
@@ -77,6 +76,36 @@ async fn creating_two_users_with_one_name_at_once_creates_one() {
         error.find_source::<create_user::NameTaken>().is_some(),
         "{error}"
     );
+    drop(db_context);
+    database.drop().await;
+}
+
+#[tokio::test]
+async fn user_names_ignore_case_at_sign_in() {
+    let database = TestDatabase::create().await;
+    let db_context = db_context(&database).await;
+    create_user(&db_context, "Noor", "noor@example.com")
+        .await
+        .unwrap();
+
+    let signed_in = sign_in::call(
+        sign_in::Dependencies {
+            db_context: db_context.clone(),
+            clock: Clock::new(FakeClock::new().reader()),
+        },
+        "NOOR".to_owned(),
+        "a long passphrase".to_owned(),
+        ClientKind::Web,
+        "Firefox".to_owned(),
+        Uuid::new_v4(),
+    )
+    .await
+    .unwrap();
+
+    let sign_in::Output::SignedIn { name, .. } = signed_in else {
+        panic!("the name matches ignoring case");
+    };
+    assert_eq!(name, "Noor");
     drop(db_context);
     database.drop().await;
 }
