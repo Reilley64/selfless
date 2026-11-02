@@ -18,6 +18,10 @@ Single-context: one `GLOSSARY.md` at the repo root. ADRs are Plane pages under A
 
 Building tickets in worktrees: see `docs/agents/implementation.md`.
 
+### GitHub automation
+
+Before changing workflows, composite actions or other YAML under `.github/`, read `.github/AGENTS.md`.
+
 ## Workflow
 
 Work moves through these skills in order. Start at the step that matches what you were given:
