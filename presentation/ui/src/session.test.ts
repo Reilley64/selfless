@@ -374,7 +374,7 @@ test("a TV with no users can forget the server address, to connect to another se
   expect(startTvSession(storage, "appleTv").state()).toEqual(session.state());
 });
 
-test("a 401 during use returns to the picker with that user dimmed", async () => {
+test("a 401 during use returns to the picker with that user signed out", async () => {
   mockServer({ ended: [theo.token] });
   const storage = fakeStorage();
   const session = await connectedTv(storage);
@@ -387,11 +387,11 @@ test("a 401 during use returns to the picker with that user dimmed", async () =>
   expect(session.state().currentUserId).toBeUndefined();
   expect(startTvSession(storage, "appleTv").state().users).toEqual([
     { token, ...user },
-    { token: theo.token, ...theo.user, dimmed: true },
+    { token: theo.token, ...theo.user, signedOut: true },
   ]);
 });
 
-test("refreshing the picker updates each user from the server and dims those whose sign-in has ended", async () => {
+test("refreshing the picker updates each user from the server and marks those whose sign-in has ended as signed out", async () => {
   const fetch = mockServer();
   const storage = fakeStorage();
   const session = await connectedTv(storage);
@@ -410,11 +410,11 @@ test("refreshing the picker updates each user from the server and dims those who
   ]);
   expect(startTvSession(storage, "appleTv").state().users).toEqual([
     { token, ...renamed },
-    { token: theo.token, ...theo.user, dimmed: true },
+    { token: theo.token, ...theo.user, signedOut: true },
   ]);
 });
 
-test("a dimmed user can be removed too", async () => {
+test("a signed-out user can be removed too", async () => {
   mockServer({ ended: [token] });
   const storage = fakeStorage();
   const session = await connectedTv(storage);

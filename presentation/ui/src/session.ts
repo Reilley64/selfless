@@ -23,7 +23,7 @@ const usersKey = "selfless.session.users";
 
 export interface PickerUser extends User {
   token: string;
-  dimmed?: boolean;
+  signedOut?: boolean;
 }
 
 function listeners() {
@@ -110,11 +110,11 @@ export function startTvSession(storage: SessionStorage, clientKind: Exclude<Clie
     serverUrl: () => state.serverUrl ?? "",
     token: () => state.users.find(({ id }) => id === state.currentUserId)?.token,
     telemetryToken: () =>
-      (state.users.find(({ id }) => id === state.currentUserId) ?? state.users.find(({ dimmed }) => !dimmed))?.token,
+      (state.users.find(({ id }) => id === state.currentUserId) ?? state.users.find(({ signedOut }) => !signedOut))?.token,
     ended(token: string) {
       const owner = state.users.find((user) => user.token === token);
       if (owner) {
-        const users = state.users.map((user) => (user === owner ? { ...user, dimmed: true } : user));
+        const users = state.users.map((user) => (user === owner ? { ...user, signedOut: true } : user));
         updateUsers(users, owner.id === state.currentUserId ? { currentUserId: undefined } : {});
       }
     },
@@ -157,7 +157,7 @@ export function startTvSession(storage: SessionStorage, clientKind: Exclude<Clie
     async refresh() {
       await Promise.all(
         state.users
-          .filter(({ dimmed }) => !dimmed)
+          .filter(({ signedOut }) => !signedOut)
           .map(async ({ id, token }) => {
             const response = await getMe({ headers: authorizationHeaders(token) });
             if (response.status === 200) {

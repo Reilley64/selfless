@@ -65,8 +65,8 @@ export function UserPicker({ onSignIn }: { onSignIn: (name: string) => void }) {
           <PickerButton
             key={user.id}
             label={user.name}
-            className={`${colours[user.colour]} ${user.dimmed ? "opacity-40" : ""}`}
-            onPress={() => (user.dimmed ? onSignIn(user.name) : session.pick(user.id))}
+            className={`${colours[user.colour]} ${user.signedOut ? "opacity-40" : ""}`}
+            onPress={() => (user.signedOut ? onSignIn(user.name) : session.pick(user.id))}
             onLongPress={() =>
               Alert.alert(user.name, undefined, [
                 { text: "Remove from this TV", style: "destructive", onPress: () => void remove(user) },

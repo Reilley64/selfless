@@ -175,7 +175,7 @@ test("telemetry recorded on the TV's user picker goes out with a signed-in user'
   ]);
 });
 
-test("nothing is sent while every user on the TV's picker is dimmed", async () => {
+test("nothing is sent while every user on the TV's picker is signed out", async () => {
   const fetch = mockServer({ meStatus: 401 });
   const session = startTvSession(fakeStorage(), "appleTv");
   startTelemetry("selfless-tv", { serverUrl: session.serverUrl, token: session.telemetryToken });
@@ -183,10 +183,10 @@ test("nothing is sent while every user on the TV's picker is dimmed", async () =
   await session.signIn("Noor", "correct horse", "Living Room");
   await session.refresh();
 
-  record("all dimmed");
+  record("all signed out");
   await flush();
 
-  expect(sentWith(fetch, "all dimmed")).toEqual([]);
+  expect(sentWith(fetch, "all signed out")).toEqual([]);
 });
 
 test("switching user sends pending telemetry with the old user's token", async () => {
