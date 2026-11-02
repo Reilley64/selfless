@@ -16,6 +16,9 @@ dependencies = [
  "domain",
  "http",
  "infrastructure",
+ "jiff",
+ "opentelemetry",
+ "opentelemetry_sdk",
  "serde",
  "test-app",
  "test-fixtures",
@@ -23,6 +26,8 @@ dependencies = [
  "topcoat",
  "tracing",
  "tracing-opentelemetry",
+ "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]

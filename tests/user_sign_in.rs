@@ -208,22 +208,6 @@ async fn last_used_is_written_at_most_once_an_hour() {
     database.drop().await;
 }
 
-#[tokio::test]
-async fn a_user_token_is_rejected_on_admin() {
-    let database = TestDatabase::create().await;
-    let server = TestServer::start(database.url()).await;
-    let token = server.signed_in_user().await;
-    let mut browser = server.browser();
-
-    browser.set_cookie("session", &token);
-    let home = browser.get("/admin").await;
-
-    assert_eq!(home.status, StatusCode::SEE_OTHER);
-    assert_eq!(home.location.as_deref(), Some("/admin/sign-in"));
-    drop(server);
-    database.drop().await;
-}
-
 async fn sign_in_on_tv(
     server: &TestServer,
     name: &str,

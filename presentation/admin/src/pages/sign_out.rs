@@ -29,3 +29,42 @@ pub(crate) async fn sign_out(cx: &Cx, Form(form): Form<SignOut>) -> topcoat::Res
     }
     Ok(see_other(SIGN_IN_PATH))
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::test::serve;
+    use application::admins::create_admin;
+    use domain::Password;
+    use http::StatusCode;
+    use test_app::TestApp;
+
+    #[tokio::test]
+    async fn signing_out_ends_the_admin_session() {
+        let app = TestApp::new().await;
+        create_admin::call(
+            &app.state,
+            "Maya".to_owned(),
+            Password::new("correct horse battery staple".to_owned()).unwrap(),
+        )
+        .await
+        .unwrap();
+        let server = serve(&app).await;
+        let mut browser = server.browser();
+        browser
+            .sign_in("Maya", "correct horse battery staple")
+            .await;
+        let token = browser.cookie("session").unwrap().to_owned();
+
+        let signed_out = browser.sign_out().await;
+        browser.set_cookie("session", &token);
+        let home_with_old_token = browser.get("/admin").await;
+
+        assert_eq!(signed_out.status, StatusCode::SEE_OTHER);
+        assert_eq!(signed_out.location.as_deref(), Some("/admin/sign-in"));
+        assert_eq!(home_with_old_token.status, StatusCode::SEE_OTHER);
+        assert_eq!(
+            home_with_old_token.location.as_deref(),
+            Some("/admin/sign-in")
+        );
+    }
+}
