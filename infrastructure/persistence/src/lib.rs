@@ -1,3 +1,10 @@
+mod outbox_consumer;
+mod queue_consumer;
+
+pub use outbox_consumer::HandleOutboxError;
+pub use outbox_consumer::consume_outbox;
+pub use queue_consumer::QueuePauses;
+
 use application::ports::persistence::DbLocation;
 use serde::Deserialize;
 use std::time::Duration;

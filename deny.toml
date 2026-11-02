@@ -7,12 +7,12 @@ wildcards = "allow"
 deny = [
     { name = "native-tls" },
 
-    { name = "domain", wrappers = ["selfless", "application", "api"] },
+    { name = "domain", wrappers = ["selfless", "application", "api", "persistence", "workers"] },
     { name = "application", wrappers = ["selfless", "infrastructure", "email", "locking", "persistence", "telemetry", "api", "admin", "workers"] },
 
     { name = "email", wrappers = ["selfless", "settings"] },
     { name = "locking", wrappers = ["selfless"] },
-    { name = "persistence", wrappers = ["selfless", "settings"] },
+    { name = "persistence", wrappers = ["selfless", "settings", "workers"] },
     { name = "telemetry", wrappers = ["selfless", "settings"] },
     { name = "settings", wrappers = ["selfless"] },
     { name = "infrastructure", wrappers = ["selfless", "api", "admin", "workers"] },
