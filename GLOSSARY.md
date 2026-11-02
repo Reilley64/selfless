@@ -40,6 +40,10 @@ _Avoid_: Tag, category
 A household member who watches. Users sign in on the web app, and on each TV where they want to appear in the user picker.
 _Avoid_: Account, viewer, profile, member
 
+**Colour**:
+The colour from a fixed list that marks a user in the apps. It never changes, and two users can share one.
+_Avoid_: Avatar colour, profile colour
+
 **Invite**:
 An email an admin sends to add a user. Its link lets the person choose their username and password. It works once and expires after 7 days.
 _Avoid_: Invitation code, sign-up link, registration
@@ -48,9 +52,25 @@ _Avoid_: Invitation code, sign-up link, registration
 An account that runs the server through the admin app. An admin is not a user, cannot watch, and never appears in the user picker.
 _Avoid_: Account, administrator, owner
 
+**Admin session**:
+An admin's sign-in to the admin app. It lasts until it is ended or unused for 12 hours.
+_Avoid_: Admin login
+
 **Client id**:
 A random id each app install or browser makes once and sends with every sign-in, so signing in again as the same user from it replaces that user's earlier session from it.
 _Avoid_: Device id, install id
+
+**Session**:
+A user's sign-in from one browser or one TV app install. It lasts until it is ended or, on the web, unused for 30 days.
+_Avoid_: Login, device session
+
+**Client kind**:
+Which app a session signed in from: web, Apple TV or Google TV.
+_Avoid_: Device type, client type, app type
+
+**Device name**:
+The name a session shows for where it signed in, such as "Firefox on macOS" or "Living Room".
+_Avoid_: Device label, client name
 
 ## TVs
 
