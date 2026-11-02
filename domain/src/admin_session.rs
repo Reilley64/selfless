@@ -23,12 +23,16 @@ impl AdminSession {
     const IDLE_TIMEOUT: SignedDuration = SignedDuration::from_hours(12);
     const LAST_USED_PRECISION: SignedDuration = SignedDuration::from_hours(1);
 
-    pub fn idle_cutoff(now: Timestamp) -> Timestamp {
+    fn idle_cutoff(now: Timestamp) -> Timestamp {
         now - Self::IDLE_TIMEOUT
     }
 
     pub fn expired(&self, now: Timestamp) -> bool {
         self.last_used_at <= Self::idle_cutoff(now)
+    }
+
+    pub fn expired_filter(now: Timestamp) -> toasty::stmt::Expr<bool> {
+        Self::fields().last_used_at().le(Self::idle_cutoff(now))
     }
 
     pub fn last_used_is_stale(&self, now: Timestamp) -> bool {

@@ -18,24 +18,14 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<Output, Error
     let now = clock.call();
     db_context
         .sessions()
-        .filter(
-            Session::fields().client_kind().is_web().and(
-                Session::fields()
-                    .last_used_at()
-                    .le(Session::web_idle_cutoff(now)),
-            ),
-        )
+        .filter(Session::expired_filter(now))
         .delete()
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?;
     db_context
         .admin_sessions()
-        .filter(
-            AdminSession::fields()
-                .last_used_at()
-                .le(AdminSession::idle_cutoff(now)),
-        )
+        .filter(AdminSession::expired_filter(now))
         .delete()
         .exec(db_context.executor_mut())
         .await
@@ -72,7 +62,7 @@ mod tests {
             .await
             .unwrap();
         for (device_name, client_kind, idle_hours) in [
-            ("Old laptop", ClientKind::Web, 30 * 24 + 1),
+            ("Old laptop", ClientKind::Web, 30 * 24),
             ("Firefox on macOS", ClientKind::Web, 24),
             ("Living Room", ClientKind::AppleTv, 400 * 24),
             ("Bedroom", ClientKind::GoogleTv, 400 * 24),
@@ -99,7 +89,7 @@ mod tests {
             .exec(db_context.executor_mut())
             .await
             .unwrap();
-        for (token, idle_hours) in [("old", 12 + 1), ("recent", 1)] {
+        for (token, idle_hours) in [("old", 12), ("recent", 1)] {
             db_context
                 .admin_sessions()
                 .create()
