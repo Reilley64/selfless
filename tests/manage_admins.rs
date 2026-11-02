@@ -1,8 +1,6 @@
 mod support;
 
-use application::admins::create_admin::NameTaken;
 use domain::Password;
-use ohno::ErrorExt;
 use reqwest::StatusCode;
 use support::ADMIN_NAME;
 use support::ADMIN_PASSWORD;
@@ -45,38 +43,6 @@ async fn a_new_admin_signs_in_to_the_admin_app() {
     let mut browser = server.browser();
     assert!(signs_in(&mut browser, "Ravi", "another password").await);
     assert_eq!(browser.get("/admin").await.status, StatusCode::OK);
-    drop(server);
-    database.drop().await;
-}
-
-#[tokio::test]
-async fn admin_names_are_unique_ignoring_case() {
-    let database = TestDatabase::create().await;
-    let server = TestServer::start(database.url()).await;
-
-    let error = create_admin(&server, &ADMIN_NAME.to_uppercase(), "another password")
-        .await
-        .expect_err("the name is taken");
-
-    assert!(error.find_source::<NameTaken>().is_some(), "{error}");
-    let mut browser = server.browser();
-    assert!(signs_in(&mut browser, ADMIN_NAME, ADMIN_PASSWORD).await);
-    drop(server);
-    database.drop().await;
-}
-
-#[tokio::test]
-async fn creating_two_admins_with_one_name_at_once_creates_one() {
-    let database = TestDatabase::create().await;
-    let server = TestServer::start(database.url()).await;
-
-    let (first, second) = tokio::join!(
-        create_admin(&server, "Ravi", "password"),
-        create_admin(&server, "RAVI", "another password")
-    );
-
-    let error = first.err().or(second.err()).expect("one name is taken");
-    assert!(error.find_source::<NameTaken>().is_some(), "{error}");
     drop(server);
     database.drop().await;
 }

@@ -1,3 +1,6 @@
+#[path = "../../../test/persistence.rs"]
+mod persistence_test;
+
 use application::invites::create_invite;
 use application::invites::send_invite_email;
 use application::ports::Clock;
@@ -14,10 +17,10 @@ use opentelemetry::trace::TracerProvider;
 use opentelemetry_sdk::trace::InMemorySpanExporter;
 use opentelemetry_sdk::trace::SdkTracerProvider;
 use opentelemetry_sdk::trace::SpanData;
-use persistence::DatabaseSettings;
 use persistence::HandleOutboxError;
 use persistence::QueuePauses;
 use persistence::consume_outbox;
+use persistence_test::db_context;
 use std::io;
 use std::io::Write;
 use std::sync::Arc;
@@ -40,15 +43,6 @@ const PAUSES: QueuePauses = QueuePauses {
 };
 
 const TRACEPARENT: &str = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01";
-
-async fn db_context(database: &TestDatabase) -> DbContext {
-    let settings = DatabaseSettings {
-        url: database.url(),
-    };
-    let db = persistence::connect(&settings).await.unwrap();
-    persistence::migrate(&db).await.unwrap();
-    DbContext::new(db, settings.location())
-}
 
 fn trace(exporter: &InMemorySpanExporter) -> DefaultGuard {
     let provider = SdkTracerProvider::builder()
