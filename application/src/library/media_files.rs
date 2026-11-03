@@ -32,6 +32,11 @@ impl Inspected {
     }
 }
 
+pub(crate) struct Saved {
+    pub(crate) id: Uuid,
+    pub(crate) changed: bool,
+}
+
 #[ohno::error]
 #[display("failed to inspect a media file")]
 pub(crate) struct Error;
@@ -79,7 +84,7 @@ pub(crate) async fn save(
     scope: &mut impl DbScope,
     path: &str,
     inspected: Inspected,
-) -> toasty::Result<(Uuid, bool)> {
+) -> toasty::Result<Saved> {
     let size = inspected.found.map(|x| x.size);
     let modified_at = inspected.found.map(|x| x.modified_at);
     let probed = match &inspected.probed {
@@ -139,7 +144,7 @@ pub(crate) async fn save(
         Probed::Read(probe) => save_probe(scope, id, path, Some(probe)).await?,
     }
     changed |= save_subtitle_files(scope, id, inspected.subtitle_files).await?;
-    Ok((id, changed))
+    Ok(Saved { id, changed })
 }
 
 async fn save_probe(
@@ -548,8 +553,10 @@ mod tests {
         )
         .await
         .unwrap();
-        let (_, changed) = save(&mut db_context, MOVIE_FILE, inspected).await.unwrap();
-        changed
+        save(&mut db_context, MOVIE_FILE, inspected)
+            .await
+            .unwrap()
+            .changed
     }
 
     #[tokio::test]

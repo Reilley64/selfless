@@ -7,6 +7,7 @@ use application::ports::ProbeMediaFile;
 use application::ports::SendEmail;
 use selfless_test::ADMIN_NAME;
 use selfless_test::ADMIN_PASSWORD;
+use selfless_test::RADARR_API_KEY;
 use selfless_test::RADARR_WEBHOOK_PASSWORD;
 use selfless_test::SONARR_API_KEY;
 use selfless_test::SONARR_WEBHOOK_PASSWORD;
@@ -69,62 +70,50 @@ async fn once_an_admin_exists_the_server_starts_with_the_first_admin_settings_em
     database.drop().await;
 }
 
+const RADARR_SETTINGS: [(&str, &str); 3] = [
+    ("RADARR__URL", "http://127.0.0.1:7878"),
+    ("RADARR__API_KEY", RADARR_API_KEY),
+    ("RADARR__WEBHOOK_PASSWORD", RADARR_WEBHOOK_PASSWORD),
+];
+const SONARR_SETTINGS: [(&str, &str); 3] = [
+    ("SONARR__URL", "http://127.0.0.1:8989"),
+    ("SONARR__API_KEY", SONARR_API_KEY),
+    ("SONARR__WEBHOOK_PASSWORD", SONARR_WEBHOOK_PASSWORD),
+];
+
+fn assert_exits_naming(missing: &str, settings: &[(&str, &str)]) {
+    let output = Command::new(env!("CARGO_BIN_EXE_selfless"))
+        .env(
+            "DATABASE__URL",
+            "postgres://selfless:selfless@127.0.0.1:1/selfless",
+        )
+        .envs(
+            settings
+                .iter()
+                .filter(|(name, _)| *name != missing)
+                .copied(),
+        )
+        .env_remove(missing)
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains(missing), "{missing} is not named: {stderr}");
+}
+
 #[test]
 fn the_server_exits_naming_a_missing_radarr_setting() {
-    let settings = [
-        ("RADARR__URL", "http://127.0.0.1:7878"),
-        ("RADARR__API_KEY", "radarr api key"),
-        ("RADARR__WEBHOOK_PASSWORD", RADARR_WEBHOOK_PASSWORD),
-    ];
-    for (missing, _) in settings {
-        let output = Command::new(env!("CARGO_BIN_EXE_selfless"))
-            .env(
-                "DATABASE__URL",
-                "postgres://selfless:selfless@127.0.0.1:1/selfless",
-            )
-            .envs(
-                settings
-                    .iter()
-                    .filter(|(name, _)| *name != missing)
-                    .copied(),
-            )
-            .env_remove(missing)
-            .output()
-            .unwrap();
-
-        assert!(!output.status.success());
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        assert!(stderr.contains(missing), "{missing} is not named: {stderr}");
+    for (missing, _) in RADARR_SETTINGS {
+        assert_exits_naming(missing, &RADARR_SETTINGS);
     }
 }
 
 #[test]
 fn the_server_exits_naming_a_missing_sonarr_setting() {
-    let settings = [
-        ("RADARR__URL", "http://127.0.0.1:7878"),
-        ("RADARR__API_KEY", "radarr api key"),
-        ("RADARR__WEBHOOK_PASSWORD", RADARR_WEBHOOK_PASSWORD),
-        ("SONARR__URL", "http://127.0.0.1:8989"),
-        ("SONARR__API_KEY", SONARR_API_KEY),
-        ("SONARR__WEBHOOK_PASSWORD", SONARR_WEBHOOK_PASSWORD),
-    ];
-    for (missing, _) in settings
-        .iter()
-        .filter(|(name, _)| name.starts_with("SONARR"))
-    {
-        let output = Command::new(env!("CARGO_BIN_EXE_selfless"))
-            .env(
-                "DATABASE__URL",
-                "postgres://selfless:selfless@127.0.0.1:1/selfless",
-            )
-            .envs(settings.iter().filter(|(name, _)| name != missing).copied())
-            .env_remove(missing)
-            .output()
-            .unwrap();
-
-        assert!(!output.status.success());
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        assert!(stderr.contains(missing), "{missing} is not named: {stderr}");
+    let settings = [RADARR_SETTINGS, SONARR_SETTINGS].concat();
+    for (missing, _) in SONARR_SETTINGS {
+        assert_exits_naming(missing, &settings);
     }
 }
 

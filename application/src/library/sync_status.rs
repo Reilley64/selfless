@@ -16,6 +16,7 @@ pub use output::VisibleCounts;
 
 use crate::library::Reconciles;
 use crate::library::SourceHealth;
+use crate::library::source_health::ApiCallResult;
 use crate::ports::persistence::DbContext;
 use crate::ports::persistence::DbScope;
 use domain::Episode;
@@ -99,11 +100,17 @@ async fn source_status(
         .map_err(Error::caused_by)?;
     let health = source_health.health(source);
     Ok(SourceStatus {
-        last_api_call: health.last_api_call,
+        last_api_call: health.last_api_call.map(|x| match x {
+            ApiCallResult::Succeeded => ApiCall::Succeeded,
+            ApiCallResult::Failed(error) => ApiCall::Failed(error),
+        }),
         kodi_metadata: health.kodi_metadata,
         last_webhook_at: state.as_ref().and_then(|x| x.last_webhook_at),
         rejected_webhooks: state.as_ref().map_or(0, |x| x.rejected_webhooks),
-        reconcile_progress: reconciles.progress(source),
+        reconcile_progress: reconciles.progress(source).map(|x| ReconcileProgress {
+            imported: x.imported,
+            total: x.total,
+        }),
         last_reconcile: state.and_then(|x| {
             Some(LastReconcile {
                 started_at: x.last_reconcile_started_at?,
@@ -551,7 +558,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_last_api_call_and_kodi_metadata_setting_are_shown_per_source() {
+    async fn the_last_api_call_is_shown_per_source() {
         let seeded = Seeded::new().await;
         let source_health = SourceHealth::default();
         let _ = source_health.api_call(
@@ -559,7 +566,6 @@ mod tests {
             Err::<(), _>(RadarrError::caused_by("500 Internal Server Error")),
         );
         let _ = source_health.api_call(Source::Sonarr, Ok::<_, RadarrError>(()));
-        source_health.set_kodi_metadata(Source::Sonarr, false);
 
         let status = seeded.status(&source_health).await;
 
@@ -568,8 +574,6 @@ mod tests {
             "{:?}",
             status.radarr.last_api_call
         );
-        assert_eq!(status.radarr.kodi_metadata, None);
         assert_eq!(status.sonarr.last_api_call, Some(ApiCall::Succeeded));
-        assert_eq!(status.sonarr.kodi_metadata, Some(false));
     }
 }

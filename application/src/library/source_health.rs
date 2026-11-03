@@ -1,5 +1,4 @@
-use crate::library::sync_status::ApiCall;
-use crate::webhooks::BySource;
+use crate::by_source::BySource;
 use domain::Source;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -9,8 +8,14 @@ pub struct SourceHealth(BySource<Arc<Mutex<Health>>>);
 
 #[derive(Clone, Default)]
 pub(crate) struct Health {
-    pub(crate) last_api_call: Option<ApiCall>,
+    pub(crate) last_api_call: Option<ApiCallResult>,
     pub(crate) kodi_metadata: Option<bool>,
+}
+
+#[derive(Clone)]
+pub(crate) enum ApiCallResult {
+    Succeeded,
+    Failed(String),
 }
 
 impl SourceHealth {
@@ -20,8 +25,8 @@ impl SourceHealth {
         result: Result<T, E>,
     ) -> Result<T, E> {
         self.0.get(source).lock().unwrap().last_api_call = Some(match &result {
-            Ok(_) => ApiCall::Succeeded,
-            Err(error) => ApiCall::Failed(error.to_string()),
+            Ok(_) => ApiCallResult::Succeeded,
+            Err(error) => ApiCallResult::Failed(error.to_string()),
         });
         result
     }

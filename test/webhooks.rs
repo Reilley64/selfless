@@ -30,13 +30,11 @@ pub(crate) async fn send(
     server: &TestServer,
     method: Method,
     path: &str,
-    credentials: Option<(&str, &str)>,
+    (username, password): (&str, &str),
 ) -> (StatusCode, HeaderMap) {
     let mut headers = HeaderMap::new();
-    if let Some((username, password)) = credentials {
-        let basic = STANDARD.encode(format!("{username}:{password}"));
-        headers.insert(AUTHORIZATION, format!("Basic {basic}").parse().unwrap());
-    }
+    let basic = STANDARD.encode(format!("{username}:{password}"));
+    headers.insert(AUTHORIZATION, format!("Basic {basic}").parse().unwrap());
     let (status, headers, _) = server
         .request_with_response_headers(method, path, headers, Some(json!({"eventType": "Test"})))
         .await;
