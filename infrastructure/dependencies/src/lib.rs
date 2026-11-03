@@ -12,7 +12,7 @@ use application::ports::GetRadarrMovie;
 use application::ports::GetSonarrEpisodes;
 use application::ports::GetSonarrShow;
 use application::ports::ListRadarrMovies;
-use application::ports::ListSonarrSeries;
+use application::ports::ListSonarrShows;
 use application::ports::ReadRadarrWebhook;
 use application::ports::ReadSonarrWebhook;
 use application::ports::SendEmail;
@@ -33,7 +33,7 @@ pub struct AppState {
     pub get_sonarr_episodes: GetSonarrEpisodes,
     pub get_sonarr_show: GetSonarrShow,
     pub list_radarr_movies: ListRadarrMovies,
-    pub list_sonarr_series: ListSonarrSeries,
+    pub list_sonarr_shows: ListSonarrShows,
     pub media_folder: MediaFolder,
     pub read_radarr_webhook: ReadRadarrWebhook,
     pub read_sonarr_webhook: ReadSonarrWebhook,

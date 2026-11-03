@@ -15,7 +15,7 @@ use application::ports::GetRadarrMovie;
 use application::ports::GetSonarrEpisodes;
 use application::ports::GetSonarrShow;
 use application::ports::ListRadarrMovies;
-use application::ports::ListSonarrSeries;
+use application::ports::ListSonarrShows;
 use application::ports::ListSubtitleFiles;
 use application::ports::LockGuard;
 use application::ports::ProbeError;
@@ -89,7 +89,7 @@ impl TestApp {
             list_radarr_movies: ListRadarrMovies::new(|| {
                 Box::pin(async { Err(RadarrError::default()) })
             }),
-            list_sonarr_series: ListSonarrSeries::new(|| {
+            list_sonarr_shows: ListSonarrShows::new(|| {
                 Box::pin(async { Err(SonarrError::default()) })
             }),
             media_folder: MediaFolder {

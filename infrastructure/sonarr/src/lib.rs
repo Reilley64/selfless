@@ -5,12 +5,12 @@ pub use webhook::read_webhook;
 use application::ports::CheckSonarrKodiMetadata;
 use application::ports::GetSonarrEpisodes;
 use application::ports::GetSonarrShow;
-use application::ports::ListSonarrSeries;
+use application::ports::ListSonarrShows;
 use application::ports::SonarrEpisode;
 use application::ports::SonarrEpisodeFile;
 use application::ports::SonarrError;
-use application::ports::SonarrSeries;
 use application::ports::SonarrShow;
+use application::ports::SonarrShowListing;
 use jiff::Timestamp;
 use jiff::civil::Date;
 use reqwest::StatusCode;
@@ -42,9 +42,9 @@ impl SonarrSettings {
         }))
     }
 
-    pub fn list_series(&self) -> Result<ListSonarrSeries, MissingSetting> {
+    pub fn list_shows(&self) -> Result<ListSonarrShows, MissingSetting> {
         let api = self.api()?;
-        Ok(ListSonarrSeries::new(move || {
+        Ok(ListSonarrShows::new(move || {
             let api = api.clone();
             Box::pin(async move {
                 Ok(api
@@ -52,7 +52,7 @@ impl SonarrSettings {
                     .await
                     .map_err(SonarrError::caused_by)?
                     .into_iter()
-                    .map(SonarrSeries::from)
+                    .map(SonarrShowListing::from)
                     .collect())
             })
         }))
@@ -132,7 +132,7 @@ async fn show(api: &Api, sonarr_id: i64) -> Result<Option<SonarrShow>, reqwest::
         series => series?,
     };
     Ok(Some(SonarrShow {
-        series: series.into(),
+        listing: series.into(),
         episodes: episodes(api, sonarr_id).await?,
     }))
 }
@@ -167,9 +167,9 @@ async fn episodes(api: &Api, sonarr_id: i64) -> Result<Vec<SonarrEpisode>, reqwe
         .collect())
 }
 
-impl From<Series> for SonarrSeries {
+impl From<Series> for SonarrShowListing {
     fn from(series: Series) -> Self {
-        SonarrSeries {
+        SonarrShowListing {
             sonarr_id: series.id,
             tvdb_id: series.tvdb_id,
             path: series.path,

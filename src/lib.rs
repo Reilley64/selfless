@@ -45,7 +45,7 @@ pub async fn start(
     };
     let get_sonarr_show = settings.sonarr.get_show()?;
     let list_radarr_movies = settings.radarr.list_movies()?;
-    let list_sonarr_series = settings.sonarr.list_series()?;
+    let list_sonarr_shows = settings.sonarr.list_shows()?;
     let get_sonarr_episodes = settings.sonarr.get_episodes()?;
     let check_radarr_kodi_metadata = settings.radarr.check_kodi_metadata()?;
     let check_sonarr_kodi_metadata = settings.sonarr.check_kodi_metadata()?;
@@ -69,7 +69,7 @@ pub async fn start(
         .get_sonarr_episodes(|_| get_sonarr_episodes.clone())
         .get_sonarr_show(|_| get_sonarr_show.clone())
         .list_radarr_movies(|_| list_radarr_movies.clone())
-        .list_sonarr_series(|_| list_sonarr_series.clone())
+        .list_sonarr_shows(|_| list_sonarr_shows.clone())
         .media_folder(|_| media_folder::media_folder(probe_media_file.clone()))
         .read_radarr_webhook(|_| radarr::read_webhook())
         .read_sonarr_webhook(|_| sonarr::read_webhook())

@@ -267,7 +267,7 @@ impl GetSonarrEpisodes {
     }
 }
 
-pub struct SonarrSeries {
+pub struct SonarrShowListing {
     pub sonarr_id: i64,
     pub tvdb_id: i64,
     pub path: String,
@@ -278,7 +278,7 @@ pub struct SonarrSeries {
 }
 
 pub struct SonarrShow {
-    pub series: SonarrSeries,
+    pub listing: SonarrShowListing,
     pub episodes: Vec<SonarrEpisode>,
 }
 
@@ -349,20 +349,20 @@ impl ListRadarrMovies {
     }
 }
 
-type ListSonarrSeriesFn =
-    dyn Fn() -> PortFuture<Result<Vec<SonarrSeries>, SonarrError>> + Send + Sync;
+type ListSonarrShowsFn =
+    dyn Fn() -> PortFuture<Result<Vec<SonarrShowListing>, SonarrError>> + Send + Sync;
 
 #[derive(Clone)]
-pub struct ListSonarrSeries(Arc<ListSonarrSeriesFn>);
+pub struct ListSonarrShows(Arc<ListSonarrShowsFn>);
 
-impl ListSonarrSeries {
+impl ListSonarrShows {
     pub fn new(
-        f: impl Fn() -> PortFuture<Result<Vec<SonarrSeries>, SonarrError>> + Send + Sync + 'static,
+        f: impl Fn() -> PortFuture<Result<Vec<SonarrShowListing>, SonarrError>> + Send + Sync + 'static,
     ) -> Self {
         Self(Arc::new(f))
     }
 
-    pub fn call(&self) -> PortFuture<Result<Vec<SonarrSeries>, SonarrError>> {
+    pub fn call(&self) -> PortFuture<Result<Vec<SonarrShowListing>, SonarrError>> {
         (self.0)()
     }
 }

@@ -10,7 +10,7 @@ use crate::ports::CheckSonarrKodiMetadata;
 use crate::ports::Clock;
 use crate::ports::GetSonarrEpisodes;
 use crate::ports::ListRadarrMovies;
-use crate::ports::ListSonarrSeries;
+use crate::ports::ListSonarrShows;
 use crate::ports::SonarrShow;
 use crate::ports::persistence::DbContext;
 use crate::ports::persistence::DbScope;
@@ -44,7 +44,7 @@ pub struct Dependencies {
     pub db_context: DbContext,
     pub get_sonarr_episodes: GetSonarrEpisodes,
     pub list_radarr_movies: ListRadarrMovies,
-    pub list_sonarr_series: ListSonarrSeries,
+    pub list_sonarr_shows: ListSonarrShows,
     pub media_folder: MediaFolder,
     pub reconciles: Reconciles,
     pub source_health: SourceHealth,
@@ -62,7 +62,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
         mut db_context,
         get_sonarr_episodes,
         list_radarr_movies,
-        list_sonarr_series,
+        list_sonarr_shows,
         media_folder,
         reconciles,
         source_health,
@@ -110,7 +110,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
                 sync_shows(
                     &mut db_context,
                     &media_folder,
-                    &list_sonarr_series,
+                    &list_sonarr_shows,
                     &get_sonarr_episodes,
                     &source_health,
                     progress,
@@ -270,16 +270,16 @@ async fn sync_movies(
 async fn sync_shows(
     db_context: &mut DbContext,
     media_folder: &MediaFolder,
-    list_sonarr_series: &ListSonarrSeries,
+    list_sonarr_shows: &ListSonarrShows,
     get_sonarr_episodes: &GetSonarrEpisodes,
     source_health: &SourceHealth,
     progress: &Mutex<Option<ReconcileProgress>>,
 ) -> Result<Listing, Error> {
-    let series = source_health
-        .api_call(Source::Sonarr, list_sonarr_series.call().await)
+    let listings = source_health
+        .api_call(Source::Sonarr, list_sonarr_shows.call().await)
         .map_err(Error::caused_by)?;
-    let listed = series.iter().map(|x| x.tvdb_id).collect::<HashSet<_>>();
-    set_total(progress, series.len());
+    let listed = listings.iter().map(|x| x.tvdb_id).collect::<HashSet<_>>();
+    set_total(progress, listings.len());
     let stored_shows = Show::all()
         .exec(db_context.executor_mut())
         .await
@@ -291,15 +291,15 @@ async fn sync_shows(
         .map(|x| x.id)
         .collect();
     let mut failed_calls = 0;
-    for series in series {
+    for listing in listings {
         let span = sync_show::span();
         let episodes = get_sonarr_episodes
-            .call(series.sonarr_id)
+            .call(listing.sonarr_id)
             .instrument(span.clone())
             .await;
         match source_health.api_call(Source::Sonarr, episodes) {
             Ok(episodes) => {
-                sync_show::save(db_context, media_folder, SonarrShow { series, episodes })
+                sync_show::save(db_context, media_folder, SonarrShow { listing, episodes })
                     .instrument(span)
                     .await
                     .map_err(Error::caused_by)?;

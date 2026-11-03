@@ -14,8 +14,8 @@ use crate::ports::GetSonarrShow;
 use crate::ports::ShowFolder;
 use crate::ports::ShowNfo;
 use crate::ports::SonarrEpisode;
-use crate::ports::SonarrSeries;
 use crate::ports::SonarrShow;
+use crate::ports::SonarrShowListing;
 use crate::ports::persistence::DbContext;
 use crate::ports::persistence::DbScope;
 use domain::ArtworkKind;
@@ -110,20 +110,20 @@ impl ShowMetadata {
         }
     }
 
-    fn of(nfo: &Nfo<ShowNfo>, series: &SonarrSeries, stored: Option<&Show>) -> Self {
+    fn of(nfo: &Nfo<ShowNfo>, listing: &SonarrShowListing, stored: Option<&Show>) -> Self {
         match (nfo, stored) {
             (Nfo::Unchanged, Some(show)) => Self::stored(show),
             (Nfo::Read(nfo, modified_at), _) => Self {
-                title: nfo.title.clone().unwrap_or_else(|| series.title.clone()),
+                title: nfo.title.clone().unwrap_or_else(|| listing.title.clone()),
                 sort_title: nfo.sort_title.clone(),
-                overview: nfo.plot.clone().or_else(|| series.overview.clone()),
+                overview: nfo.plot.clone().or_else(|| listing.overview.clone()),
                 certification: nfo.certification.clone(),
                 premiered: nfo.premiered,
                 end_date: nfo.end_date,
                 status: nfo.status.clone(),
                 network: nfo.network.clone(),
                 genres: if nfo.genres.is_empty() {
-                    series.genres.clone()
+                    listing.genres.clone()
                 } else {
                     nfo.genres.clone()
                 },
@@ -131,15 +131,15 @@ impl ShowMetadata {
                 nfo_modified_at: Some(*modified_at),
             },
             _ => Self {
-                title: series.title.clone(),
+                title: listing.title.clone(),
                 sort_title: None,
-                overview: series.overview.clone(),
+                overview: listing.overview.clone(),
                 certification: None,
                 premiered: None,
                 end_date: None,
                 status: None,
                 network: None,
-                genres: series.genres.clone(),
+                genres: listing.genres.clone(),
                 rating: None,
                 nfo_modified_at: None,
             },
@@ -228,7 +228,7 @@ pub(crate) async fn save(
     let folder = media_folder
         .read_show_folder
         .call(
-            &sonarr_show.series.path,
+            &sonarr_show.listing.path,
             season_numbers.into_iter().collect(),
         )
         .await;
@@ -305,8 +305,8 @@ async fn write(
     folder: ShowFolder,
     media_folder: &MediaFolder,
 ) -> Result<Option<Change>, Error> {
-    let series = sonarr_show.series;
-    let stored = Show::filter_by_tvdb_id(series.tvdb_id)
+    let listing = sonarr_show.listing;
+    let stored = Show::filter_by_tvdb_id(listing.tvdb_id)
         .first()
         .exec(db)
         .await
@@ -318,16 +318,16 @@ async fn write(
     )
     .await;
     let had_nfo = stored.as_ref().is_some_and(|x| x.nfo_modified_at.is_some());
-    let metadata = ShowMetadata::of(&nfo, &series, stored.as_ref());
+    let metadata = ShowMetadata::of(&nfo, &listing, stored.as_ref());
     let (show, show_change) = match stored {
         Some(mut show) => {
-            let changed = show.sonarr_id != series.sonarr_id
-                || show.year != series.year
+            let changed = show.sonarr_id != listing.sonarr_id
+                || show.year != listing.year
                 || ShowMetadata::stored(&show) != metadata;
             if changed {
                 show.update()
-                    .sonarr_id(series.sonarr_id)
-                    .year(series.year)
+                    .sonarr_id(listing.sonarr_id)
+                    .year(listing.year)
                     .title(metadata.title)
                     .sort_title(metadata.sort_title)
                     .overview(metadata.overview)
@@ -347,9 +347,9 @@ async fn write(
         }
         None => (
             toasty::create!(Show {
-                tvdb_id: series.tvdb_id,
-                sonarr_id: series.sonarr_id,
-                year: series.year,
+                tvdb_id: listing.tvdb_id,
+                sonarr_id: listing.sonarr_id,
+                year: listing.year,
                 title: metadata.title,
                 sort_title: metadata.sort_title,
                 overview: metadata.overview,
