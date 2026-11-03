@@ -21,13 +21,65 @@ groups:
               stability: development
         stability: development
         brief: How the server chose to play a media file.
+      - id: selfless.playback.reason_kind
+        type:
+          members:
+            - id: container
+              value: container
+              brief: The media file's container.
+              stability: development
+            - id: video_codec
+              value: videoCodec
+              brief: The video codec.
+              stability: development
+            - id: video_profile
+              value: videoProfile
+              brief: The video profile.
+              stability: development
+            - id: video_level
+              value: videoLevel
+              brief: The video level.
+              stability: development
+            - id: video_size
+              value: videoSize
+              brief: The video width or height.
+              stability: development
+            - id: video_bit_depth
+              value: videoBitDepth
+              brief: The video bit depth.
+              stability: development
+            - id: video_range
+              value: videoRange
+              brief: The video's dynamic range.
+              stability: development
+            - id: audio_codec
+              value: audioCodec
+              brief: The codec of an audio track.
+              stability: development
+            - id: audio_channels
+              value: audioChannels
+              brief: The channels of an audio track.
+              stability: development
+            - id: subtitle
+              value: subtitle
+              brief: A subtitle the device can't show from the file.
+              stability: development
+            - id: no_keyframe_index
+              value: noKeyframeIndex
+              brief: The media file has no keyframe at least every 20 seconds.
+              stability: development
+            - id: forced_hls
+              value: forcedHls
+              brief: The play request forced HLS.
+              stability: development
+        stability: development
+        brief: The kind of one reason a playback is not a direct play.
+        note: Only selfless.playback.reason_kinds carries these values.
       - id: selfless.playback.reason_kinds
         type: string[]
         stability: development
         brief: The kinds of the reasons a playback is not a direct play, in the order the server found them.
-        note: >
-          The kinds are container, videoCodec, videoProfile, videoLevel, videoSize, videoBitDepth, videoRange,
-          interlaced, audioCodec, audioChannels, subtitle, noKeyframeIndex and forcedHls. A direct play has none.
+        note: Each kind is a selfless.playback.reason_kind value. A direct play has none.
         examples: [["container", "audioCodec"]]
   - id: registry.selfless.media_file
     type: attribute_group

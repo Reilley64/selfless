@@ -13,6 +13,7 @@ use domain::CapabilityProfile;
 use domain::HdrType;
 use domain::PlayMethod;
 use domain::PlayReason;
+use domain::PlayReasonKind;
 use domain::VideoCodecSupport;
 use http::HeaderValue;
 use http::header::CONTENT_TYPE;
@@ -174,8 +175,25 @@ enum MethodBody {
 
 #[derive(Serialize)]
 struct ReasonBody {
-    kind: &'static str,
+    kind: ReasonKindBody,
     value: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+enum ReasonKindBody {
+    Container,
+    VideoCodec,
+    VideoProfile,
+    VideoLevel,
+    VideoSize,
+    VideoBitDepth,
+    VideoRange,
+    AudioCodec,
+    AudioChannels,
+    Subtitle,
+    NoKeyframeIndex,
+    ForcedHls,
 }
 
 #[derive(Serialize)]
@@ -223,34 +241,23 @@ struct SubtitleTrackBody {
 
 impl From<PlayReason> for ReasonBody {
     fn from(reason: PlayReason) -> Self {
-        let (kind, value) = match reason {
-            PlayReason::Container(x) => ("container", Some(x)),
-            PlayReason::VideoCodec(x) => ("videoCodec", Some(x)),
-            PlayReason::VideoProfile(x) => ("videoProfile", Some(x)),
-            PlayReason::VideoLevel(x) => ("videoLevel", Some(x.to_string())),
-            PlayReason::VideoSize { width, height } => {
-                ("videoSize", Some(format!("{width}x{height}")))
-            }
-            PlayReason::VideoBitDepth(x) => ("videoBitDepth", Some(x.to_string())),
-            PlayReason::VideoRange(x) => (
-                "videoRange",
-                Some(
-                    match x {
-                        HdrType::Sdr => "sdr",
-                        HdrType::Hdr10 => "hdr10",
-                        HdrType::Hlg => "hlg",
-                        HdrType::DolbyVision => "dolbyVision",
-                    }
-                    .to_owned(),
-                ),
-            ),
-            PlayReason::AudioCodec(x) => ("audioCodec", Some(x)),
-            PlayReason::AudioChannels(x) => ("audioChannels", Some(x.to_string())),
-            PlayReason::Subtitle(x) => ("subtitle", Some(x)),
-            PlayReason::NoKeyframeIndex => ("noKeyframeIndex", None),
-            PlayReason::ForcedHls => ("forcedHls", None),
-        };
-        Self { kind, value }
+        Self {
+            kind: match reason.kind() {
+                PlayReasonKind::Container => ReasonKindBody::Container,
+                PlayReasonKind::VideoCodec => ReasonKindBody::VideoCodec,
+                PlayReasonKind::VideoProfile => ReasonKindBody::VideoProfile,
+                PlayReasonKind::VideoLevel => ReasonKindBody::VideoLevel,
+                PlayReasonKind::VideoSize => ReasonKindBody::VideoSize,
+                PlayReasonKind::VideoBitDepth => ReasonKindBody::VideoBitDepth,
+                PlayReasonKind::VideoRange => ReasonKindBody::VideoRange,
+                PlayReasonKind::AudioCodec => ReasonKindBody::AudioCodec,
+                PlayReasonKind::AudioChannels => ReasonKindBody::AudioChannels,
+                PlayReasonKind::Subtitle => ReasonKindBody::Subtitle,
+                PlayReasonKind::NoKeyframeIndex => ReasonKindBody::NoKeyframeIndex,
+                PlayReasonKind::ForcedHls => ReasonKindBody::ForcedHls,
+            },
+            value: reason.value(),
+        }
     }
 }
 
