@@ -13,12 +13,14 @@ export { initials } from "./initials";
 export { forgetInviteIdempotencyKey, inviteIdempotencyKey } from "./inviteIdempotencyKey";
 export { serverUnreachable } from "./messages";
 export { MovieHeader } from "./MovieHeader";
+export { NextEpisodeButton } from "./NextEpisodeButton";
 export { PlaybackSettingsToggles } from "./PlaybackSettingsToggles";
 export { PlayActions } from "./PlayActions";
 export { playHref } from "./playHref";
 export {
   createPlayerLogic,
   matchTrack,
+  type NextEpisodeButtonState,
   type PlaybackSpans,
   type PlayerEvent,
   type PlayerTrack,

@@ -3,6 +3,7 @@ import { ATTR_ERROR_TYPE } from "@opentelemetry/semantic-conventions";
 import type {
   Playback,
   PlaybackAudioTrack,
+  PlaybackNextEpisode,
   PlaybackSubtitleTrack,
   reportPlaybackProgress,
 } from "@selfless/api-client";
@@ -23,7 +24,8 @@ export type PlayerEvent =
   | { type: "seeked"; position: number }
   | { type: "position"; position: number }
   | { type: "failed"; position: number; errorType: string }
-  | { type: "stopped"; position: number };
+  | { type: "stopped"; position: number }
+  | { type: "ended"; position: number };
 
 export type Tracks = { audioTrackId: string | null; subtitleTrackId: string | null };
 
@@ -35,7 +37,11 @@ export type PlaybackSpans = ReturnType<typeof startPlaybackSpans>;
 
 export type PlayerTrack = { language: string; label: string };
 
+export type NextEpisodeButtonState = { countdown: number | null };
+
 export const reportInterval = 10_000;
+
+const nextEpisodeLead = 5;
 
 export function startPlaybackSpans(userId: string, mediaFileId: string) {
   const tracer = trace.getTracer("@selfless/ui");
@@ -75,7 +81,7 @@ export function startPlaybackSpans(userId: string, mediaFileId: string) {
 }
 
 export function createPlayerLogic({
-  playback: { method, audioTracks, audioTrackId, subtitleTrackId },
+  playback: { method, duration, audioTracks, audioTrackId, subtitleTrackId, nextEpisode, autoplayNextEpisode },
   audioSwitchesInPlace,
   forceHls,
   sendReport,
@@ -83,9 +89,21 @@ export function createPlayerLogic({
   showError,
   switchAudio,
   switchSubtitle,
+  showNextEpisode,
+  playNextEpisode,
+  returnToTitle,
   spans,
 }: {
-  playback: Pick<Playback, "method" | "audioTracks" | "audioTrackId" | "subtitleTrackId">;
+  playback: Pick<
+    Playback,
+    | "method"
+    | "duration"
+    | "audioTracks"
+    | "audioTrackId"
+    | "subtitleTrackId"
+    | "nextEpisode"
+    | "autoplayNextEpisode"
+  >;
   audioSwitchesInPlace: boolean;
   forceHls: boolean;
   sendReport: (report: ProgressReport) => ReturnType<typeof reportPlaybackProgress>;
@@ -93,6 +111,9 @@ export function createPlayerLogic({
   showError: () => void;
   switchAudio: (track: PlaybackAudioTrack) => void;
   switchSubtitle: (track: PlaybackSubtitleTrack | null) => void;
+  showNextEpisode: (button: NextEpisodeButtonState | null) => void;
+  playNextEpisode: (episode: PlaybackNextEpisode) => void;
+  returnToTitle: () => void;
   spans: PlaybackSpans;
 }) {
   let position = 0;
@@ -100,6 +121,18 @@ export function createPlayerLogic({
   let stopped = false;
   let tracks: Tracks = { audioTrackId, subtitleTrackId };
   let timer: ReturnType<typeof setInterval> | undefined;
+  let button: NextEpisodeButtonState | null = null;
+  const updateButton = () => {
+    const left = duration === null ? Infinity : duration - position;
+    const next =
+      nextEpisode === null || stopped || left > nextEpisodeLead
+        ? null
+        : { countdown: autoplayNextEpisode ? Math.max(1, Math.ceil(left)) : null };
+    if (next?.countdown !== button?.countdown) {
+      button = next;
+      showNextEpisode(next);
+    }
+  };
   const end = () => {
     stopped = true;
     clearInterval(timer);
@@ -120,6 +153,12 @@ export function createPlayerLogic({
       },
       () => undefined,
     );
+  };
+  const stop = () => {
+    end();
+    spans.stopped();
+    report();
+    updateButton();
   };
   const switchStream = (switched: Tracks, throughHls: boolean) => {
     end();
@@ -166,11 +205,25 @@ export function createPlayerLogic({
           }
           break;
         case "stopped":
-          end();
-          spans.stopped();
-          report();
+          stop();
+          break;
+        case "ended":
+          stop();
+          if (nextEpisode !== null && autoplayNextEpisode) {
+            playNextEpisode(nextEpisode);
+          } else {
+            returnToTitle();
+          }
           break;
       }
+      updateButton();
+    },
+    playNextEpisode() {
+      if (stopped || nextEpisode === null) {
+        return;
+      }
+      stop();
+      playNextEpisode(nextEpisode);
     },
     selected() {
       return tracks;

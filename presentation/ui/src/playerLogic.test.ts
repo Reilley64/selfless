@@ -9,10 +9,19 @@ import {
 import type {
   PlayMethod,
   PlaybackAudioTrack,
+  PlaybackNextEpisode,
   PlaybackSubtitleTrack,
   reportPlaybackProgressResponse,
 } from "@selfless/api-client";
-import { type ProgressReport, type Resume, createPlayerLogic, matchTrack, playerTrackFor, startPlaybackSpans } from "./playerLogic";
+import {
+  type NextEpisodeButtonState,
+  type ProgressReport,
+  type Resume,
+  createPlayerLogic,
+  matchTrack,
+  playerTrackFor,
+  startPlaybackSpans,
+} from "./playerLogic";
 
 const userId = "01890a5d-ac96-774b-bcce-b302099a8057";
 const mediaFileId = "01890a5d-ac96-774b-bcce-b302099a8060";
@@ -69,6 +78,14 @@ function subtitleTrack(id: string, overrides: Partial<PlaybackSubtitleTrack> = {
 const english = audioTrack("english", { default: true });
 const japanese = audioTrack("japanese", { language: "jpn" });
 const tracks = { audioTrackId: "english", subtitleTrackId: null };
+const nextEpisode: PlaybackNextEpisode = {
+  id: "s01e04",
+  mediaFileId: "01890a5d-ac96-774b-bcce-b302099a8061",
+  seasonNumber: 1,
+  episodeNumber: 4,
+  title: "The You You Are",
+  thumb: null,
+};
 
 function player(
   response = reported,
@@ -77,15 +94,34 @@ function player(
     forceHls = false,
     audioTrackId = "english",
     audioSwitchesInPlace = true,
-  }: { method?: PlayMethod; forceHls?: boolean; audioTrackId?: string; audioSwitchesInPlace?: boolean } = {},
+    nextEpisode = null,
+    autoplayNextEpisode = true,
+  }: {
+    method?: PlayMethod;
+    forceHls?: boolean;
+    audioTrackId?: string;
+    audioSwitchesInPlace?: boolean;
+    nextEpisode?: PlaybackNextEpisode | null;
+    autoplayNextEpisode?: boolean;
+  } = {},
 ) {
   const reports: ProgressReport[] = [];
   const restarts: Resume[] = [];
   const errors: number[] = [];
   const switches: (string | null)[] = [];
+  const buttons: (NextEpisodeButtonState | null)[] = [];
+  const endings: string[] = [];
   const spans = startPlaybackSpans(userId, mediaFileId);
   const logic = createPlayerLogic({
-    playback: { method, audioTracks: [english, japanese], audioTrackId, subtitleTrackId: null },
+    playback: {
+      method,
+      duration: 1_500,
+      audioTracks: [english, japanese],
+      audioTrackId,
+      subtitleTrackId: null,
+      nextEpisode,
+      autoplayNextEpisode,
+    },
     audioSwitchesInPlace,
     forceHls,
     sendReport: async (report) => {
@@ -96,9 +132,12 @@ function player(
     showError: () => errors.push(errors.length),
     switchAudio: (track) => switches.push(track.id),
     switchSubtitle: (track) => switches.push(track?.id ?? null),
+    showNextEpisode: (button) => buttons.push(button),
+    playNextEpisode: (episode) => endings.push(episode.id),
+    returnToTitle: () => endings.push("title page"),
     spans,
   });
-  return { reports, restarts, errors, switches, spans, logic };
+  return { reports, restarts, errors, switches, buttons, endings, spans, logic };
 }
 
 function playbackSpans() {
@@ -446,4 +485,76 @@ test("an API track finds the player track in its place among the player tracks o
     "English (Commentary)",
     undefined,
   ]);
+});
+
+test("the Next episode button shows 5 seconds before the end and counts down the seconds left", () => {
+  const { buttons, logic } = player(reported, { nextEpisode });
+  logic.handle({ type: "playing", position: 1_490 });
+
+  for (const position of [1_494.9, 1_495, 1_495.5, 1_496.2, 1_497, 1_499.8]) {
+    jest.advanceTimersByTime(500);
+    logic.handle({ type: "position", position });
+  }
+
+  expect(buttons).toEqual([{ countdown: 5 }, { countdown: 4 }, { countdown: 3 }, { countdown: 1 }]);
+});
+
+test("with autoplay on, the next episode plays when the file ends, after a stop report", async () => {
+  const { reports, buttons, endings, logic } = player(reported, { nextEpisode });
+  logic.handle({ type: "playing", position: 1_498 });
+
+  logic.handle({ type: "ended", position: 1_500 });
+  logic.handle({ type: "stopped", position: 1_500 });
+  await jest.advanceTimersByTimeAsync(10_000);
+
+  expect(endings).toEqual(["s01e04"]);
+  expect(reports).toEqual([{ position: 1_500, paused: false, stopped: true, ...tracks }]);
+  expect(buttons).toEqual([{ countdown: 2 }, null]);
+});
+
+test("with autoplay off, the button shows without a countdown and the end of the file returns to the show page", () => {
+  const { buttons, endings, logic } = player(reported, { nextEpisode, autoplayNextEpisode: false });
+  logic.handle({ type: "playing", position: 1_490 });
+
+  for (const position of [1_495, 1_497, 1_499]) {
+    logic.handle({ type: "position", position });
+  }
+  logic.handle({ type: "ended", position: 1_500 });
+
+  expect(buttons).toEqual([{ countdown: null }, null]);
+  expect(endings).toEqual(["title page"]);
+});
+
+test("pressing the Next episode button plays the next episode at once, after a stop report", async () => {
+  const { reports, endings, logic } = player(reported, { nextEpisode });
+  logic.handle({ type: "playing", position: 1_496 });
+
+  logic.playNextEpisode();
+  logic.handle({ type: "ended", position: 1_500 });
+  await jest.advanceTimersByTimeAsync(10_000);
+
+  expect(endings).toEqual(["s01e04"]);
+  expect(reports).toEqual([{ position: 1_496, paused: false, stopped: true, ...tracks }]);
+});
+
+test("after a movie or a show's last episode, the end of the file returns to its page and no button shows", () => {
+  const { buttons, endings, logic } = player();
+  logic.handle({ type: "playing", position: 1_490 });
+
+  logic.handle({ type: "position", position: 1_498 });
+  logic.handle({ type: "ended", position: 1_500 });
+
+  expect(buttons).toEqual([]);
+  expect(endings).toEqual(["title page"]);
+});
+
+test("seeking back before the last 5 seconds hides the button, and leaving the player goes nowhere", () => {
+  const { buttons, endings, logic } = player(reported, { nextEpisode });
+  logic.handle({ type: "playing", position: 1_496 });
+
+  logic.handle({ type: "seeked", position: 1_200 });
+  logic.handle({ type: "stopped", position: 1_200 });
+
+  expect(buttons).toEqual([{ countdown: 4 }, null]);
+  expect(endings).toEqual([]);
 });

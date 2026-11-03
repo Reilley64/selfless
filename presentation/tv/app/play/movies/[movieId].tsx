@@ -21,6 +21,7 @@ export default function PlayMovie() {
     <Player
       mediaFileId={data.data.mediaFileId}
       startPosition={position === undefined ? (data.data.play.resumePosition ?? 0) : Number(position)}
+      titleHref={`/movies/${movieId}`}
     />
   );
 }

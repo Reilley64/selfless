@@ -13,13 +13,15 @@ import {
   episodeLabel,
   FocusGuide,
   matchTrack,
+  NextEpisodeButton,
+  type NextEpisodeButtonState,
   type PlaybackSpans,
   playerTrackFor,
   type Resume,
   serverUnreachable,
   startPlaybackSpans,
 } from "@selfless/ui";
-import { useRouter } from "expo-router";
+import { type Href, useRouter } from "expo-router";
 import { type AudioTrack, type SubtitleTrack, useVideoPlayer, type VideoPlayer, VideoView } from "expo-video";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Platform, StyleSheet } from "react-native";
@@ -31,13 +33,13 @@ import { NotFound } from "./NotFound";
 
 type Start = { response: Awaited<ReturnType<typeof startPlayback>>; spans: PlaybackSpans } | "unreachable";
 
-type PlayerProps = { mediaFileId: string; startPosition: number };
+type PlayerProps = { mediaFileId: string; startPosition: number; titleHref: Href };
 
 export function Player(props: PlayerProps) {
   return <Playing key={`${props.mediaFileId}@${props.startPosition}`} {...props} />;
 }
 
-function Playing({ mediaFileId, startPosition }: PlayerProps) {
+function Playing({ mediaFileId, startPosition, titleHref }: PlayerProps) {
   const { data: me, isError } = useGetMe();
   const userId = me?.status === 200 ? me.data.id : undefined;
   const [start, setStart] = useState<Start>();
@@ -105,6 +107,7 @@ function Playing({ mediaFileId, startPosition }: PlayerProps) {
           spans={start.spans}
           resume={resume}
           restart={setResume}
+          titleHref={titleHref}
         />
       );
     case 404:
@@ -133,13 +136,17 @@ function Video({
   spans,
   resume,
   restart,
+  titleHref,
 }: {
   playback: Playback;
   spans: PlaybackSpans;
   resume: Resume;
   restart: (resume: Resume) => void;
+  titleHref: Href;
 }) {
+  const router = useRouter();
   const [failed, setFailed] = useState(false);
+  const [nextButton, setNextButton] = useState<NextEpisodeButtonState | null>(null);
   const position = useRef(resume.position);
   const available = useRef<{ audio: AudioTrack[]; subtitle: SubtitleTrack[] }>({ audio: [], subtitle: [] });
   const player = useVideoPlayer({ uri: serverUrl(playback.url), metadata: { title: title(playback) } }, (player) => {
@@ -173,10 +180,13 @@ function Video({
         showError: () => setFailed(true),
         switchAudio: () => undefined,
         switchSubtitle: () => undefined,
+        showNextEpisode: setNextButton,
+        playNextEpisode: (episode) => router.replace(`/play/episodes/${episode.id}?position=0`),
+        returnToTitle: () => router.dismissTo(titleHref),
         spans,
       }),
     };
-  }, [player, playback, resume.forceHls, restart, spans]);
+  }, [player, playback, resume.forceHls, restart, spans, router, titleHref]);
   useEffect(() => {
     let selectionShown = false;
     const subscriptions = [
@@ -191,7 +201,7 @@ function Video({
         position.current = currentTime;
         logic.handle({ type: "position", position: currentTime });
       }),
-      player.addListener("playToEnd", () => logic.handle({ type: "stopped", position: position.current })),
+      player.addListener("playToEnd", () => logic.handle({ type: "ended", position: position.current })),
       player.addListener("sourceLoad", ({ availableAudioTracks, availableSubtitleTracks }) => {
         available.current = { audio: availableAudioTracks, subtitle: availableSubtitleTracks };
         const { audioTrackId, subtitleTrackId } = logic.selected();
@@ -250,7 +260,23 @@ function Video({
       />
     );
   }
-  return <VideoView player={player} nativeControls contentFit="contain" style={StyleSheet.absoluteFill} />;
+  return (
+    <>
+      <VideoView
+        player={player}
+        nativeControls={nextButton === null}
+        contentFit="contain"
+        style={StyleSheet.absoluteFill}
+      />
+      {nextButton && playback.nextEpisode && (
+        <NextEpisodeButton
+          episode={playback.nextEpisode}
+          countdown={nextButton.countdown}
+          onPress={logic.playNextEpisode}
+        />
+      )}
+    </>
+  );
 }
 
 function play(player: VideoPlayer, tracks: Partial<Pick<VideoPlayer, "audioTrack" | "subtitleTrack">>) {
