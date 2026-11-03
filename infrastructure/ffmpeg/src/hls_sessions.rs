@@ -1,6 +1,6 @@
 use crate::hls::INIT;
 use crate::hls::Segments;
-use crate::hls::remux;
+use crate::hls::write_segments;
 use application::attributes::SELFLESS_FFMPEG_PURPOSE;
 use application::attributes::SELFLESS_FFMPEG_START_SEGMENT;
 use application::attributes::selfless_ffmpeg_purpose;
@@ -12,6 +12,7 @@ use application::ports::HlsSession;
 use application::ports::StartHlsSession;
 use application::ports::VideoStream;
 use application::spans::SELFLESS_FFMPEG;
+use domain::VideoTranscode;
 use std::collections::HashMap;
 use std::io;
 use std::io::ErrorKind;
@@ -39,6 +40,7 @@ struct Session {
     folder: PathBuf,
     input: PathBuf,
     video: VideoStream,
+    video_transcode: Option<VideoTranscode>,
     audio: Option<AudioStream>,
     segments: Arc<Segments>,
     run: Option<Run>,
@@ -122,18 +124,31 @@ impl HlsSessions {
     async fn start(&self, session: HlsSession) -> io::Result<()> {
         let folder = self.segments_dir.join(session.playback_id.to_string());
         fs::create_dir_all(&folder).await?;
-        let segments = Segments::new(&session.keyframes, session.duration);
-        let size = fs::metadata(&session.path).await?.len();
-        let bandwidth = (size as f64 * 8.0 / session.duration.as_secs_f64().max(1.0)).ceil();
+        let (segments, bandwidth, width, height) = match &session.video_transcode {
+            Some(transcode) => (
+                Segments::fixed(session.video.frame_rate, session.duration),
+                transcode.bit_rate as f64,
+                transcode.width,
+                transcode.height,
+            ),
+            None => {
+                let size = fs::metadata(&session.path).await?.len();
+                (
+                    Segments::new(&session.keyframes, session.duration),
+                    (size as f64 * 8.0 / session.duration.as_secs_f64().max(1.0)).ceil(),
+                    session.video.width,
+                    session.video.height,
+                )
+            }
+        };
         fs::write(
             folder.join(MAIN),
             format!(
                 "#EXTM3U\n\
                  #EXT-X-VERSION:7\n\
                  #EXT-X-INDEPENDENT-SEGMENTS\n\
-                 #EXT-X-STREAM-INF:BANDWIDTH={bandwidth},RESOLUTION={}x{}\n\
-                 {VIDEO}\n",
-                session.video.width, session.video.height
+                 #EXT-X-STREAM-INF:BANDWIDTH={bandwidth},RESOLUTION={width}x{height}\n\
+                 {VIDEO}\n"
             ),
         )
         .await?;
@@ -143,6 +158,7 @@ impl HlsSessions {
             folder,
             input: PathBuf::from(session.path),
             video: session.video,
+            video_transcode: session.video_transcode,
             audio: session.audio,
             segments: Arc::new(segments),
             run: None,
@@ -238,7 +254,11 @@ impl Session {
             otel.name = SELFLESS_FFMPEG,
             otel.kind = "internal",
             otel.status_code = field::Empty,
-            { SELFLESS_FFMPEG_PURPOSE } = selfless_ffmpeg_purpose::REMUX,
+            { SELFLESS_FFMPEG_PURPOSE } = if self.video_transcode.is_some() {
+                selfless_ffmpeg_purpose::TRANSCODE
+            } else {
+                selfless_ffmpeg_purpose::REMUX
+            },
             { SELFLESS_FFMPEG_START_SEGMENT } = start as i64,
             process.executable.name = "ffmpeg",
             process.exit.code = field::Empty,
@@ -246,14 +266,16 @@ impl Session {
         );
         let input = self.input.clone();
         let video = self.video.clone();
+        let video_transcode = self.video_transcode.clone();
         let audio = self.audio.clone();
         let segments = self.segments.clone();
         let folder = self.folder.clone();
         let task = tokio::spawn(
             async move {
-                if let Err(error) = remux(
+                if let Err(error) = write_segments(
                     &input,
                     &video,
+                    video_transcode.as_ref(),
                     audio.as_ref(),
                     &segments,
                     start,
@@ -264,7 +286,7 @@ impl Session {
                 {
                     tracing::error!(
                         error = &error as &dyn std::error::Error,
-                        "ffmpeg failed to remux a media file"
+                        "ffmpeg failed to write the segments of a media file"
                     );
                 }
             }
@@ -301,6 +323,7 @@ mod tests {
         HlsSession {
             playback_id: PLAYBACK_ID,
             keyframes: read_keyframes(&path).await.unwrap(),
+            video_transcode: None,
             path: path.to_string_lossy().into_owned(),
             duration: Duration::from_secs(40),
             video: VideoStream {
@@ -368,6 +391,39 @@ mod tests {
         assert_eq!(served, [true; 7]);
         assert_eq!(get(&sessions, "6.m4s").await, None);
         assert_eq!(get(&sessions, "../segments").await, None);
+    }
+
+    #[tokio::test]
+    async fn a_transcode_writes_playlists_of_6_second_gops_at_the_transcoded_size() {
+        let dir = TempDir::new().unwrap();
+        let sessions = HlsSessions::new(dir.path().join("segments")).await.unwrap();
+        let mut transcode = session(Duration::ZERO).await;
+        transcode.keyframes = Vec::new();
+        transcode.video.frame_rate = Some(24000.0 / 1001.0);
+        transcode.video_transcode = Some(VideoTranscode {
+            width: 1920,
+            height: 800,
+            bit_rate: 10_000_000,
+            tone_map: true,
+            deinterlace: false,
+        });
+
+        sessions.start_hls_session().call(transcode).await.unwrap();
+        let main = std::fs::read_to_string(get(&sessions, "main.m3u8").await.unwrap()).unwrap();
+        let video = std::fs::read_to_string(get(&sessions, "video.m3u8").await.unwrap()).unwrap();
+        sessions.end_hls_session().call(PLAYBACK_ID).await;
+
+        assert!(
+            main.ends_with(
+                "#EXT-X-STREAM-INF:BANDWIDTH=10000000,RESOLUTION=1920x800\nvideo.m3u8\n"
+            ),
+            "{main}"
+        );
+        assert_eq!(video.matches("#EXTINF:6.006000,").count(), 6, "{video}");
+        assert!(
+            video.contains("#EXTINF:3.964000,\n6.m4s\n#EXT-X-ENDLIST"),
+            "{video}"
+        );
     }
 
     #[tokio::test]

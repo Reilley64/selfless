@@ -698,7 +698,7 @@ paths:
     post:
       operationId: startPlayback
       summary: Start a playback of a media file
-      description: The server compares the capability profile with the media file and picks the play method. It plays the file directly when the profile covers its container, its video stream and the selected audio track, which is the file's default audio track, else its first. When only the container is wrong and the server can read the file's keyframes, or when the request forces HLS, it remuxes the file to HLS and the URL is the HLS master playlist. A file that needs a transcode fails with the needs-transcode problem for now. Starting a playback ends any playback the same session has not ended. A media file is hidden when no visible movie or episode plays from it.
+      description: The server compares the capability profile with the media file and picks the play method. It plays the file directly when the profile covers its container, its video stream and the selected audio track, which is the file's default audio track, else its first. When only the container is wrong and the server can read the file's keyframes, or when the request forces HLS, it remuxes the file to HLS and the URL is the HLS master playlist. When the profile doesn't cover the video stream, or the file has no keyframe at least every 20 seconds, it transcodes the video to H.264 at the source size up to 1080p and the source bitrate up to 10 Mbps, tone-mapping HDR to SDR and deinterlacing interlaced video. Dolby Vision plays as its HDR10 base layer where the profile lists hdr10. A file whose audio needs a transcode fails with the needs-transcode problem for now. Starting a playback ends any playback the same session has not ended. A media file is hidden when no visible movie or episode plays from it.
       tags: [playback]
       requestBody:
         description: The media file, the start position and the device's capability profile.
@@ -1171,7 +1171,7 @@ components:
                     const: 422
           example: {"type":"urn:selfless:problem:unreadable-media-file","title":"selfless can't read this media file.","status":422}
     NeedsTranscode:
-      description: The profile doesn't cover a stream of the media file, or the server can't read its keyframes, so it needs a transcode, which the server can't do yet.
+      description: The profile doesn't cover the selected audio track of the media file, so it needs an audio transcode, which the server can't do yet.
       content:
         application/problem+json:
           schema:

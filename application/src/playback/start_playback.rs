@@ -124,30 +124,41 @@ pub async fn call(
     if force_hls && reasons.is_empty() {
         reasons.push(PlayReason::ForcedHls);
     }
-    let remux = match (video, duration) {
-        (Some(video), Some(duration))
-            if !reasons.is_empty() && reasons.iter().all(PlayReason::allows_remux) =>
-        {
-            let keyframes = keyframes(&mut db_context, &read_keyframes, &media_file).await?;
-            if usable_keyframe_index(&keyframes) {
-                Some((video, duration, keyframes))
+    let hls = match (video, duration) {
+        (Some(video), Some(duration)) if !reasons.is_empty() => {
+            let keyframes = if reasons.iter().any(PlayReason::transcodes_video) {
+                Vec::new()
             } else {
-                reasons.push(PlayReason::NoKeyframeIndex);
-                None
-            }
+                let keyframes = keyframes(&mut db_context, &read_keyframes, &media_file).await?;
+                if usable_keyframe_index(&keyframes) {
+                    keyframes
+                } else {
+                    reasons.push(PlayReason::NoKeyframeIndex);
+                    Vec::new()
+                }
+            };
+            let video_transcode = reasons
+                .iter()
+                .any(PlayReason::transcodes_video)
+                .then(|| video.transcode());
+            Some((video, duration, keyframes, video_transcode))
         }
         _ => None,
     };
     if !reasons.is_empty() {
         Span::current().set_attribute(SELFLESS_PLAYBACK_REASON_KINDS, reason_kinds(&reasons));
-        if remux.is_none() {
+        if hls.is_none()
+            || reasons
+                .iter()
+                .any(|x| matches!(x, PlayReason::AudioCodec(_) | PlayReason::AudioChannels(_)))
+        {
             return Ok(Output::NeedsTranscode);
         }
     }
-    let method = if remux.is_some() {
-        PlayMethod::Remux
-    } else {
-        PlayMethod::DirectPlay
+    let method = match &hls {
+        None => PlayMethod::DirectPlay,
+        Some((_, _, _, None)) => PlayMethod::Remux,
+        Some((_, _, _, Some(_))) => PlayMethod::Transcode,
     };
     let episodes = player_episodes(&mut db_context, episodes)
         .await
@@ -192,13 +203,14 @@ pub async fn call(
     for id in ended {
         end_hls_session.call(id).await;
     }
-    if let Some((video, duration, keyframes)) = remux {
+    if let Some((video, duration, keyframes, video_transcode)) = hls {
         start_hls_session
             .call(HlsSession {
                 playback_id: playback.id,
                 path: media_file.path.clone(),
                 duration,
                 keyframes,
+                video_transcode,
                 video: ports::VideoStream {
                     index: video.index,
                     codec: video.codec.clone(),
