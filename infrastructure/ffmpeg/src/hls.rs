@@ -2,6 +2,7 @@ use crate::subtitles;
 use application::ports::AudioStream;
 use application::ports::SubtitleStream;
 use application::ports::VideoStream;
+use domain::VideoTranscode;
 use std::io;
 use std::path::Path;
 use std::path::PathBuf;
@@ -15,6 +16,10 @@ use tokio::sync::watch;
 use tracing::Span;
 
 const SEGMENT_MARK: Duration = Duration::from_secs(6);
+const DEFAULT_FRAME_RATE: f64 = 25.0;
+const HARDWARE_DECODED_CODECS: [&str; 5] = ["hevc", "mpeg2video", "vc1", "vp9", "av1"];
+const HARDWARE_DECODED_H264_PROFILES: [&str; 4] =
+    ["Constrained Baseline", "Baseline", "Main", "High"];
 pub(crate) const INIT: &str = "init.mp4";
 const SEGMENT_FORMAT_OPTIONS: &str = "movflags=+frag_custom+empty_moov+delay_moov+default_base_moof+frag_discont+negative_cts_offsets+skip_trailer:strict=unofficial";
 
@@ -35,6 +40,16 @@ impl Segments {
                 }
             }
         }
+        Self { starts, duration }
+    }
+
+    pub fn fixed(frame_rate: Option<f64>, duration: Duration) -> Self {
+        let frame_rate = frame_rate.unwrap_or(DEFAULT_FRAME_RATE);
+        let length = Duration::from_secs_f64(gop(frame_rate) as f64 / frame_rate);
+        let starts = (0..)
+            .map(|x| length * x)
+            .take_while(|x| x.is_zero() || *x < duration)
+            .collect();
         Self { starts, duration }
     }
 
@@ -91,9 +106,10 @@ impl Segments {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub async fn remux(
+pub async fn write_segments(
     input: &Path,
     video: &VideoStream,
+    video_transcode: Option<&VideoTranscode>,
     audio: Option<&AudioStream>,
     subtitles: &[SubtitleStream],
     segments: &Segments,
@@ -109,8 +125,23 @@ pub async fn remux(
         .collect::<Vec<_>>()
         .join(",");
     let mut command = Command::new("ffmpeg");
+    command.args(["-hide_banner", "-nostdin", "-nostats", "-loglevel", "error"]);
+    let hardware_decoded = match video.codec.as_str() {
+        "h264" => video
+            .profile
+            .as_deref()
+            .is_some_and(|x| HARDWARE_DECODED_H264_PROFILES.contains(&x)),
+        codec => HARDWARE_DECODED_CODECS.contains(&codec),
+    };
+    if video_transcode.is_some() {
+        command
+            .args(["-init_hw_device", "vaapi=va:/dev/dri/renderD128,driver=iHD"])
+            .args(["-init_hw_device", "qsv=qs@va", "-filter_hw_device", "qs"]);
+        if hardware_decoded {
+            command.args(["-hwaccel", "vaapi", "-hwaccel_output_format", "vaapi"]);
+        }
+    }
     command
-        .args(["-hide_banner", "-nostdin", "-nostats", "-loglevel", "error"])
         .args(["-ss", &seconds(start), "-copyts", "-i"])
         .arg(input)
         .args(["-map", &format!("0:{}", video.index)]);
@@ -118,8 +149,38 @@ pub async fn remux(
         command.args(["-map", &format!("0:{}", audio.index)]);
     }
     command.args(["-c", "copy"]);
-    if video.codec == "hevc" {
-        command.args(["-tag:v", "hvc1"]);
+    match video_transcode {
+        Some(transcode) => {
+            let mut filter = if hardware_decoded {
+                "hwmap=derive_device=qsv".to_owned()
+            } else {
+                "format=nv12,hwupload=extra_hw_frames=64".to_owned()
+            };
+            filter.push_str(&format!(
+                ",vpp_qsv=w={}:h={}:format=nv12",
+                transcode.width, transcode.height
+            ));
+            if transcode.deinterlace {
+                filter.push_str(":deinterlace=2");
+            }
+            if transcode.tone_map {
+                filter.push_str(
+                    ":tonemap=1:out_color_matrix=bt709:out_color_primaries=bt709:out_color_transfer=bt709",
+                );
+            }
+            let gop = gop(video.frame_rate.unwrap_or(DEFAULT_FRAME_RATE)).to_string();
+            command
+                .args(["-vf", &filter, "-c:v", "h264_qsv", "-low_power", "1"])
+                .args(["-preset", "veryfast", "-profile:v", "high"])
+                .args(["-b:v", &transcode.bit_rate.to_string()])
+                .args(["-maxrate", &transcode.bit_rate.to_string()])
+                .args(["-bufsize", &(transcode.bit_rate * 2).to_string()])
+                .args(["-g", &gop, "-keyint_min", &gop, "-bf", "0"]);
+        }
+        None if video.codec == "hevc" => {
+            command.args(["-tag:v", "hvc1"]);
+        }
+        None => {}
     }
     command
         .args(["-copypriorss", "0", "-avoid_negative_ts", "disabled"])
@@ -233,6 +294,10 @@ pub(crate) async fn write_atomically(path: &Path, bytes: &[u8]) -> io::Result<()
     fs::rename(partial, path).await
 }
 
+fn gop(frame_rate: f64) -> u64 {
+    (SEGMENT_MARK.as_secs_f64() * frame_rate).round() as u64
+}
+
 fn seconds(duration: Duration) -> String {
     format!("{}.{:06}", duration.as_secs(), duration.subsec_micros())
 }
@@ -240,7 +305,7 @@ fn seconds(duration: Duration) -> String {
 #[cfg(test)]
 mod tests {
     use super::Segments;
-    use super::remux;
+    use super::write_segments;
     use crate::keyframes::read_keyframes;
     use application::ports::AudioStream;
     use application::ports::VideoStream;
@@ -281,6 +346,25 @@ mod tests {
              #EXTINF:6.000000,\n4.m4s\n\
              #EXTINF:4.000000,\n5.m4s\n\
              #EXT-X-ENDLIST\n"
+        );
+    }
+
+    #[test]
+    fn a_transcode_cuts_after_each_6_second_gop_of_whole_frames() {
+        let playlist = |frame_rate| {
+            playlist_times(
+                &Segments::fixed(frame_rate, Duration::from_secs(20))
+                    .media_playlist(Some("init.mp4"), |x| format!("{x}.m4s")),
+            )
+        };
+
+        assert_eq!(
+            playlist(Some(24000.0 / 1001.0)),
+            [(0, 6006), (6006, 12012), (12012, 18018), (18018, 20000)]
+        );
+        assert_eq!(
+            playlist(Some(25.0)),
+            [(0, 6000), (6000, 12000), (12000, 18000), (18000, 20000)]
         );
     }
 
@@ -383,6 +467,8 @@ mod tests {
             height: 90,
             frame_rate: Some(25.0),
             hdr_type: HdrType::Sdr,
+            interlaced: false,
+            bit_rate: None,
         };
         let audio = AudioStream {
             index: 1,
@@ -392,9 +478,10 @@ mod tests {
             title: None,
             default: true,
         };
-        remux(
+        write_segments(
             &input,
             &video,
+            None,
             Some(&audio),
             &[],
             &segments,

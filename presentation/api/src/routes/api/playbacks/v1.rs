@@ -423,6 +423,7 @@ mod tests {
     use domain::HdrType;
     use domain::MediaFile;
     use domain::Season;
+    use domain::VideoStream;
     use http::HeaderMap;
     use http::HeaderValue;
     use http::Method;
@@ -492,6 +493,7 @@ mod tests {
             .width(1920)
             .height(800)
             .hdr_type(HdrType::Sdr)
+            .interlaced(false)
             .exec(db_context.executor_mut())
             .await
             .unwrap();
@@ -872,16 +874,161 @@ mod tests {
         );
     }
 
+    async fn start_for(
+        server: &TestServer,
+        token: &str,
+        media_file_id: Uuid,
+        profile: Value,
+    ) -> (StatusCode, Value) {
+        server
+            .request(
+                Method::POST,
+                "/api/playbacks/v1",
+                Some(token),
+                Some(json!({
+                    "mediaFileId": media_file_id,
+                    "startPosition": 0,
+                    "profile": profile,
+                })),
+            )
+            .await
+    }
+
+    async fn set_video(app: &TestApp, media_file_id: Uuid, codec: &str, hdr_type: HdrType) {
+        let mut db_context = app.state.db_context.clone();
+        VideoStream::filter_by_media_file_id(media_file_id)
+            .update()
+            .codec(codec)
+            .profile(Some("Main 10".to_owned()))
+            .width(3840)
+            .height(1600)
+            .hdr_type(hdr_type)
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap();
+    }
+
+    fn hevc_profile(hdr_types: &[&str]) -> Value {
+        json!({
+            "containers": ["mp4"],
+            "videoCodecs": [{
+                "codec": "hevc",
+                "profiles": ["main", "main10"],
+                "maxWidth": 3840,
+                "maxHeight": 2160,
+                "hdrTypes": hdr_types,
+            }],
+            "audioCodecs": [{ "codec": "aac", "maxChannels": 2 }],
+            "subtitleCodecs": [],
+        })
+    }
+
     #[tokio::test]
-    async fn a_file_that_needs_a_transcode_returns_the_needs_transcode_problem() {
+    async fn a_video_codec_the_profile_does_not_list_transcodes_the_video_with_a_video_codec_reason()
+     {
+        let app = TestApp::new().await;
+        let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;
+        let (media_file_id, _file) = add_media_file(&app, "mkv", Some("matroska,webm")).await;
+        set_video(&app, media_file_id, "hevc", HdrType::Sdr).await;
+        add_movie_playing(&app, media_file_id, true).await;
+        let server = serve(&app).await;
+
+        let (status, playback) = start(&server, &token, media_file_id).await;
+        let (main_status, _, main) = server.get_bytes(playback["url"].as_str().unwrap()).await;
+
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(playback["method"], "transcode");
+        assert_eq!(
+            playback["reasons"],
+            json!([
+                { "kind": "container", "value": "mkv" },
+                { "kind": "videoCodec", "value": "hevc" },
+            ])
+        );
+        assert_eq!(main_status, StatusCode::OK);
+        assert_eq!(main, MAIN_PLAYLIST.as_bytes());
+    }
+
+    #[tokio::test]
+    async fn hdr_on_a_device_without_hdr_transcodes_the_video_with_a_video_range_reason() {
+        let app = TestApp::new().await;
+        let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;
+        let (media_file_id, _file) = add_media_file(&app, "mp4", Some(MP4)).await;
+        set_video(&app, media_file_id, "hevc", HdrType::Hdr10).await;
+        add_movie_playing(&app, media_file_id, true).await;
+        let server = serve(&app).await;
+
+        let (status, playback) =
+            start_for(&server, &token, media_file_id, hevc_profile(&["sdr"])).await;
+
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(playback["method"], "transcode");
+        assert_eq!(
+            playback["reasons"],
+            json!([{ "kind": "videoRange", "value": "hdr10" }])
+        );
+    }
+
+    #[tokio::test]
+    async fn dolby_vision_remuxes_as_its_hdr10_base_layer_to_a_device_without_dolby_vision() {
+        let app = TestApp::new().await;
+        let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;
+        let (media_file_id, _file) = add_media_file(&app, "mkv", Some("matroska,webm")).await;
+        set_video(&app, media_file_id, "hevc", HdrType::DolbyVision).await;
+        add_movie_playing(&app, media_file_id, true).await;
+        let server = serve(&app).await;
+
+        let (status, playback) = start_for(
+            &server,
+            &token,
+            media_file_id,
+            hevc_profile(&["sdr", "hdr10"]),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(playback["method"], "remux");
+        assert_eq!(
+            playback["reasons"],
+            json!([{ "kind": "container", "value": "mkv" }])
+        );
+    }
+
+    #[tokio::test]
+    async fn a_file_without_a_usable_keyframe_index_transcodes_the_video_with_a_no_keyframe_index_reason()
+     {
         let mut app = TestApp::new().await;
         app.state.read_keyframes = ReadKeyframes::new(|_| {
             Box::pin(async { Ok(vec![Duration::ZERO, Duration::from_secs(30)]) })
         });
         let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;
-        let (sparse_keyframes, _sparse_file) =
-            add_media_file(&app, "mkv", Some("matroska,webm")).await;
-        add_movie_playing(&app, sparse_keyframes, true).await;
+        let (media_file_id, _file) = add_media_file(&app, "mkv", Some("matroska,webm")).await;
+        add_movie_playing(&app, media_file_id, true).await;
+        let server = serve(&app).await;
+
+        let (status, playback) = start(&server, &token, media_file_id).await;
+
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(playback["method"], "transcode");
+        assert_eq!(
+            playback["reasons"],
+            json!([
+                { "kind": "container", "value": "mkv" },
+                { "kind": "noKeyframeIndex", "value": null },
+            ])
+        );
+        assert!(
+            app.hls
+                .folder(playback_id(&playback))
+                .join("main.m3u8")
+                .exists()
+        );
+    }
+
+    #[tokio::test]
+    async fn audio_the_profile_does_not_cover_returns_the_needs_transcode_problem() {
+        let app = TestApp::new().await;
+        let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;
         let (dts, _dts_file) = add_media_file(&app, "mp4", Some(MP4)).await;
         add_movie_playing(&app, dts, true).await;
         let mut db_context = app.state.db_context.clone();
@@ -893,12 +1040,10 @@ mod tests {
             .unwrap();
         let server = serve(&app).await;
 
-        for media_file_id in [sparse_keyframes, dts] {
-            let (status, problem) = start(&server, &token, media_file_id).await;
+        let (status, problem) = start(&server, &token, dts).await;
 
-            assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
-            assert_eq!(problem["type"], "urn:selfless:problem:needs-transcode");
-        }
+        assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
+        assert_eq!(problem["type"], "urn:selfless:problem:needs-transcode");
     }
 
     #[tokio::test]

@@ -14,8 +14,15 @@ pub enum PlayReason {
 }
 
 impl PlayReason {
-    pub fn allows_remux(&self) -> bool {
-        matches!(self, Self::Container(_) | Self::ForcedHls)
+    pub fn transcodes_video(&self) -> bool {
+        matches!(
+            self,
+            Self::VideoCodec(_)
+                | Self::VideoProfile(_)
+                | Self::VideoSize { .. }
+                | Self::VideoRange(_)
+                | Self::NoKeyframeIndex
+        )
     }
 }
 
@@ -24,17 +31,27 @@ mod tests {
     use super::*;
 
     #[test]
-    fn only_a_wrong_container_or_forced_hls_leaves_the_streams_to_copy() {
-        let remuxable = [
+    fn only_a_video_stream_the_profile_does_not_cover_or_a_missing_keyframe_index_transcodes_the_video()
+     {
+        let transcodes = [
             PlayReason::Container("mkv".to_owned()),
             PlayReason::VideoCodec("hevc".to_owned()),
+            PlayReason::VideoProfile("main10".to_owned()),
+            PlayReason::VideoSize {
+                width: 3840,
+                height: 2160,
+            },
+            PlayReason::VideoRange(HdrType::Hdr10),
             PlayReason::AudioCodec("dts".to_owned()),
             PlayReason::AudioChannels(6),
             PlayReason::NoKeyframeIndex,
             PlayReason::ForcedHls,
         ]
-        .map(|x| x.allows_remux());
+        .map(|x| x.transcodes_video());
 
-        assert_eq!(remuxable, [true, false, false, false, false, true]);
+        assert_eq!(
+            transcodes,
+            [false, true, true, true, true, false, false, true, false]
+        );
     }
 }

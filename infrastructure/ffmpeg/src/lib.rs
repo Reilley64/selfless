@@ -138,6 +138,10 @@ enum Stream {
         avg_frame_rate: Option<String>,
         r_frame_rate: Option<String>,
         color_transfer: Option<String>,
+        field_order: Option<String>,
+        bit_rate: Option<String>,
+        #[serde(default)]
+        tags: Tags,
         #[serde(default)]
         side_data_list: Vec<SideData>,
         #[serde(default)]
@@ -183,6 +187,8 @@ struct Disposition {
 struct Tags {
     language: Option<String>,
     title: Option<String>,
+    #[serde(rename = "BPS", alias = "BPS-eng")]
+    bps: Option<String>,
 }
 
 impl Tags {
@@ -225,6 +231,9 @@ fn parse(output: &[u8]) -> Result<Probe, ProbeError> {
                 avg_frame_rate,
                 r_frame_rate,
                 color_transfer,
+                field_order,
+                bit_rate,
+                tags,
                 side_data_list,
                 ..
             } => probe.video_streams.push(VideoStream {
@@ -248,6 +257,10 @@ fn parse(output: &[u8]) -> Result<Probe, ProbeError> {
                         _ => HdrType::Sdr,
                     }
                 },
+                interlaced: matches!(field_order.as_deref(), Some("tt" | "bb" | "tb" | "bt")),
+                bit_rate: [bit_rate, tags.bps]
+                    .into_iter()
+                    .find_map(|x| x?.parse().ok()),
             }),
             Stream::Audio {
                 index,
@@ -333,6 +346,8 @@ mod tests {
                     height: 134,
                     frame_rate: Some(24000.0 / 1001.0),
                     hdr_type: HdrType::Hdr10,
+                    interlaced: false,
+                    bit_rate: None,
                 }],
                 audio_streams: vec![
                     AudioStream {
@@ -395,6 +410,8 @@ mod tests {
                     height: 180,
                     frame_rate: Some(25.0),
                     hdr_type: HdrType::Sdr,
+                    interlaced: false,
+                    bit_rate: Some(227_660),
                 }],
                 audio_streams: vec![AudioStream {
                     index: 1,
@@ -422,6 +439,29 @@ mod tests {
         assert_eq!(probe.video_streams[0].hdr_type, HdrType::Hlg);
         assert_eq!(probe.video_streams[0].frame_rate, Some(50.0));
         assert_eq!(probe.audio_streams[0].language, None);
+    }
+
+    #[test]
+    fn an_interlaced_matroska_episode_is_interlaced_with_the_bitrate_of_its_tags() {
+        let probe = parse(include_bytes!(
+            "../../../test/fixtures/ffprobe/interlaced-episode.mkv.json"
+        ))
+        .unwrap();
+
+        assert_eq!(
+            probe.video_streams,
+            [VideoStream {
+                index: 0,
+                codec: "mpeg2video".to_owned(),
+                profile: Some("Main".to_owned()),
+                width: 720,
+                height: 480,
+                frame_rate: Some(30000.0 / 1001.0),
+                hdr_type: HdrType::Sdr,
+                interlaced: true,
+                bit_rate: Some(5_982_144),
+            }]
+        );
     }
 
     #[test]
