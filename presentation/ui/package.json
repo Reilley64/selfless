@@ -22,6 +22,7 @@
     "@opentelemetry/sdk-trace": "^3.0.0",
     "@opentelemetry/semantic-conventions": "^1.44.0",
     "@selfless/api-client": "workspace:*",
+    "@shopify/flash-list": "2.3.2",
     "react-native-css": "catalog:"
   },
   "devDependencies": {

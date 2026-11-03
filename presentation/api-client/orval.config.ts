@@ -13,6 +13,10 @@ export default defineConfig({
       headers: true,
       override: {
         mutator: { path: "src/tracedFetch.ts", name: "tracedFetch" },
+        operations: {
+          listMovies: { query: { useInfinite: true, useInfiniteQueryParam: "cursor" } },
+          listShows: { query: { useInfinite: true, useInfiniteQueryParam: "cursor" } },
+        },
       },
     },
   },
