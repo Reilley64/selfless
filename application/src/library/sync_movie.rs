@@ -12,11 +12,11 @@ use crate::library::library_items::Change;
 use crate::library::media_files;
 use crate::library::media_files::Inspected;
 use crate::library::metadata;
+use crate::library::metadata::FoundArtwork;
 use crate::library::metadata::Nfo;
 use crate::library::metadata::Owner;
 use crate::ports::FindMediaFile;
 use crate::ports::ListSubtitleFiles;
-use crate::ports::MovieFolder;
 use crate::ports::RadarrMovie;
 use crate::ports::ReadMovieFolder;
 use crate::ports::ReadMovieNfo;
@@ -25,7 +25,9 @@ use crate::ports::persistence::DbScope;
 use domain::MediaFile;
 use domain::Movie;
 use domain::MovieMetadata;
+use domain::MovieNfo;
 use domain::Source;
+use jiff::Timestamp;
 use std::collections::HashSet;
 use tracing::Instrument;
 use tracing::Span;
@@ -55,7 +57,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, radarr_id: i64) -> Resu
             .map_err(Error::caused_by)?
         {
             Some(radarr_movie) => {
-                let stored = match &radarr_movie.movie_file {
+                let stored_file = match &radarr_movie.movie_file {
                     Some(file) => db_context
                         .media_files()
                         .filter(MediaFile::fields().path().eq(&file.path))
@@ -65,8 +67,22 @@ pub async fn call(dependencies: impl Into<Dependencies>, radarr_id: i64) -> Resu
                         .map_err(Error::caused_by)?,
                     None => None,
                 };
-                let inspected = inspect(&files, stored.as_ref(), &radarr_movie).await?;
-                save(&mut db_context, &files, radarr_movie, inspected).await
+                let stored_nfo_modified_at = db_context
+                    .movies()
+                    .filter(Movie::fields().tmdb_id().eq(radarr_movie.tmdb_id))
+                    .first()
+                    .exec(db_context.executor_mut())
+                    .await
+                    .map_err(Error::caused_by)?
+                    .and_then(|x| x.nfo_modified_at);
+                let inspected = inspect(
+                    &files,
+                    stored_file.as_ref(),
+                    stored_nfo_modified_at,
+                    &radarr_movie,
+                )
+                .await?;
+                save(&mut db_context, radarr_movie, inspected).await
             }
             None => {
                 let movies = db_context
@@ -96,45 +112,63 @@ pub(crate) fn span() -> Span {
     tracing::info_span!("sync_movie", otel.name = "sync radarr movie")
 }
 
+pub(crate) struct InspectedMovie {
+    media_file: Option<Inspected>,
+    artwork: Vec<FoundArtwork>,
+    nfo: Nfo<MovieNfo>,
+}
+
 pub(crate) async fn inspect(
     files: &MovieFiles,
-    stored: Option<&MediaFile>,
+    stored_file: Option<&MediaFile>,
+    stored_nfo_modified_at: Option<Timestamp>,
     radarr_movie: &RadarrMovie,
-) -> Result<Option<Inspected>, Error> {
-    match &radarr_movie.movie_file {
-        Some(file) => Ok(Some(
-            media_files::inspect(
-                &files.find_media_file,
-                &files.list_subtitle_files,
-                &files.prober,
-                stored,
-                &file.path,
-            )
-            .await
-            .map_err(Error::caused_by)?,
-        )),
-        None => Ok(None),
-    }
+) -> Result<InspectedMovie, Error> {
+    let Some(file) = &radarr_movie.movie_file else {
+        return Ok(InspectedMovie {
+            media_file: None,
+            artwork: Vec::new(),
+            nfo: Nfo::Missing,
+        });
+    };
+    let media_file = media_files::inspect(
+        &files.find_media_file,
+        &files.list_subtitle_files,
+        &files.prober,
+        stored_file,
+        &file.path,
+    )
+    .await
+    .map_err(Error::caused_by)?;
+    let folder = files.read_movie_folder.call(&file.path).await;
+    let nfo = Nfo::read(folder.nfo, stored_nfo_modified_at, |path| {
+        files.read_movie_nfo.call(path)
+    })
+    .await;
+    Ok(InspectedMovie {
+        media_file: Some(media_file),
+        artwork: metadata::item_artwork(folder.poster, folder.fanart, folder.clearlogo),
+        nfo,
+    })
 }
 
 pub(crate) async fn save(
     db_context: &mut DbContext,
-    files: &MovieFiles,
     radarr_movie: RadarrMovie,
-    inspected: Option<Inspected>,
+    inspected: InspectedMovie,
 ) -> Result<(), Error> {
-    let folder = match &radarr_movie.movie_file {
-        Some(file) => files.read_movie_folder.call(&file.path).await,
-        None => MovieFolder::default(),
-    };
+    let InspectedMovie {
+        media_file,
+        artwork,
+        nfo,
+    } = inspected;
     let visible = Movie::in_library(
         radarr_movie.movie_file.is_some(),
-        inspected.as_ref().is_some_and(Inspected::on_disk),
+        media_file.as_ref().is_some_and(Inspected::on_disk),
     );
     let date_added = radarr_movie.movie_file.as_ref().map(|x| x.date_added);
-    let artwork = metadata::item_artwork(folder.poster, folder.fanart, folder.clearlogo);
     let mut transaction = db_context.transaction().await.map_err(Error::caused_by)?;
-    let (media_file_id, media_file_changed) = match (&radarr_movie.movie_file, inspected) {
+    let (media_file_id, media_file_changed) = match (&radarr_movie.movie_file, media_file) {
         (Some(file), Some(inspected)) => {
             let saved = media_files::save(&mut transaction, &file.path, inspected)
                 .await
@@ -150,12 +184,6 @@ pub(crate) async fn save(
         .exec(transaction.executor_mut())
         .await
         .map_err(Error::caused_by)?;
-    let nfo = Nfo::read(
-        folder.nfo,
-        stored.as_ref().and_then(|x| x.nfo_modified_at),
-        |path| files.read_movie_nfo.call(path),
-    )
-    .await;
     let radarr_metadata = MovieMetadata::from_radarr(
         radarr_movie.title,
         radarr_movie.year,

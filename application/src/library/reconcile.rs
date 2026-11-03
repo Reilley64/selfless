@@ -235,6 +235,10 @@ async fn sync_movies(
         .await
         .map_err(Error::caused_by)?;
     let total = stored_movies.len();
+    let nfo_modified_at = stored_movies
+        .iter()
+        .map(|x| (x.tmdb_id, x.nfo_modified_at))
+        .collect::<HashMap<_, _>>();
     let absent = stored_movies
         .into_iter()
         .filter(|x| !listed.contains(&x.tmdb_id))
@@ -252,21 +256,26 @@ async fn sync_movies(
     let mut inspections = stream::iter(radarr_movies)
         .map(|radarr_movie| {
             let span = sync_movie::span();
-            let stored = radarr_movie
+            let stored_file = radarr_movie
                 .movie_file
                 .as_ref()
                 .and_then(|x| stored.get(&x.path));
+            let stored_nfo_modified_at = nfo_modified_at
+                .get(&radarr_movie.tmdb_id)
+                .copied()
+                .flatten();
             async move {
-                let inspected = sync_movie::inspect(files, stored, &radarr_movie)
-                    .instrument(span.clone())
-                    .await;
+                let inspected =
+                    sync_movie::inspect(files, stored_file, stored_nfo_modified_at, &radarr_movie)
+                        .instrument(span.clone())
+                        .await;
                 (radarr_movie, inspected, span)
             }
         })
         .buffered(CONCURRENT_PROBES);
     while let Some((radarr_movie, inspected, span)) = inspections.next().await {
         let inspected = inspected.map_err(Error::caused_by)?;
-        sync_movie::save(db_context, files, radarr_movie, inspected)
+        sync_movie::save(db_context, radarr_movie, inspected)
             .instrument(span)
             .await
             .map_err(Error::caused_by)?;

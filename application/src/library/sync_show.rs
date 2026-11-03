@@ -29,10 +29,12 @@ use crate::ports::persistence::DbScope;
 use domain::ArtworkKind;
 use domain::Episode;
 use domain::EpisodeMetadata;
+use domain::EpisodeNfo;
 use domain::MediaFile;
 use domain::Season;
 use domain::Show;
 use domain::ShowMetadata;
+use domain::ShowNfo;
 use domain::Source;
 use futures_util::future::try_join_all;
 use std::collections::BTreeSet;
@@ -125,7 +127,7 @@ pub(crate) async fn save(
         .iter()
         .map(|x| x.season_number)
         .collect::<BTreeSet<_>>();
-    let folder = files
+    let mut folder = files
         .read_show_folder
         .call(
             &sonarr_show.listing.path,
@@ -164,6 +166,74 @@ pub(crate) async fn save(
     .map_err(Error::caused_by)?
     .into_iter()
     .collect::<HashMap<_, _>>();
+    let stored_show = db_context
+        .shows()
+        .filter(Show::fields().tvdb_id().eq(sonarr_show.listing.tvdb_id))
+        .include(Show::fields().seasons().episodes())
+        .first()
+        .exec(db_context.executor_mut())
+        .await
+        .map_err(Error::caused_by)?;
+    let nfo = Nfo::read(
+        folder.nfo.take(),
+        stored_show.as_ref().and_then(|x| x.nfo_modified_at),
+        |path| files.read_show_nfo.call(path),
+    )
+    .await;
+    let stored_nfo_modified_at = stored_show
+        .iter()
+        .flat_map(|x| x.seasons.get())
+        .flat_map(|x| x.episodes.get())
+        .map(|x| (x.tvdb_id, x.nfo_modified_at))
+        .collect::<HashMap<_, _>>();
+    let sonarr_ids = sonarr_show
+        .episodes
+        .iter()
+        .map(|x| x.sonarr_id)
+        .collect::<HashSet<_>>();
+    let mut nfo_roots = HashMap::new();
+    let mut episode_nfos = Vec::new();
+    for sonarr_episode in &sonarr_show.episodes {
+        let nfo_file = sonarr_episode
+            .episode_file
+            .as_ref()
+            .and_then(|x| episode_folders.get(&x.path))
+            .and_then(|x| x.nfo.as_ref());
+        episode_nfos.push(match nfo_file {
+            None => Nfo::Missing,
+            Some(nfo_file)
+                if stored_nfo_modified_at.get(&sonarr_episode.tvdb_id)
+                    == Some(&Some(nfo_file.modified_at)) =>
+            {
+                Nfo::Unchanged
+            }
+            Some(nfo_file) => {
+                if !nfo_roots.contains_key(&nfo_file.path) {
+                    let roots = files.read_episode_nfo.call(&nfo_file.path).await;
+                    if let Err(error) = &roots {
+                        metadata::warn_unreadable(error, &nfo_file.path);
+                    }
+                    nfo_roots.insert(nfo_file.path.clone(), roots.ok());
+                }
+                match &nfo_roots[&nfo_file.path] {
+                    None => Nfo::Unreadable(nfo_file.path.clone()),
+                    Some(roots) => match roots
+                        .iter()
+                        .find(|x| x.sonarr_id == Some(sonarr_episode.sonarr_id))
+                        .or_else(|| {
+                            roots.iter().find(|x| {
+                                !x.sonarr_id.is_some_and(|x| sonarr_ids.contains(&x))
+                                    && x.season_number == Some(sonarr_episode.season_number)
+                                    && x.episode_number == Some(sonarr_episode.episode_number)
+                            })
+                        }) {
+                        Some(root) => Nfo::Read(root.clone(), nfo_file.modified_at),
+                        None => Nfo::Missing,
+                    },
+                }
+            }
+        });
+    }
     let mut transaction = db_context.transaction().await.map_err(Error::caused_by)?;
     let change = write(
         &mut transaction,
@@ -171,7 +241,8 @@ pub(crate) async fn save(
         &episode_folders,
         inspected,
         folder,
-        files,
+        nfo,
+        episode_nfos,
     )
     .await?;
     transaction.commit().await.map_err(Error::caused_by)?;
@@ -214,7 +285,8 @@ async fn write(
     episode_folders: &HashMap<String, EpisodeFolder>,
     mut inspected: HashMap<String, Inspected>,
     folder: ShowFolder,
-    files: &ShowFiles,
+    nfo: Nfo<ShowNfo>,
+    episode_nfos: Vec<Nfo<EpisodeNfo>>,
 ) -> Result<Option<Change>, Error> {
     let listing = sonarr_show.listing;
     let stored = scope
@@ -224,12 +296,6 @@ async fn write(
         .exec(scope.executor_mut())
         .await
         .map_err(Error::caused_by)?;
-    let nfo = Nfo::read(
-        folder.nfo,
-        stored.as_ref().and_then(|x| x.nfo_modified_at),
-        |path| files.read_show_nfo.call(path),
-    )
-    .await;
     let had_nfo = stored.as_ref().is_some_and(|x| x.nfo_modified_at.is_some());
     let sonarr_metadata =
         ShowMetadata::from_sonarr(listing.title, listing.overview, listing.genres);
@@ -319,55 +385,14 @@ async fn write(
         .collect::<HashSet<_>>();
     let mut synced_seasons = HashSet::new();
     let mut media_file_ids = HashSet::new();
-    let mut nfo_roots = HashMap::new();
     let mut unreadable_nfos = HashMap::new();
     let mut saved = HashMap::new();
-    let sonarr_ids = sonarr_show
-        .episodes
-        .iter()
-        .map(|x| x.sonarr_id)
-        .collect::<HashSet<_>>();
-    for sonarr_episode in sonarr_show.episodes {
+    for (sonarr_episode, nfo) in sonarr_show.episodes.into_iter().zip(episode_nfos) {
         let episode_folder = sonarr_episode
             .episode_file
             .as_ref()
             .and_then(|x| episode_folders.get(&x.path));
         let stored = episodes.remove(&sonarr_episode.tvdb_id);
-        let nfo = match episode_folder.and_then(|x| x.nfo.as_ref()) {
-            None => Nfo::Missing,
-            Some(nfo_file)
-                if stored
-                    .as_ref()
-                    .is_some_and(|x| x.nfo_modified_at == Some(nfo_file.modified_at)) =>
-            {
-                Nfo::Unchanged
-            }
-            Some(nfo_file) => {
-                if !nfo_roots.contains_key(&nfo_file.path) {
-                    let roots = files.read_episode_nfo.call(&nfo_file.path).await;
-                    if let Err(error) = &roots {
-                        metadata::warn_unreadable(error, &nfo_file.path);
-                    }
-                    nfo_roots.insert(nfo_file.path.clone(), roots.ok());
-                }
-                match &nfo_roots[&nfo_file.path] {
-                    None => Nfo::Unreadable(nfo_file.path.clone()),
-                    Some(roots) => match roots
-                        .iter()
-                        .find(|x| x.sonarr_id == Some(sonarr_episode.sonarr_id))
-                        .or_else(|| {
-                            roots.iter().find(|x| {
-                                !x.sonarr_id.is_some_and(|x| sonarr_ids.contains(&x))
-                                    && x.season_number == Some(sonarr_episode.season_number)
-                                    && x.episode_number == Some(sonarr_episode.episode_number)
-                            })
-                        }) {
-                        Some(root) => Nfo::Read(root.clone(), nfo_file.modified_at),
-                        None => Nfo::Missing,
-                    },
-                }
-            }
-        };
         let sonarr_metadata = EpisodeMetadata::from_sonarr(
             sonarr_episode.title,
             sonarr_episode.air_date,
