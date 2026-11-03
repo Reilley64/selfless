@@ -29,6 +29,7 @@ const halfLoop: EpisodePage = {
     { language: "fr", hearingImpaired: true, forced: false },
   ],
   progress: null,
+  minutesLeft: null,
   watched: false,
   play: { resumePosition: null },
 };
@@ -58,4 +59,11 @@ test("an episode without languages lists none", async () => {
 
   expect(screen.queryByText("Audio")).toBeNull();
   expect(screen.queryByText("Subtitles")).toBeNull();
+});
+
+test("an episode with a resume position shows how far the user got and the minutes left", async () => {
+  await render(<EpisodeHeader episode={{ ...halfLoop, progress: 0.5, minutesLeft: 29, play: { resumePosition: 1710 } }} />);
+
+  expect(screen.getByRole("progressbar")).toHaveAccessibilityValue({ now: 50 });
+  expect(screen.getByText("29 min left")).toBeOnTheScreen();
 });

@@ -2,10 +2,12 @@ import type { Artwork } from "@selfless/api-client";
 import type { ReactNode } from "react";
 import { Platform } from "react-native";
 import { Text, View } from "react-native-css/components";
+import { ProgressBar } from "./ProgressBar";
 import { ArtworkImage } from "./Tile";
 
 export type DetailItem = { text: string; outlined?: boolean };
 export type DetailFact = { label: string; value: string };
+export type DetailResume = { progress: number | null; minutesLeft: number | null };
 
 export function DetailHeader({
   kicker,
@@ -16,6 +18,7 @@ export function DetailHeader({
   subtitle,
   plot,
   facts,
+  resume,
   children,
 }: {
   kicker: string;
@@ -26,6 +29,7 @@ export function DetailHeader({
   details: DetailItem[];
   plot: string | null;
   facts: DetailFact[];
+  resume?: DetailResume;
   children?: ReactNode;
 }) {
   const tv = Platform.isTV;
@@ -75,6 +79,14 @@ export function DetailHeader({
             </Text>
           ))}
         </View>
+        {resume?.progress != null && resume.minutesLeft != null && (
+          <View className={`flex-row items-center ${tv ? "gap-4" : "gap-3"}`}>
+            <ProgressBar progress={resume.progress} className={tv ? "h-1.5 w-[260px]" : "h-1 w-[180px]"} />
+            <Text className={`font-sans text-text-secondary ${tv ? "text-tv-meta" : "text-web-meta"}`}>
+              {`${resume.minutesLeft} min left`}
+            </Text>
+          </View>
+        )}
         {plot && (
           <Text className={`font-sans text-text-secondary leading-body ${tv ? "text-tv-body" : "text-web-body"}`}>
             {plot}
