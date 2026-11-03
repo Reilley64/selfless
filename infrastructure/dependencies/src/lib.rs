@@ -24,6 +24,7 @@ use application::ports::ReadShowNfo;
 use application::ports::ReadSonarrWebhook;
 use application::ports::ReadWebhookEventType;
 use application::ports::SendEmail;
+use application::ports::TryAcquireLock;
 use application::ports::persistence::DbContext;
 use application::webhooks::WebhookPasswords;
 use jiff::Timestamp;
@@ -58,6 +59,7 @@ pub struct AppState {
     pub reconciles: Reconciles,
     pub send_email: SendEmail,
     pub source_health: SourceHealth,
+    pub try_acquire_lock: TryAcquireLock,
     pub webhook_passwords: WebhookPasswords,
 }
 

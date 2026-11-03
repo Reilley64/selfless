@@ -17,6 +17,7 @@ use crate::library::sync_movie::MovieFiles;
 use crate::library::sync_show;
 use crate::library::sync_show::ShowFiles;
 use crate::metrics::SELFLESS_RECONCILE_DURATION;
+use crate::ports::AcquireLock;
 use crate::ports::GetSonarrEpisodes;
 use crate::ports::ListRadarrMovies;
 use crate::ports::ListSonarrShows;
@@ -41,6 +42,10 @@ use tracing::Instrument;
 use tracing::field;
 use uuid::Uuid;
 
+pub(crate) fn lock_key(source: Source) -> String {
+    AcquireLock::key("library", "reconcile", 1, [source.name().to_owned()])
+}
+
 pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Result<Output, Error> {
     let Dependencies {
         check_radarr_kodi_metadata,
@@ -61,12 +66,12 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
         read_show_nfo,
         reconciles,
         source_health,
+        try_acquire_lock,
     } = dependencies.into();
-    let reconcile = reconciles.source(source);
-    let Ok(_running) = reconcile.running.clone().try_lock_owned() else {
+    let Some(_running) = try_acquire_lock.call(lock_key(source)).await else {
         return Ok(Output);
     };
-    let progress = &reconcile.progress;
+    let progress = &reconciles.source(source).progress;
     *progress.lock().unwrap() = Some(Progress {
         imported: 0,
         total: None,
@@ -444,6 +449,7 @@ mod tests {
     use crate::ports::Clock;
     use crate::ports::FindMediaFile;
     use crate::ports::FoundMediaFile;
+    use crate::ports::LockGuard;
     use crate::ports::RadarrError;
     use crate::ports::RadarrMovie;
     use crate::ports::RadarrMovieFile;
@@ -451,6 +457,7 @@ mod tests {
     use crate::ports::SonarrEpisodeFile;
     use crate::ports::SonarrError;
     use crate::ports::SonarrShowListing;
+    use crate::ports::TryAcquireLock;
     use crate::test::empty_episode_folder;
     use crate::test::empty_movie_folder;
     use crate::test::empty_show_folder;
@@ -642,6 +649,9 @@ mod tests {
                 read_show_nfo: unreadable_show_nfo(),
                 reconciles: self.reconciles.clone(),
                 source_health: self.source_health.clone(),
+                try_acquire_lock: TryAcquireLock::new(|_| {
+                    Box::pin(async { Some(LockGuard::new(())) })
+                }),
             }
         }
 
@@ -739,6 +749,29 @@ mod tests {
         let last_reconcile = library.status().await.radarr.last_reconcile.unwrap();
         assert_eq!(last_reconcile.started_at, library.clock.now());
         assert_eq!(last_reconcile.result, ReconcileResult::Succeeded);
+    }
+
+    #[tokio::test]
+    async fn a_reconcile_does_nothing_while_its_source_is_locked_by_another_reconcile() {
+        let library = Library::new().await;
+        library.radarr_lists(&[ARRIVAL]);
+        let locked = lock_key(Source::Radarr);
+
+        call(
+            Dependencies {
+                try_acquire_lock: TryAcquireLock::new(move |key| {
+                    let free = key != locked;
+                    Box::pin(async move { free.then(|| LockGuard::new(())) })
+                }),
+                ..library.dependencies()
+            },
+            Source::Radarr,
+        )
+        .await
+        .unwrap();
+
+        assert!(movie_titles(&library.db_context).await.is_empty());
+        assert!(library.status().await.radarr.last_reconcile.is_none());
     }
 
     #[tokio::test]

@@ -77,7 +77,7 @@ async fn two_admins_deleting_each_other_at_once_leave_one_admin() {
     let mut db_context = db_context(&database).await;
     let maya = create_admin(&mut db_context, "Maya").await;
     let ravi = create_admin(&mut db_context, "Ravi").await;
-    let acquire_lock = locking::acquire_lock();
+    let acquire_lock = locking::Locks::default().acquire_lock();
 
     let (first, second) = tokio::join!(
         delete_admin(&db_context, &acquire_lock, maya),

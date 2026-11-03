@@ -14,13 +14,13 @@ use std::collections::HashSet;
 
 pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Result<Output, Error> {
     let Dependencies {
+        acquire_lock,
         mut db_context,
         list_radarr_movies,
         list_sonarr_shows,
-        reconciles,
         source_health,
     } = dependencies.into();
-    let _running = reconciles.source(source).running.lock().await;
+    let _running = acquire_lock.call(reconcile::lock_key(source)).await;
     let Some(held_removal) = db_context
         .held_removals()
         .filter(HeldRemoval::fields().source().eq(source))
@@ -61,12 +61,12 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::library::Reconciles;
     use crate::library::SourceHealth;
     use crate::ports::ListRadarrMovies;
     use crate::ports::ListSonarrShows;
     use crate::ports::RadarrMovie;
     use crate::ports::persistence::DbContext;
+    use crate::test::RecordingLock;
     use crate::test::arrival;
     use crate::test::mock_db_context;
     use crate::test::movie_titles;
@@ -81,6 +81,7 @@ mod tests {
     struct Library {
         db_context: DbContext,
         radarr: Arc<Mutex<Vec<i64>>>,
+        lock: RecordingLock,
     }
 
     impl Library {
@@ -104,6 +105,7 @@ mod tests {
             Self {
                 db_context,
                 radarr: Arc::default(),
+                lock: RecordingLock::default(),
             }
         }
 
@@ -142,6 +144,7 @@ mod tests {
             let radarr = self.radarr.clone();
             call(
                 Dependencies {
+                    acquire_lock: self.lock.port(),
                     db_context: self.db_context.clone(),
                     list_radarr_movies: ListRadarrMovies::new(move || {
                         let movies = radarr
@@ -156,7 +159,6 @@ mod tests {
                         Box::pin(async move { Ok(movies) })
                     }),
                     list_sonarr_shows: ListSonarrShows::new(|| Box::pin(async { Ok(Vec::new()) })),
-                    reconciles: Reconciles::default(),
                     source_health: SourceHealth::default(),
                 },
                 Source::Radarr,
@@ -187,6 +189,17 @@ mod tests {
                 .unwrap()
                 .len()
         }
+    }
+
+    #[tokio::test]
+    async fn confirming_a_held_removal_waits_for_the_reconcile_lock_of_its_source() {
+        let library = Library::new(&[(ARRIVAL, "Arrival"), (DUNE, "Dune")]).await;
+        library.hold(&[DUNE]).await;
+        library.radarr_lists(&[ARRIVAL]);
+
+        library.confirm().await;
+
+        assert_eq!(library.lock.keys(), [reconcile::lock_key(Source::Radarr)]);
     }
 
     #[tokio::test]

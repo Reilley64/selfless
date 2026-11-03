@@ -15,6 +15,7 @@ use crate::ports::ReadMovieFolder;
 use crate::ports::ReadMovieNfo;
 use crate::ports::ReadShowFolder;
 use crate::ports::ReadShowNfo;
+use crate::ports::TryAcquireLock;
 use crate::ports::persistence::DbContext;
 
 #[fundle::deps]
@@ -37,4 +38,5 @@ pub struct Dependencies {
     pub read_show_nfo: ReadShowNfo,
     pub reconciles: Reconciles,
     pub source_health: SourceHealth,
+    pub try_acquire_lock: TryAcquireLock,
 }
