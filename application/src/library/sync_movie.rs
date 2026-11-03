@@ -288,7 +288,7 @@ pub(crate) async fn remove(db_context: &mut DbContext, movies: Vec<Movie>) -> Re
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::library::sync_status::ApiCall;
+    use crate::library::source_health::ApiCallResult;
     use crate::ports::FoundFile;
     use crate::ports::RadarrMovieFile;
     use crate::test::MOVIE_FILE;
@@ -725,7 +725,7 @@ mod tests {
         assert!(synced.is_err());
         assert!(matches!(
             library.source_health.health(Source::Radarr).last_api_call,
-            Some(ApiCall::Failed(_))
+            Some(ApiCallResult::Failed(_))
         ));
     }
 }

@@ -10,12 +10,12 @@ use crate::attributes::SELFLESS_LIBRARY_SOURCE;
 use crate::attributes::SELFLESS_RECONCILE_RESULT;
 use crate::library::SourceHealth;
 use crate::library::prober::CONCURRENT_PROBES;
+use crate::library::reconciles::Progress;
 use crate::library::source_states;
 use crate::library::sync_movie;
 use crate::library::sync_movie::MovieFiles;
 use crate::library::sync_show;
 use crate::library::sync_show::ShowFiles;
-use crate::library::sync_status::ReconcileProgress;
 use crate::metrics::SELFLESS_RECONCILE_DURATION;
 use crate::ports::GetSonarrEpisodes;
 use crate::ports::ListRadarrMovies;
@@ -66,7 +66,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
         return Ok(Output);
     };
     let progress = &reconcile.progress;
-    *progress.lock().unwrap() = Some(ReconcileProgress {
+    *progress.lock().unwrap() = Some(Progress {
         imported: 0,
         total: None,
     });
@@ -217,7 +217,7 @@ async fn sync_movies(
     files: &MovieFiles,
     list_radarr_movies: &ListRadarrMovies,
     source_health: &SourceHealth,
-    progress: &Mutex<Option<ReconcileProgress>>,
+    progress: &Mutex<Option<Progress>>,
 ) -> Result<Listing, Error> {
     let radarr_movies = source_health
         .api_call(Source::Radarr, list_radarr_movies.call().await)
@@ -285,7 +285,7 @@ async fn sync_shows(
     list_sonarr_shows: &ListSonarrShows,
     get_sonarr_episodes: &GetSonarrEpisodes,
     source_health: &SourceHealth,
-    progress: &Mutex<Option<ReconcileProgress>>,
+    progress: &Mutex<Option<Progress>>,
 ) -> Result<Listing, Error> {
     let listings = source_health
         .api_call(Source::Sonarr, list_sonarr_shows.call().await)
@@ -338,14 +338,14 @@ async fn sync_shows(
     })
 }
 
-fn set_total(progress: &Mutex<Option<ReconcileProgress>>, total: usize) {
-    *progress.lock().unwrap() = Some(ReconcileProgress {
+fn set_total(progress: &Mutex<Option<Progress>>, total: usize) {
+    *progress.lock().unwrap() = Some(Progress {
         imported: 0,
         total: Some(total),
     });
 }
 
-fn imported(progress: &Mutex<Option<ReconcileProgress>>) {
+fn imported(progress: &Mutex<Option<Progress>>) {
     if let Some(progress) = progress.lock().unwrap().as_mut() {
         progress.imported += 1;
     }
