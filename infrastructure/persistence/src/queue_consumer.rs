@@ -1,13 +1,11 @@
 use application::ports::persistence::DbContext;
 use application::ports::persistence::DbScope;
-use application::trace_context::span_context;
-use opentelemetry::Context;
+use application::trace_context;
+use opentelemetry::propagation::TextMapPropagator;
 use opentelemetry::trace::SpanContext;
 use opentelemetry::trace::TraceContextExt;
-use opentelemetry::trace::TraceFlags;
-use opentelemetry::trace::TraceState;
-use opentelemetry_sdk::trace::IdGenerator;
-use opentelemetry_sdk::trace::RandomIdGenerator;
+use opentelemetry_sdk::propagation::TraceContextPropagator;
+use std::collections::HashMap;
 use std::error::Error;
 use std::future::Future;
 use std::pin::Pin;
@@ -86,14 +84,7 @@ where
     E: Error + Send + Sync + 'static,
 {
     let poll = tracing::info_span!(parent: None, "poll");
-    let ids = RandomIdGenerator::default();
-    let _ = poll.set_parent(Context::new().with_remote_span_context(SpanContext::new(
-        ids.new_trace_id(),
-        ids.new_span_id(),
-        TraceFlags::NOT_SAMPLED,
-        true,
-        TraceState::NONE,
-    )));
+    let _ = poll.set_parent(trace_context::unsampled_parent());
     let mut transaction = db_context.transaction().instrument(poll.clone()).await?;
     let rows = toasty::sql::query(format!(
         "SELECT id, traceparent FROM {table} WHERE delivered_at IS NULL \
@@ -187,6 +178,15 @@ where
         }
         processed => processed,
     }
+}
+
+fn span_context(traceparent: &str) -> SpanContext {
+    let carrier = HashMap::from([("traceparent".to_owned(), traceparent.to_owned())]);
+    TraceContextPropagator::new()
+        .extract(&carrier)
+        .span()
+        .span_context()
+        .clone()
 }
 
 fn record_failure(span: &Span, error_type: &'static str) {

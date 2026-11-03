@@ -7,11 +7,9 @@ pub use error::Error;
 pub use error::InviteNotFound;
 pub use output::Output;
 
-use crate::ports::AcquireLock;
+use crate::invites::invite_email;
 use crate::ports::persistence::DbScope;
-use crate::trace_context;
 use domain::InviteEmailStatus;
-use domain::OutboxData;
 use uuid::Uuid;
 
 pub async fn call(
@@ -24,9 +22,7 @@ pub async fn call(
         clock,
         acquire_lock,
     } = dependencies.into();
-    let _guard = acquire_lock
-        .call(AcquireLock::key("invites", "email", 1, [id.to_string()]))
-        .await;
+    let _guard = acquire_lock.call(invite_email::lock_key(id)).await;
     let mut transaction = db_context.transaction().await.map_err(Error::caused_by)?;
     let Some(mut invite) = transaction
         .invites()
@@ -45,15 +41,7 @@ pub async fn call(
         .exec(transaction.executor_mut())
         .await
         .map_err(Error::caused_by)?;
-    transaction
-        .outboxes()
-        .create()
-        .data(OutboxData::SendInviteEmail {
-            invite_id: invite.id,
-            origin,
-        })
-        .traceparent(trace_context::current_traceparent())
-        .exec(transaction.executor_mut())
+    invite_email::queue(&mut transaction, invite.id, origin)
         .await
         .map_err(Error::caused_by)?;
     transaction.commit().await.map_err(Error::caused_by)?;
@@ -71,6 +59,7 @@ mod tests {
     use domain::EmailAddress;
     use domain::Invite;
     use domain::Outbox;
+    use domain::OutboxData;
     use jiff::SignedDuration;
     use jiff::Timestamp;
     use ohno::ErrorExt;

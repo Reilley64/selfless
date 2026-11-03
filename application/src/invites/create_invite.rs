@@ -7,12 +7,11 @@ pub use error::AddressTaken;
 pub use error::Error;
 pub use output::Output;
 
+use crate::invites::invite_email;
 use crate::ports::persistence::DbScope;
-use crate::trace_context;
 use domain::EmailAddress;
 use domain::Invite;
 use domain::InviteEmailStatus;
-use domain::OutboxData;
 use domain::User;
 use jiff::Timestamp;
 use uuid::Uuid;
@@ -50,15 +49,7 @@ pub async fn call(
         .await
         .map_err(Error::caused_by)?
         .ok_or_else(|| Error::caused_by(AddressTaken::new()))?;
-    transaction
-        .outboxes()
-        .create()
-        .data(OutboxData::SendInviteEmail {
-            invite_id: invite.id,
-            origin,
-        })
-        .traceparent(trace_context::current_traceparent())
-        .exec(transaction.executor_mut())
+    invite_email::queue(&mut transaction, invite.id, origin)
         .await
         .map_err(Error::caused_by)?;
     transaction.commit().await.map_err(Error::caused_by)?;
@@ -72,6 +63,7 @@ mod tests {
     use crate::ports::persistence::DbContext;
     use crate::test::mock_db_context;
     use domain::Outbox;
+    use domain::OutboxData;
     use ohno::ErrorExt;
     use opentelemetry::trace::TracerProvider;
     use opentelemetry_sdk::trace::InMemorySpanExporter;

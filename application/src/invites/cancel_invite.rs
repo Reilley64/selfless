@@ -6,7 +6,7 @@ pub use dependencies::Dependencies;
 pub use error::Error;
 pub use output::Output;
 
-use crate::ports::AcquireLock;
+use crate::invites::invite_email;
 use crate::ports::persistence::DbScope;
 use domain::Invite;
 use uuid::Uuid;
@@ -16,9 +16,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, id: Uuid) -> Result<Out
         mut db_context,
         acquire_lock,
     } = dependencies.into();
-    let _guard = acquire_lock
-        .call(AcquireLock::key("invites", "email", 1, [id.to_string()]))
-        .await;
+    let _guard = acquire_lock.call(invite_email::lock_key(id)).await;
     db_context
         .invites()
         .filter(Invite::fields().id().eq(id))

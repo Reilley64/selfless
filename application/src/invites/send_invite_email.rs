@@ -7,7 +7,6 @@ pub use error::Error;
 pub use output::Output;
 
 use crate::invites::invite_email;
-use crate::ports::AcquireLock;
 use crate::ports::EmailRejected;
 use crate::ports::persistence::DbScope;
 use crate::tokens;
@@ -27,14 +26,7 @@ pub async fn call(
         acquire_lock,
         send_email,
     } = dependencies.into();
-    let _guard = acquire_lock
-        .call(AcquireLock::key(
-            "invites",
-            "email",
-            1,
-            [invite_id.to_string()],
-        ))
-        .await;
+    let _guard = acquire_lock.call(invite_email::lock_key(invite_id)).await;
     let Some(mut invite) = db_context
         .invites()
         .find(invite_id)
