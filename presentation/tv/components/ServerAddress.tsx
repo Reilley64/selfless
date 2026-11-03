@@ -3,16 +3,17 @@ import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native-css/components";
 import { session } from "../session";
-import { button, buttonText, input } from "./form";
+import { button, buttonText, input, useFirstFieldFocus } from "./form";
 
 export function ServerAddress() {
   const [address, setAddress] = useState("");
+  const guide = useFirstFieldFocus();
   const connect = useMutation({ mutationFn: () => session.connect(address) });
   const canConnect = address.trim() !== "" && !connect.isPending;
   const submit = () => canConnect && connect.mutate();
 
   return (
-    <FocusGuide autoFocus className="flex-1 items-center justify-center bg-background">
+    <FocusGuide autoFocus ref={guide} className="flex-1 items-center justify-center bg-background">
       <View className="w-4/5 gap-6">
         <Text className="font-sans font-bold text-tv-title text-text-primary">Server address</Text>
         <Text className="font-sans text-tv-body text-text-secondary">
@@ -20,7 +21,6 @@ export function ServerAddress() {
         </Text>
         <TextInput
           className={input}
-          hasTVPreferredFocus
           placeholder="Server address"
           keyboardType="url"
           textContentType="URL"
@@ -28,6 +28,7 @@ export function ServerAddress() {
           autoCorrect={false}
           value={address}
           onChangeText={setAddress}
+          onEndEditing={(event) => setAddress(event.nativeEvent.text)}
           onSubmitEditing={submit}
         />
         {connect.data === false && (

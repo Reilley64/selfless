@@ -4,7 +4,7 @@ import { deviceName } from "expo-device";
 import { useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native-css/components";
 import { session } from "../session";
-import { button, buttonText, input } from "./form";
+import { button, buttonText, input, useFirstFieldFocus } from "./form";
 
 export function SignIn({
   name: filledIn = "",
@@ -17,6 +17,7 @@ export function SignIn({
 }) {
   const [name, setName] = useState(filledIn);
   const [password, setPassword] = useState("");
+  const guide = useFirstFieldFocus();
   const signIn = useMutation({
     mutationFn: () => session.signIn(name, password, deviceName ?? "TV"),
     onSuccess: (response) => response.status === 201 && onDone?.(),
@@ -25,12 +26,11 @@ export function SignIn({
   const submit = () => canSignIn && signIn.mutate();
 
   return (
-    <FocusGuide autoFocus className="flex-1 items-center justify-center bg-background">
+    <FocusGuide autoFocus ref={guide} className="flex-1 items-center justify-center bg-background">
       <View className="w-4/5 gap-6">
         <Text className="font-sans font-bold text-tv-title text-text-primary">Sign in</Text>
         <TextInput
           className={input}
-          hasTVPreferredFocus
           placeholder="Name"
           textContentType="username"
           autoComplete="username"
@@ -38,6 +38,7 @@ export function SignIn({
           autoCorrect={false}
           value={name}
           onChangeText={setName}
+          onEndEditing={(event) => setName(event.nativeEvent.text)}
         />
         <TextInput
           className={input}
@@ -47,6 +48,7 @@ export function SignIn({
           secureTextEntry
           value={password}
           onChangeText={setPassword}
+          onEndEditing={(event) => setPassword(event.nativeEvent.text)}
           onSubmitEditing={submit}
         />
         {signIn.data?.status === 401 && (
