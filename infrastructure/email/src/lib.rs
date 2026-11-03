@@ -23,6 +23,7 @@ use tracing::Span;
 use tracing::field;
 
 const IMPLICIT_TLS_PORT: u16 = 465;
+const MAILBOX_REFUSAL_CODES: [u16; 4] = [550, 551, 553, 554];
 
 #[derive(Clone, Default, Deserialize)]
 #[serde(default)]
@@ -107,7 +108,7 @@ where
                         Some(code) => {
                             Span::current()
                                 .record(SELFLESS_EMAIL_SMTP_REPLY_CODE, i64::from(u16::from(code)));
-                            if matches!(u16::from(code), 550 | 551 | 553 | 554) {
+                            if MAILBOX_REFUSAL_CODES.contains(&u16::from(code)) {
                                 SendEmailError::caused_by(EmailRejected::caused_by(SmtpReply(code)))
                             } else {
                                 SendEmailError::caused_by(SmtpReply(code))
@@ -291,7 +292,7 @@ mod tests {
             ("RCPT", 553),
             ("RCPT", 554),
             ("MAIL", 550),
-            (".", 550),
+            (ScriptedSmtpServer::END_OF_DATA, 550),
         ] {
             let server = ScriptedSmtpServer::refusing(
                 command,
