@@ -136,10 +136,10 @@ pub(crate) async fn save(
     let mut transaction = db_context.transaction().await.map_err(Error::caused_by)?;
     let (media_file_id, media_file_changed) = match (&radarr_movie.movie_file, inspected) {
         (Some(file), Some(inspected)) => {
-            let (id, changed) = media_files::save(&mut transaction, &file.path, inspected)
+            let saved = media_files::save(&mut transaction, &file.path, inspected)
                 .await
                 .map_err(Error::caused_by)?;
-            (Some(id), changed)
+            (Some(saved.id), saved.changed)
         }
         _ => (None, false),
     };
