@@ -64,10 +64,6 @@ groups:
               value: sync.start
               brief: Started a reconcile with Sync now.
               stability: development
-            - id: sync_retry
-              value: sync.retry
-              brief: Retried a failed webhook delivery.
-              stability: development
             - id: sync_confirm_removal
               value: sync.confirm_removal
               brief: Confirmed a held removal.
@@ -77,5 +73,5 @@ groups:
       - id: selfless.admin.target.id
         type: string
         stability: development
-        brief: The ID of the user, invite, session, admin or webhook delivery an admin action changed.
+        brief: The ID of the user, invite, session or admin an admin action changed.
         examples: ["01890a5d-ac96-774b-bcce-b302099a8057"]

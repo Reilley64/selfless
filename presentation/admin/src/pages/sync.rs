@@ -17,7 +17,6 @@ use crate::components::card::card_content;
 use crate::components::card::card_description;
 use crate::components::card::card_header;
 use crate::components::card::card_title;
-use crate::components::dialog::dialog;
 use crate::components::dialog::dialog_content;
 use crate::components::dialog::dialog_description;
 use crate::components::dialog::dialog_footer;
@@ -38,14 +37,12 @@ use crate::components::table::table_cell;
 use crate::components::table::table_head;
 use crate::components::table::table_header;
 use crate::components::table::table_row;
-use crate::log_admin_action;
 use crate::require_admin;
 use crate::templates::admin_page::admin_page;
 use crate::verify_csrf;
 use application::attributes::SELFLESS_ADMIN_ACTION;
 use application::attributes::SELFLESS_LIBRARY_SOURCE;
 use application::sync_status::ApiCall;
-use application::sync_status::FailedRow;
 use application::sync_status::ProblemItem;
 use application::sync_status::ReconcileProgress;
 use application::sync_status::SourceStatus;
@@ -72,12 +69,10 @@ use topcoat::view::View;
 use topcoat::view::attributes;
 use topcoat::view::component;
 use topcoat::view::view;
-use uuid::Uuid;
 
 const SYNC_STATUS_ID: &str = "sync-status";
 const SYNC_STATUS_TARGET: &str = "#sync-status";
 
-path_param!(delivery_id: Uuid, error = not_found);
 path_param!(source_name);
 
 pub(crate) fn register(router: RouterBuilder) -> RouterBuilder {
@@ -85,7 +80,6 @@ pub(crate) fn register(router: RouterBuilder) -> RouterBuilder {
         .page(sync)
         .page(sources)
         .page(sync_now)
-        .page(retry)
         .page(confirm_removal)
 }
 
@@ -192,34 +186,6 @@ async fn sync_now(cx: &Cx, Form(form): Form<SyncAction>) -> topcoat::Result<impl
     Ok(view! { sync_status(status: &status, query: query, notice: Some(notice), polling: true) })
 }
 
-#[page(POST "/admin/sync/failed-deliveries/{delivery_id}/retry")]
-async fn retry(cx: &Cx, Form(form): Form<SyncAction>) -> topcoat::Result<impl View> {
-    verify_csrf(cx, &form.csrf)?;
-    require_admin(cx).await?;
-    let id = *path_param::<DeliveryId>(cx)?;
-    let state = app_context::<AppState>(cx);
-    let notice = match application::retry_failed_row::call(state, id).await {
-        Ok(()) => {
-            log_admin_action(AdminAction::SyncRetry, id);
-            Notice {
-                variant: AlertVariant::Neutral,
-                title: "Retrying the delivery",
-                description: "selfless processes it again now.".to_owned(),
-            }
-        }
-        Err(error) => {
-            tracing::error!(error = &error as &dyn Error, "failed to retry a delivery");
-            Notice {
-                variant: AlertVariant::Destructive,
-                title: "Retry failed",
-                description: "The delivery stays failed. Try again in a moment.".to_owned(),
-            }
-        }
-    };
-    let (status, query) = read_sync_status(cx).await?;
-    Ok(view! { sync_status(status: &status, query: query, notice: Some(notice), polling: false) })
-}
-
 #[page(POST "/admin/sync/{source_name}/confirm-removal")]
 async fn confirm_removal(cx: &Cx, Form(form): Form<SyncAction>) -> topcoat::Result<impl View> {
     verify_csrf(cx, &form.csrf)?;
@@ -298,7 +264,6 @@ async fn sync_status(
                 None => "",
             }
             source_cards(status: status, query: query, polling: polling)
-            failed_deliveries(rows: &status.failed_rows, query: query)
             sync_problems(status: status, query: query)
         </div>
     })
@@ -512,149 +477,6 @@ async fn held_removal_alert(
 }
 
 #[component]
-async fn failed_deliveries(rows: &[FailedRow], query: ProblemQuery) -> topcoat::Result<impl View> {
-    Ok(view! {
-        <section aria-label="Failed deliveries" class="flex flex-col gap-3">
-            <h2 class="text-sm font-semibold">"Failed deliveries"</h2>
-            if rows.is_empty() {
-                <p class="text-sm text-muted-foreground">"No failed deliveries"</p>
-            } else {
-                card(
-                    table(
-                        table_header(
-                            table_row(
-                                table_head("Source")
-                                table_head("Event")
-                                table_head("Error")
-                                table_head("Attempts")
-                                table_head("Received")
-                                table_head(<span class="sr-only">"Actions"</span>)
-                            )
-                        )
-                        table_body(
-                            #[key(row.id.as_u128())]
-                            for row in rows {
-                                table_row(
-                                    attrs: attributes! { class="relative" },
-                                    table_cell((source_label(row.source)))
-                                    table_cell(
-                                        <button
-                                            type="button"
-                                            commandfor=(failed_delivery_dialog_id(row))
-                                            command="show-modal"
-                                            class="cursor-pointer font-medium underline-offset-4 outline-none after:absolute after:inset-0 hover:underline focus-visible:underline"
-                                        >
-                                            (event_label(row))
-                                        </button>
-                                    )
-                                    table_cell(
-                                        attrs: attributes! { class="max-w-sm truncate" },
-                                        (&row.error)
-                                    )
-                                    table_cell((row.attempts.to_string()))
-                                    table_cell(local_time(at: row.received_at, format: TimeFormat::Absolute))
-                                    table_cell(
-                                        attrs: attributes! { class="text-right" },
-                                        button(
-                                            variant: ButtonVariant::Outline,
-                                            size: ButtonSize::Sm,
-                                            attrs: attributes! {
-                                                type="button"
-                                                class="relative z-10"
-                                                hx-post=(href!(retry, DeliveryId(row.id)).query(query))
-                                                hx-target=(SYNC_STATUS_TARGET)
-                                                hx-swap="outerHTML"
-                                            },
-                                            "Retry"
-                                        )
-                                    )
-                                )
-                            }
-                        )
-                    )
-                )
-                #[key(row.id.as_u128())]
-                for row in rows {
-                    failed_delivery_dialog(row: row)
-                }
-            }
-        </section>
-    })
-}
-
-#[component]
-async fn failed_delivery_dialog(row: &FailedRow) -> topcoat::Result<impl View> {
-    let dialog_id = failed_delivery_dialog_id(row);
-    let title_id = format!("{dialog_id}-title");
-    let body = serde_json::from_slice::<serde_json::Value>(&row.body)
-        .and_then(|x| serde_json::to_string_pretty(&x))
-        .unwrap_or_else(|_| String::from_utf8_lossy(&row.body).into_owned());
-    Ok(view! {
-        dialog(
-            open: false,
-            attrs: attributes! { id=(&dialog_id) aria-labelledby=(&title_id) },
-            dialog_content(
-                attrs: attributes! { class="[&]:max-w-3xl" },
-                dialog_header(
-                    dialog_title(
-                        attrs: attributes! { id=(&title_id) },
-                        (format!("{} from {}", event_label(row), source_label(row.source)))
-                    )
-                    dialog_description(
-                        "Received " local_time(at: row.received_at, format: TimeFormat::Absolute)
-                    )
-                )
-                <div class="flex flex-col gap-2">
-                    <h3 class="text-sm font-medium">"Last error"</h3>
-                    <pre class="rounded-md bg-foreground/5 p-3 font-mono text-xs break-words whitespace-pre-wrap">(&row.error)</pre>
-                </div>
-                <div class="flex flex-col gap-2">
-                    <h3 class="text-sm font-medium">"Attempts"</h3>
-                    table(
-                        table_header(
-                            table_row(
-                                table_head("Time")
-                                table_head("Error")
-                            )
-                        )
-                        table_body(
-                            #[key(index)]
-                            for (index, attempt) in row.attempt_log.iter().enumerate() {
-                                table_row(
-                                    table_cell(local_time(at: attempt.attempted_at, format: TimeFormat::Absolute))
-                                    table_cell(
-                                        attrs: attributes! { class="break-words [&]:whitespace-pre-wrap" },
-                                        match &attempt.error {
-                                            Some(error) => (error),
-                                            None => "No error",
-                                        }
-                                    )
-                                )
-                            }
-                        )
-                    )
-                </div>
-                <div class="flex flex-col gap-2">
-                    <h3 class="text-sm font-medium">"Body"</h3>
-                    <pre class="max-h-96 overflow-auto rounded-md bg-foreground/5 p-3 font-mono text-xs">(body)</pre>
-                </div>
-                dialog_footer(
-                    button(
-                        variant: ButtonVariant::Outline,
-                        attrs: attributes! {
-                            type="button"
-                            commandfor=(&dialog_id)
-                            command="close"
-                        },
-                        "Close"
-                    )
-                )
-            )
-        )
-    })
-}
-
-#[component]
 async fn sync_problems(status: &SyncStatus, query: ProblemQuery) -> topcoat::Result<impl View> {
     let page = status.problem_page;
     let page_href = move |page: usize| {
@@ -762,14 +584,6 @@ fn source_label(source: Source) -> &'static str {
         Source::Radarr => "Radarr",
         Source::Sonarr => "Sonarr",
     }
-}
-
-fn failed_delivery_dialog_id(row: &FailedRow) -> String {
-    format!("failed-delivery-{}", row.id)
-}
-
-fn event_label(row: &FailedRow) -> &str {
-    row.event_type.as_deref().unwrap_or("Unknown")
 }
 
 fn source_items(source: Source, items: usize) -> String {

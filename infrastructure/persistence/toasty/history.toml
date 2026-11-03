@@ -99,3 +99,8 @@ snapshot_name = "20261103_033711_snapshot.toml"
 id = 3603335964398289043
 name = "20261103_033712_inbox_attempts.sql"
 snapshot_name = "20261103_033712_snapshot.toml"
+
+[[migrations]]
+id = 635962922419300786
+name = "20261103_040141_drop_inbox_attempts.sql"
+snapshot_name = "20261103_040141_snapshot.toml"

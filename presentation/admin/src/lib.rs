@@ -86,7 +86,6 @@ pub(crate) enum AdminAction {
     AdminDelete,
     AccountChangePassword,
     SyncStart,
-    SyncRetry,
     SyncConfirmRemoval,
 }
 
@@ -106,7 +105,6 @@ impl AdminAction {
             Self::AdminDelete => "admin.delete",
             Self::AccountChangePassword => "account.change_password",
             Self::SyncStart => "sync.start",
-            Self::SyncRetry => "sync.retry",
             Self::SyncConfirmRemoval => "sync.confirm_removal",
         }
     }
