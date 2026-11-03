@@ -41,6 +41,7 @@ getrandom = "0.4.3"
 hmac = "0.13.0"
 http = "1.5.0"
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png"] }
+isolang = "2.4.0"
 jiff = "0.2.38"
 jsonschema = { version = "0.60.2", default-features = false }
 lettre = { version = "0.11.23", default-features = false }

@@ -175,6 +175,8 @@ pub struct HlsSession {
     pub keyframes: Vec<Duration>,
     pub video: VideoStream,
     pub audio: Vec<HlsAudioTrack>,
+    pub subtitle_streams: Vec<SubtitleStream>,
+    pub subtitle_files: Vec<FoundSubtitleFile>,
     pub start_position: Duration,
 }
 

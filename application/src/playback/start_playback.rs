@@ -125,7 +125,7 @@ pub async fn call(
     if force_hls && reasons.is_empty() {
         reasons.push(PlayReason::ForcedHls);
     }
-    let hls = match (video, duration) {
+    let copied_video = match (video, duration) {
         (Some(video), Some(duration))
             if !reasons.is_empty() && reasons.iter().all(PlayReason::copies_video) =>
         {
@@ -140,7 +140,7 @@ pub async fn call(
         _ => None,
     };
     let mut audio_tracks = Vec::new();
-    if hls.is_some() {
+    if copied_video.is_some() {
         let mut streams = media_file.audio_streams.get().iter().collect::<Vec<_>>();
         streams.sort_by_key(|x| x.index);
         for stream in streams {
@@ -166,11 +166,11 @@ pub async fn call(
     }
     if !reasons.is_empty() {
         Span::current().set_attribute(SELFLESS_PLAYBACK_REASON_KINDS, reason_kinds(&reasons));
-        if hls.is_none() {
+        if copied_video.is_none() {
             return Ok(Output::NeedsTranscode);
         }
     }
-    let method = if hls.is_none() {
+    let method = if copied_video.is_none() {
         PlayMethod::DirectPlay
     } else if audio_tracks.iter().any(|x| x.transcode.is_some()) {
         PlayMethod::Transcode
@@ -180,6 +180,10 @@ pub async fn call(
     let episodes = player_episodes(&mut db_context, episodes)
         .await
         .map_err(Error::caused_by)?;
+    let mut subtitle_streams = media_file.subtitle_streams.into_inner();
+    let mut subtitle_files = media_file.subtitle_files.into_inner();
+    subtitle_streams.sort_by_key(|x| x.index);
+    subtitle_files.sort_by(|a, b| a.path.cmp(&b.path));
     let now = clock.call();
     let mut transaction = db_context.transaction().await.map_err(Error::caused_by)?;
     let mut ended = Vec::new();
@@ -220,7 +224,7 @@ pub async fn call(
     for id in ended {
         end_hls_session.call(id).await;
     }
-    if let Some((video, duration, keyframes)) = hls {
+    if let Some((video, duration, keyframes)) = copied_video {
         start_hls_session
             .call(HlsSession {
                 playback_id: playback.id,
@@ -237,6 +241,29 @@ pub async fn call(
                     hdr_type: video.hdr_type,
                 },
                 audio: audio_tracks,
+                subtitle_streams: subtitle_streams
+                    .iter()
+                    .filter(|x| x.text)
+                    .map(|x| ports::SubtitleStream {
+                        index: x.index,
+                        codec: x.codec.clone(),
+                        language: x.language.clone(),
+                        title: x.title.clone(),
+                        default: x.is_default,
+                        forced: x.forced,
+                        hearing_impaired: x.hearing_impaired,
+                        text: x.text,
+                    })
+                    .collect(),
+                subtitle_files: subtitle_files
+                    .iter()
+                    .map(|x| ports::FoundSubtitleFile {
+                        path: x.path.clone(),
+                        language: x.language.clone(),
+                        hearing_impaired: x.hearing_impaired,
+                        forced: x.forced,
+                    })
+                    .collect(),
                 start_position: Duration::try_from_secs_f64(start_position).unwrap_or_default(),
             })
             .await
@@ -255,11 +282,8 @@ pub async fn call(
     }
     DECISIONS.add(1, &decision);
     let mut audio_streams = media_file.audio_streams.into_inner();
-    let mut subtitle_streams = media_file.subtitle_streams.into_inner();
-    let mut subtitle_files = media_file.subtitle_files.into_inner();
     audio_streams.sort_by_key(|x| x.index);
-    subtitle_streams.sort_by_key(|x| x.index);
-    subtitle_files.sort_by(|a, b| a.path.cmp(&b.path));
+    let hls = playback.method != PlayMethod::DirectPlay;
     Ok(Output::Playback(Box::new(Playback {
         id: playback.id,
         method: playback.method,
@@ -286,7 +310,11 @@ pub async fn call(
         subtitle_tracks: subtitle_streams
             .into_iter()
             .map(|x| SubtitleTrack {
-                in_stream: profile.subtitle_codecs.contains(&x.codec),
+                in_stream: if hls {
+                    x.text
+                } else {
+                    profile.subtitle_codecs.contains(&x.codec)
+                },
                 id: x.id,
                 language: x.language,
                 label: x.title,
@@ -307,7 +335,7 @@ pub async fn call(
                 hearing_impaired: x.hearing_impaired,
                 external: true,
                 text: true,
-                in_stream: false,
+                in_stream: hls,
             }))
             .collect(),
     })))

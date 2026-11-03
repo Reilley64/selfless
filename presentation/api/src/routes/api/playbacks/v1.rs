@@ -397,6 +397,7 @@ pub(crate) async fn hls_file(cx: &Cx) -> topcoat::Result<Response> {
     let content_type = match file_name.rsplit_once('.').map(|(_, x)| x) {
         Some("m3u8") => "application/vnd.apple.mpegurl",
         Some("m4s") => "video/iso.segment",
+        Some("vtt") => "text/vtt",
         _ => "video/mp4",
     };
     let mut request = http::Request::new(());
@@ -448,6 +449,7 @@ mod tests {
     use test_app::MAIN_PLAYLIST;
     use test_app::SEGMENT;
     use test_app::TestApp;
+    use test_app::WEBVTT;
     use test_fixtures::TestServer;
     use tracing::level_filters::LevelFilter;
     use tracing_subscriber::layer::SubscriberExt;
@@ -822,7 +824,7 @@ mod tests {
         let (main_status, main_headers, main) =
             server.get_bytes(playback["url"].as_str().unwrap()).await;
         let (segment_status, segment_headers, segment) =
-            server.get_bytes(&sibling(&playback, "video-0.m4s")).await;
+            server.get_bytes(&sibling(&playback, "0.m4s")).await;
 
         assert_eq!(status, StatusCode::CREATED);
         assert_eq!(playback["method"], "remux");
@@ -841,6 +843,73 @@ mod tests {
         assert_eq!(segment_status, StatusCode::OK);
         assert_eq!(segment_headers[CONTENT_TYPE], "video/iso.segment");
         assert_eq!(segment, SEGMENT);
+    }
+
+    #[tokio::test]
+    async fn an_hls_playback_carries_every_text_subtitle_in_its_stream_but_no_image_subtitle() {
+        let app = TestApp::new().await;
+        let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;
+        let (media_file_id, file) = add_media_file(&app, "mkv", Some("matroska,webm")).await;
+        add_movie_playing(&app, media_file_id, true).await;
+        let mut db_context = app.state.db_context.clone();
+        let media_file = db_context
+            .media_files()
+            .find(media_file_id)
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap()
+            .unwrap();
+        for (index, codec, text) in [(3, "subrip", true), (4, "hdmv_pgs_subtitle", false)] {
+            media_file
+                .subtitle_streams()
+                .create()
+                .index(index)
+                .codec(codec)
+                .language(Some("eng".to_owned()))
+                .is_default(false)
+                .forced(false)
+                .hearing_impaired(false)
+                .text(text)
+                .exec(db_context.executor_mut())
+                .await
+                .unwrap();
+        }
+        media_file
+            .subtitle_files()
+            .create()
+            .path(file.0.with_extension("en.srt").to_str().unwrap())
+            .language(Some("en".to_owned()))
+            .hearing_impaired(false)
+            .forced(false)
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap();
+        let server = serve(&app).await;
+
+        let (status, playback) = start(&server, &token, media_file_id).await;
+        let (subtitle_status, subtitle_headers, subtitle) = server
+            .get_bytes(&sibling(&playback, "subtitles-0.vtt"))
+            .await;
+
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(playback["method"], "remux");
+        let tracks = playback["subtitleTracks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|x| (x["codec"].clone(), x["inStream"].clone()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            tracks,
+            [
+                (json!("subrip"), json!(true)),
+                (json!("hdmv_pgs_subtitle"), json!(false)),
+                (json!("srt"), json!(true)),
+            ]
+        );
+        assert_eq!(subtitle_status, StatusCode::OK);
+        assert_eq!(subtitle_headers[CONTENT_TYPE], "text/vtt");
+        assert_eq!(subtitle, WEBVTT.as_bytes());
     }
 
     #[tokio::test]
@@ -1085,7 +1154,7 @@ mod tests {
         let (_, current) = start(&server, &token, media_file_id).await;
 
         for playback in [&stopped, &replaced] {
-            for file_name in ["main.m3u8", "video-0.m4s"] {
+            for file_name in ["main.m3u8", "0.m4s"] {
                 let (status, _, problem) = server.get_bytes(&sibling(playback, file_name)).await;
 
                 assert_eq!(status, StatusCode::NOT_FOUND, "{file_name}");
@@ -1095,7 +1164,7 @@ mod tests {
             assert!(!app.hls.folder(playback_id(playback)).exists());
         }
         assert_eq!(
-            server.get_bytes(&sibling(&current, "video-0.m4s")).await.0,
+            server.get_bytes(&sibling(&current, "0.m4s")).await.0,
             StatusCode::OK
         );
     }

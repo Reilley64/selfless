@@ -64,6 +64,7 @@ use uuid::Uuid;
 pub const MAIN_PLAYLIST: &str =
     "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x800\nvideo.m3u8\n";
 pub const SEGMENT: &[u8] = b"a ready-made segment";
+pub const WEBVTT: &str = "WEBVTT\n\n00:01.000 --> 00:03.000\nA ready-made subtitle\n";
 
 pub struct TestApp {
     pub state: AppState,
@@ -102,7 +103,8 @@ impl FakeHls {
                 std::fs::create_dir_all(&folder).map_err(HlsError::caused_by)?;
                 std::fs::write(folder.join("main.m3u8"), MAIN_PLAYLIST)
                     .map_err(HlsError::caused_by)?;
-                std::fs::write(folder.join("video-0.m4s"), SEGMENT).map_err(HlsError::caused_by)
+                std::fs::write(folder.join("0.m4s"), SEGMENT).map_err(HlsError::caused_by)?;
+                std::fs::write(folder.join("subtitles-0.vtt"), WEBVTT).map_err(HlsError::caused_by)
             })
         })
     }
