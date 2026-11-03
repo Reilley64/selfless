@@ -359,7 +359,7 @@ struct SyncedEpisode {
     nfo_modified_at: Option<Timestamp>,
     added_at: Option<Timestamp>,
     media_file_id: Option<Uuid>,
-    visible: bool,
+    in_library: bool,
 }
 
 macro_rules! set_episode {
@@ -371,7 +371,7 @@ macro_rules! set_episode {
             nfo_modified_at,
             added_at,
             media_file_id,
-            visible,
+            in_library,
         } = $synced;
         $builder
             .season_id(season_id)
@@ -383,7 +383,7 @@ macro_rules! set_episode {
             .nfo_modified_at(nfo_modified_at)
             .added_at(added_at)
             .media_file_id(media_file_id)
-            .visible(visible)
+            .in_library(in_library)
     }};
 }
 
@@ -532,7 +532,7 @@ async fn write(
             }
             None => (None, false),
         };
-        let visible = Episode::in_library(source_episode.media_file.is_some(), file_on_disk);
+        let in_library = Episode::in_library(source_episode.media_file.is_some(), file_on_disk);
         let source_added_at = source_episode.media_file.map(|x| x.added_at);
         let synced = SyncedEpisode {
             season_id,
@@ -544,7 +544,7 @@ async fn write(
                 source_added_at,
             ),
             media_file_id,
-            visible,
+            in_library,
         };
         let episode_id = match stored {
             Some(mut episode) => {
@@ -554,7 +554,7 @@ async fn write(
                     || episode.metadata() != synced.metadata
                     || episode.added_at != synced.added_at
                     || episode.media_file_id != synced.media_file_id
-                    || episode.visible != synced.visible
+                    || episode.in_library != synced.in_library
                 {
                     changed = true;
                     set_episode!(episode.update(), synced)

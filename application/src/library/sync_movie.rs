@@ -224,13 +224,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_movie_whose_media_file_is_on_disk_is_stored_visible_with_radarrs_fields() {
+    async fn a_movie_whose_media_file_is_on_disk_is_stored_in_the_library_with_radarrs_fields() {
         let library = MovieLibrary::new().await;
 
         library.sync_movie().await.unwrap();
 
         let movie = movie(&library).await;
-        assert!(movie.visible);
+        assert!(movie.in_library);
         assert_eq!(movie.radarr_id, 42);
         assert_eq!(movie.tmdb_id, 329_865);
         assert_eq!(movie.title, "Arrival");
@@ -255,9 +255,9 @@ mod tests {
         library.sources().movie = Some(arrival(Some(MOVIE_FILE)));
         library.sync_movie().await.unwrap();
 
-        assert!(!hidden.visible);
+        assert!(!hidden.in_library);
         let after = movie(&library).await;
-        assert!(after.visible);
+        assert!(after.in_library);
         assert_eq!(after.id, before.id);
     }
 
@@ -268,7 +268,7 @@ mod tests {
 
         library.sync_movie().await.unwrap();
 
-        assert!(!movie(&library).await.visible);
+        assert!(!movie(&library).await.in_library);
     }
 
     #[tokio::test]
@@ -290,7 +290,7 @@ mod tests {
         let after = movie(&library).await;
         assert_eq!(after.id, before.id);
         assert_eq!(after.added_at, Some(at("2026-10-29T10:00:00Z")));
-        assert!(after.visible);
+        assert!(after.in_library);
     }
 
     #[tokio::test]
@@ -559,7 +559,7 @@ mod tests {
         library.sync_movie().await.unwrap();
 
         assert_eq!(kept.id, before.id);
-        assert!(kept.visible);
+        assert!(kept.in_library);
         assert_eq!(kept.title, "Arrival");
         assert_eq!(kept.media_file_id, before.media_file_id);
         assert_eq!(kept_artwork, 1);
@@ -584,7 +584,7 @@ mod tests {
         library.sync_movie().await.unwrap();
 
         let movie = movie(&library).await;
-        assert!(movie.visible);
+        assert!(movie.in_library);
         assert_eq!(movie.title, "Arrival");
         assert_eq!(
             artwork(&library).await,
@@ -611,7 +611,7 @@ mod tests {
         library.sync_movie().await.unwrap();
 
         let movie = movie(&library).await;
-        assert!(!movie.visible);
+        assert!(!movie.in_library);
         assert_eq!(movie.media_file_id, None);
         assert_eq!(
             unreadable_file_problems(&library).await,

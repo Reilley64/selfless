@@ -135,7 +135,7 @@ pub(crate) async fn save(
         }
     };
     if changed {
-        save_file_not_found(scope, id, path, inspected.found.is_some()).await?;
+        save_missing_media_file(scope, id, path, inspected.found.is_some()).await?;
     }
     match inspected.probed {
         Probed::Unchanged => {}
@@ -176,7 +176,7 @@ async fn save_probe(
             SyncProblem::fields().media_file_id().eq(media_file_id).and(
                 SyncProblem::fields()
                     .kind()
-                    .eq(SyncProblemKind::FfprobeFailed),
+                    .eq(SyncProblemKind::UnrecognisedMediaFile),
             ),
         )
         .delete()
@@ -187,7 +187,7 @@ async fn save_probe(
             .sync_problems()
             .create()
             .media_file_id(Some(media_file_id))
-            .kind(SyncProblemKind::FfprobeFailed)
+            .kind(SyncProblemKind::UnrecognisedMediaFile)
             .path(path)
             .exec(scope.executor_mut())
             .await?;
@@ -285,7 +285,7 @@ async fn save_subtitle_files(
     Ok(true)
 }
 
-async fn save_file_not_found(
+async fn save_missing_media_file(
     scope: &mut impl DbScope,
     media_file_id: Uuid,
     path: &str,
@@ -297,7 +297,7 @@ async fn save_file_not_found(
             SyncProblem::fields().media_file_id().eq(media_file_id).and(
                 SyncProblem::fields()
                     .kind()
-                    .eq(SyncProblemKind::FileNotFound),
+                    .eq(SyncProblemKind::MissingMediaFile),
             ),
         )
         .delete()
@@ -308,7 +308,7 @@ async fn save_file_not_found(
             .sync_problems()
             .create()
             .media_file_id(Some(media_file_id))
-            .kind(SyncProblemKind::FileNotFound)
+            .kind(SyncProblemKind::MissingMediaFile)
             .path(path)
             .exec(scope.executor_mut())
             .await?;
@@ -521,7 +521,7 @@ mod tests {
         subtitle_files
     }
 
-    async fn movie_is_visible(library: &MovieLibrary) -> bool {
+    async fn movie_is_in_library(library: &MovieLibrary) -> bool {
         let mut db_context = library.db_context.clone();
         let [movie]: [Movie; 1] = db_context
             .movies()
@@ -531,7 +531,7 @@ mod tests {
             .unwrap()
             .try_into()
             .unwrap();
-        movie.visible
+        movie.in_library
     }
 
     async fn inspect_and_save(library: &MovieLibrary) -> bool {
@@ -625,7 +625,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_file_ffprobe_cannot_read_stays_visible_without_streams_until_a_probe_succeeds() {
+    async fn an_unrecognised_media_file_stays_in_the_library_without_streams_until_a_probe_succeeds()
+     {
         let library = MovieLibrary::new().await;
         library.sources().unprobeable.insert(MOVIE_FILE.to_owned());
 
@@ -635,11 +636,11 @@ mod tests {
         let media_file = media_file(&library).await;
         assert_eq!(media_file.container, None);
         assert!(streams(&library).await.video_streams.is_empty());
-        assert!(movie_is_visible(&library).await);
+        assert!(movie_is_in_library(&library).await);
         assert_eq!(
             problems(&library).await,
             [(
-                SyncProblemKind::FfprobeFailed,
+                SyncProblemKind::UnrecognisedMediaFile,
                 Some(media_file.id),
                 MOVIE_FILE.to_owned()
             )]
@@ -657,7 +658,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_missing_file_records_file_not_found_until_it_appears() {
+    async fn a_missing_file_records_a_missing_media_file_until_it_appears() {
         let library = MovieLibrary::new().await;
         library.sources().files_on_disk.clear();
 
@@ -667,7 +668,7 @@ mod tests {
         assert_eq!(
             problems(&library).await,
             [(
-                SyncProblemKind::FileNotFound,
+                SyncProblemKind::MissingMediaFile,
                 Some(media_file.id),
                 MOVIE_FILE.to_owned()
             )]

@@ -48,7 +48,7 @@ async fn a_radarr_download_delivery_re_syncs_its_movie_while_the_server_runs() {
     let movie = eventually(async || {
         db_context
             .movies()
-            .filter(Movie::fields().visible().eq(true))
+            .filter(Movie::fields().in_library().eq(true))
             .first()
             .exec(db_context.executor_mut())
             .await
@@ -103,7 +103,7 @@ async fn a_sonarr_download_delivery_re_syncs_its_show_while_the_server_runs() {
     eventually(async || {
         db_context
             .episodes()
-            .filter(Episode::fields().visible().eq(true))
+            .filter(Episode::fields().in_library().eq(true))
             .first()
             .exec(db_context.executor_mut())
             .await

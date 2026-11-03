@@ -343,17 +343,17 @@ mod tests {
         retitle_show(&library);
         library.sync_show().await.unwrap();
         let kept = show(&library).await;
-        let kept_visible = episode(&library, 2, 1).await.visible;
+        let kept_in_library = episode(&library, 2, 1).await.in_library;
         let recorded = unreadable_file_problems(&library).await;
         library.sources().unreadable_files.clear();
         library.sync_show().await.unwrap();
 
         assert_eq!(kept.id, before.id);
         assert_eq!(kept.title, "Severance");
-        assert!(kept_visible);
+        assert!(kept_in_library);
         assert_eq!(recorded, [(Some(before.id), S01E01_FILE.to_owned())]);
         assert_eq!(show(&library).await.title, "Severance (2022)");
-        assert!(!episode(&library, 2, 1).await.visible);
+        assert!(!episode(&library, 2, 1).await.in_library);
         assert!(unreadable_file_problems(&library).await.is_empty());
     }
 
@@ -514,7 +514,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_new_show_with_an_unreadable_file_is_stored_without_visible_episodes_and_with_an_unreadable_file()
+    async fn a_new_show_with_an_unreadable_file_is_stored_without_episodes_in_the_library_and_with_an_unreadable_file()
      {
         let library = ShowLibrary::new().await;
         library
@@ -525,7 +525,7 @@ mod tests {
         library.sync_show().await.unwrap();
 
         let show = show(&library).await;
-        assert!(episodes(&library).await.iter().all(|(_, x)| !x.visible));
+        assert!(episodes(&library).await.iter().all(|(_, x)| !x.in_library));
         assert!(media_files(&library).await.is_empty());
         assert_eq!(
             unreadable_file_problems(&library).await,
@@ -534,8 +534,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_show_is_stored_with_sonarrs_fields_and_only_episodes_with_a_media_file_are_visible()
-    {
+    async fn a_show_is_stored_with_sonarrs_fields_and_only_episodes_with_a_media_file_are_in_the_library()
+     {
         let library = ShowLibrary::new().await;
 
         library.sync_show().await.unwrap();
@@ -569,7 +569,7 @@ mod tests {
             episodes(&library)
                 .await
                 .into_iter()
-                .map(|(season, x)| (season, x.number, x.visible))
+                .map(|(season, x)| (season, x.number, x.in_library))
                 .collect::<Vec<_>>(),
             [
                 (0, 1, true),
@@ -612,12 +612,12 @@ mod tests {
 
         library.sync_show().await.unwrap();
 
-        assert!(!episode(&library, 1, 1).await.visible);
-        assert!(episode(&library, 1, 2).await.visible);
+        assert!(!episode(&library, 1, 1).await.in_library);
+        assert!(episode(&library, 1, 2).await.in_library);
     }
 
     #[tokio::test]
-    async fn a_shared_file_missing_on_disk_records_one_file_not_found_problem() {
+    async fn a_shared_file_missing_on_disk_records_one_missing_media_file_problem() {
         let library = ShowLibrary::new().await;
         library.sources().files_on_disk.remove(S01E02_E03_FILE);
 
@@ -631,7 +631,7 @@ mod tests {
                 .map(|x| (x.kind, x.media_file_id, x.path))
                 .collect::<Vec<_>>(),
             [(
-                SyncProblemKind::FileNotFound,
+                SyncProblemKind::MissingMediaFile,
                 media_file_id,
                 S01E02_E03_FILE.to_owned()
             )]
@@ -660,14 +660,14 @@ mod tests {
         with_source_episodes(&library, |episodes| *episodes = with_files);
         library.sync_show().await.unwrap();
 
-        assert!(hidden.iter().all(|(_, x)| !x.visible));
+        assert!(hidden.iter().all(|(_, x)| !x.in_library));
         assert_eq!(show(&library).await.id, show_before.id);
         let episodes_after = episodes(&library).await;
         assert_eq!(
             episodes_after.iter().map(|(_, x)| x.id).collect::<Vec<_>>(),
             episodes_before
         );
-        assert!(episode(&library, 1, 1).await.visible);
+        assert!(episode(&library, 1, 1).await.in_library);
     }
 
     #[tokio::test]
@@ -690,7 +690,7 @@ mod tests {
         assert_eq!(after.id, before.id);
         assert_eq!(after.added_at, Some(at("2025-01-17T03:12:44Z")));
         assert_ne!(after.media_file_id, before.media_file_id);
-        assert!(after.visible);
+        assert!(after.in_library);
     }
 
     #[tokio::test]

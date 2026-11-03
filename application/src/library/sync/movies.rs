@@ -106,7 +106,7 @@ struct SyncedMovie {
     nfo_modified_at: Option<Timestamp>,
     added_at: Option<Timestamp>,
     media_file_id: Option<Uuid>,
-    visible: bool,
+    in_library: bool,
 }
 
 macro_rules! set_movie {
@@ -117,7 +117,7 @@ macro_rules! set_movie {
             nfo_modified_at,
             added_at,
             media_file_id,
-            visible,
+            in_library,
         } = $synced;
         $builder
             .radarr_id(radarr_id)
@@ -136,7 +136,7 @@ macro_rules! set_movie {
             .nfo_modified_at(nfo_modified_at)
             .added_at(added_at)
             .media_file_id(media_file_id)
-            .visible(visible)
+            .in_library(in_library)
     }};
 }
 
@@ -174,7 +174,7 @@ pub(crate) async fn save(
         }
         source_movie.media_file = None;
     }
-    let visible = Movie::in_library(
+    let in_library = Movie::in_library(
         source_movie.media_file.is_some(),
         media_file.as_ref().is_some_and(Inspected::on_disk),
     );
@@ -206,7 +206,7 @@ pub(crate) async fn save(
         nfo_modified_at,
         added_at: domain::first_added_at(stored.as_ref().and_then(|x| x.added_at), source_added_at),
         media_file_id,
-        visible,
+        in_library,
     };
     let (movie_id, change) = match stored {
         Some(mut movie) => {
@@ -215,7 +215,7 @@ pub(crate) async fn save(
                 || movie.radarr_id != synced.radarr_id
                 || movie.added_at != synced.added_at
                 || movie.media_file_id != synced.media_file_id
-                || movie.visible != synced.visible
+                || movie.in_library != synced.in_library
                 || movie.nfo_modified_at != synced.nfo_modified_at
                 || movie.metadata() != synced.metadata;
             if changed {

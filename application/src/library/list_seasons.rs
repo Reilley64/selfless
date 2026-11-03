@@ -87,7 +87,7 @@ mod tests {
         season_id: Uuid,
         tvdb_id: i64,
         number: i64,
-        visible: bool,
+        in_library: bool,
     ) -> Uuid {
         db_context
             .episodes()
@@ -96,7 +96,7 @@ mod tests {
             .tvdb_id(tvdb_id)
             .number(number)
             .title(format!("Episode {number}"))
-            .visible(visible)
+            .in_library(in_library)
             .exec(db_context.executor_mut())
             .await
             .unwrap()
@@ -130,9 +130,9 @@ mod tests {
      {
         let mut db_context = mock_db_context().await;
         let show_id = seed_show(&mut db_context, 1, "Severance").await;
-        for (number, visible) in [(0, true), (2, true), (1, true), (3, false)] {
+        for (number, in_library) in [(0, true), (2, true), (1, true), (3, false)] {
             let season_id = seed_season(&mut db_context, show_id, number).await;
-            seed_episode(&mut db_context, season_id, number, 1, visible).await;
+            seed_episode(&mut db_context, season_id, number, 1, in_library).await;
         }
         let other_show = seed_show(&mut db_context, 2, "Andor").await;
         let other_season = seed_season(&mut db_context, other_show, 1).await;

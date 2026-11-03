@@ -97,7 +97,7 @@ mod tests {
                     .year(2016)
                     .genres(Vec::<String>::new())
                     .directors(Vec::<String>::new())
-                    .visible(true)
+                    .in_library(true)
                     .exec(db_context.executor_mut())
                     .await
                     .unwrap();

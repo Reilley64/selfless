@@ -110,7 +110,7 @@ mod tests {
         season_id: Uuid,
         tvdb_id: i64,
         number: i64,
-        visible: bool,
+        in_library: bool,
     ) -> Uuid {
         db_context
             .episodes()
@@ -119,7 +119,7 @@ mod tests {
             .tvdb_id(tvdb_id)
             .number(number)
             .title(format!("Episode {number}"))
-            .visible(visible)
+            .in_library(in_library)
             .exec(db_context.executor_mut())
             .await
             .unwrap()

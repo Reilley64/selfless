@@ -6,13 +6,13 @@ pub use dependencies::Dependencies;
 pub use error::Error;
 pub use output::ApiCall;
 pub use output::HeldRemoval;
+pub use output::InLibraryCounts;
 pub use output::LastReconcile;
 pub use output::Output;
 pub use output::Problem;
 pub use output::ProblemItem;
 pub use output::ReconcileProgress;
 pub use output::SourceStatus;
-pub use output::VisibleCounts;
 
 use crate::library::Reconciles;
 use crate::library::SourceHealth;
@@ -61,7 +61,7 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<Output, Error
             &reconciles,
             &source_health,
             Source::Radarr,
-            VisibleCounts::Movies(movies),
+            InLibraryCounts::Movies(movies),
         )
         .await?,
         sonarr: source_status(
@@ -69,7 +69,7 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<Output, Error
             &reconciles,
             &source_health,
             Source::Sonarr,
-            VisibleCounts::Shows { shows, episodes },
+            InLibraryCounts::Shows { shows, episodes },
         )
         .await?,
         problems,
@@ -81,7 +81,7 @@ async fn source_status(
     reconciles: &Reconciles,
     source_health: &SourceHealth,
     source: Source,
-    visible: VisibleCounts,
+    in_library: InLibraryCounts,
 ) -> Result<SourceStatus, Error> {
     let state = db_context
         .source_states()
@@ -119,7 +119,7 @@ async fn source_status(
         held_removal: held_removal.map(|x| HeldRemoval {
             count: x.items.get().len(),
         }),
-        visible,
+        in_library,
     })
 }
 
@@ -223,7 +223,7 @@ mod tests {
             tmdb_id: i64,
             title: &str,
             media_file_id: Option<Uuid>,
-            visible: bool,
+            in_library: bool,
         ) -> Uuid {
             let db_context = &mut self.db_context;
             db_context
@@ -236,7 +236,7 @@ mod tests {
                 .genres(Vec::<String>::new())
                 .directors(Vec::<String>::new())
                 .media_file_id(media_file_id)
-                .visible(visible)
+                .in_library(in_library)
                 .exec(db_context.executor_mut())
                 .await
                 .unwrap()
@@ -277,7 +277,7 @@ mod tests {
             number: i64,
             title: &str,
             media_file_id: Option<Uuid>,
-            visible: bool,
+            in_library: bool,
         ) {
             self.episodes += 1;
             let db_context = &mut self.db_context;
@@ -289,7 +289,7 @@ mod tests {
                 .number(number)
                 .title(title)
                 .media_file_id(media_file_id)
-                .visible(visible)
+                .in_library(in_library)
                 .exec(db_context.executor_mut())
                 .await
                 .unwrap();
@@ -351,7 +351,7 @@ mod tests {
         seeded.movie(2, "Dune", Some(dune), false).await;
         seeded
             .problem(
-                SyncProblemKind::FfprobeFailed,
+                SyncProblemKind::UnrecognisedMediaFile,
                 "/movies/Arrival.mkv",
                 None,
                 None,
@@ -360,7 +360,7 @@ mod tests {
             .await;
         seeded
             .problem(
-                SyncProblemKind::FileNotFound,
+                SyncProblemKind::MissingMediaFile,
                 "/movies/Dune.mkv",
                 None,
                 None,
@@ -374,11 +374,15 @@ mod tests {
             kinds_paths_and_titles(&status.problems),
             [
                 (
-                    SyncProblemKind::FfprobeFailed,
+                    SyncProblemKind::UnrecognisedMediaFile,
                     "/movies/Arrival.mkv",
                     "Arrival"
                 ),
-                (SyncProblemKind::FileNotFound, "/movies/Dune.mkv", "Dune"),
+                (
+                    SyncProblemKind::MissingMediaFile,
+                    "/movies/Dune.mkv",
+                    "Dune"
+                ),
             ]
         );
     }
@@ -448,7 +452,13 @@ mod tests {
             .episode(season, 2, "Half Loop", Some(file), true)
             .await;
         seeded
-            .problem(SyncProblemKind::FileNotFound, path, None, None, Some(file))
+            .problem(
+                SyncProblemKind::MissingMediaFile,
+                path,
+                None,
+                None,
+                Some(file),
+            )
             .await;
 
         let status = seeded.status(&SourceHealth::default()).await;
@@ -477,7 +487,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             [
                 (
-                    SyncProblemKind::FileNotFound,
+                    SyncProblemKind::MissingMediaFile,
                     path,
                     "Severance",
                     1,
@@ -485,7 +495,7 @@ mod tests {
                     "Half Loop"
                 ),
                 (
-                    SyncProblemKind::FileNotFound,
+                    SyncProblemKind::MissingMediaFile,
                     path,
                     "Severance",
                     1,
@@ -515,10 +525,10 @@ mod tests {
 
         let status = seeded.status(&SourceHealth::default()).await;
 
-        assert_eq!(status.radarr.visible, VisibleCounts::Movies(1));
+        assert_eq!(status.radarr.in_library, InLibraryCounts::Movies(1));
         assert_eq!(
-            status.sonarr.visible,
-            VisibleCounts::Shows {
+            status.sonarr.in_library,
+            InLibraryCounts::Shows {
                 shows: 1,
                 episodes: 1
             }

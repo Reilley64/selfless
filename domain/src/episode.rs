@@ -26,7 +26,7 @@ pub struct Episode {
     pub media_file_id: Option<Uuid>,
     #[belongs_to(key = media_file_id, references = id)]
     pub media_file: toasty::Deferred<Option<MediaFile>>,
-    pub visible: bool,
+    pub in_library: bool,
     pub rating: Option<f64>,
     pub nfo_modified_at: Option<Timestamp>,
     #[has_many]
@@ -39,7 +39,7 @@ impl Episode {
     }
 
     pub fn in_library_filter() -> toasty::stmt::Expr<bool> {
-        Self::fields().visible().eq(true)
+        Self::fields().in_library().eq(true)
     }
 
     pub fn metadata(&self) -> EpisodeMetadata {

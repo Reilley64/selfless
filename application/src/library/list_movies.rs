@@ -79,7 +79,7 @@ mod tests {
         db_context: &mut DbContext,
         tmdb_id: i64,
         title: &str,
-        visible: bool,
+        in_library: bool,
     ) -> Uuid {
         db_context
             .movies()
@@ -90,7 +90,7 @@ mod tests {
             .year(2016)
             .genres(Vec::<String>::new())
             .directors(Vec::<String>::new())
-            .visible(visible)
+            .in_library(in_library)
             .exec(db_context.executor_mut())
             .await
             .unwrap()
