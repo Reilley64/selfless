@@ -48,6 +48,18 @@ _Avoid_: Avatar colour, profile colour
 An email an admin sends to add a user. Its link lets the person choose their username and password. It works once and expires 7 days after the email is sent.
 _Avoid_: Invitation code, sign-up link, registration
 
+**Queued**:
+An invite whose email is waiting to be sent. A new or resent invite is queued.
+_Avoid_: Pending, sending, unsent
+
+**Sent**:
+An invite whose email the mail server accepted. Its link works for 7 days from then.
+_Avoid_: Delivered
+
+**Refused**:
+An invite whose email the mail server refused for its address. It is not sent again until an admin resends it.
+_Avoid_: Bounced, failed
+
 **Admin**:
 An account that runs the server through the admin app. An admin is not a user, cannot watch, and never appears in the user picker.
 _Avoid_: Account, administrator, owner

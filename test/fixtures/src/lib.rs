@@ -1,5 +1,6 @@
 mod clock;
 mod http;
+mod logs;
 mod mailer;
 mod mock_database;
 mod openapi;
@@ -12,6 +13,7 @@ pub use clock::FakeClock;
 pub use http::Browser;
 pub use http::Page;
 pub use http::TestServer;
+pub use logs::Logs;
 pub use mailer::FakeMailer;
 pub use mailer::SentEmail;
 pub use mock_database::mock_database;

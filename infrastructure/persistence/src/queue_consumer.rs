@@ -1,13 +1,11 @@
 use application::ports::persistence::DbContext;
 use application::ports::persistence::DbScope;
-use application::trace_context::span_context;
-use opentelemetry::Context;
+use application::trace_context;
+use opentelemetry::propagation::TextMapPropagator;
 use opentelemetry::trace::SpanContext;
 use opentelemetry::trace::TraceContextExt;
-use opentelemetry::trace::TraceFlags;
-use opentelemetry::trace::TraceState;
-use opentelemetry_sdk::trace::IdGenerator;
-use opentelemetry_sdk::trace::RandomIdGenerator;
+use opentelemetry_sdk::propagation::TraceContextPropagator;
+use std::collections::HashMap;
 use std::error::Error;
 use std::future::Future;
 use std::pin::Pin;
@@ -41,7 +39,7 @@ struct ConsumeQueueError;
 enum Claim {
     Empty,
     Delivered,
-    Failed(Uuid),
+    Failed,
 }
 
 pub(crate) async fn consume_queue<T, F, E>(
@@ -59,18 +57,7 @@ pub(crate) async fn consume_queue<T, F, E>(
         let pause = match claim(&mut db_context, table, load, &handle).await {
             Ok(Claim::Empty) => pauses.idle,
             Ok(Claim::Delivered) => Duration::ZERO,
-            Ok(Claim::Failed(id)) => {
-                if let Err(error) = toasty::sql::statement(format!(
-                    "UPDATE {table} SET updated_at = statement_timestamp() WHERE id = $1"
-                ))
-                .bind(id)
-                .exec(db_context.executor_mut())
-                .await
-                {
-                    tracing::error!(error = &error as &dyn Error, "failed to consume a queue");
-                }
-                pauses.after_failure
-            }
+            Ok(Claim::Failed) => pauses.after_failure,
             Err(error) => {
                 tracing::error!(error = &error as &dyn Error, "failed to consume a queue");
                 pauses.after_failure
@@ -97,14 +84,7 @@ where
     E: Error + Send + Sync + 'static,
 {
     let poll = tracing::info_span!(parent: None, "poll");
-    let ids = RandomIdGenerator::default();
-    let _ = poll.set_parent(Context::new().with_remote_span_context(SpanContext::new(
-        ids.new_trace_id(),
-        ids.new_span_id(),
-        TraceFlags::NOT_SAMPLED,
-        true,
-        TraceState::NONE,
-    )));
+    let _ = poll.set_parent(trace_context::unsampled_parent());
     let mut transaction = db_context.transaction().instrument(poll.clone()).await?;
     let rows = toasty::sql::query(format!(
         "SELECT id, traceparent FROM {table} WHERE delivered_at IS NULL \
@@ -177,14 +157,36 @@ where
         };
         record_failure(&Span::current(), error_type);
         transaction.rollback().await?;
-        Ok(Claim::Failed(id))
+        Ok(Claim::Failed)
     }
     .instrument(span.clone())
     .await;
-    if processed.is_err() {
-        record_failure(&span, "database_error");
+    match processed {
+        Ok(Claim::Failed) => {
+            toasty::sql::statement(format!(
+                "UPDATE {table} SET updated_at = statement_timestamp() WHERE id = $1"
+            ))
+            .bind(id)
+            .exec(db_context.executor_mut())
+            .instrument(span)
+            .await?;
+            Ok(Claim::Failed)
+        }
+        Err(error) => {
+            record_failure(&span, "database_error");
+            Err(error)
+        }
+        processed => processed,
     }
-    processed
+}
+
+fn span_context(traceparent: &str) -> SpanContext {
+    let carrier = HashMap::from([("traceparent".to_owned(), traceparent.to_owned())]);
+    TraceContextPropagator::new()
+        .extract(&carrier)
+        .span()
+        .span_context()
+        .clone()
 }
 
 fn record_failure(span: &Span, error_type: &'static str) {

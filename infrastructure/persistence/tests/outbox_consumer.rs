@@ -8,14 +8,14 @@ use persistence::HandleOutboxError;
 use persistence::QueuePauses;
 use persistence::consume_outbox;
 use persistence_test::db_context;
-use std::io;
-use std::io::Write;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::Duration;
+use test_fixtures::Logs;
 use test_fixtures::TestDatabase;
 use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
+use tracing::subscriber::DefaultGuard;
 use uuid::Uuid;
 
 const PAUSES: QueuePauses = QueuePauses {
@@ -68,34 +68,14 @@ async fn wait_until_delivered(db_context: &DbContext) {
     .expect("every row is delivered");
 }
 
-#[derive(Clone, Default)]
-struct Logs(Arc<Mutex<Vec<u8>>>);
-
-impl Logs {
-    fn capture(&self) -> tracing::subscriber::DefaultGuard {
-        let logs = self.clone();
-        test_fixtures::set_default_subscriber(
-            tracing_subscriber::fmt()
-                .with_ansi(false)
-                .with_writer(move || logs.clone())
-                .finish(),
-        )
-    }
-
-    fn text(&self) -> String {
-        String::from_utf8(self.0.lock().unwrap().clone()).unwrap()
-    }
-}
-
-impl Write for Logs {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(buffer);
-        Ok(buffer.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
+fn capture(logs: &Logs) -> DefaultGuard {
+    let logs = logs.clone();
+    test_fixtures::set_default_subscriber(
+        tracing_subscriber::fmt()
+            .with_ansi(false)
+            .with_writer(move || logs.clone())
+            .finish(),
+    )
 }
 
 fn invite_id(data: &OutboxData) -> Uuid {
@@ -279,7 +259,7 @@ async fn a_database_error_restarts_the_loop() {
     let database = TestDatabase::create().await;
     let mut db_context = db_context(&database).await;
     let logs = Logs::default();
-    let _logging = logs.capture();
+    let _logging = capture(&logs);
     toasty::sql::statement("ALTER TABLE outboxes RENAME TO outboxes_moved")
         .exec(db_context.executor_mut())
         .await

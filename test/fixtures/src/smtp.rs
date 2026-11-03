@@ -3,14 +3,13 @@ use tokio::io::AsyncWriteExt;
 use tokio::io::BufReader;
 use tokio::net::TcpListener;
 
-/// An SMTP server on a local port that accepts one connection, answers every
-/// command with success, and answers `command` with `reply` instead. Pass
-/// `"."` as the command to reply after DATA.
 pub struct ScriptedSmtpServer {
     port: u16,
 }
 
 impl ScriptedSmtpServer {
+    pub const END_OF_DATA: &str = ".";
+
     pub async fn refusing(command: &'static str, reply: String) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
@@ -23,11 +22,11 @@ impl ScriptedSmtpServer {
             while let Ok(Some(line)) = lines.next_line().await {
                 let upper = line.to_uppercase();
                 let answer = if in_data {
-                    if line != "." {
+                    if line != Self::END_OF_DATA {
                         continue;
                     }
                     in_data = false;
-                    if command == "." {
+                    if command == Self::END_OF_DATA {
                         format!("{reply}\r\n")
                     } else {
                         "250 queued\r\n".to_owned()

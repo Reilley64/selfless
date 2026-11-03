@@ -4,20 +4,14 @@ use tracing::Subscriber;
 use tracing::subscriber::DefaultGuard;
 use tracing::subscriber::NoSubscriber;
 
-static SECOND_DISPATCHER: LazyLock<Dispatch> =
+static SECOND_DISPATCHER_SO_TRACING_ASKS_EVERY_DISPATCHER: LazyLock<Dispatch> =
     LazyLock::new(|| Dispatch::new(NoSubscriber::default()));
 
-/// Sets `subscriber` as this thread's default until the guard drops.
-///
-/// tracing decides whether a span or event is on the first time any thread reaches it, and keeps
-/// that answer. While only one dispatcher exists, it asks just that thread's default, so a test
-/// with no subscriber can turn a span off for a test that has one. A second dispatcher that lives
-/// as long as the test binary makes tracing ask every dispatcher instead.
 pub fn set_default_subscriber<S>(subscriber: S) -> DefaultGuard
 where
     S: Subscriber + Send + Sync + 'static,
 {
-    LazyLock::force(&SECOND_DISPATCHER);
+    LazyLock::force(&SECOND_DISPATCHER_SO_TRACING_ASKS_EVERY_DISPATCHER);
     tracing::subscriber::set_default(subscriber)
 }
 

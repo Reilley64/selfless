@@ -1,24 +1,29 @@
+use opentelemetry::Context;
 use opentelemetry::propagation::TextMapPropagator;
 use opentelemetry::trace::SpanContext;
 use opentelemetry::trace::TraceContextExt;
+use opentelemetry::trace::TraceFlags;
+use opentelemetry::trace::TraceState;
 use opentelemetry_sdk::propagation::TraceContextPropagator;
+use opentelemetry_sdk::trace::IdGenerator;
+use opentelemetry_sdk::trace::RandomIdGenerator;
 use std::collections::HashMap;
 use tracing::Span;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
-const TRACEPARENT: &str = "traceparent";
-
 pub fn current_traceparent() -> Option<String> {
     let mut carrier = HashMap::new();
     TraceContextPropagator::new().inject_context(&Span::current().context(), &mut carrier);
-    carrier.remove(TRACEPARENT)
+    carrier.remove("traceparent")
 }
 
-pub fn span_context(traceparent: &str) -> SpanContext {
-    let carrier = HashMap::from([(TRACEPARENT.to_owned(), traceparent.to_owned())]);
-    TraceContextPropagator::new()
-        .extract(&carrier)
-        .span()
-        .span_context()
-        .clone()
+pub fn unsampled_parent() -> Context {
+    let ids = RandomIdGenerator::default();
+    Context::new().with_remote_span_context(SpanContext::new(
+        ids.new_trace_id(),
+        ids.new_span_id(),
+        TraceFlags::NOT_SAMPLED,
+        true,
+        TraceState::NONE,
+    ))
 }

@@ -21,26 +21,29 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<Output, Error
         .map_err(Error::caused_by)?;
     let mut invites = invites
         .into_iter()
-        .map(|x| output::Invite {
-            id: x.id,
-            email: x.email.to_string(),
-            email_status: match x.email_status {
-                InviteEmailStatus::Queued { queued_at } => EmailStatus::Queued { queued_at },
-                InviteEmailStatus::Sent { sent_at } => EmailStatus::Sent { sent_at },
-                InviteEmailStatus::Rejected { rejected_at } => {
-                    EmailStatus::Rejected { rejected_at }
+        .map(|x| {
+            let (email_status, status_at) = match x.email_status {
+                InviteEmailStatus::Queued { queued_at } => {
+                    (EmailStatus::Queued { queued_at }, queued_at)
                 }
-            },
-            expires_at: x.expires_at,
+                InviteEmailStatus::Sent { sent_at } => (EmailStatus::Sent { sent_at }, sent_at),
+                InviteEmailStatus::Rejected { rejected_at } => {
+                    (EmailStatus::Rejected { rejected_at }, rejected_at)
+                }
+            };
+            let invite = output::Invite {
+                id: x.id,
+                email: x.email.to_string(),
+                email_status,
+                expires_at: x.expires_at,
+            };
+            (Reverse(status_at), invite)
         })
         .collect::<Vec<_>>();
-    invites.sort_by_key(|x| {
-        let (EmailStatus::Queued { queued_at: at }
-        | EmailStatus::Sent { sent_at: at }
-        | EmailStatus::Rejected { rejected_at: at }) = x.email_status;
-        Reverse(at)
-    });
-    Ok(Output { invites })
+    invites.sort_by_key(|x| x.0);
+    Ok(Output {
+        invites: invites.into_iter().map(|x| x.1).collect(),
+    })
 }
 
 #[cfg(test)]

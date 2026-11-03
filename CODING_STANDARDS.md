@@ -46,7 +46,7 @@ The `code-review` step applies these rules to each diff. Each rule is a judgemen
 - A use case's `Dependencies` holds only the ports it calls.
 - A port is named for what the use case needs. Its parameters, results and errors are application or domain types, never a vendor's request or response shapes.
 - Radarr, Sonarr, NFO and SMTP shapes stay in the crate that talks to that system. That crate translates them into domain types before they cross a port, and keeps only the IDs and fields selfless uses.
-- A use case that must reach Radarr, Sonarr or the SMTP server after a change writes an outbox row with IDs in the same transaction, and a worker makes the call. No call to those systems runs inside a transaction or a request.
+- A use case that must reach Radarr, Sonarr or the SMTP server after a change writes an outbox row in the same transaction, and a worker makes the call. The row holds IDs and the values the handler cannot look up, such as the request origin. No call to those systems runs inside a transaction or a request.
 - An inbox or outbox handler gives the same result when it runs twice or out of order. It re-reads current state, or checks a marker committed in the same transaction as its change.
 - A route, admin page, webhook handler or worker loop calls one use case and only maps its input and output.
 - A screen that combines several models, such as Continue watching, gets one use case whose query builds its Output.
@@ -61,7 +61,7 @@ The `code-review` step applies these rules to each diff. Each rule is a judgemen
 
 - Test each behaviour once, at the smallest component that owns it, in a `#[cfg(test)] mod tests` at the bottom of that component's file: a domain rule in the domain type; a use case on the mocked database (Toasty's in-memory SQLite from `test_fixtures::mock_database`) with fake ports; a route or admin page over HTTP through `TestServer` or `Browser`, which check every JSON response against `openapi.yaml`; a worker or adapter at the bottom of its own file. These unit tests never touch PostgreSQL.
 - Unit tests check only our own logic. Never test what a dependency does, such as Toasty's id generation or serde ignoring unknown fields.
-- A behaviour that relies on PostgreSQL is an integration test. The case-insensitive collation, unique-index races, `FOR UPDATE` and other hand-written SQL, and the migrations go in `infrastructure/persistence/tests/`. Startup, health and build info through `selfless::start` go in the root `tests/`. A test that sets a global telemetry provider, or compares timings, gets its own file in its crate's `tests/`.
+- A behaviour that relies on PostgreSQL is an integration test. The case-insensitive collation, unique-index races, `FOR UPDATE` and other hand-written SQL, and the migrations go in `infrastructure/persistence/tests/`. Startup, health and build info, and the workers `selfless::start` runs, through `selfless::start` go in the root `tests/`. A test that sets a global telemetry provider, or compares timings, gets its own file in its crate's `tests/`.
 - An HTTP test checks wiring: one step past each time limit, with the problem type. The exact limit is the domain unit test.
 - Tests read data through the `DbContext`. Use raw SQL only where no model exposes the data.
 - Fixtures live in `test/`. `test-fixtures` depends on no workspace crate. `test-app` builds an `AppState` for presentation tests. Each crate's glue is a file in `test/` included with `#[path]`.
