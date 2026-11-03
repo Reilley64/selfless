@@ -6,16 +6,10 @@ mod session_cleanup;
 use application::sessions::delete_expired_sessions;
 use domain::Source;
 use infrastructure::AppState;
-use persistence::QueuePauses;
 use std::error::Error;
 use std::time::Duration;
 use tokio::time::MissedTickBehavior;
 use tokio_util::sync::CancellationToken;
-
-const QUEUE_PAUSES: QueuePauses = QueuePauses {
-    idle: Duration::from_millis(100),
-    after_failure: Duration::from_secs(30),
-};
 
 pub async fn start(state: &AppState) -> Result<(), delete_expired_sessions::Error> {
     session_cleanup::start(state).await

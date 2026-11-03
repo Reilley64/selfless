@@ -1,4 +1,4 @@
 #[derive(Debug)]
 pub struct Output {
-    pub deleted: u64,
+    pub deleted: i64,
 }

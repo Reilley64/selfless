@@ -31,7 +31,9 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<Output, Error
         .await
         .map_err(Error::caused_by)?;
     transaction.commit().await.map_err(Error::caused_by)?;
-    Ok(Output { deleted })
+    Ok(Output {
+        deleted: i64::try_from(deleted).map_err(Error::caused_by)?,
+    })
 }
 
 #[cfg(test)]
