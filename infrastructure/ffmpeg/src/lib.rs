@@ -6,10 +6,13 @@ use application::ports::ProbeMediaFile;
 use application::ports::SubtitleStream;
 use application::ports::VideoStream;
 use serde::Deserialize;
+use std::ffi::OsStr;
 use std::time::Duration;
 use tokio::process::Command;
 use tracing::Instrument;
 use tracing::field;
+
+const PROBE_TIMEOUT: Duration = Duration::from_secs(120);
 
 const IMAGE_SUBTITLE_CODECS: [&str; 4] =
     ["hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle", "xsub"];
@@ -24,29 +27,41 @@ pub fn probe_media_file() -> ProbeMediaFile {
             process.exit.code = field::Empty,
             error.type = field::Empty,
         );
-        Box::pin(probe(path, span.clone()).instrument(span))
+        Box::pin(probe("ffprobe", path, span.clone()).instrument(span))
     })
 }
 
-async fn probe(path: String, span: tracing::Span) -> Result<Probe, ProbeError> {
-    let output = Command::new("ffprobe")
-        .args([
-            "-v",
-            "error",
-            "-print_format",
-            "json",
-            "-show_format",
-            "-show_streams",
-        ])
-        .arg(&path)
-        .kill_on_drop(true)
-        .output()
-        .await
-        .map_err(|error| {
-            span.record("otel.status_code", "ERROR");
-            span.record("error.type", "spawn");
-            ProbeError::caused_by(error)
-        })?;
+async fn probe(
+    program: impl AsRef<OsStr>,
+    path: String,
+    span: tracing::Span,
+) -> Result<Probe, ProbeError> {
+    let output = tokio::time::timeout(
+        PROBE_TIMEOUT,
+        Command::new(program)
+            .args([
+                "-v",
+                "error",
+                "-print_format",
+                "json",
+                "-show_format",
+                "-show_streams",
+            ])
+            .arg(&path)
+            .kill_on_drop(true)
+            .output(),
+    )
+    .await
+    .map_err(|error| {
+        span.record("otel.status_code", "ERROR");
+        span.record("error.type", "timeout");
+        ProbeError::caused_by(error)
+    })?
+    .map_err(|error| {
+        span.record("otel.status_code", "ERROR");
+        span.record("error.type", "spawn");
+        ProbeError::caused_by(error)
+    })?;
     if let Some(code) = output.status.code() {
         span.record("process.exit.code", code);
     }
@@ -239,13 +254,19 @@ fn frame_rate(rational: &str) -> Option<f64> {
 
 #[cfg(test)]
 mod tests {
+    use super::PROBE_TIMEOUT;
     use super::parse;
+    use super::probe;
     use application::ports::AudioStream;
     use application::ports::HdrType;
     use application::ports::Probe;
     use application::ports::SubtitleStream;
     use application::ports::VideoStream;
+    use std::fs::Permissions;
+    use std::os::unix::fs::PermissionsExt;
     use std::time::Duration;
+    use tempfile::TempDir;
+    use tokio::time::Instant;
 
     fn subtitle(index: i64, codec: &str, language: &str, title: Option<&str>) -> SubtitleStream {
         SubtitleStream {
@@ -381,5 +402,19 @@ mod tests {
         assert_eq!(probe.video_streams[0].hdr_type, HdrType::DolbyVision);
         assert_eq!(probe.video_streams[0].width, 1920);
         assert_eq!(probe.video_streams[0].height, 1080);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_ffprobe_still_running_at_the_time_limit_fails() {
+        let folder = TempDir::new().unwrap();
+        let ffprobe = folder.path().join("ffprobe");
+        std::fs::write(&ffprobe, "#!/bin/sh\nexec sleep 5\n").unwrap();
+        std::fs::set_permissions(&ffprobe, Permissions::from_mode(0o755)).unwrap();
+        let started = Instant::now();
+
+        let probe = probe(&ffprobe, "movie.mkv".to_owned(), tracing::Span::none()).await;
+
+        assert!(probe.is_err());
+        assert_eq!(started.elapsed().as_secs(), PROBE_TIMEOUT.as_secs());
     }
 }

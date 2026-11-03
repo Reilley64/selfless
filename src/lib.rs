@@ -39,17 +39,13 @@ pub async fn start(
     send_email: SendEmail,
     probe_media_file: ProbeMediaFile,
 ) -> Result<Server, AppError> {
-    let get_radarr_movie = settings.radarr.get_movie()?;
+    let client = servarr::client()?;
+    let radarr_api = settings.radarr.api(client.clone())?;
     let webhook_passwords = WebhookPasswords {
         radarr: settings.radarr.webhook_password()?,
         sonarr: settings.sonarr.webhook_password()?,
     };
-    let get_sonarr_show = settings.sonarr.get_show()?;
-    let list_radarr_movies = settings.radarr.list_movies()?;
-    let list_sonarr_shows = settings.sonarr.list_shows()?;
-    let get_sonarr_episodes = settings.sonarr.get_episodes()?;
-    let check_radarr_kodi_metadata = settings.radarr.check_kodi_metadata()?;
-    let check_sonarr_kodi_metadata = settings.sonarr.check_kodi_metadata()?;
+    let sonarr_api = settings.sonarr.api(client)?;
     let db = persistence::connect(&settings.database).await?;
     persistence::migrate(&db).await?;
     let locks = locking::Locks::default();
@@ -62,17 +58,17 @@ pub async fn start(
             git_commit_id: env!("GIT_COMMIT"),
             git_commit_time: env!("GIT_COMMIT_TIME"),
         })
-        .check_radarr_kodi_metadata(|_| check_radarr_kodi_metadata.clone())
-        .check_sonarr_kodi_metadata(|_| check_sonarr_kodi_metadata.clone())
+        .check_radarr_kodi_metadata(|_| radarr::check_kodi_metadata(radarr_api.clone()))
+        .check_sonarr_kodi_metadata(|_| sonarr::check_kodi_metadata(sonarr_api.clone()))
         .clock(|_| clock.clone())
         .db_context(|_| DbContext::new(db.clone(), settings.database.location()))
         .export_telemetry_try(|_| telemetry::export_telemetry(&settings.otlp))?
         .find_media_file(|_| media_folder::find_media_file())
-        .get_radarr_movie(|_| get_radarr_movie.clone())
-        .get_sonarr_episodes(|_| get_sonarr_episodes.clone())
-        .get_sonarr_show(|_| get_sonarr_show.clone())
-        .list_radarr_movies(|_| list_radarr_movies.clone())
-        .list_sonarr_shows(|_| list_sonarr_shows.clone())
+        .get_radarr_movie(|_| radarr::get_movie(radarr_api.clone()))
+        .get_sonarr_episodes(|_| sonarr::get_episodes(sonarr_api.clone()))
+        .get_sonarr_show(|_| sonarr::get_show(sonarr_api.clone()))
+        .list_radarr_movies(|_| radarr::list_movies(radarr_api.clone()))
+        .list_sonarr_shows(|_| sonarr::list_shows(sonarr_api.clone()))
         .list_subtitle_files(|_| media_folder::list_subtitle_files())
         .prober(|_| Prober::new(probe_media_file.clone()))
         .read_episode_folder(|_| media_folder::read_episode_folder())
