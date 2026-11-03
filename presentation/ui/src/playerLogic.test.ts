@@ -1,11 +1,33 @@
-import { createPlayerLogic, type ProgressReport } from "./playerLogic";
+import type { reportPlaybackProgressResponse } from "@selfless/api-client";
+import { type Resume, createPlayerLogic, type ProgressReport } from "./playerLogic";
 
 beforeEach(() => jest.useFakeTimers());
 afterEach(() => jest.useRealTimers());
 
-function player() {
+const headers = new Headers();
+const reported: reportPlaybackProgressResponse = { status: 204, data: undefined, headers };
+const ended: reportPlaybackProgressResponse = {
+  status: 404,
+  data: { type: "urn:selfless:problem:playback-ended", title: "The playback has ended.", status: 404 },
+  headers,
+};
+const notFound: reportPlaybackProgressResponse = {
+  status: 404,
+  data: { type: "urn:selfless:problem:not-found", title: "Nothing exists at this URL.", status: 404 },
+  headers,
+};
+
+function player(response = reported) {
   const reports: ProgressReport[] = [];
-  return { reports, logic: createPlayerLogic((report) => reports.push(report)) };
+  const restarts: Resume[] = [];
+  const logic = createPlayerLogic({
+    sendReport: async (report) => {
+      reports.push(report);
+      return response;
+    },
+    restart: (resume) => restarts.push(resume),
+  });
+  return { reports, restarts, logic };
 }
 
 test("while playing, a report goes every 10 seconds with the latest position", () => {
@@ -61,4 +83,50 @@ test("nothing is reported before playback starts", () => {
   jest.advanceTimersByTime(30_000);
 
   expect(reports).toEqual([]);
+});
+
+test("a report on an ended playback starts a new playback at the position, paused or not", async () => {
+  const playing = player(ended);
+  const paused = player(ended);
+  playing.logic.handle({ type: "playing", position: 0 });
+  paused.logic.handle({ type: "playing", position: 0 });
+
+  playing.logic.handle({ type: "position", position: 9.9 });
+  paused.logic.handle({ type: "paused", position: 7 });
+  await jest.advanceTimersByTimeAsync(10_000);
+
+  expect(playing.restarts).toEqual([{ position: 9.9, paused: false }]);
+  expect(paused.restarts).toEqual([{ position: 7, paused: true }]);
+});
+
+test("after the playback ended, the old playback sends no more reports", async () => {
+  const { reports, restarts, logic } = player(ended);
+  logic.handle({ type: "playing", position: 0 });
+  await jest.advanceTimersByTimeAsync(10_000);
+
+  logic.handle({ type: "paused", position: 12 });
+  await jest.advanceTimersByTimeAsync(30_000);
+
+  expect(reports).toHaveLength(1);
+  expect(restarts).toHaveLength(1);
+});
+
+test("a stop report on an ended playback starts no new playback", async () => {
+  const { restarts, logic } = player(ended);
+  logic.handle({ type: "playing", position: 0 });
+
+  logic.handle({ type: "stopped", position: 3 });
+  await jest.advanceTimersByTimeAsync(0);
+
+  expect(restarts).toEqual([]);
+});
+
+test("a playback that is not found starts no new playback", async () => {
+  const { reports, restarts, logic } = player(notFound);
+  logic.handle({ type: "playing", position: 0 });
+
+  await jest.advanceTimersByTimeAsync(20_000);
+
+  expect(reports).toHaveLength(2);
+  expect(restarts).toEqual([]);
 });
