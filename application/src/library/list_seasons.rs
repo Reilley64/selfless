@@ -28,26 +28,24 @@ pub async fn call(dependencies: impl Into<Dependencies>, show_id: Uuid) -> Resul
     seasons.sort_by_key(domain::Season::listing_order);
     let seasons = seasons
         .into_iter()
-        .map(|x| Season {
-            id: x.id,
-            number: x.number,
-            artwork: artwork(x.artwork.into_inner()),
+        .map(|x| {
+            let mut artwork = x.artwork.into_inner();
+            artwork.sort_by_cached_key(domain::Artwork::listing_order);
+            Season {
+                id: x.id,
+                number: x.number,
+                artwork: artwork
+                    .into_iter()
+                    .map(|x| Artwork {
+                        kind: x.kind,
+                        path: x.path,
+                        modified_at: x.modified_at,
+                    })
+                    .collect(),
+            }
         })
         .collect();
     Ok(Output { seasons })
-}
-
-fn artwork(stored: Vec<domain::Artwork>) -> Vec<Artwork> {
-    let mut artwork = stored
-        .into_iter()
-        .map(|x| Artwork {
-            kind: x.kind,
-            path: x.path,
-            modified_at: x.modified_at,
-        })
-        .collect::<Vec<_>>();
-    artwork.sort_by(|a, b| a.path.cmp(&b.path));
-    artwork
 }
 
 #[cfg(test)]
