@@ -1,4 +1,5 @@
 use crate::Artwork;
+use crate::EpisodeMetadata;
 use crate::MediaFile;
 use crate::Season;
 use jiff::Timestamp;
@@ -30,4 +31,43 @@ pub struct Episode {
     pub nfo_modified_at: Option<Timestamp>,
     #[has_many]
     pub artwork: toasty::Deferred<Vec<Artwork>>,
+}
+
+impl Episode {
+    pub fn in_library(sonarr_has_file: bool, file_on_disk: bool) -> bool {
+        sonarr_has_file && file_on_disk
+    }
+
+    pub fn in_library_filter() -> toasty::stmt::Expr<bool> {
+        Self::fields().visible().eq(true)
+    }
+
+    pub fn metadata(&self) -> EpisodeMetadata {
+        EpisodeMetadata {
+            title: self.title.clone(),
+            air_date: self.air_date,
+            overview: self.overview.clone(),
+            rating: self.rating,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_episode_is_in_the_library_when_sonarr_has_its_file_and_the_file_is_on_disk() {
+        assert!(Episode::in_library(true, true));
+    }
+
+    #[test]
+    fn an_episode_sonarr_has_no_file_for_is_not_in_the_library() {
+        assert!(!Episode::in_library(false, false));
+    }
+
+    #[test]
+    fn an_episode_whose_file_is_missing_on_disk_is_not_in_the_library() {
+        assert!(!Episode::in_library(true, false));
+    }
 }

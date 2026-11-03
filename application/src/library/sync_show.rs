@@ -16,7 +16,6 @@ use crate::library::metadata::FoundArtwork;
 use crate::library::metadata::Nfo;
 use crate::library::metadata::Owner;
 use crate::ports::EpisodeFolder;
-use crate::ports::EpisodeNfo;
 use crate::ports::FindMediaFile;
 use crate::ports::ListSubtitleFiles;
 use crate::ports::ReadEpisodeFolder;
@@ -24,21 +23,18 @@ use crate::ports::ReadEpisodeNfo;
 use crate::ports::ReadShowFolder;
 use crate::ports::ReadShowNfo;
 use crate::ports::ShowFolder;
-use crate::ports::ShowNfo;
-use crate::ports::SonarrEpisode;
 use crate::ports::SonarrShow;
-use crate::ports::SonarrShowListing;
 use crate::ports::persistence::DbContext;
 use crate::ports::persistence::DbScope;
 use domain::ArtworkKind;
 use domain::Episode;
+use domain::EpisodeMetadata;
 use domain::MediaFile;
 use domain::Season;
 use domain::Show;
+use domain::ShowMetadata;
 use domain::Source;
 use futures_util::future::try_join_all;
-use jiff::Timestamp;
-use jiff::civil::Date;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -74,7 +70,9 @@ pub async fn call(dependencies: impl Into<Dependencies>, sonarr_id: i64) -> Resu
             .map_err(Error::caused_by)?
         {
             Some(sonarr_show) => save(&mut db_context, &files, sonarr_show).await,
-            None => match Show::filter_by_sonarr_id(sonarr_id)
+            None => match db_context
+                .shows()
+                .filter(Show::fields().sonarr_id().eq(sonarr_id))
                 .first()
                 .exec(db_context.executor_mut())
                 .await
@@ -102,130 +100,6 @@ pub(crate) struct ShowFiles {
 
 pub(crate) fn span() -> Span {
     tracing::info_span!("sync_show", otel.name = "sync sonarr show")
-}
-
-#[derive(Clone, PartialEq)]
-struct ShowMetadata {
-    title: String,
-    sort_title: Option<String>,
-    overview: Option<String>,
-    certification: Option<String>,
-    premiered: Option<Date>,
-    end_date: Option<Date>,
-    status: Option<String>,
-    network: Option<String>,
-    genres: Vec<String>,
-    rating: Option<f64>,
-    nfo_modified_at: Option<Timestamp>,
-}
-
-impl ShowMetadata {
-    fn stored(show: &Show) -> Self {
-        Self {
-            title: show.title.clone(),
-            sort_title: show.sort_title.clone(),
-            overview: show.overview.clone(),
-            certification: show.certification.clone(),
-            premiered: show.premiered,
-            end_date: show.end_date,
-            status: show.status.clone(),
-            network: show.network.clone(),
-            genres: show.genres.clone(),
-            rating: show.rating,
-            nfo_modified_at: show.nfo_modified_at,
-        }
-    }
-
-    fn of(nfo: &Nfo<ShowNfo>, listing: &SonarrShowListing, stored: Option<&Show>) -> Self {
-        match (nfo, stored) {
-            (Nfo::Unchanged, Some(show)) => Self::stored(show),
-            (Nfo::Read(nfo, modified_at), _) => Self {
-                title: nfo.title.clone().unwrap_or_else(|| listing.title.clone()),
-                sort_title: nfo.sort_title.clone(),
-                overview: nfo.plot.clone().or_else(|| listing.overview.clone()),
-                certification: nfo.certification.clone(),
-                premiered: nfo.premiered,
-                end_date: nfo.end_date,
-                status: nfo.status.clone(),
-                network: nfo.network.clone(),
-                genres: if nfo.genres.is_empty() {
-                    listing.genres.clone()
-                } else {
-                    nfo.genres.clone()
-                },
-                rating: nfo.rating,
-                nfo_modified_at: Some(*modified_at),
-            },
-            _ => Self {
-                title: listing.title.clone(),
-                sort_title: None,
-                overview: listing.overview.clone(),
-                certification: None,
-                premiered: None,
-                end_date: None,
-                status: None,
-                network: None,
-                genres: listing.genres.clone(),
-                rating: None,
-                nfo_modified_at: None,
-            },
-        }
-    }
-}
-
-#[derive(Clone, PartialEq)]
-struct EpisodeMetadata {
-    number: i64,
-    title: String,
-    air_date: Option<Date>,
-    overview: Option<String>,
-    rating: Option<f64>,
-    nfo_modified_at: Option<Timestamp>,
-}
-
-impl EpisodeMetadata {
-    fn stored(episode: &Episode) -> Self {
-        Self {
-            number: episode.number,
-            title: episode.title.clone(),
-            air_date: episode.air_date,
-            overview: episode.overview.clone(),
-            rating: episode.rating,
-            nfo_modified_at: episode.nfo_modified_at,
-        }
-    }
-
-    fn of(
-        nfo: &Nfo<EpisodeNfo>,
-        sonarr_episode: &SonarrEpisode,
-        stored: Option<&EpisodeMetadata>,
-    ) -> Self {
-        match (nfo, stored) {
-            (Nfo::Unchanged, Some(stored)) => Self {
-                number: sonarr_episode.episode_number,
-                ..stored.clone()
-            },
-            (Nfo::Read(nfo, modified_at), _) => Self {
-                number: sonarr_episode.episode_number,
-                title: nfo
-                    .title
-                    .clone()
-                    .unwrap_or_else(|| sonarr_episode.title.clone()),
-                air_date: nfo.air_date.or(sonarr_episode.air_date),
-                overview: nfo.plot.clone().or_else(|| sonarr_episode.overview.clone()),
-                rating: nfo.rating,
-                nfo_modified_at: Some(*modified_at),
-            },
-            _ => Self {
-                number: sonarr_episode.episode_number,
-                title: sonarr_episode.title.clone(),
-                air_date: sonarr_episode.air_date,
-                overview: sonarr_episode.overview.clone(),
-                rating: None,
-                nfo_modified_at: None,
-            },
-        }
-    }
 }
 
 pub(crate) async fn save(
@@ -261,17 +135,19 @@ pub(crate) async fn save(
     let stored = if episode_folders.is_empty() {
         HashMap::new()
     } else {
-        MediaFile::filter(
-            MediaFile::fields()
-                .path()
-                .in_list(episode_folders.keys().cloned().collect::<Vec<_>>()),
-        )
-        .exec(db_context.executor_mut())
-        .await
-        .map_err(Error::caused_by)?
-        .into_iter()
-        .map(|x| (x.path.clone(), x))
-        .collect::<HashMap<_, _>>()
+        db_context
+            .media_files()
+            .filter(
+                MediaFile::fields()
+                    .path()
+                    .in_list(episode_folders.keys().cloned().collect::<Vec<_>>()),
+            )
+            .exec(db_context.executor_mut())
+            .await
+            .map_err(Error::caused_by)?
+            .into_iter()
+            .map(|x| (x.path.clone(), x))
+            .collect::<HashMap<_, _>>()
     };
     let inspected = try_join_all(episode_folders.keys().map(async |path| {
         let inspected = media_files::inspect(
@@ -341,7 +217,9 @@ async fn write(
     files: &ShowFiles,
 ) -> Result<Option<Change>, Error> {
     let listing = sonarr_show.listing;
-    let stored = Show::filter_by_tvdb_id(listing.tvdb_id)
+    let stored = scope
+        .shows()
+        .filter(Show::fields().tvdb_id().eq(listing.tvdb_id))
         .first()
         .exec(scope.executor_mut())
         .await
@@ -353,12 +231,19 @@ async fn write(
     )
     .await;
     let had_nfo = stored.as_ref().is_some_and(|x| x.nfo_modified_at.is_some());
-    let metadata = ShowMetadata::of(&nfo, &listing, stored.as_ref());
+    let sonarr_metadata =
+        ShowMetadata::from_sonarr(listing.title, listing.overview, listing.genres);
+    let (metadata, nfo_modified_at) = match (&nfo, &stored) {
+        (Nfo::Unchanged, Some(show)) => (show.metadata(), show.nfo_modified_at),
+        (Nfo::Read(nfo, modified_at), _) => (sonarr_metadata.with_nfo(nfo), Some(*modified_at)),
+        _ => (sonarr_metadata, None),
+    };
     let (show, show_change) = match stored {
         Some(mut show) => {
             let changed = show.sonarr_id != listing.sonarr_id
                 || show.year != listing.year
-                || ShowMetadata::stored(&show) != metadata;
+                || show.nfo_modified_at != nfo_modified_at
+                || show.metadata() != metadata;
             if changed {
                 show.update()
                     .sonarr_id(listing.sonarr_id)
@@ -373,7 +258,7 @@ async fn write(
                     .network(metadata.network)
                     .genres(metadata.genres)
                     .rating(metadata.rating)
-                    .nfo_modified_at(metadata.nfo_modified_at)
+                    .nfo_modified_at(nfo_modified_at)
                     .exec(scope.executor_mut())
                     .await
                     .map_err(Error::caused_by)?;
@@ -381,25 +266,26 @@ async fn write(
             (show, changed.then_some(Change::Changed))
         }
         None => (
-            toasty::create!(Show {
-                tvdb_id: listing.tvdb_id,
-                sonarr_id: listing.sonarr_id,
-                year: listing.year,
-                title: metadata.title,
-                sort_title: metadata.sort_title,
-                overview: metadata.overview,
-                certification: metadata.certification,
-                premiered: metadata.premiered,
-                end_date: metadata.end_date,
-                status: metadata.status,
-                network: metadata.network,
-                genres: metadata.genres,
-                rating: metadata.rating,
-                nfo_modified_at: metadata.nfo_modified_at,
-            })
-            .exec(scope.executor_mut())
-            .await
-            .map_err(Error::caused_by)?,
+            scope
+                .shows()
+                .create()
+                .tvdb_id(listing.tvdb_id)
+                .sonarr_id(listing.sonarr_id)
+                .year(listing.year)
+                .title(metadata.title)
+                .sort_title(metadata.sort_title)
+                .overview(metadata.overview)
+                .certification(metadata.certification)
+                .premiered(metadata.premiered)
+                .end_date(metadata.end_date)
+                .status(metadata.status)
+                .network(metadata.network)
+                .genres(metadata.genres)
+                .rating(metadata.rating)
+                .nfo_modified_at(nfo_modified_at)
+                .exec(scope.executor_mut())
+                .await
+                .map_err(Error::caused_by)?,
             Some(Change::Added),
         ),
     };
@@ -446,16 +332,13 @@ async fn write(
             .episode_file
             .as_ref()
             .and_then(|x| episode_folders.get(&x.path));
-        let stored = episodes.remove(&sonarr_episode.tvdb_id).map(|x| {
-            let metadata = EpisodeMetadata::stored(&x);
-            (x, metadata)
-        });
+        let stored = episodes.remove(&sonarr_episode.tvdb_id);
         let nfo = match episode_folder.and_then(|x| x.nfo.as_ref()) {
             None => Nfo::Missing,
             Some(nfo_file)
                 if stored
                     .as_ref()
-                    .is_some_and(|(x, _)| x.nfo_modified_at == Some(nfo_file.modified_at)) =>
+                    .is_some_and(|x| x.nfo_modified_at == Some(nfo_file.modified_at)) =>
             {
                 Nfo::Unchanged
             }
@@ -485,36 +368,46 @@ async fn write(
                 }
             }
         };
-        let metadata = EpisodeMetadata::of(&nfo, &sonarr_episode, stored.as_ref().map(|(_, x)| x));
+        let sonarr_metadata = EpisodeMetadata::from_sonarr(
+            sonarr_episode.title,
+            sonarr_episode.air_date,
+            sonarr_episode.overview,
+        );
+        let (metadata, nfo_modified_at) = match (&nfo, &stored) {
+            (Nfo::Unchanged, Some(episode)) => (episode.metadata(), episode.nfo_modified_at),
+            (Nfo::Read(nfo, modified_at), _) => (sonarr_metadata.with_nfo(nfo), Some(*modified_at)),
+            _ => (sonarr_metadata, None),
+        };
         let season_number = sonarr_episode.season_number;
         let season_id = match seasons.get(&season_number) {
             Some(id) => *id,
             None => {
-                let season = toasty::create!(Season {
-                    show_id: show.id,
-                    number: season_number,
-                })
-                .exec(scope.executor_mut())
-                .await
-                .map_err(Error::caused_by)?;
+                let season = scope
+                    .seasons()
+                    .create()
+                    .show_id(show.id)
+                    .number(season_number)
+                    .exec(scope.executor_mut())
+                    .await
+                    .map_err(Error::caused_by)?;
                 changed = true;
                 seasons.insert(season_number, season.id);
                 season.id
             }
         };
         synced_seasons.insert(season_number);
-        let (media_file_id, visible) = match &sonarr_episode.episode_file {
+        let (media_file_id, file_on_disk) = match &sonarr_episode.episode_file {
             Some(sonarr_file) => {
-                let (id, visible) = match inspected.remove(&sonarr_file.path) {
+                let (id, on_disk) = match inspected.remove(&sonarr_file.path) {
                     Some(inspected) => {
-                        let visible = inspected.on_disk();
+                        let on_disk = inspected.on_disk();
                         let (id, file_changed) =
                             media_files::save(scope, &sonarr_file.path, inspected)
                                 .await
                                 .map_err(Error::caused_by)?;
                         changed |= file_changed;
-                        saved.insert(sonarr_file.path.clone(), (id, visible));
-                        (id, visible)
+                        saved.insert(sonarr_file.path.clone(), (id, on_disk));
+                        (id, on_disk)
                     }
                     None => saved[&sonarr_file.path],
                 };
@@ -522,16 +415,19 @@ async fn write(
                 if let Nfo::Unreadable(path) = &nfo {
                     unreadable_nfos.insert(id, path.clone());
                 }
-                (Some(id), visible)
+                (Some(id), on_disk)
             }
             None => (None, false),
         };
+        let visible = Episode::in_library(sonarr_episode.episode_file.is_some(), file_on_disk);
         let date_added = sonarr_episode.episode_file.map(|x| x.date_added);
         let episode_id = match stored {
-            Some((mut episode, stored_metadata)) => {
+            Some(mut episode) => {
                 let added_at = domain::first_added_at(episode.added_at, date_added);
                 if episode.season_id != season_id
-                    || stored_metadata != metadata
+                    || episode.number != sonarr_episode.episode_number
+                    || episode.nfo_modified_at != nfo_modified_at
+                    || episode.metadata() != metadata
                     || episode.added_at != added_at
                     || episode.media_file_id != media_file_id
                     || episode.visible != visible
@@ -540,12 +436,12 @@ async fn write(
                     episode
                         .update()
                         .season_id(season_id)
-                        .number(metadata.number)
+                        .number(sonarr_episode.episode_number)
                         .title(metadata.title)
                         .air_date(metadata.air_date)
                         .overview(metadata.overview)
                         .rating(metadata.rating)
-                        .nfo_modified_at(metadata.nfo_modified_at)
+                        .nfo_modified_at(nfo_modified_at)
                         .added_at(added_at)
                         .media_file_id(media_file_id)
                         .visible(visible)
@@ -557,23 +453,24 @@ async fn write(
             }
             None => {
                 changed = true;
-                toasty::create!(Episode {
-                    season_id,
-                    tvdb_id: sonarr_episode.tvdb_id,
-                    number: metadata.number,
-                    title: metadata.title,
-                    air_date: metadata.air_date,
-                    overview: metadata.overview,
-                    rating: metadata.rating,
-                    nfo_modified_at: metadata.nfo_modified_at,
-                    added_at: date_added,
-                    media_file_id,
-                    visible,
-                })
-                .exec(scope.executor_mut())
-                .await
-                .map_err(Error::caused_by)?
-                .id
+                scope
+                    .episodes()
+                    .create()
+                    .season_id(season_id)
+                    .tvdb_id(sonarr_episode.tvdb_id)
+                    .number(sonarr_episode.episode_number)
+                    .title(metadata.title)
+                    .air_date(metadata.air_date)
+                    .overview(metadata.overview)
+                    .rating(metadata.rating)
+                    .nfo_modified_at(nfo_modified_at)
+                    .added_at(date_added)
+                    .media_file_id(media_file_id)
+                    .visible(visible)
+                    .exec(scope.executor_mut())
+                    .await
+                    .map_err(Error::caused_by)?
+                    .id
             }
         };
         if let Some(thumb) = episode_folder.and_then(|x| x.thumb.clone()) {
@@ -609,14 +506,18 @@ async fn write(
         .collect::<Vec<_>>();
     changed |= !episodes.is_empty() || !seasons.is_empty() || !removed_media_files.is_empty();
     if !episodes.is_empty() {
-        Episode::filter(Episode::fields().id().in_list(episodes))
+        scope
+            .episodes()
+            .filter(Episode::fields().id().in_list(episodes))
             .delete()
             .exec(scope.executor_mut())
             .await
             .map_err(Error::caused_by)?;
     }
     if !seasons.is_empty() {
-        Season::filter(Season::fields().id().in_list(seasons))
+        scope
+            .seasons()
+            .filter(Season::fields().id().in_list(seasons))
             .delete()
             .exec(scope.executor_mut())
             .await
@@ -647,4 +548,927 @@ async fn write(
     .await
     .map_err(Error::caused_by)?;
     Ok(show_change.or(changed.then_some(Change::Changed)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ports::FoundFile;
+    use crate::ports::SonarrEpisode;
+    use crate::test::S01E01_FILE;
+    use crate::test::S01E02_E03_FILE;
+    use crate::test::S02E01_FILE;
+    use crate::test::SHOW_FOLDER;
+    use crate::test::SPECIAL_FILE;
+    use crate::test::ShowLibrary;
+    use crate::test::at;
+    use crate::test::severance;
+    use crate::test::sonarr_episode_file;
+    use domain::Actor;
+    use domain::Artwork;
+    use domain::EpisodeNfo;
+    use domain::NfoActor;
+    use domain::ShowNfo;
+    use domain::SyncProblem;
+    use domain::SyncProblemKind;
+    use jiff::civil::date;
+    use uuid::Uuid;
+
+    const UPGRADED_S02E01_FILE: &str =
+        "/media/TV/Severance/Season 02/Severance - S02E01 - Hello, Ms. Cobel Bluray-2160p.mkv";
+    const SHOW_NFO: &str = "/media/TV/Severance/tvshow.nfo";
+
+    async fn show(library: &ShowLibrary) -> Show {
+        let [show] = shows(library).await.try_into().unwrap();
+        show
+    }
+
+    async fn shows(library: &ShowLibrary) -> Vec<Show> {
+        let mut db_context = library.db_context.clone();
+        db_context
+            .shows()
+            .all()
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap()
+    }
+
+    async fn season_numbers(library: &ShowLibrary) -> HashMap<Uuid, i64> {
+        let mut db_context = library.db_context.clone();
+        db_context
+            .seasons()
+            .all()
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|x| (x.id, x.number))
+            .collect()
+    }
+
+    async fn episodes(library: &ShowLibrary) -> Vec<(i64, Episode)> {
+        let mut db_context = library.db_context.clone();
+        let season_numbers = season_numbers(library).await;
+        let mut episodes = db_context
+            .episodes()
+            .all()
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|x| (season_numbers[&x.season_id], x))
+            .collect::<Vec<_>>();
+        episodes.sort_by_key(|(season, x)| (*season, x.number));
+        episodes
+    }
+
+    async fn episode(library: &ShowLibrary, season: i64, number: i64) -> Episode {
+        episodes(library)
+            .await
+            .into_iter()
+            .find(|(s, x)| *s == season && x.number == number)
+            .unwrap()
+            .1
+    }
+
+    async fn titles_and_ratings(
+        library: &ShowLibrary,
+        season: i64,
+    ) -> Vec<(i64, String, Option<f64>)> {
+        episodes(library)
+            .await
+            .into_iter()
+            .filter(|(s, _)| *s == season)
+            .map(|(_, x)| (x.number, x.title, x.rating))
+            .collect()
+    }
+
+    async fn actors(library: &ShowLibrary) -> Vec<(String, Option<String>, Option<i64>)> {
+        let mut db_context = library.db_context.clone();
+        let mut actors = db_context
+            .actors()
+            .all()
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|x: Actor| (x.name, x.role, x.order))
+            .collect::<Vec<_>>();
+        actors.sort_by_key(|x| x.2);
+        actors
+    }
+
+    async fn artwork(library: &ShowLibrary) -> Vec<Artwork> {
+        let mut db_context = library.db_context.clone();
+        let mut artwork = db_context
+            .artwork()
+            .all()
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap();
+        artwork.sort_by(|a, b| (&a.path, a.episode_id).cmp(&(&b.path, b.episode_id)));
+        artwork
+    }
+
+    async fn problems(library: &ShowLibrary) -> Vec<SyncProblem> {
+        let mut db_context = library.db_context.clone();
+        db_context
+            .sync_problems()
+            .all()
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap()
+    }
+
+    async fn media_files(library: &ShowLibrary) -> Vec<MediaFile> {
+        let mut db_context = library.db_context.clone();
+        db_context
+            .media_files()
+            .all()
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap()
+    }
+
+    fn found(path: &str, modified_at: &str) -> Option<FoundFile> {
+        Some(FoundFile {
+            path: path.to_owned(),
+            modified_at: at(modified_at),
+        })
+    }
+
+    fn nfo_path(media_file: &str) -> String {
+        media_file.replace(".mkv", ".nfo")
+    }
+
+    fn show_nfo() -> ShowNfo {
+        ShowNfo {
+            title: Some("Severance".to_owned()),
+            sort_title: Some("severance".to_owned()),
+            plot: Some("Mark leads a team whose memories are surgically divided.".to_owned()),
+            certification: Some("TV-MA".to_owned()),
+            premiered: Some(date(2022, 2, 18)),
+            end_date: None,
+            status: Some("Continuing".to_owned()),
+            network: Some("Apple TV+".to_owned()),
+            genres: vec!["Drama".to_owned(), "Thriller".to_owned()],
+            rating: Some(8.7),
+            actors: vec![
+                nfo_actor("Adam Scott", "Mark Scout", 0),
+                nfo_actor("Britt Lower", "Helly R.", 1),
+                nfo_actor("Zach Cherry", "Dylan George", 2),
+            ],
+        }
+    }
+
+    fn nfo_actor(name: &str, role: &str, order: i64) -> NfoActor {
+        NfoActor {
+            name: name.to_owned(),
+            role: Some(role.to_owned()),
+            order: Some(order),
+        }
+    }
+
+    fn episode_nfo(
+        sonarr_id: Option<i64>,
+        season_number: i64,
+        episode_number: i64,
+        title: &str,
+        rating: f64,
+    ) -> EpisodeNfo {
+        EpisodeNfo {
+            sonarr_id,
+            title: Some(title.to_owned()),
+            season_number: Some(season_number),
+            episode_number: Some(episode_number),
+            air_date: None,
+            plot: Some(format!("The NFO's plot of {title}")),
+            rating: Some(rating),
+        }
+    }
+
+    fn with_show_nfo(library: &ShowLibrary, nfo: Option<ShowNfo>, modified_at: &str) {
+        let mut sources = library.sources();
+        sources.folder.nfo = found(SHOW_NFO, modified_at);
+        sources.nfo = nfo;
+    }
+
+    fn with_episode_nfo(
+        library: &ShowLibrary,
+        media_file: &str,
+        roots: Option<Vec<EpisodeNfo>>,
+        modified_at: &str,
+    ) {
+        let mut sources = library.sources();
+        let path = nfo_path(media_file);
+        sources
+            .episode_folders
+            .entry(media_file.to_owned())
+            .or_default()
+            .nfo = found(&path, modified_at);
+        match roots {
+            Some(roots) => sources.episode_nfos.insert(path, roots),
+            None => sources.episode_nfos.remove(&path),
+        };
+    }
+
+    fn with_sonarr_episodes(library: &ShowLibrary, change: impl FnOnce(&mut Vec<SonarrEpisode>)) {
+        let mut sources = library.sources();
+        change(&mut sources.sonarr_show.as_mut().unwrap().episodes);
+    }
+
+    fn severance_episodes(library: &ShowLibrary) -> Vec<SonarrEpisode> {
+        library
+            .sources()
+            .sonarr_show
+            .as_ref()
+            .unwrap()
+            .episodes
+            .clone()
+    }
+
+    fn sonarr_episode(
+        episodes: &mut [SonarrEpisode],
+        season: i64,
+        number: i64,
+    ) -> &mut SonarrEpisode {
+        episodes
+            .iter_mut()
+            .find(|x| x.season_number == season && x.episode_number == number)
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_sonarr_show_is_stored_with_sonarrs_fields_and_only_episodes_with_a_file_are_visible()
+    {
+        let library = ShowLibrary::new().await;
+
+        library.sync_show().await.unwrap();
+
+        let show = show(&library).await;
+        assert_eq!(show.sonarr_id, 7);
+        assert_eq!(show.tvdb_id, 371_980);
+        assert_eq!(show.title, "Severance");
+        assert_eq!(show.year, Some(2022));
+        assert_eq!(show.genres, ["Drama", "Mystery", "Science Fiction"]);
+        assert_eq!(
+            show.overview.as_deref(),
+            Some("Mark leads a team of office workers.")
+        );
+        let mut seasons = season_numbers(&library)
+            .await
+            .into_values()
+            .collect::<Vec<_>>();
+        seasons.sort_unstable();
+        assert_eq!(seasons, [0, 1, 2]);
+        let episode = episode(&library, 2, 1).await;
+        assert_eq!(episode.tvdb_id, 10_535_541);
+        assert_eq!(episode.title, "Hello, Ms. Cobel");
+        assert_eq!(episode.air_date, Some(date(2025, 1, 17)));
+        assert_eq!(
+            episode.overview.as_deref(),
+            Some("Mark leads his team on a search for answers.")
+        );
+        assert_eq!(episode.added_at, Some(at("2025-01-17T03:12:44Z")));
+        assert_eq!(
+            episodes(&library)
+                .await
+                .into_iter()
+                .map(|(season, x)| (season, x.number, x.visible))
+                .collect::<Vec<_>>(),
+            [
+                (0, 1, true),
+                (1, 1, true),
+                (1, 2, true),
+                (1, 3, true),
+                (2, 1, true),
+                (2, 2, false),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_file_holding_two_episodes_gives_each_episode_its_own_row_pointing_at_the_one_file() {
+        let library = ShowLibrary::new().await;
+
+        library.sync_show().await.unwrap();
+
+        let first = episode(&library, 1, 1).await;
+        let second = episode(&library, 1, 2).await;
+        let third = episode(&library, 1, 3).await;
+        assert_ne!(second.id, third.id);
+        assert!(second.media_file_id.is_some());
+        assert_eq!(second.media_file_id, third.media_file_id);
+        assert_ne!(first.media_file_id, second.media_file_id);
+        assert_eq!(
+            media_files(&library)
+                .await
+                .into_iter()
+                .filter(|x| x.path == S01E02_E03_FILE)
+                .count(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn an_episode_whose_file_is_missing_on_disk_is_hidden() {
+        let library = ShowLibrary::new().await;
+        library.sources().files_on_disk.remove(S01E01_FILE);
+
+        library.sync_show().await.unwrap();
+
+        assert!(!episode(&library, 1, 1).await.visible);
+        assert!(episode(&library, 1, 2).await.visible);
+    }
+
+    #[tokio::test]
+    async fn a_shared_file_missing_on_disk_records_one_file_not_found_problem() {
+        let library = ShowLibrary::new().await;
+        library.sources().files_on_disk.remove(S01E02_E03_FILE);
+
+        library.sync_show().await.unwrap();
+
+        let media_file_id = episode(&library, 1, 2).await.media_file_id;
+        assert_eq!(
+            problems(&library)
+                .await
+                .into_iter()
+                .map(|x| (x.kind, x.media_file_id, x.path))
+                .collect::<Vec<_>>(),
+            [(
+                SyncProblemKind::FileNotFound,
+                media_file_id,
+                S01E02_E03_FILE.to_owned()
+            )]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_show_without_files_is_hidden_and_files_again_show_it_with_the_same_rows() {
+        let library = ShowLibrary::new().await;
+        library.sync_show().await.unwrap();
+        let show_before = show(&library).await;
+        let episodes_before = episodes(&library)
+            .await
+            .into_iter()
+            .map(|(_, x)| x.id)
+            .collect::<Vec<_>>();
+
+        let with_files = severance_episodes(&library);
+        with_sonarr_episodes(&library, |episodes| {
+            for episode in episodes {
+                episode.episode_file = None;
+            }
+        });
+        library.sync_show().await.unwrap();
+        let hidden = episodes(&library).await;
+        with_sonarr_episodes(&library, |episodes| *episodes = with_files);
+        library.sync_show().await.unwrap();
+
+        assert!(hidden.iter().all(|(_, x)| !x.visible));
+        assert_eq!(show(&library).await.id, show_before.id);
+        let episodes_after = episodes(&library).await;
+        assert_eq!(
+            episodes_after.iter().map(|(_, x)| x.id).collect::<Vec<_>>(),
+            episodes_before
+        );
+        assert!(episode(&library, 1, 1).await.visible);
+    }
+
+    #[tokio::test]
+    async fn an_upgraded_file_keeps_the_episode_and_its_added_date() {
+        let library = ShowLibrary::new().await;
+        library.sync_show().await.unwrap();
+        let before = episode(&library, 2, 1).await;
+
+        library
+            .sources()
+            .files_on_disk
+            .insert(UPGRADED_S02E01_FILE.to_owned());
+        with_sonarr_episodes(&library, |episodes| {
+            sonarr_episode(episodes, 2, 1).episode_file =
+                sonarr_episode_file(UPGRADED_S02E01_FILE, "2026-10-31T10:00:00Z");
+        });
+        library.sync_show().await.unwrap();
+
+        let after = episode(&library, 2, 1).await;
+        assert_eq!(after.id, before.id);
+        assert_eq!(after.added_at, Some(at("2025-01-17T03:12:44Z")));
+        assert_ne!(after.media_file_id, before.media_file_id);
+        assert!(after.visible);
+    }
+
+    #[tokio::test]
+    async fn a_show_sonarr_no_longer_has_is_removed_with_its_seasons_episodes_actors_artwork_problems_and_media_files()
+     {
+        let library = ShowLibrary::new().await;
+        with_show_nfo(&library, Some(show_nfo()), "2026-10-29T11:00:00Z");
+        with_episode_nfo(&library, S01E01_FILE, None, "2026-10-29T11:00:00Z");
+        library.sources().folder.poster =
+            found(&format!("{SHOW_FOLDER}/poster.jpg"), "2026-10-29T11:00:00Z");
+        library.sources().files_on_disk.remove(S02E01_FILE);
+        library.sync_show().await.unwrap();
+        let before = show(&library).await;
+
+        library.sources().sonarr_show = None;
+        library.sync_show().await.unwrap();
+
+        assert!(shows(&library).await.is_empty());
+        assert!(season_numbers(&library).await.is_empty());
+        assert!(episodes(&library).await.is_empty());
+        assert!(actors(&library).await.is_empty());
+        assert!(artwork(&library).await.is_empty());
+        assert!(problems(&library).await.is_empty());
+        assert!(media_files(&library).await.is_empty());
+        library.sources().sonarr_show = Some(severance());
+        library.sync_show().await.unwrap();
+        assert_ne!(show(&library).await.id, before.id);
+    }
+
+    #[tokio::test]
+    async fn a_show_stores_the_fields_and_actors_of_its_tvshow_nfo() {
+        let library = ShowLibrary::new().await;
+        with_show_nfo(&library, Some(show_nfo()), "2026-10-29T11:00:00Z");
+
+        library.sync_show().await.unwrap();
+
+        let show = show(&library).await;
+        assert_eq!(show.title, "Severance");
+        assert_eq!(show.sort_title.as_deref(), Some("severance"));
+        assert_eq!(
+            show.overview.as_deref(),
+            Some("Mark leads a team whose memories are surgically divided.")
+        );
+        assert_eq!(show.certification.as_deref(), Some("TV-MA"));
+        assert_eq!(show.premiered, Some(date(2022, 2, 18)));
+        assert_eq!(show.end_date, None);
+        assert_eq!(show.status.as_deref(), Some("Continuing"));
+        assert_eq!(show.network.as_deref(), Some("Apple TV+"));
+        assert_eq!(show.genres, ["Drama", "Thriller"]);
+        assert_eq!(show.rating, Some(8.7));
+        assert_eq!(show.nfo_modified_at, Some(at("2026-10-29T11:00:00Z")));
+        assert_eq!(
+            actors(&library).await,
+            [
+                (
+                    "Adam Scott".to_owned(),
+                    Some("Mark Scout".to_owned()),
+                    Some(0)
+                ),
+                (
+                    "Britt Lower".to_owned(),
+                    Some("Helly R.".to_owned()),
+                    Some(1)
+                ),
+                (
+                    "Zach Cherry".to_owned(),
+                    Some("Dylan George".to_owned()),
+                    Some(2)
+                ),
+            ]
+        );
+        assert!(problems(&library).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_new_show_without_a_tvshow_nfo_takes_sonarrs_fields_until_a_later_sync_finds_one() {
+        let library = ShowLibrary::new().await;
+        library.sync_show().await.unwrap();
+        let without_nfo = show(&library).await;
+        let actors_without_nfo = actors(&library).await;
+
+        with_show_nfo(&library, Some(show_nfo()), "2026-10-29T11:00:00Z");
+        library.sync_show().await.unwrap();
+
+        assert_eq!(without_nfo.network, None);
+        assert_eq!(without_nfo.sort_title, None);
+        assert!(actors_without_nfo.is_empty());
+        assert!(problems(&library).await.is_empty());
+        assert_eq!(show(&library).await.network.as_deref(), Some("Apple TV+"));
+        assert_eq!(actors(&library).await.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn unreadable_nfos_store_sonarrs_fields_and_one_problem_for_the_show_nfo_and_one_per_media_file()
+     {
+        let library = ShowLibrary::new().await;
+        with_show_nfo(&library, None, "2026-10-29T11:00:00Z");
+        with_episode_nfo(&library, S01E02_E03_FILE, None, "2026-10-29T11:00:00Z");
+
+        library.sync_show().await.unwrap();
+
+        let show = show(&library).await;
+        assert_eq!(show.sort_title, None);
+        assert_eq!(show.genres, ["Drama", "Mystery", "Science Fiction"]);
+        let half_loop = episode(&library, 1, 2).await;
+        assert_eq!(half_loop.title, "Half Loop");
+        assert_eq!(
+            half_loop.overview.as_deref(),
+            Some("Mark takes Helly on a tour of the office.")
+        );
+        assert_eq!(half_loop.rating, None);
+        let mut problems = problems(&library)
+            .await
+            .into_iter()
+            .map(|x| (x.kind, x.show_id, x.media_file_id, x.path))
+            .collect::<Vec<_>>();
+        problems.sort_by(|a, b| a.3.cmp(&b.3));
+        assert_eq!(
+            problems,
+            [
+                (
+                    SyncProblemKind::UnreadableNfo,
+                    None,
+                    half_loop.media_file_id,
+                    nfo_path(S01E02_E03_FILE)
+                ),
+                (
+                    SyncProblemKind::UnreadableNfo,
+                    Some(show.id),
+                    None,
+                    SHOW_NFO.to_owned()
+                ),
+            ]
+        );
+        assert_eq!(library.sources().episode_nfo_reads, 1);
+    }
+
+    #[tokio::test]
+    async fn an_nfo_with_two_episodes_fills_each_of_them() {
+        let library = ShowLibrary::new().await;
+        with_episode_nfo(
+            &library,
+            S01E02_E03_FILE,
+            Some(vec![
+                episode_nfo(Some(1012), 1, 2, "Half Loop", 8.1),
+                episode_nfo(Some(1013), 1, 3, "In Perpetuity", 8.3),
+            ]),
+            "2026-10-29T11:00:00Z",
+        );
+
+        library.sync_show().await.unwrap();
+
+        assert_eq!(
+            titles_and_ratings(&library, 1).await,
+            [
+                (1, "Good News About Hell".to_owned(), None),
+                (2, "Half Loop".to_owned(), Some(8.1)),
+                (3, "In Perpetuity".to_owned(), Some(8.3)),
+            ]
+        );
+        assert_eq!(
+            episode(&library, 1, 3).await.overview.as_deref(),
+            Some("The NFO's plot of In Perpetuity")
+        );
+        assert_eq!(
+            episode(&library, 1, 3).await.air_date,
+            Some(date(2022, 2, 25))
+        );
+    }
+
+    #[tokio::test]
+    async fn an_episode_nfo_matches_by_sonarr_id_then_by_season_and_episode_number_and_keeps_sonarrs_numbers()
+     {
+        let library = ShowLibrary::new().await;
+        with_episode_nfo(
+            &library,
+            S02E01_FILE,
+            Some(vec![episode_nfo(Some(1021), 3, 9, "Hello, Ms. Cobel", 8.6)]),
+            "2026-10-29T11:00:00Z",
+        );
+        with_episode_nfo(
+            &library,
+            SPECIAL_FILE,
+            Some(vec![episode_nfo(None, 0, 1, "Inside the Episode", 7.2)]),
+            "2026-10-29T11:00:00Z",
+        );
+
+        library.sync_show().await.unwrap();
+
+        assert_eq!(
+            titles_and_ratings(&library, 2).await,
+            [
+                (1, "Hello, Ms. Cobel".to_owned(), Some(8.6)),
+                (2, "Goodbye, Mrs. Selvig".to_owned(), None),
+            ]
+        );
+        assert_eq!(
+            titles_and_ratings(&library, 0).await,
+            [(1, "Inside the Episode".to_owned(), Some(7.2))]
+        );
+    }
+
+    #[tokio::test]
+    async fn an_unchanged_episode_nfo_takes_sonarrs_new_episode_number() {
+        let library = ShowLibrary::new().await;
+        with_episode_nfo(
+            &library,
+            S01E01_FILE,
+            Some(vec![episode_nfo(
+                Some(1011),
+                1,
+                1,
+                "Good News About Hell",
+                8.0,
+            )]),
+            "2026-10-29T11:00:00Z",
+        );
+        library.sync_show().await.unwrap();
+
+        with_sonarr_episodes(&library, |episodes| {
+            sonarr_episode(episodes, 1, 1).episode_number = 4;
+        });
+        library.sync_show().await.unwrap();
+
+        assert_eq!(
+            titles_and_ratings(&library, 1).await,
+            [
+                (2, "Half Loop".to_owned(), None),
+                (3, "In Perpetuity".to_owned(), None),
+                (4, "Good News About Hell".to_owned(), Some(8.0)),
+            ]
+        );
+        assert_eq!(library.sources().episode_nfo_reads, 1);
+    }
+
+    #[tokio::test]
+    async fn an_episode_nfo_of_a_re_added_show_matches_by_season_and_episode_number() {
+        let library = ShowLibrary::new().await;
+        with_episode_nfo(
+            &library,
+            S01E02_E03_FILE,
+            Some(vec![
+                episode_nfo(Some(1012), 1, 2, "Half Loop", 8.1),
+                episode_nfo(Some(1013), 1, 3, "In Perpetuity", 8.3),
+            ]),
+            "2026-10-29T11:00:00Z",
+        );
+        with_sonarr_episodes(&library, |episodes| {
+            for episode in episodes {
+                episode.sonarr_id += 10_000;
+            }
+        });
+
+        library.sync_show().await.unwrap();
+
+        assert_eq!(
+            titles_and_ratings(&library, 1).await,
+            [
+                (1, "Good News About Hell".to_owned(), None),
+                (2, "Half Loop".to_owned(), Some(8.1)),
+                (3, "In Perpetuity".to_owned(), Some(8.3)),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn an_episode_nfo_entry_whose_sonarr_id_belongs_to_another_episode_is_not_matched_by_number()
+     {
+        let library = ShowLibrary::new().await;
+        with_episode_nfo(
+            &library,
+            S01E02_E03_FILE,
+            Some(vec![
+                episode_nfo(Some(1012), 1, 2, "Half Loop", 8.1),
+                episode_nfo(Some(1013), 1, 3, "In Perpetuity", 8.3),
+            ]),
+            "2026-10-29T11:00:00Z",
+        );
+        with_sonarr_episodes(&library, |episodes| {
+            sonarr_episode(episodes, 1, 2).episode_number = 4;
+            let in_perpetuity = sonarr_episode(episodes, 1, 3);
+            in_perpetuity.episode_number = 2;
+            in_perpetuity.sonarr_id = 1014;
+        });
+
+        library.sync_show().await.unwrap();
+
+        assert_eq!(
+            titles_and_ratings(&library, 1).await,
+            [
+                (1, "Good News About Hell".to_owned(), None),
+                (2, "In Perpetuity".to_owned(), None),
+                (4, "Half Loop".to_owned(), Some(8.1)),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn show_artwork_season_posters_for_synced_seasons_and_episode_thumbs_are_stored_with_their_owners()
+     {
+        let library = ShowLibrary::new().await;
+        {
+            let mut sources = library.sources();
+            sources.folder.poster =
+                found(&format!("{SHOW_FOLDER}/poster.jpg"), "2026-10-28T12:30:00Z");
+            sources.folder.fanart =
+                found(&format!("{SHOW_FOLDER}/fanart.jpg"), "2026-10-28T12:30:00Z");
+            sources.folder.clearlogo = found(
+                &format!("{SHOW_FOLDER}/clearlogo.png"),
+                "2026-10-28T12:30:00Z",
+            );
+            sources.folder.season_posters = [
+                (0, "season-specials-poster.jpg"),
+                (1, "season01-poster.jpg"),
+                (4, "season04-poster.jpg"),
+            ]
+            .into_iter()
+            .map(|(number, name)| {
+                (
+                    number,
+                    found(&format!("{SHOW_FOLDER}/{name}"), "2026-10-28T12:31:00Z").unwrap(),
+                )
+            })
+            .collect();
+            for media_file in [S01E01_FILE, S01E02_E03_FILE] {
+                sources
+                    .episode_folders
+                    .entry(media_file.to_owned())
+                    .or_default()
+                    .thumb = found(
+                    &media_file.replace(".mkv", "-thumb.jpg"),
+                    "2026-10-28T12:32:00Z",
+                );
+            }
+        }
+
+        library.sync_show().await.unwrap();
+
+        let show_id = show(&library).await.id;
+        let season_numbers = season_numbers(&library).await;
+        let episode_numbers = episodes(&library)
+            .await
+            .into_iter()
+            .map(|(season, x)| (x.id, (season, x.number)))
+            .collect::<HashMap<_, _>>();
+        let artwork = artwork(&library)
+            .await
+            .into_iter()
+            .map(|x| {
+                assert_eq!(x.show_id, Some(show_id));
+                (
+                    x.kind,
+                    x.path.strip_prefix(SHOW_FOLDER).unwrap().to_owned(),
+                    x.season_id.map(|id| season_numbers[&id]),
+                    x.episode_id.map(|id| episode_numbers[&id]),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            artwork,
+            [
+                (
+                    ArtworkKind::Thumb,
+                    "/Season 01/Severance - S01E01 - Good News About Hell WEBDL-1080p-thumb.jpg"
+                        .to_owned(),
+                    None,
+                    Some((1, 1))
+                ),
+                (
+                    ArtworkKind::Thumb,
+                    "/Season 01/Severance - S01E02-E03 - Half Loop + In Perpetuity WEBDL-1080p-thumb.jpg"
+                        .to_owned(),
+                    None,
+                    Some((1, 2))
+                ),
+                (
+                    ArtworkKind::Thumb,
+                    "/Season 01/Severance - S01E02-E03 - Half Loop + In Perpetuity WEBDL-1080p-thumb.jpg"
+                        .to_owned(),
+                    None,
+                    Some((1, 3))
+                ),
+                (ArtworkKind::Clearlogo, "/clearlogo.png".to_owned(), None, None),
+                (ArtworkKind::Fanart, "/fanart.jpg".to_owned(), None, None),
+                (ArtworkKind::Poster, "/poster.jpg".to_owned(), None, None),
+                (
+                    ArtworkKind::Poster,
+                    "/season-specials-poster.jpg".to_owned(),
+                    Some(0),
+                    None
+                ),
+                (
+                    ArtworkKind::Poster,
+                    "/season01-poster.jpg".to_owned(),
+                    Some(1),
+                    None
+                ),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_season_poster_is_not_kept_for_a_season_sonarr_no_longer_lists() {
+        let library = ShowLibrary::new().await;
+        library.sources().folder.season_posters = vec![(
+            2,
+            found(
+                &format!("{SHOW_FOLDER}/season02-poster.jpg"),
+                "2026-10-28T12:31:00Z",
+            )
+            .unwrap(),
+        )];
+        library.sync_show().await.unwrap();
+        let kept_while_listed = artwork(&library).await.len();
+
+        with_sonarr_episodes(&library, |episodes| {
+            episodes.retain(|x| x.season_number != 2)
+        });
+        library.sync_show().await.unwrap();
+
+        assert_eq!(kept_while_listed, 1);
+        assert!(artwork(&library).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_later_sync_picks_up_changed_nfos_and_images() {
+        let library = ShowLibrary::new().await;
+        with_show_nfo(&library, Some(show_nfo()), "2026-10-29T11:00:00Z");
+        with_episode_nfo(
+            &library,
+            S01E01_FILE,
+            Some(vec![episode_nfo(
+                Some(1011),
+                1,
+                1,
+                "Good News About Hell",
+                8.0,
+            )]),
+            "2026-10-29T11:00:00Z",
+        );
+        {
+            let mut sources = library.sources();
+            sources.folder.poster =
+                found(&format!("{SHOW_FOLDER}/poster.jpg"), "2026-10-28T12:30:00Z");
+            sources.folder.fanart =
+                found(&format!("{SHOW_FOLDER}/fanart.jpg"), "2026-10-28T12:30:00Z");
+        }
+        library.sync_show().await.unwrap();
+
+        let ended = ShowNfo {
+            status: Some("Ended".to_owned()),
+            ..show_nfo()
+        };
+        with_show_nfo(&library, Some(ended), "2026-10-30T08:00:00Z");
+        with_episode_nfo(
+            &library,
+            S01E01_FILE,
+            Some(vec![episode_nfo(
+                Some(1011),
+                1,
+                1,
+                "Good News About Hell",
+                8.2,
+            )]),
+            "2026-10-30T08:00:00Z",
+        );
+        {
+            let mut sources = library.sources();
+            sources.folder.poster =
+                found(&format!("{SHOW_FOLDER}/poster.jpg"), "2026-10-30T08:00:00Z");
+            sources.folder.fanart = None;
+            sources.folder.season_posters = vec![(
+                1,
+                found(
+                    &format!("{SHOW_FOLDER}/season01-poster.jpg"),
+                    "2026-10-30T08:00:00Z",
+                )
+                .unwrap(),
+            )];
+            sources.episode_folders.get_mut(S01E01_FILE).unwrap().thumb = found(
+                &S01E01_FILE.replace(".mkv", "-thumb.jpg"),
+                "2026-10-30T08:00:00Z",
+            );
+        }
+        library.sync_show().await.unwrap();
+
+        assert_eq!(show(&library).await.status.as_deref(), Some("Ended"));
+        assert_eq!(actors(&library).await.len(), 3);
+        assert_eq!(episode(&library, 1, 1).await.rating, Some(8.2));
+        assert_eq!(
+            artwork(&library)
+                .await
+                .into_iter()
+                .map(|x| (x.kind, x.path, x.modified_at))
+                .collect::<Vec<_>>(),
+            [
+                (
+                    ArtworkKind::Thumb,
+                    S01E01_FILE.replace(".mkv", "-thumb.jpg"),
+                    at("2026-10-30T08:00:00Z")
+                ),
+                (
+                    ArtworkKind::Poster,
+                    format!("{SHOW_FOLDER}/poster.jpg"),
+                    at("2026-10-30T08:00:00Z")
+                ),
+                (
+                    ArtworkKind::Poster,
+                    format!("{SHOW_FOLDER}/season01-poster.jpg"),
+                    at("2026-10-30T08:00:00Z")
+                ),
+            ]
+        );
+        assert_eq!(library.sources().nfo_reads, 2);
+    }
 }

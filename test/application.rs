@@ -2,14 +2,18 @@ use crate::browsing::Resizer;
 use crate::library::Prober;
 use crate::library::SourceHealth;
 use crate::library::sync_movie;
+use crate::library::sync_show;
 use crate::ports::AcquireLock;
 use crate::ports::CachedImage;
 use crate::ports::DeleteCachedImage;
 use crate::ports::EmailRefused;
+use crate::ports::EpisodeFolder;
+use crate::ports::EpisodeNfo;
 use crate::ports::FindMediaFile;
 use crate::ports::FoundMediaFile;
 use crate::ports::FoundSubtitleFile;
 use crate::ports::GetRadarrMovie;
+use crate::ports::GetSonarrShow;
 use crate::ports::ImageFile;
 use crate::ports::ImageFormat;
 use crate::ports::ListCachedImages;
@@ -34,6 +38,12 @@ use crate::ports::ResizeImage;
 use crate::ports::SaveCachedImage;
 use crate::ports::SendEmail;
 use crate::ports::SendEmailError;
+use crate::ports::ShowFolder;
+use crate::ports::ShowNfo;
+use crate::ports::SonarrEpisode;
+use crate::ports::SonarrEpisodeFile;
+use crate::ports::SonarrShow;
+use crate::ports::SonarrShowListing;
 use crate::ports::UnreadableNfo;
 use crate::ports::persistence;
 use crate::ports::persistence::DbContext;
@@ -44,6 +54,7 @@ use domain::Episode;
 use domain::Movie;
 use domain::Show;
 use jiff::Timestamp;
+use jiff::civil::date;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -110,6 +121,20 @@ pub(crate) fn no_subtitle_files() -> ListSubtitleFiles {
 pub(crate) fn failing_prober() -> Prober {
     Prober::new(ProbeMediaFile::new(|_| {
         Box::pin(async { Err(ProbeError::default()) })
+    }))
+}
+
+pub(crate) fn readable_prober() -> Prober {
+    Prober::new(ProbeMediaFile::new(|_| {
+        Box::pin(async {
+            Ok(Probe {
+                container: "matroska,webm".to_owned(),
+                duration: None,
+                video_streams: Vec::new(),
+                audio_streams: Vec::new(),
+                subtitle_streams: Vec::new(),
+            })
+        })
     }))
 }
 
@@ -437,5 +462,205 @@ impl FakeResizer {
 
     pub(crate) fn release(&self) {
         self.held.send_replace(false);
+    }
+}
+
+pub(crate) const SHOW_FOLDER: &str = "/media/TV/Severance";
+pub(crate) const SPECIAL_FILE: &str =
+    "/media/TV/Severance/Specials/Severance - S00E01 - Inside the Episode WEBDL-1080p.mkv";
+pub(crate) const S01E01_FILE: &str =
+    "/media/TV/Severance/Season 01/Severance - S01E01 - Good News About Hell WEBDL-1080p.mkv";
+pub(crate) const S01E02_E03_FILE: &str = "/media/TV/Severance/Season 01/Severance - S01E02-E03 - Half Loop + In Perpetuity WEBDL-1080p.mkv";
+pub(crate) const S02E01_FILE: &str =
+    "/media/TV/Severance/Season 02/Severance - S02E01 - Hello, Ms. Cobel WEBDL-1080p.mkv";
+
+pub(crate) fn sonarr_episode_file(path: &str, date_added: &str) -> Option<SonarrEpisodeFile> {
+    Some(SonarrEpisodeFile {
+        path: path.to_owned(),
+        date_added: at(date_added),
+    })
+}
+
+pub(crate) fn severance() -> SonarrShow {
+    SonarrShow {
+        listing: SonarrShowListing {
+            sonarr_id: 7,
+            tvdb_id: 371_980,
+            path: SHOW_FOLDER.to_owned(),
+            title: "Severance".to_owned(),
+            year: Some(2022),
+            genres: vec![
+                "Drama".to_owned(),
+                "Mystery".to_owned(),
+                "Science Fiction".to_owned(),
+            ],
+            overview: Some("Mark leads a team of office workers.".to_owned()),
+        },
+        episodes: vec![
+            SonarrEpisode {
+                sonarr_id: 1001,
+                tvdb_id: 9_094_718,
+                season_number: 0,
+                episode_number: 1,
+                title: "Inside the Episode".to_owned(),
+                air_date: Some(date(2022, 2, 18)),
+                overview: Some("Ben Stiller and the cast talk about the first season.".to_owned()),
+                episode_file: sonarr_episode_file(SPECIAL_FILE, "2022-03-04T11:02:19Z"),
+            },
+            SonarrEpisode {
+                sonarr_id: 1011,
+                tvdb_id: 8_486_245,
+                season_number: 1,
+                episode_number: 1,
+                title: "Good News About Hell".to_owned(),
+                air_date: Some(date(2022, 2, 18)),
+                overview: Some("Mark's memories are divided.".to_owned()),
+                episode_file: sonarr_episode_file(S01E01_FILE, "2022-03-01T09:30:00Z"),
+            },
+            SonarrEpisode {
+                sonarr_id: 1012,
+                tvdb_id: 8_786_934,
+                season_number: 1,
+                episode_number: 2,
+                title: "Half Loop".to_owned(),
+                air_date: Some(date(2022, 2, 18)),
+                overview: Some("Mark takes Helly on a tour of the office.".to_owned()),
+                episode_file: sonarr_episode_file(S01E02_E03_FILE, "2022-03-01T09:31:00Z"),
+            },
+            SonarrEpisode {
+                sonarr_id: 1013,
+                tvdb_id: 8_786_935,
+                season_number: 1,
+                episode_number: 3,
+                title: "In Perpetuity".to_owned(),
+                air_date: Some(date(2022, 2, 25)),
+                overview: Some("Helly takes a tour of the Perpetuity Wing.".to_owned()),
+                episode_file: sonarr_episode_file(S01E02_E03_FILE, "2022-03-01T09:31:00Z"),
+            },
+            SonarrEpisode {
+                sonarr_id: 1021,
+                tvdb_id: 10_535_541,
+                season_number: 2,
+                episode_number: 1,
+                title: "Hello, Ms. Cobel".to_owned(),
+                air_date: Some(date(2025, 1, 17)),
+                overview: Some("Mark leads his team on a search for answers.".to_owned()),
+                episode_file: sonarr_episode_file(S02E01_FILE, "2025-01-17T03:12:44Z"),
+            },
+            SonarrEpisode {
+                sonarr_id: 1022,
+                tvdb_id: 10_535_542,
+                season_number: 2,
+                episode_number: 2,
+                title: "Goodbye, Mrs. Selvig".to_owned(),
+                air_date: Some(date(2025, 1, 24)),
+                overview: Some("Helly and Mark go looking for Ms. Casey.".to_owned()),
+                episode_file: None,
+            },
+        ],
+    }
+}
+
+#[derive(Default)]
+pub(crate) struct ShowSources {
+    pub(crate) sonarr_show: Option<SonarrShow>,
+    pub(crate) files_on_disk: HashSet<String>,
+    pub(crate) folder: ShowFolder,
+    pub(crate) nfo: Option<ShowNfo>,
+    pub(crate) nfo_reads: usize,
+    pub(crate) episode_folders: HashMap<String, EpisodeFolder>,
+    pub(crate) episode_nfos: HashMap<String, Vec<EpisodeNfo>>,
+    pub(crate) episode_nfo_reads: usize,
+}
+
+#[derive(Clone)]
+pub(crate) struct ShowLibrary {
+    pub(crate) db_context: DbContext,
+    sources: Arc<Mutex<ShowSources>>,
+}
+
+impl ShowLibrary {
+    pub(crate) async fn new() -> Self {
+        let library = Self {
+            db_context: mock_db_context().await,
+            sources: Arc::default(),
+        };
+        {
+            let mut sources = library.sources();
+            sources.sonarr_show = Some(severance());
+            sources.files_on_disk = [SPECIAL_FILE, S01E01_FILE, S01E02_E03_FILE, S02E01_FILE]
+                .map(str::to_owned)
+                .into();
+        }
+        library
+    }
+
+    pub(crate) fn sources(&self) -> MutexGuard<'_, ShowSources> {
+        self.sources.lock().unwrap()
+    }
+
+    pub(crate) fn sync_show_dependencies(&self) -> sync_show::Dependencies {
+        let disk = self.sources.clone();
+        let sonarr = self.sources.clone();
+        let episode_folders = self.sources.clone();
+        let episode_nfos = self.sources.clone();
+        let folder = self.sources.clone();
+        let nfo = self.sources.clone();
+        sync_show::Dependencies {
+            db_context: self.db_context.clone(),
+            find_media_file: FindMediaFile::new(move |path| {
+                let found =
+                    disk.lock()
+                        .unwrap()
+                        .files_on_disk
+                        .contains(&path)
+                        .then(|| FoundMediaFile {
+                            size: 1_000,
+                            modified_at: at("2026-10-29T09:00:00Z"),
+                        });
+                Box::pin(async move { found })
+            }),
+            get_sonarr_show: GetSonarrShow::new(move |_| {
+                let show = sonarr.lock().unwrap().sonarr_show.clone();
+                Box::pin(async move { Ok(show) })
+            }),
+            list_subtitle_files: no_subtitle_files(),
+            prober: readable_prober(),
+            read_episode_folder: ReadEpisodeFolder::new(move |path| {
+                let folder = episode_folders
+                    .lock()
+                    .unwrap()
+                    .episode_folders
+                    .get(&path)
+                    .cloned()
+                    .unwrap_or_default();
+                Box::pin(async move { folder })
+            }),
+            read_episode_nfo: ReadEpisodeNfo::new(move |path| {
+                let mut sources = episode_nfos.lock().unwrap();
+                sources.episode_nfo_reads += 1;
+                let roots = sources
+                    .episode_nfos
+                    .get(&path)
+                    .cloned()
+                    .ok_or_else(UnreadableNfo::default);
+                Box::pin(async move { roots })
+            }),
+            read_show_folder: ReadShowFolder::new(move |_, _| {
+                let folder = folder.lock().unwrap().folder.clone();
+                Box::pin(async move { folder })
+            }),
+            read_show_nfo: ReadShowNfo::new(move |_| {
+                let mut sources = nfo.lock().unwrap();
+                sources.nfo_reads += 1;
+                let nfo = sources.nfo.clone().ok_or_else(UnreadableNfo::default);
+                Box::pin(async move { nfo })
+            }),
+            source_health: SourceHealth::default(),
+        }
+    }
+
+    pub(crate) async fn sync_show(&self) -> Result<sync_show::Output, sync_show::Error> {
+        sync_show::call(self.sync_show_dependencies(), 7).await
     }
 }
