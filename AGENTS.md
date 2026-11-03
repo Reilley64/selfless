@@ -16,7 +16,7 @@ Single-context: one `GLOSSARY.md` at the repo root. ADRs are Plane pages under A
 
 ### Implementation
 
-Building tickets in worktrees: see `docs/agents/implementation.md`.
+Building tickets in worktrees, and writing tests, migrations and device checks: see `docs/agents/implementation.md`.
 
 ### GitHub automation
 

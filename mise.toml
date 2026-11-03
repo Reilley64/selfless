@@ -8,8 +8,15 @@ yq = "4.54.1"
 "github:open-telemetry/weaver" = "0.28.0"
 
 [env]
-DATABASE__URL = "postgres://selfless:selfless@localhost:5432/selfless"
+ADMIN__USERNAME = "admin"
+ADMIN__PASSWORD = "admin"
+DATABASE__URL = "{{ get_env(name='DATABASE__URL', default='postgres://selfless:selfless@localhost:5432/selfless') }}"
 OTEL_SERVICE_NAME = "selfless"
+SMTP__HOST = "localhost"
+SMTP__PORT = "587"
+SMTP__USERNAME = "selfless"
+SMTP__PASSWORD = "selfless"
+SMTP__FROM = "selfless <selfless@localhost>"
 
 [tasks.services]
 description = "Start PostgreSQL and grafana/otel-lgtm for local development"
@@ -33,6 +40,10 @@ description = "Start the web app's dev server, which proxies API calls to the se
 depends = ["generate"]
 dir = "presentation/web"
 run = "bun run start"
+
+[tasks."dev:seed-users"]
+description = "Make the users Noor and Theo on a running server, http://localhost:8080 by default, and print their passwords"
+run = "scripts/seed-users"
 
 [tasks.check]
 description = "Check formatting, lints and crate direction"
@@ -63,6 +74,10 @@ docker build --platform linux/amd64 --tag selfless:local \
 description = "Start selfless:local beside PostgreSQL and wait for readiness"
 depends = ["build:image"]
 run = "scripts/smoke-test-image selfless:local"
+
+[tasks."lint:comments"]
+description = "List lines that add a comment against a base ref, origin/main by default"
+run = "scripts/check-no-new-comments"
 
 [tasks."lint:openapi"]
 description = "Lint the OpenAPI file"

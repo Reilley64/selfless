@@ -64,3 +64,83 @@ pub fn export_telemetry(
         })
     }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceResponse;
+    use opentelemetry_proto::tonic::collector::trace::v1::trace_service_server::TraceService;
+    use opentelemetry_proto::tonic::collector::trace::v1::trace_service_server::TraceServiceServer;
+    use opentelemetry_proto::tonic::trace::v1::ResourceSpans;
+    use opentelemetry_proto::tonic::trace::v1::ScopeSpans;
+    use opentelemetry_proto::tonic::trace::v1::Span;
+    use std::sync::Arc;
+    use std::sync::Mutex;
+    use tokio::net::TcpListener;
+    use tonic::Request;
+    use tonic::Response;
+    use tonic::Status;
+    use tonic::transport::Server;
+    use tonic::transport::server::TcpIncoming;
+
+    #[tokio::test]
+    async fn exported_traces_reach_the_collector() {
+        let collector = FakeCollector::default();
+        let settings = OtlpSettings {
+            endpoint: Some(collector.start().await),
+            ..Default::default()
+        };
+        let request = ExportTraceServiceRequest {
+            resource_spans: vec![ResourceSpans {
+                scope_spans: vec![ScopeSpans {
+                    spans: vec![Span {
+                        trace_id: vec![0x4b; 16],
+                        span_id: vec![0x00; 8],
+                        name: "GET".to_owned(),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+        };
+
+        let reply = export_telemetry(&settings)
+            .unwrap()
+            .call(TelemetrySignal::Traces, request.encode_to_vec().into())
+            .await
+            .unwrap();
+
+        ExportTraceServiceResponse::decode(reply).unwrap();
+        assert_eq!(*collector.requests.lock().unwrap(), vec![request]);
+    }
+
+    #[derive(Clone, Default)]
+    struct FakeCollector {
+        requests: Arc<Mutex<Vec<ExportTraceServiceRequest>>>,
+    }
+
+    impl FakeCollector {
+        async fn start(&self) -> String {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let address = listener.local_addr().unwrap();
+            tokio::spawn(
+                Server::builder()
+                    .add_service(TraceServiceServer::new(self.clone()))
+                    .serve_with_incoming(TcpIncoming::from(listener)),
+            );
+            format!("http://{address}")
+        }
+    }
+
+    #[tonic::async_trait]
+    impl TraceService for FakeCollector {
+        async fn export(
+            &self,
+            request: Request<ExportTraceServiceRequest>,
+        ) -> Result<Response<ExportTraceServiceResponse>, Status> {
+            self.requests.lock().unwrap().push(request.into_inner());
+            Ok(Response::new(ExportTraceServiceResponse::default()))
+        }
+    }
+}

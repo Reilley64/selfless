@@ -1,6 +1,6 @@
 # Coding standards
 
-The `code-review` step applies these rules to each diff. Each rule is a judgement call. `cargo fmt`, Clippy with `-D warnings`, `cargo deny`, TypeScript, ESLint, vacuum, Weaver, actionlint and `mise run lint:versions` own the mechanical rules. The ADRs and the Telemetry conventions page in Plane own the architecture decisions. Cite them when a diff breaks one.
+The `code-review` step applies these rules to each diff. Each rule is a judgement call. `cargo fmt`, Clippy with `-D warnings`, `cargo deny`, TypeScript, ESLint, vacuum, Weaver, actionlint, `mise run lint:versions` and `mise run lint:comments` own the mechanical rules. The ADRs and the Telemetry conventions page in Plane own the architecture decisions. Cite them when a diff breaks one.
 
 ## Code
 
@@ -20,15 +20,25 @@ The `code-review` step applies these rules to each diff. Each rule is a judgemen
 
 - Dependencies point inward: domain, application, infrastructure, presentation, then the binary. `deny.toml` lists each crate's allowed dependents. A new edge needs a reason the diff makes clear.
 - A port is a newtype over `Arc<dyn Fn>` with a `call` method that takes named parameters. Application owns the port, and an infrastructure crate builds it.
+- Use case Outputs carry plain data, never Toasty models. Each use case defines its own Output. Outputs are never shared between use cases.
 - Settings come only from environment variables, with no prefix and `__` for nesting. Each adapter crate owns its settings type, and `AppSettings::load()` in `infrastructure/settings` composes them.
 - Every database call goes through the `DbContext`, including hand-written SQL through `toasty::sql`. Hand-written SQL runs on PostgreSQL 14, the homelab's version.
+- An insert that must not fail on a unique clash uses Toasty's upsert, `Model::upsert_by_*()`, with `.or_ignore()` when the existing row must stay, because Toasty's `DbSet` has no upsert. `.or_ignore()` returns `None` only for a clash on the upsert's own key. A clash on another unique column is still an error. Every other insert starts from a `DbSet` root, such as `db_context.users().create()`. Bulk upserts stay in `toasty::sql`, as ADR 0001 says.
 - Rustls is the only TLS stack. A dependency with a choice of TLS backend sets `default-features = false` and picks Rustls by name.
+
+## Files
+
+- Application groups use cases by capability. Each use case is `<use_case>.rs` with `call`, and its `Dependencies`, `Output` and `Error` sit in `<use_case>/dependencies.rs`, `output.rs` and `error.rs`. A marker error that only one use case returns goes in its `error.rs`. See `application/src/users/create_user.rs`.
+- Ports live in `application/src/ports/`. `persistence.rs` holds the `DbContext`, and `mod.rs` holds the callable ports in alphabetical order.
+- Domain has one file per type, re-exported from `lib.rs`.
+- API routes live in `presentation/api/src/routes/`, one file per resource and version, such as `routes/api/sessions/v1.rs`. The admin app splits its views into `pages/`, `templates/` and `atoms/`.
 
 ## Logging and telemetry
 
 - Log an error once, where it is handled, as `error = &error as &dyn Error` with a constant message.
 - Use OpenTelemetry semantic convention names. A name they lack gets a `selfless.*` entry in `telemetry/registry`, and code uses the generated constant.
 - User and media IDs go on spans and events, never on metric attributes. Usernames, passwords, session tokens and signed URLs never appear in telemetry.
+- An integer span or event field is recorded as `i64`. tracing-opentelemetry records `u16` and `u64` values as strings.
 
 ## Use cases and adapters
 
@@ -37,7 +47,7 @@ The `code-review` step applies these rules to each diff. Each rule is a judgemen
 - A use case's `Dependencies` holds only the ports it calls.
 - A port is named for what the use case needs. Its parameters, results and errors are application or domain types, never a vendor's request or response shapes.
 - Radarr, Sonarr, NFO and SMTP shapes stay in the crate that talks to that system. That crate translates them into domain types before they cross a port, and keeps only the IDs and fields selfless uses.
-- A use case that must reach Radarr, Sonarr or the SMTP server after a change writes an outbox row with IDs in the same transaction, and a worker makes the call. No call to those systems runs inside a transaction or a request.
+- A use case that must reach Radarr, Sonarr or the SMTP server after a change writes an outbox row in the same transaction, and a worker makes the call. The row holds IDs and the values the handler cannot look up, such as the request origin. No call to those systems runs inside a transaction or a request.
 - An inbox or outbox handler gives the same result when it runs twice or out of order. It re-reads current state, or checks a marker committed in the same transaction as its change.
 - A route, admin page, webhook handler or worker loop calls one use case and only maps its input and output.
 - A screen that combines several models, such as Continue watching, gets one use case whose query builds its Output.
@@ -47,8 +57,25 @@ The `code-review` step applies these rules to each diff. Each rule is a judgemen
 ## API
 
 - `openapi.yaml` is written by hand and describes every endpoint the server serves. Each resource's version is at the end of its path.
+- Every `/api` operation lists the `InternalError` response, and every operation with a JSON body also lists `BadRequest`.
+- Response schemas set `additionalProperties: false`, except `Problem`, which each problem response extends with `allOf`. Request schemas leave it out, so a client may send a field the server ignores. With `true`, orval adds an index signature to the generated type.
+- A schema is never named after a JavaScript global such as `Symbol`, because orval emits a `const` with the schema's name.
+
+## Apps
+
+- The web app runs under a Content Security Policy that allows no inline script or style (`presentation/api/src/web.rs`). Styles go in class names or `global.css`.
+- Each client-side route of the web app has a server route in `presentation/api/src/web.rs` that rewrites to `/index.html`.
+- Tailwind finds only class names written out in full. Code maps a value to a whole class name, such as `bg-user-amber`, and never builds one from parts.
+- Every admin page that needs an admin session calls `require_admin`. Every admin form renders `csrf_field()`, and its handler calls `verify_csrf`.
 
 ## Tests
 
-- Tests sit at the seams the spec's Testing Decisions name: the whole server in process against PostgreSQL over HTTP, with every JSON response checked against `openapi.yaml`, and the shared app components with a mocked fetch. Each test checks behavior a spec asks for.
-- Do not test a dependency's behavior on its own.
+- Test each behaviour once, at the smallest component that owns it, in a `#[cfg(test)] mod tests` at the bottom of that component's file: a domain rule in the domain type; a use case on the mocked database (Toasty's in-memory SQLite from `test_fixtures::mock_database`) with fake ports; a route or admin page over HTTP through `TestServer` or `Browser`, which check every JSON response against `openapi.yaml`; a worker or adapter at the bottom of its own file. These unit tests never touch PostgreSQL.
+- Unit tests check only our own logic. Never test what a dependency does, such as Toasty's id generation or serde ignoring unknown fields.
+- A behaviour that relies on PostgreSQL is an integration test. The case-insensitive collation, unique-index races, `FOR UPDATE` and other hand-written SQL, and the migrations go in `infrastructure/persistence/tests/`. Startup, health and build info, and the workers `selfless::start` runs, through `selfless::start` go in the root `tests/`. A test that sets a global telemetry provider, or compares timings, gets its own file in its crate's `tests/`.
+- An HTTP test checks wiring: one step past each time limit, with the problem type. The exact limit is the domain unit test.
+- Tests read data through the `DbContext`. Use raw SQL only where no model exposes the data.
+- Fixtures live in `test/`. `test-fixtures` depends on no workspace crate. `test-app` builds an `AppState` for presentation tests. Each crate's glue is a file in `test/` included with `#[path]`.
+- An app module or component is tested with Jest in a `*.test.ts` file next to it, with a fake storage or a mocked fetch.
+- Each test checks behaviour a spec asks for, and its name says which.
+- A test of a lock, a race or a timer fails when the code it guards is removed.

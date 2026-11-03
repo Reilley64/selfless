@@ -26,7 +26,7 @@
     "react-native": "npm:react-native-tvos@0.88.0-0"
   },
   "scripts": {
-    "generate": "bun run --filter '*' generate",
+    "generate": "bun run --filter @selfless/ui generate && bun run --filter '*' --filter '!@selfless/ui' generate",
     "typecheck": "bun run --filter '*' typecheck",
     "lint": "eslint .",
     "test": "bun run --filter '*' test",
