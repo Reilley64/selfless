@@ -1,6 +1,7 @@
 import type { Tile } from "@selfless/api-client";
 import { Text, View } from "react-native-css/components";
 import { episodeLabel } from "./episodeLabel";
+import { ProgressBar } from "./ProgressBar";
 import { ArtworkImage } from "./Tile";
 import { TitleMeta } from "./TitleMeta";
 
@@ -39,9 +40,7 @@ export function FocusedDetails({ tile }: { tile: Tile }) {
         )}
         {progress != null && (
           <View className="flex-row items-center gap-4">
-            <View className="h-1.5 w-[260px] overflow-hidden rounded-pill bg-progress-track">
-              <View className="h-full bg-progress-fill" style={{ width: `${progress * 100}%` }} />
-            </View>
+            <ProgressBar progress={progress} className="h-1.5 w-[260px]" />
             {runtimeMinutes != null && (
               <Text className="font-sans text-tv-label text-text-secondary">
                 {`${Math.round(runtimeMinutes * (1 - progress))} min left`}

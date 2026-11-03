@@ -88,7 +88,7 @@ export function Tile({
               {label}
             </Text>
           )}
-          {tile.progress != null && <ProgressBar progress={tile.progress} className="absolute right-2 bottom-2 left-2" />}
+          {tile.progress != null && <ProgressBar progress={tile.progress} className="absolute right-2 bottom-2 left-2 h-1" />}
           {tile.watched && <WatchedMark className="absolute top-2 right-2" />}
           {Platform.isTV && focused && (
             <View className="absolute inset-0 rounded-medium border-(length:--spacing-focus-ring-tv-width) border-focus-ring" />

@@ -49,7 +49,7 @@ export function EpisodeList({ seasonId }: { seasonId: string }) {
                     />
                   )}
                   {episode.progress != null && (
-                    <ProgressBar progress={episode.progress} className="absolute right-2 bottom-2 left-2" />
+                    <ProgressBar progress={episode.progress} className="absolute right-2 bottom-2 left-2 h-1" />
                   )}
                   {episode.watched && <WatchedMark className="absolute top-2 right-2" />}
                 </View>

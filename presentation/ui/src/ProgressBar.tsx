@@ -24,7 +24,7 @@ const fills = [
   "w-full",
 ] as const;
 
-export function ProgressBar({ progress, className = "" }: { progress: number; className?: string }) {
+export function ProgressBar({ progress, className }: { progress: number; className: string }) {
   return (
     <View
       accessible
@@ -32,7 +32,7 @@ export function ProgressBar({ progress, className = "" }: { progress: number; cl
       aria-valuemin={0}
       aria-valuemax={100}
       aria-valuenow={Math.round(progress * 100)}
-      className={`h-1 overflow-hidden rounded-full bg-progress-track ${className}`}
+      className={`overflow-hidden rounded-full bg-progress-track ${className}`}
     >
       <View className={`h-full bg-progress-fill ${fills[Math.round(progress * (fills.length - 1))]}`} />
     </View>
