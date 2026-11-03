@@ -55,7 +55,7 @@ pub async fn call(
             radarr_id,
         )
         .await
-        .map(|()| Outcome::Processed),
+        .map(|_| Outcome::Processed),
         Ok(RadarrWebhook::Ignored) => Ok(Outcome::Ignored),
         Err(error) => {
             tracing::warn!(

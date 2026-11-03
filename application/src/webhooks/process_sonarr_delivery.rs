@@ -59,7 +59,7 @@ pub async fn call(
             sonarr_id,
         )
         .await
-        .map(|()| Outcome::Processed),
+        .map(|_| Outcome::Processed),
         Ok(SonarrWebhook::Ignored) => Ok(Outcome::Ignored),
         Err(error) => {
             tracing::warn!(

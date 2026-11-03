@@ -72,6 +72,7 @@ impl Fixture {
         application::library::list_movies::call(&self.server.state)
             .await
             .unwrap()
+            .movies
     }
 
     async fn reconcile(&self) -> Movie {
@@ -83,7 +84,7 @@ impl Fixture {
             .await;
         self.server.clock.advance(SignedDuration::from_mins(1));
         let started_at = self.server.clock.now();
-        application::library::sync_now::call(&self.server.state);
+        application::library::sync_now::call(&self.server.state).unwrap();
         eventually(async || {
             application::library::sync_status::call(&self.server.state)
                 .await

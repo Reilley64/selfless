@@ -1,28 +1,18 @@
-use crate::library::Reconciles;
-use crate::library::SourceHealth;
+mod dependencies;
+mod error;
+mod output;
+
+pub use dependencies::Dependencies;
+pub use error::Error;
+pub use output::Output;
+
 use crate::library::reconcile;
-use crate::ports::ListRadarrMovies;
-use crate::ports::ListSonarrShows;
-use crate::ports::persistence::DbContext;
 use crate::ports::persistence::DbScope;
 use domain::HeldRemoval;
 use domain::Source;
 use std::collections::HashSet;
 
-#[fundle::deps]
-pub struct Dependencies {
-    pub db_context: DbContext,
-    pub list_radarr_movies: ListRadarrMovies,
-    pub list_sonarr_shows: ListSonarrShows,
-    pub reconciles: Reconciles,
-    pub source_health: SourceHealth,
-}
-
-#[ohno::error]
-#[display("failed to confirm a held removal")]
-pub struct Error;
-
-pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Result<(), Error> {
+pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Result<Output, Error> {
     let Dependencies {
         mut db_context,
         list_radarr_movies,
@@ -37,7 +27,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
         .await
         .map_err(Error::caused_by)?
     else {
-        return Ok(());
+        return Ok(Output);
     };
     let listed = match source {
         Source::Radarr => source_health
@@ -65,5 +55,6 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
         .delete()
         .exec(db_context.executor_mut())
         .await
-        .map_err(Error::caused_by)
+        .map_err(Error::caused_by)?;
+    Ok(Output)
 }

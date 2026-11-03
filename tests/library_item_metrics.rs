@@ -65,7 +65,7 @@ async fn reconciles_count_movies_added_changed_and_removed_by_source() {
     };
     let sync_now = async || {
         server.clock.advance(SignedDuration::from_mins(1));
-        application::library::sync_now::call(&server.state);
+        application::library::sync_now::call(&server.state).unwrap();
         reconciled().await;
     };
     let count = |name: &'static str| {

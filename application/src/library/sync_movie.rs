@@ -1,5 +1,12 @@
+mod dependencies;
+mod error;
+mod output;
+
+pub use dependencies::Dependencies;
+pub use error::Error;
+pub use output::Output;
+
 use crate::library::Prober;
-use crate::library::SourceHealth;
 use crate::library::library_items;
 use crate::library::library_items::Change;
 use crate::library::media_files;
@@ -8,7 +15,6 @@ use crate::library::metadata;
 use crate::library::metadata::Nfo;
 use crate::library::metadata::Owner;
 use crate::ports::FindMediaFile;
-use crate::ports::GetRadarrMovie;
 use crate::ports::ListSubtitleFiles;
 use crate::ports::MovieFolder;
 use crate::ports::MovieNfo;
@@ -26,23 +32,7 @@ use std::collections::HashSet;
 use tracing::Instrument;
 use tracing::Span;
 
-#[fundle::deps]
-pub struct Dependencies {
-    pub db_context: DbContext,
-    pub find_media_file: FindMediaFile,
-    pub get_radarr_movie: GetRadarrMovie,
-    pub list_subtitle_files: ListSubtitleFiles,
-    pub prober: Prober,
-    pub read_movie_folder: ReadMovieFolder,
-    pub read_movie_nfo: ReadMovieNfo,
-    pub source_health: SourceHealth,
-}
-
-#[ohno::error]
-#[display("failed to sync a movie")]
-pub struct Error;
-
-pub async fn call(dependencies: impl Into<Dependencies>, radarr_id: i64) -> Result<(), Error> {
+pub async fn call(dependencies: impl Into<Dependencies>, radarr_id: i64) -> Result<Output, Error> {
     let Dependencies {
         mut db_context,
         find_media_file,
@@ -88,7 +78,8 @@ pub async fn call(dependencies: impl Into<Dependencies>, radarr_id: i64) -> Resu
         }
     }
     .instrument(span())
-    .await
+    .await?;
+    Ok(Output)
 }
 
 pub(crate) struct MovieFiles {

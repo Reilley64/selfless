@@ -73,6 +73,7 @@ impl Fixture {
         application::library::list_movies::call(&self.server.state)
             .await
             .unwrap()
+            .movies
     }
 
     async fn visible_movie(&self) -> Movie {

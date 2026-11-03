@@ -1,10 +1,12 @@
-use crate::library::Reconciles;
+mod dependencies;
+mod error;
+mod output;
 
-#[fundle::deps]
-pub struct Dependencies {
-    pub reconciles: Reconciles,
-}
+pub use dependencies::Dependencies;
+pub use error::Error;
+pub use output::Output;
 
-pub fn call(dependencies: impl Into<Dependencies>) {
+pub fn call(dependencies: impl Into<Dependencies>) -> Result<Output, Error> {
     dependencies.into().reconciles.request();
+    Ok(Output)
 }

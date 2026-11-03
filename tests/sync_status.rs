@@ -2,10 +2,10 @@
 mod library_test;
 
 use application::library::sync_status::ApiCall;
+use application::library::sync_status::Output as SyncStatus;
 use application::library::sync_status::Problem;
 use application::library::sync_status::ProblemItem;
 use application::library::sync_status::SourceStatus;
-use application::library::sync_status::SyncStatus;
 use application::ports::Probe;
 use domain::SyncProblemKind;
 use jiff::SignedDuration;
@@ -87,7 +87,7 @@ impl Fixture {
 
     async fn sync_now(&self) -> SyncStatus {
         self.server.clock.advance(SignedDuration::from_mins(1));
-        application::library::sync_now::call(&self.server.state);
+        application::library::sync_now::call(&self.server.state).unwrap();
         self.reconciled().await
     }
 

@@ -1,37 +1,24 @@
-use crate::ports::AudioStream;
-use crate::ports::FoundSubtitleFile;
-use crate::ports::SubtitleStream;
-use crate::ports::VideoStream;
-use crate::ports::persistence::DbContext;
+mod dependencies;
+mod error;
+mod output;
+
+pub use dependencies::Dependencies;
+pub use error::Error;
+pub use output::AudioStream;
+pub use output::MediaFileDetails;
+pub use output::Output;
+pub use output::SubtitleFile;
+pub use output::SubtitleStream;
+pub use output::VideoStream;
+
 use crate::ports::persistence::DbScope;
 use std::time::Duration;
 use uuid::Uuid;
 
-#[fundle::deps]
-pub struct Dependencies {
-    pub db_context: DbContext,
-}
-
-#[ohno::error]
-#[display("failed to read a media file")]
-pub struct Error;
-
-#[derive(Debug)]
-pub struct MediaFileDetails {
-    pub path: String,
-    pub container: Option<String>,
-    pub duration: Option<Duration>,
-    pub size: Option<i64>,
-    pub video_streams: Vec<VideoStream>,
-    pub audio_streams: Vec<AudioStream>,
-    pub subtitle_streams: Vec<SubtitleStream>,
-    pub subtitle_files: Vec<FoundSubtitleFile>,
-}
-
 pub async fn call(
     dependencies: impl Into<Dependencies>,
     media_file_id: Uuid,
-) -> Result<Option<MediaFileDetails>, Error> {
+) -> Result<Output, Error> {
     let mut db_context = dependencies.into().db_context;
     let Some(media_file) = domain::MediaFile::filter_by_id(media_file_id)
         .include(domain::MediaFile::fields().video_streams())
@@ -43,7 +30,7 @@ pub async fn call(
         .await
         .map_err(Error::caused_by)?
     else {
-        return Ok(None);
+        return Ok(Output { media_file: None });
     };
     let mut video_streams = media_file
         .video_streams
@@ -94,7 +81,7 @@ pub async fn call(
         .subtitle_files
         .into_inner()
         .into_iter()
-        .map(|x| FoundSubtitleFile {
+        .map(|x| SubtitleFile {
             path: x.path,
             language: x.language,
             hearing_impaired: x.hearing_impaired,
@@ -102,17 +89,19 @@ pub async fn call(
         })
         .collect::<Vec<_>>();
     subtitle_files.sort_by(|a, b| a.path.cmp(&b.path));
-    Ok(Some(MediaFileDetails {
-        path: media_file.path,
-        container: media_file.container,
-        duration: media_file
-            .duration_ms
-            .and_then(|x| u64::try_from(x).ok())
-            .map(Duration::from_millis),
-        size: media_file.size,
-        video_streams,
-        audio_streams,
-        subtitle_streams,
-        subtitle_files,
-    }))
+    Ok(Output {
+        media_file: Some(MediaFileDetails {
+            path: media_file.path,
+            container: media_file.container,
+            duration: media_file
+                .duration_ms
+                .and_then(|x| u64::try_from(x).ok())
+                .map(Duration::from_millis),
+            size: media_file.size,
+            video_streams,
+            audio_streams,
+            subtitle_streams,
+            subtitle_files,
+        }),
+    })
 }

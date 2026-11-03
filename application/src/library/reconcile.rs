@@ -1,7 +1,13 @@
+mod dependencies;
+mod error;
+mod output;
+
+pub use dependencies::Dependencies;
+pub use error::Error;
+pub use output::Output;
+
 use crate::attributes::SELFLESS_LIBRARY_SOURCE;
 use crate::attributes::SELFLESS_RECONCILE_RESULT;
-use crate::library::Prober;
-use crate::library::Reconciles;
 use crate::library::SourceHealth;
 use crate::library::prober::CONCURRENT_PROBES;
 use crate::library::source_states;
@@ -11,20 +17,9 @@ use crate::library::sync_show;
 use crate::library::sync_show::ShowFiles;
 use crate::library::sync_status::ReconcileProgress;
 use crate::metrics::SELFLESS_RECONCILE_DURATION;
-use crate::ports::CheckRadarrKodiMetadata;
-use crate::ports::CheckSonarrKodiMetadata;
-use crate::ports::Clock;
-use crate::ports::FindMediaFile;
 use crate::ports::GetSonarrEpisodes;
 use crate::ports::ListRadarrMovies;
 use crate::ports::ListSonarrShows;
-use crate::ports::ListSubtitleFiles;
-use crate::ports::ReadEpisodeFolder;
-use crate::ports::ReadEpisodeNfo;
-use crate::ports::ReadMovieFolder;
-use crate::ports::ReadMovieNfo;
-use crate::ports::ReadShowFolder;
-use crate::ports::ReadShowNfo;
 use crate::ports::SonarrShow;
 use crate::ports::persistence::DbContext;
 use crate::ports::persistence::DbScope;
@@ -46,33 +41,7 @@ use tracing::Instrument;
 use tracing::field;
 use uuid::Uuid;
 
-#[fundle::deps]
-pub struct Dependencies {
-    pub check_radarr_kodi_metadata: CheckRadarrKodiMetadata,
-    pub check_sonarr_kodi_metadata: CheckSonarrKodiMetadata,
-    pub clock: Clock,
-    pub db_context: DbContext,
-    pub find_media_file: FindMediaFile,
-    pub get_sonarr_episodes: GetSonarrEpisodes,
-    pub list_radarr_movies: ListRadarrMovies,
-    pub list_sonarr_shows: ListSonarrShows,
-    pub list_subtitle_files: ListSubtitleFiles,
-    pub prober: Prober,
-    pub read_episode_folder: ReadEpisodeFolder,
-    pub read_episode_nfo: ReadEpisodeNfo,
-    pub read_movie_folder: ReadMovieFolder,
-    pub read_movie_nfo: ReadMovieNfo,
-    pub read_show_folder: ReadShowFolder,
-    pub read_show_nfo: ReadShowNfo,
-    pub reconciles: Reconciles,
-    pub source_health: SourceHealth,
-}
-
-#[ohno::error]
-#[display("failed to reconcile the library")]
-pub struct Error;
-
-pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Result<(), Error> {
+pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Result<Output, Error> {
     let Dependencies {
         check_radarr_kodi_metadata,
         check_sonarr_kodi_metadata,
@@ -95,7 +64,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
     } = dependencies.into();
     let reconcile = reconciles.source(source);
     let Ok(_running) = reconcile.running.clone().try_lock_owned() else {
-        return Ok(());
+        return Ok(Output);
     };
     let progress = &reconcile.progress;
     *progress.lock().unwrap() = Some(ReconcileProgress {
@@ -213,7 +182,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
         .instrument(span)
         .await
         .map_err(Error::caused_by)?;
-    Ok(())
+    Ok(Output)
 }
 
 fn record_kodi_metadata(

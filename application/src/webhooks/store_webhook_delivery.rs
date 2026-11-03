@@ -1,8 +1,13 @@
+mod dependencies;
+mod error;
+mod output;
+
+pub use dependencies::Dependencies;
+pub use error::Error;
+pub use output::Output;
+
 use crate::library::source_states;
-use crate::ports::Clock;
-use crate::ports::persistence::DbContext;
 use crate::ports::persistence::DbScope;
-use crate::webhooks::WebhookPasswords;
 use crate::webhooks::webhook_deliveries;
 use crate::webhooks::webhook_deliveries::Outcome;
 use bytes::Bytes;
@@ -13,28 +18,12 @@ use std::collections::HashMap;
 use tracing::Span;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
-#[fundle::deps]
-pub struct Dependencies {
-    pub clock: Clock,
-    pub db_context: DbContext,
-    pub webhook_passwords: WebhookPasswords,
-}
-
-#[ohno::error]
-#[display("failed to store a webhook delivery")]
-pub struct Error;
-
-pub enum Delivery {
-    Stored,
-    Rejected,
-}
-
 pub async fn call(
     dependencies: impl Into<Dependencies>,
     source: Source,
     password: Option<String>,
     body: Bytes,
-) -> Result<Delivery, Error> {
+) -> Result<Output, Error> {
     let Dependencies {
         clock,
         mut db_context,
@@ -56,7 +45,7 @@ pub async fn call(
             selfless.webhook.source = source.name(),
             "rejected a webhook delivery with a wrong or missing password"
         );
-        return Ok(Delivery::Rejected);
+        return Ok(Output::Rejected);
     }
     let event_type = webhook_deliveries::event_type(&body);
     let received_at = clock.call();
@@ -81,5 +70,5 @@ pub async fn call(
         .await
         .map_err(Error::caused_by)?;
     webhook_deliveries::count(source, event_type, Outcome::Stored);
-    Ok(Delivery::Stored)
+    Ok(Output::Stored)
 }

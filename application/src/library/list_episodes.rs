@@ -1,38 +1,19 @@
-use crate::library::list_movies::Artwork;
-use crate::library::list_movies::artwork;
-use crate::ports::persistence::DbContext;
+mod dependencies;
+mod error;
+mod output;
+
+pub use dependencies::Dependencies;
+pub use error::Error;
+pub use output::Artwork;
+pub use output::Episode;
+pub use output::Output;
+
 use crate::ports::persistence::DbScope;
-use jiff::Timestamp;
-use jiff::civil::Date;
 use uuid::Uuid;
 
-#[fundle::deps]
-pub struct Dependencies {
-    pub db_context: DbContext,
-}
-
-#[ohno::error]
-#[display("failed to list the episodes of a season")]
-pub struct Error;
-
-pub struct Episode {
-    pub id: Uuid,
-    pub number: i64,
-    pub title: String,
-    pub air_date: Option<Date>,
-    pub overview: Option<String>,
-    pub added_at: Option<Timestamp>,
-    pub media_file_id: Option<Uuid>,
-    pub rating: Option<f64>,
-    pub artwork: Vec<Artwork>,
-}
-
-pub async fn call(
-    dependencies: impl Into<Dependencies>,
-    season_id: Uuid,
-) -> Result<Vec<Episode>, Error> {
+pub async fn call(dependencies: impl Into<Dependencies>, season_id: Uuid) -> Result<Output, Error> {
     let mut db_context = dependencies.into().db_context;
-    Ok(domain::Episode::filter(
+    let episodes = domain::Episode::filter(
         domain::Episode::fields()
             .season_id()
             .eq(season_id)
@@ -55,5 +36,19 @@ pub async fn call(
         rating: episode.rating,
         artwork: artwork(episode.artwork.into_inner()),
     })
-    .collect())
+    .collect();
+    Ok(Output { episodes })
+}
+
+fn artwork(stored: Vec<domain::Artwork>) -> Vec<Artwork> {
+    let mut artwork = stored
+        .into_iter()
+        .map(|x| Artwork {
+            kind: x.kind,
+            path: x.path,
+            modified_at: x.modified_at,
+        })
+        .collect::<Vec<_>>();
+    artwork.sort_by(|a, b| a.path.cmp(&b.path));
+    artwork
 }

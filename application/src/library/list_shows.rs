@@ -1,42 +1,19 @@
-use crate::library::list_movies::Actor;
-use crate::library::list_movies::Artwork;
-use crate::library::list_movies::actors;
-use crate::library::list_movies::artwork;
-use crate::ports::persistence::DbContext;
+mod dependencies;
+mod error;
+mod output;
+
+pub use dependencies::Dependencies;
+pub use error::Error;
+pub use output::Actor;
+pub use output::Artwork;
+pub use output::Output;
+pub use output::Show;
+
 use crate::ports::persistence::DbScope;
 use domain::Episode;
 use domain::Season;
-use jiff::civil::Date;
-use uuid::Uuid;
 
-#[fundle::deps]
-pub struct Dependencies {
-    pub db_context: DbContext,
-}
-
-#[ohno::error]
-#[display("failed to list the shows")]
-pub struct Error;
-
-#[derive(Debug)]
-pub struct Show {
-    pub id: Uuid,
-    pub title: String,
-    pub sort_title: Option<String>,
-    pub year: Option<i64>,
-    pub genres: Vec<String>,
-    pub overview: Option<String>,
-    pub certification: Option<String>,
-    pub premiered: Option<Date>,
-    pub end_date: Option<Date>,
-    pub status: Option<String>,
-    pub network: Option<String>,
-    pub rating: Option<f64>,
-    pub actors: Vec<Actor>,
-    pub artwork: Vec<Artwork>,
-}
-
-pub async fn call(dependencies: impl Into<Dependencies>) -> Result<Vec<Show>, Error> {
+pub async fn call(dependencies: impl Into<Dependencies>) -> Result<Output, Error> {
     let mut db_context = dependencies.into().db_context;
     let mut shows = domain::Show::filter(
         domain::Show::fields().seasons().any(
@@ -76,5 +53,31 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<Vec<Show>, Er
     })
     .collect::<Vec<_>>();
     shows.sort_by_cached_key(|x| domain::sort_key(x.sort_title.as_deref(), &x.title));
-    Ok(shows)
+    Ok(Output { shows })
+}
+
+fn actors(stored: Vec<domain::Actor>) -> Vec<Actor> {
+    let mut actors = stored
+        .into_iter()
+        .map(|x| Actor {
+            name: x.name,
+            role: x.role,
+            order: x.order,
+        })
+        .collect::<Vec<_>>();
+    actors.sort_by_key(|x| x.order);
+    actors
+}
+
+fn artwork(stored: Vec<domain::Artwork>) -> Vec<Artwork> {
+    let mut artwork = stored
+        .into_iter()
+        .map(|x| Artwork {
+            kind: x.kind,
+            path: x.path,
+            modified_at: x.modified_at,
+        })
+        .collect::<Vec<_>>();
+    artwork.sort_by(|a, b| a.path.cmp(&b.path));
+    artwork
 }

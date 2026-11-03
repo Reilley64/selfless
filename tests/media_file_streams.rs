@@ -1,10 +1,10 @@
 #[path = "../test/library.rs"]
 mod library_test;
 
+use application::library::get_media_file;
 use application::library::get_media_file::MediaFileDetails;
-use application::library::sync_status::SyncStatus;
+use application::library::sync_status::Output as SyncStatus;
 use application::ports::AudioStream;
-use application::ports::FoundSubtitleFile;
 use application::ports::HdrType;
 use application::ports::Probe;
 use application::ports::SubtitleStream;
@@ -139,7 +139,7 @@ impl Fixture {
 
     async fn sync_now(&self) {
         self.server.clock.advance(SignedDuration::from_mins(1));
-        application::library::sync_now::call(&self.server.state);
+        application::library::sync_now::call(&self.server.state).unwrap();
         self.reconciled(Source::Radarr).await;
         self.reconciled(Source::Sonarr).await;
     }
@@ -148,11 +148,13 @@ impl Fixture {
         let movie = application::library::list_movies::call(&self.server.state)
             .await
             .unwrap()
+            .movies
             .pop()
             .unwrap();
         application::library::get_media_file::call(&self.server.state, movie.media_file_id.unwrap())
             .await
             .unwrap()
+            .media_file
             .unwrap()
     }
 
@@ -233,6 +235,54 @@ fn sdr_movie() -> Probe {
     }
 }
 
+fn video_streams(probe: &Probe) -> Vec<get_media_file::VideoStream> {
+    probe
+        .video_streams
+        .iter()
+        .map(|x| get_media_file::VideoStream {
+            index: x.index,
+            codec: x.codec.clone(),
+            profile: x.profile.clone(),
+            width: x.width,
+            height: x.height,
+            frame_rate: x.frame_rate,
+            hdr_type: x.hdr_type,
+        })
+        .collect()
+}
+
+fn audio_streams(probe: &Probe) -> Vec<get_media_file::AudioStream> {
+    probe
+        .audio_streams
+        .iter()
+        .map(|x| get_media_file::AudioStream {
+            index: x.index,
+            codec: x.codec.clone(),
+            language: x.language.clone(),
+            channels: x.channels,
+            title: x.title.clone(),
+            default: x.default,
+        })
+        .collect()
+}
+
+fn subtitle_streams(probe: &Probe) -> Vec<get_media_file::SubtitleStream> {
+    probe
+        .subtitle_streams
+        .iter()
+        .map(|x| get_media_file::SubtitleStream {
+            index: x.index,
+            codec: x.codec.clone(),
+            language: x.language.clone(),
+            title: x.title.clone(),
+            default: x.default,
+            forced: x.forced,
+            hearing_impaired: x.hearing_impaired,
+            text: x.text,
+        })
+        .collect()
+}
+
 fn beside(video: &str, suffix: &str) -> String {
     format!("{}{suffix}", video.strip_suffix(".mkv").unwrap())
 }
@@ -242,8 +292,8 @@ fn subtitle_file(
     language: Option<&str>,
     hearing_impaired: bool,
     forced: bool,
-) -> FoundSubtitleFile {
-    FoundSubtitleFile {
+) -> get_media_file::SubtitleFile {
+    get_media_file::SubtitleFile {
         path,
         language: language.map(str::to_owned),
         hearing_impaired,
@@ -262,12 +312,12 @@ async fn a_new_file_is_probed_once_and_its_streams_are_stored() {
 
     let media_file = fixture.movie_file().await;
     let probe = hdr10_movie();
-    assert_eq!(media_file.container, Some(probe.container));
+    assert_eq!(media_file.container, Some(probe.container.clone()));
     assert_eq!(media_file.duration, probe.duration);
     assert_eq!(media_file.size, Some(0));
-    assert_eq!(media_file.video_streams, probe.video_streams);
-    assert_eq!(media_file.audio_streams, probe.audio_streams);
-    assert_eq!(media_file.subtitle_streams, probe.subtitle_streams);
+    assert_eq!(media_file.video_streams, video_streams(&probe));
+    assert_eq!(media_file.audio_streams, audio_streams(&probe));
+    assert_eq!(media_file.subtitle_streams, subtitle_streams(&probe));
     assert_eq!(fixture.setup.prober.calls(&video), 1);
     fixture.stop().await;
 }
@@ -285,8 +335,8 @@ async fn a_file_whose_size_or_modification_time_changed_is_probed_again() {
 
     let media_file = fixture.movie_file().await;
     assert_eq!(media_file.container, Some(sdr_movie().container));
-    assert_eq!(media_file.video_streams, sdr_movie().video_streams);
-    assert_eq!(media_file.audio_streams, sdr_movie().audio_streams);
+    assert_eq!(media_file.video_streams, video_streams(&sdr_movie()));
+    assert_eq!(media_file.audio_streams, audio_streams(&sdr_movie()));
     assert_eq!(media_file.subtitle_streams, []);
     assert_eq!(fixture.setup.prober.calls(&video), 2);
     fixture.stop().await;
@@ -403,7 +453,7 @@ async fn a_file_ffprobe_cannot_read_stays_visible_without_stream_data_until_it_c
 
     assert_eq!(
         fixture.movie_file().await.video_streams,
-        hdr10_movie().video_streams
+        video_streams(&hdr10_movie())
     );
     fixture.stop().await;
 }

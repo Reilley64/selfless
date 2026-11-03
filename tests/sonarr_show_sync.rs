@@ -85,6 +85,7 @@ impl Fixture {
         application::library::list_shows::call(&self.server.state)
             .await
             .unwrap()
+            .shows
     }
 
     async fn visible_show(&self) -> Show {
@@ -99,6 +100,7 @@ impl Fixture {
         application::library::list_seasons::call(&self.server.state, show_id)
             .await
             .unwrap()
+            .seasons
             .into_iter()
             .map(|x| x.number)
             .collect()
@@ -107,13 +109,15 @@ impl Fixture {
     async fn episodes(&self, show_id: Uuid, season_number: i64) -> Vec<Episode> {
         let seasons = application::library::list_seasons::call(&self.server.state, show_id)
             .await
-            .unwrap();
+            .unwrap()
+            .seasons;
         let Some(season) = seasons.into_iter().find(|x| x.number == season_number) else {
             return Vec::new();
         };
         application::library::list_episodes::call(&self.server.state, season.id)
             .await
             .unwrap()
+            .episodes
     }
 
     async fn stop(self) {

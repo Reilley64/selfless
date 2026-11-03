@@ -1,55 +1,17 @@
-use crate::ports::persistence::DbContext;
+mod dependencies;
+mod error;
+mod output;
+
+pub use dependencies::Dependencies;
+pub use error::Error;
+pub use output::Actor;
+pub use output::Artwork;
+pub use output::Movie;
+pub use output::Output;
+
 use crate::ports::persistence::DbScope;
-use domain::ArtworkKind;
-use jiff::Timestamp;
-use jiff::civil::Date;
-use uuid::Uuid;
 
-#[fundle::deps]
-pub struct Dependencies {
-    pub db_context: DbContext,
-}
-
-#[ohno::error]
-#[display("failed to list the movies")]
-pub struct Error;
-
-#[derive(Debug)]
-pub struct Movie {
-    pub id: Uuid,
-    pub title: String,
-    pub sort_title: Option<String>,
-    pub original_title: Option<String>,
-    pub year: i64,
-    pub overview: Option<String>,
-    pub runtime_minutes: Option<i64>,
-    pub certification: Option<String>,
-    pub premiered: Option<Date>,
-    pub studio: Option<String>,
-    pub genres: Vec<String>,
-    pub rating: Option<f64>,
-    pub directors: Vec<String>,
-    pub actors: Vec<Actor>,
-    pub artwork: Vec<Artwork>,
-    pub added_at: Option<Timestamp>,
-    pub media_file_id: Option<Uuid>,
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct Actor {
-    pub name: String,
-    pub role: Option<String>,
-    pub order: Option<i64>,
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct Artwork {
-    pub kind: ArtworkKind,
-    pub path: String,
-    pub modified_at: Timestamp,
-}
-
-pub async fn call(dependencies: impl Into<Dependencies>) -> Result<Vec<Movie>, Error> {
+pub async fn call(dependencies: impl Into<Dependencies>) -> Result<Output, Error> {
     let mut db_context = dependencies.into().db_context;
     let mut movies = domain::Movie::filter(domain::Movie::fields().visible().eq(true))
         .include(domain::Movie::fields().actors())
@@ -79,10 +41,10 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<Vec<Movie>, E
         })
         .collect::<Vec<_>>();
     movies.sort_by_cached_key(|x| domain::sort_key(x.sort_title.as_deref(), &x.title));
-    Ok(movies)
+    Ok(Output { movies })
 }
 
-pub(crate) fn actors(stored: Vec<domain::Actor>) -> Vec<Actor> {
+fn actors(stored: Vec<domain::Actor>) -> Vec<Actor> {
     let mut actors = stored
         .into_iter()
         .map(|x| Actor {
@@ -95,7 +57,7 @@ pub(crate) fn actors(stored: Vec<domain::Actor>) -> Vec<Actor> {
     actors
 }
 
-pub(crate) fn artwork(stored: Vec<domain::Artwork>) -> Vec<Artwork> {
+fn artwork(stored: Vec<domain::Artwork>) -> Vec<Artwork> {
     let mut artwork = stored
         .into_iter()
         .map(|x| Artwork {
