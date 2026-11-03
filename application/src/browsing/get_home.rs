@@ -9,17 +9,24 @@ pub use output::Output;
 pub use output::Row;
 pub use output::RowKind;
 
+use crate::browsing::Image;
 use crate::browsing::Tile;
-use crate::browsing::episode_watch_states;
 use crate::browsing::movie_watches;
 use crate::browsing::season_counts;
 use crate::browsing::title_images;
 use crate::ports::persistence::DbScope;
 use domain::Artwork;
+use domain::ContinueWatching;
 use domain::Episode;
+use domain::EpisodeWatchState;
+use domain::MediaFile;
 use domain::Movie;
+use domain::MovieWatchState;
 use domain::Season;
 use domain::Show;
+use domain::continue_watching;
+use domain::popular_now;
+use domain::popular_now_start;
 use domain::show_play_target;
 use domain::sort_key;
 use jiff::Timestamp;
@@ -71,7 +78,99 @@ pub async fn call(dependencies: impl Into<Dependencies>, user_id: Uuid) -> Resul
         .await
         .map_err(Error::caused_by)?;
 
+    let now = clock.call();
+    let user_movie_states = db_context
+        .movie_watch_states()
+        .filter(MovieWatchState::fields().user_id().eq(user_id))
+        .exec(db_context.executor_mut())
+        .await
+        .map_err(Error::caused_by)?;
+    let user_episode_states = db_context
+        .episode_watch_states()
+        .filter(EpisodeWatchState::fields().user_id().eq(user_id))
+        .exec(db_context.executor_mut())
+        .await
+        .map_err(Error::caused_by)?;
+    let recent_movie_states = db_context
+        .movie_watch_states()
+        .filter(
+            MovieWatchState::fields()
+                .last_played()
+                .ge(popular_now_start(now)),
+        )
+        .exec(db_context.executor_mut())
+        .await
+        .map_err(Error::caused_by)?;
+    let recent_episode_states = db_context
+        .episode_watch_states()
+        .filter(
+            EpisodeWatchState::fields()
+                .last_played()
+                .ge(popular_now_start(now)),
+        )
+        .exec(db_context.executor_mut())
+        .await
+        .map_err(Error::caused_by)?;
+
     let season_of: HashMap<_, _> = seasons.iter().map(|x| (x.id, x)).collect();
+    let movie_of: HashMap<_, _> = movies.iter().map(|x| (x.id, x)).collect();
+    let user_state_of: HashMap<_, _> = user_episode_states
+        .iter()
+        .map(|x| (x.episode_id, x))
+        .collect();
+    let mut show_episodes = HashMap::<Uuid, Vec<_>>::new();
+    for episode in &episodes {
+        if let Some(season) = season_of.get(&episode.season_id) {
+            show_episodes.entry(season.show_id).or_default().push((
+                *season,
+                episode,
+                user_state_of.get(&episode.id).copied(),
+            ));
+        }
+    }
+    let continue_watching: Vec<ContinueWatching> = continue_watching(
+        user_movie_states
+            .iter()
+            .filter_map(|x| Some((*movie_of.get(&x.movie_id)?, x))),
+        show_episodes.values().cloned(),
+    )
+    .into_iter()
+    .take(ROW_SIZE)
+    .collect();
+    let episode_tiles: Vec<(&Season, &Episode)> = continue_watching
+        .iter()
+        .filter_map(|x| match *x {
+            ContinueWatching::Movie(..) => None,
+            ContinueWatching::Resume(season, episode, _)
+            | ContinueWatching::NextUp(season, episode) => Some((season, episode)),
+        })
+        .collect();
+    let continue_watching: Vec<Uuid> = continue_watching
+        .iter()
+        .map(|x| match x {
+            ContinueWatching::Movie(movie, _) => movie.id,
+            ContinueWatching::Resume(_, episode, _) | ContinueWatching::NextUp(_, episode) => {
+                episode.id
+            }
+        })
+        .collect();
+    let show_of_episode: HashMap<Uuid, Uuid> = show_episodes
+        .iter()
+        .flat_map(|(show_id, episodes)| episodes.iter().map(|(_, x, _)| (x.id, *show_id)))
+        .collect();
+    let popular_now: Vec<Uuid> = popular_now(
+        recent_movie_states
+            .iter()
+            .filter(|x| movie_of.contains_key(&x.movie_id)),
+        recent_episode_states
+            .iter()
+            .filter_map(|x| Some((*show_of_episode.get(&x.episode_id)?, x))),
+        now,
+    )
+    .into_iter()
+    .take(ROW_SIZE)
+    .collect();
+
     let mut newest = HashMap::<Uuid, (Option<Timestamp>, Option<Date>)>::new();
     for episode in &episodes {
         if let Some(season) = season_of.get(&episode.season_id) {
@@ -126,50 +225,40 @@ pub async fn call(dependencies: impl Into<Dependencies>, user_id: Uuid) -> Resul
                 .collect::<Vec<_>>(),
         )
     });
-    let rows: Vec<(RowKind, Vec<Uuid>)> = [(
-        RowKind::RecentlyAdded,
-        recently_added.iter().map(|x| x.id).collect::<Vec<_>>(),
-    )]
+    let rows: Vec<(RowKind, Vec<Uuid>)> = [
+        (RowKind::ContinueWatching, continue_watching),
+        (
+            RowKind::RecentlyAdded,
+            recently_added.iter().map(|x| x.id).collect::<Vec<_>>(),
+        ),
+        (RowKind::PopularNow, popular_now.clone()),
+    ]
     .into_iter()
     .chain(genre_rows)
     .filter(|(_, ids)| !ids.is_empty())
     .collect();
 
-    let featured = titles
-        .iter()
-        .filter(|x| x.released.is_some())
-        .min_by(|a, b| {
-            (Reverse(a.released), &a.sort_key, a.id).cmp(&(Reverse(b.released), &b.sort_key, b.id))
-        })
-        .map(|x| x.id);
+    let featured = popular_now.first().copied().or_else(|| {
+        titles
+            .iter()
+            .filter(|x| x.released.is_some())
+            .min_by(|a, b| {
+                (Reverse(a.released), &a.sort_key, a.id).cmp(&(
+                    Reverse(b.released),
+                    &b.sort_key,
+                    b.id,
+                ))
+            })
+            .map(|x| x.id)
+    });
     let shown: HashSet<Uuid> = rows
         .iter()
         .flat_map(|(_, ids)| ids.iter().copied())
         .chain(featured)
         .collect();
-    let featured_episodes: Vec<(&Season, &Episode)> = featured
-        .map(|id| {
-            episodes
-                .iter()
-                .filter_map(|x| Some((*season_of.get(&x.season_id)?, x)))
-                .filter(|(season, _)| season.show_id == id)
-                .collect()
-        })
-        .unwrap_or_default();
-    let states = episode_watch_states(
-        &mut db_context,
-        user_id,
-        featured_episodes.iter().map(|(_, x)| x.id).collect(),
-    )
-    .await
-    .map_err(Error::caused_by)?;
-    let play_episode_id = show_play_target(
-        featured_episodes
-            .iter()
-            .map(|&(season, episode)| (season, episode, states.get(&episode.id))),
-    )
-    .map(|x| x.episode.id);
-    let now = clock.call();
+    let play_episode_id = featured
+        .and_then(|id| show_play_target(show_episodes.get(&id)?.iter().copied()))
+        .map(|x| x.episode.id);
     let mut movie_images = title_images(
         &mut db_context,
         |x| x.movie_id,
@@ -193,6 +282,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, user_id: Uuid) -> Resul
                 .iter()
                 .map(|x| x.id)
                 .filter(|x| shown.contains(x))
+                .chain(episode_tiles.iter().map(|(season, _)| season.show_id))
                 .collect::<Vec<_>>(),
         ),
         &url_signer,
@@ -207,26 +297,74 @@ pub async fn call(dependencies: impl Into<Dependencies>, user_id: Uuid) -> Resul
     )
     .await
     .map_err(Error::caused_by)?;
-    let season_counts = season_counts(&seasons);
-    let tiles: HashMap<Uuid, Tile> = movies
-        .into_iter()
-        .filter(|x| shown.contains(&x.id))
-        .map(|movie| {
-            let images = movie_images.remove(&movie.id).unwrap_or_default();
-            let watch = watches.remove(&movie.id).unwrap_or_default();
-            (movie.id, Tile::movie(movie, images, watch))
-        })
-        .chain(
-            shows
-                .into_iter()
-                .filter(|x| shown.contains(&x.id))
-                .map(|show| {
-                    let images = show_images.remove(&show.id).unwrap_or_default();
-                    let season_count = season_counts.get(&show.id).copied().unwrap_or_default();
-                    (show.id, Tile::show(show, season_count, images))
-                }),
+    let media_files: HashMap<Uuid, MediaFile> = db_context
+        .media_files()
+        .filter(
+            MediaFile::fields().id().in_list(
+                episode_tiles
+                    .iter()
+                    .filter_map(|(_, x)| x.media_file_id)
+                    .collect::<Vec<_>>(),
+            ),
         )
+        .exec(db_context.executor_mut())
+        .await
+        .map_err(Error::caused_by)?
+        .into_iter()
+        .map(|x| (x.id, x))
         .collect();
+    let thumbs: HashMap<Uuid, Image> = db_context
+        .artwork()
+        .filter(
+            Artwork::fields()
+                .episode_id()
+                .in_list(episode_tiles.iter().map(|(_, x)| x.id).collect::<Vec<_>>())
+                .and(Artwork::fields().kind().is_thumb()),
+        )
+        .exec(db_context.executor_mut())
+        .await
+        .map_err(Error::caused_by)?
+        .iter()
+        .filter_map(|x| Some((x.episode_id?, Image::new(x, &url_signer, now))))
+        .collect();
+    let show_of: HashMap<_, _> = shows.iter().map(|x| (x.id, x)).collect();
+    let mut tiles: HashMap<Uuid, Tile> = episode_tiles
+        .iter()
+        .filter_map(|&(season, episode)| {
+            let show = show_of.get(&season.show_id)?;
+            let tile = Tile::episode(
+                show,
+                season,
+                episode,
+                show_images.get(&show.id).cloned().unwrap_or_default(),
+                thumbs.get(&episode.id).cloned(),
+                episode.media_file_id.and_then(|x| media_files.get(&x)),
+                user_state_of.get(&episode.id).copied(),
+            );
+            Some((episode.id, tile))
+        })
+        .collect();
+    let season_counts = season_counts(&seasons);
+    tiles.extend(
+        movies
+            .into_iter()
+            .filter(|x| shown.contains(&x.id))
+            .map(|movie| {
+                let images = movie_images.remove(&movie.id).unwrap_or_default();
+                let watch = watches.remove(&movie.id).unwrap_or_default();
+                (movie.id, Tile::movie(movie, images, watch))
+            })
+            .chain(
+                shows
+                    .into_iter()
+                    .filter(|x| shown.contains(&x.id))
+                    .map(|show| {
+                        let images = show_images.remove(&show.id).unwrap_or_default();
+                        let season_count = season_counts.get(&show.id).copied().unwrap_or_default();
+                        (show.id, Tile::show(show, season_count, images))
+                    }),
+            ),
+    );
 
     Ok(Output {
         featured: featured.map(|id| FeaturedTitle {
@@ -246,6 +384,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, user_id: Uuid) -> Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::browsing::TileKind;
     use crate::ports::Clock;
     use crate::ports::persistence::DbContext;
     use crate::ports::persistence::DbScope;
@@ -259,6 +398,7 @@ mod tests {
     use crate::test::stop_at;
     use crate::test::url_signer;
     use crate::test::watch_to_the_end;
+    use domain::ArtworkKind;
     use domain::Show;
     use jiff::SignedDuration;
     use jiff::civil::Date;
@@ -326,17 +466,78 @@ mod tests {
         home_for(db_context, Uuid::new_v4()).await
     }
 
+    const NOW: &str = "2026-11-03T21:00:00Z";
+
     async fn home_for(db_context: &DbContext, user_id: Uuid) -> Output {
+        let clock = FakeClock::new();
+        clock.set(at(NOW));
         call(
             Dependencies {
                 db_context: db_context.clone(),
-                clock: Clock::new(FakeClock::new().reader()),
+                clock: Clock::new(clock.reader()),
                 url_signer: url_signer(),
             },
             user_id,
         )
         .await
         .unwrap()
+    }
+
+    async fn add_file(db_context: &mut DbContext, episode_id: Uuid, duration_ms: i64) -> Uuid {
+        let media_file_id = add_media_file(db_context, Some(duration_ms)).await;
+        db_context
+            .episodes()
+            .filter(domain::Episode::fields().id().eq(episode_id))
+            .update()
+            .media_file_id(Some(media_file_id))
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap();
+        media_file_id
+    }
+
+    async fn movie_with_file(db_context: &mut DbContext, movie: <Movie as Model>::Create) -> Uuid {
+        let media_file_id = add_media_file(db_context, Some(2_400_000)).await;
+        movie
+            .media_file_id(Some(media_file_id))
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap();
+        media_file_id
+    }
+
+    fn row<'a>(output: &'a Output, kind: &RowKind) -> &'a [Tile] {
+        output
+            .rows
+            .iter()
+            .find(|x| &x.kind == kind)
+            .map(|x| x.tiles.as_slice())
+            .unwrap_or_default()
+    }
+
+    type ContinueWatchingTile<'a> = (&'a str, Option<(i64, i64)>, Option<f64>);
+
+    fn continue_watching(output: &Output) -> Vec<ContinueWatchingTile<'_>> {
+        row(output, &RowKind::ContinueWatching)
+            .iter()
+            .map(|tile| match &tile.kind {
+                TileKind::Episode {
+                    show,
+                    season_number,
+                    episode_number,
+                    ..
+                } => (
+                    show.title.as_str(),
+                    Some((*season_number, *episode_number)),
+                    tile.progress,
+                ),
+                _ => (tile.title.as_str(), None, tile.progress),
+            })
+            .collect()
+    }
+
+    fn titles(tiles: &[Tile]) -> Vec<&str> {
+        tiles.iter().map(|x| x.title.as_str()).collect()
     }
 
     fn rows(output: &Output) -> Vec<(&RowKind, Vec<&str>)> {
@@ -627,11 +828,235 @@ mod tests {
             .await
             .unwrap();
         let noor = Uuid::new_v4();
-        watch_to_the_end(&db_context, noor, first_file, "2026-11-01T20:00:00Z").await;
+        watch_to_the_end(&db_context, noor, first_file, "2026-11-02T20:00:00Z").await;
         stop_at(
             &db_context,
             noor,
             arrival_file,
+            SignedDuration::from_mins(10),
+            "2026-11-01T20:00:00Z",
+        )
+        .await;
+
+        let output = home_for(&db_context, noor).await;
+
+        let featured = output.featured.as_ref().unwrap();
+        assert_eq!(featured.tile.title, "Severance");
+        assert_eq!(featured.play_episode_id, Some(episodes[&(1, 2)]));
+        let arrival = &row(&output, &RowKind::RecentlyAdded)[0];
+        assert_eq!(
+            (arrival.title.as_str(), arrival.progress),
+            ("Arrival", Some(0.25))
+        );
+    }
+
+    #[tokio::test]
+    async fn continue_watching_holds_resume_positions_and_next_up_episodes_newest_first_with_one_tile_per_show()
+     {
+        let mut db_context = mock_db_context().await;
+        let noor = Uuid::new_v4();
+        let sam = Uuid::new_v4();
+        let arrival = movie(&db_context, "Arrival");
+        let arrival_file = movie_with_file(&mut db_context, arrival).await;
+        let gone = movie(&db_context, "Gone").in_library(false);
+        let gone_file = movie_with_file(&mut db_context, gone).await;
+        let dune = movie(&db_context, "Dune");
+        let dune_file = movie_with_file(&mut db_context, dune).await;
+        let severance = show(&db_context, "Severance");
+        let severance = add_show(
+            &mut db_context,
+            severance,
+            &[
+                EPISODE,
+                Episode {
+                    number: 2,
+                    ..EPISODE
+                },
+                Episode {
+                    number: 3,
+                    ..EPISODE
+                },
+                Episode {
+                    number: 4,
+                    in_library: false,
+                    ..EPISODE
+                },
+            ],
+        )
+        .await;
+        let andor = show(&db_context, "Andor");
+        let andor = add_show(
+            &mut db_context,
+            andor,
+            &[
+                EPISODE,
+                Episode {
+                    number: 2,
+                    ..EPISODE
+                },
+            ],
+        )
+        .await;
+        let mut files = HashMap::new();
+        for id in severance.values().chain(andor.values()) {
+            files.insert(*id, add_file(&mut db_context, *id, 3_000_000).await);
+        }
+        let minutes = SignedDuration::from_mins;
+        stop_at(
+            &db_context,
+            noor,
+            files[&severance[&(1, 1)]],
+            minutes(10),
+            "2026-10-30T20:00:00Z",
+        )
+        .await;
+        stop_at(
+            &db_context,
+            noor,
+            files[&severance[&(1, 2)]],
+            minutes(15),
+            "2026-11-02T20:00:00Z",
+        )
+        .await;
+        stop_at(
+            &db_context,
+            noor,
+            files[&severance[&(1, 4)]],
+            minutes(20),
+            "2026-11-03T20:00:00Z",
+        )
+        .await;
+        stop_at(
+            &db_context,
+            noor,
+            arrival_file,
+            minutes(10),
+            "2026-11-01T20:00:00Z",
+        )
+        .await;
+        stop_at(
+            &db_context,
+            noor,
+            gone_file,
+            minutes(10),
+            "2026-11-03T20:00:00Z",
+        )
+        .await;
+        watch_to_the_end(
+            &db_context,
+            noor,
+            files[&andor[&(1, 1)]],
+            "2026-10-31T20:00:00Z",
+        )
+        .await;
+        stop_at(
+            &db_context,
+            sam,
+            dune_file,
+            minutes(10),
+            "2026-11-03T20:00:00Z",
+        )
+        .await;
+
+        let output = home_for(&db_context, noor).await;
+
+        assert_eq!(
+            continue_watching(&output),
+            [
+                ("Severance", Some((1, 2)), Some(0.3)),
+                ("Arrival", None, Some(0.25)),
+                ("Andor", Some((1, 2)), None),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_next_up_tile_moves_to_the_front_of_continue_watching_when_its_episode_is_added() {
+        let mut db_context = mock_db_context().await;
+        let noor = Uuid::new_v4();
+        let arrival = movie(&db_context, "Arrival");
+        let arrival_file = movie_with_file(&mut db_context, arrival).await;
+        let andor = show(&db_context, "Andor");
+        let andor = add_show(&mut db_context, andor, &[EPISODE]).await;
+        let first_file = add_file(&mut db_context, andor[&(1, 1)], 3_000_000).await;
+        watch_to_the_end(&db_context, noor, first_file, "2026-10-31T20:00:00Z").await;
+        stop_at(
+            &db_context,
+            noor,
+            arrival_file,
+            SignedDuration::from_mins(10),
+            "2026-11-01T20:00:00Z",
+        )
+        .await;
+        let caught_up = home_for(&db_context, noor).await;
+        let season_id = db_context
+            .episodes()
+            .filter(domain::Episode::fields().id().eq(andor[&(1, 1)]))
+            .first()
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap()
+            .unwrap()
+            .season_id;
+        episode(&db_context, season_id)
+            .number(2)
+            .added_at(Some(at("2026-11-02T08:00:00Z")))
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap();
+
+        let output = home_for(&db_context, noor).await;
+
+        assert_eq!(
+            continue_watching(&caught_up),
+            [("Arrival", None, Some(0.25))]
+        );
+        assert_eq!(
+            continue_watching(&output),
+            [("Andor", Some((1, 2)), None), ("Arrival", None, Some(0.25))]
+        );
+    }
+
+    #[tokio::test]
+    async fn an_episode_tile_carries_the_episode_thumb_and_runtime_and_the_shows_logo_and_fanart() {
+        let mut db_context = mock_db_context().await;
+        let noor = Uuid::new_v4();
+        let severance = show(&db_context, "Severance").certification(Some("TV-MA".to_owned()));
+        let severance = severance.exec(db_context.executor_mut()).await.unwrap();
+        let season_id = add_season(&mut db_context, severance.id, 2).await;
+        let episode = episode(&db_context, season_id)
+            .number(4)
+            .title("Woe's Hollow")
+            .overview(Some("The team goes on an outing.".to_owned()))
+            .air_date(Some(date(2025, 2, 7)))
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap();
+        let file = add_file(&mut db_context, episode.id, 3_420_000).await;
+        let mut artwork = Vec::new();
+        for (kind, episode_id) in [
+            (ArtworkKind::Fanart, None),
+            (ArtworkKind::Clearlogo, None),
+            (ArtworkKind::Thumb, Some(episode.id)),
+        ] {
+            let id = db_context
+                .artwork()
+                .create()
+                .show_id(Some(severance.id))
+                .episode_id(episode_id)
+                .kind(kind)
+                .path(format!("/media/TV/Severance/{kind:?}"))
+                .modified_at(at("2026-10-01T08:00:00Z"))
+                .exec(db_context.executor_mut())
+                .await
+                .unwrap()
+                .id;
+            artwork.push(id);
+        }
+        stop_at(
+            &db_context,
+            noor,
+            file,
             SignedDuration::from_mins(10),
             "2026-11-02T20:00:00Z",
         )
@@ -639,13 +1064,163 @@ mod tests {
 
         let output = home_for(&db_context, noor).await;
 
-        let featured = output.featured.unwrap();
-        assert_eq!(featured.tile.title, "Severance");
-        assert_eq!(featured.play_episode_id, Some(episodes[&(1, 2)]));
-        let arrival = &output.rows[0].tiles[0];
+        let tile = &row(&output, &RowKind::ContinueWatching)[0];
+        let TileKind::Episode {
+            runtime_minutes,
+            show,
+            season_number,
+            episode_number,
+        } = &tile.kind
+        else {
+            panic!("{tile:?} is not an episode tile");
+        };
         assert_eq!(
-            (arrival.title.as_str(), arrival.progress),
-            ("Arrival", Some(0.25))
+            (
+                tile.id,
+                tile.title.as_str(),
+                tile.year,
+                tile.plot.as_deref()
+            ),
+            (
+                episode.id,
+                "Woe's Hollow",
+                Some(2025),
+                Some("The team goes on an outing.")
+            )
+        );
+        assert_eq!(tile.certification.as_deref(), Some("TV-MA"));
+        assert_eq!(
+            (*runtime_minutes, *season_number, *episode_number),
+            (Some(57), 2, 4)
+        );
+        assert_eq!(
+            (
+                show.id,
+                show.title.as_str(),
+                show.logo.as_ref().map(|x| x.id)
+            ),
+            (severance.id, "Severance", Some(artwork[1]))
+        );
+        assert_eq!(
+            (
+                tile.images.thumb.as_ref().map(|x| x.id),
+                tile.images.fanart.as_ref().map(|x| x.id),
+                tile.images.logo.as_ref().map(|x| x.id),
+            ),
+            (Some(artwork[2]), Some(artwork[0]), None)
+        );
+    }
+
+    #[tokio::test]
+    async fn popular_now_ranks_titles_in_the_library_by_how_many_users_played_them_in_the_last_14_days()
+     {
+        let mut db_context = mock_db_context().await;
+        let [noor, sam, ines] = [(); 3].map(|()| Uuid::new_v4());
+        let mut files = HashMap::new();
+        for (title, in_library) in [
+            ("Arrival", true),
+            ("Dune", true),
+            ("Gone", false),
+            ("Sicario", true),
+        ] {
+            let movie = movie(&db_context, title).in_library(in_library);
+            files.insert(title, movie_with_file(&mut db_context, movie).await);
+        }
+        let severance = show(&db_context, "Severance");
+        let severance = add_show(
+            &mut db_context,
+            severance,
+            &[
+                EPISODE,
+                Episode {
+                    number: 2,
+                    ..EPISODE
+                },
+            ],
+        )
+        .await;
+        let first = add_file(&mut db_context, severance[&(1, 1)], 3_000_000).await;
+        let second = add_file(&mut db_context, severance[&(1, 2)], 3_000_000).await;
+        for (user_id, file, reported_at) in [
+            (noor, files["Arrival"], "2026-11-01T20:00:00Z"),
+            (sam, files["Arrival"], "2026-11-01T20:00:00Z"),
+            (ines, files["Arrival"], "2026-11-01T20:00:00Z"),
+            (noor, first, "2026-11-02T20:00:00Z"),
+            (noor, second, "2026-11-02T21:00:00Z"),
+            (sam, first, "2026-10-21T20:00:00Z"),
+            (noor, files["Dune"], "2026-11-03T20:00:00Z"),
+            (noor, files["Gone"], "2026-11-03T20:00:00Z"),
+            (sam, files["Gone"], "2026-11-03T20:00:00Z"),
+            (ines, files["Gone"], "2026-11-03T20:00:00Z"),
+            (noor, files["Sicario"], "2026-10-20T20:00:00Z"),
+        ] {
+            watch_to_the_end(&db_context, user_id, file, reported_at).await;
+        }
+
+        let output = home_for(&db_context, ines).await;
+
+        assert_eq!(
+            titles(row(&output, &RowKind::PopularNow)),
+            ["Arrival", "Severance", "Dune"]
+        );
+    }
+
+    #[tokio::test]
+    async fn the_featured_title_switches_from_the_latest_released_to_the_first_of_popular_now() {
+        let mut db_context = mock_db_context().await;
+        let noor = Uuid::new_v4();
+        let dune = movie(&db_context, "Dune").premiered(Some(date(2021, 10, 22)));
+        movie_with_file(&mut db_context, dune).await;
+        let arrival = movie(&db_context, "Arrival").premiered(Some(date(2016, 11, 11)));
+        let arrival_file = movie_with_file(&mut db_context, arrival).await;
+        let fallback = home_for(&db_context, noor).await;
+        watch_to_the_end(
+            &db_context,
+            Uuid::new_v4(),
+            arrival_file,
+            "2026-11-01T20:00:00Z",
+        )
+        .await;
+
+        let output = home_for(&db_context, noor).await;
+
+        assert_eq!(
+            fallback.featured.map(|x| x.tile.title).as_deref(),
+            Some("Dune")
+        );
+        assert_eq!(
+            output.featured.map(|x| x.tile.title).as_deref(),
+            Some("Arrival")
+        );
+    }
+
+    #[tokio::test]
+    async fn the_rows_are_continue_watching_recently_added_popular_now_then_the_genre_rows() {
+        let mut db_context = mock_db_context().await;
+        let noor = Uuid::new_v4();
+        let arrival = movie(&db_context, "Arrival")
+            .genres(genres(&["Drama"]))
+            .added_at(Some(at("2026-10-29T08:00:00Z")));
+        let arrival_file = movie_with_file(&mut db_context, arrival).await;
+        stop_at(
+            &db_context,
+            noor,
+            arrival_file,
+            SignedDuration::from_mins(10),
+            "2026-11-01T20:00:00Z",
+        )
+        .await;
+
+        let output = home_for(&db_context, noor).await;
+
+        assert_eq!(
+            output.rows.iter().map(|x| &x.kind).collect::<Vec<_>>(),
+            [
+                &RowKind::ContinueWatching,
+                &RowKind::RecentlyAdded,
+                &RowKind::PopularNow,
+                &RowKind::Genre("Drama".to_owned()),
+            ]
         );
     }
 }

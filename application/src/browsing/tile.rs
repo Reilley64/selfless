@@ -1,6 +1,11 @@
+use crate::browsing::Image;
 use crate::browsing::MovieWatch;
 use crate::browsing::TileImages;
+use domain::Episode;
+use domain::EpisodeWatchState;
+use domain::MediaFile;
 use domain::Movie;
+use domain::Season;
 use domain::Show;
 use jiff::Timestamp;
 use jiff::civil::Date;
@@ -39,6 +44,43 @@ impl Tile {
         }
     }
 
+    pub(crate) fn episode(
+        show: &Show,
+        season: &Season,
+        episode: &Episode,
+        show_images: TileImages,
+        thumb: Option<Image>,
+        media_file: Option<&MediaFile>,
+        state: Option<&EpisodeWatchState>,
+    ) -> Self {
+        let duration_ms = media_file.and_then(|x| x.duration_ms);
+        Self {
+            id: episode.id,
+            title: episode.title.clone(),
+            year: episode.air_date.map(|x| i64::from(x.year())),
+            certification: show.certification.clone(),
+            genres: show.genres.clone(),
+            plot: episode.overview.clone(),
+            kind: TileKind::Episode {
+                runtime_minutes: media_file.and_then(MediaFile::runtime_minutes),
+                show: TileShow {
+                    id: show.id,
+                    title: show.title.clone(),
+                    logo: show_images.logo,
+                },
+                season_number: season.number,
+                episode_number: episode.number,
+            },
+            images: TileImages {
+                fanart: show_images.fanart,
+                logo: None,
+                thumb,
+            },
+            progress: state.and_then(|x| x.watch_state().progress(duration_ms)),
+            watched: state.is_some_and(|x| x.watched),
+        }
+    }
+
     pub(crate) fn show(show: Show, season_count: i64, images: TileImages) -> Self {
         Self {
             id: show.id,
@@ -57,8 +99,25 @@ impl Tile {
 
 #[derive(Clone, Debug)]
 pub enum TileKind {
-    Movie { runtime_minutes: Option<i64> },
-    Show { season_count: i64 },
+    Movie {
+        runtime_minutes: Option<i64>,
+    },
+    Show {
+        season_count: i64,
+    },
+    Episode {
+        runtime_minutes: Option<i64>,
+        show: TileShow,
+        season_number: i64,
+        episode_number: i64,
+    },
+}
+
+#[derive(Clone, Debug)]
+pub struct TileShow {
+    pub id: Uuid,
+    pub title: String,
+    pub logo: Option<Image>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]

@@ -35,6 +35,7 @@ pub use tile::Cursor;
 pub use tile::SortKey;
 pub use tile::Tile;
 pub use tile::TileKind;
+pub use tile::TileShow;
 
 const PAGE_SIZE: usize = 60;
 

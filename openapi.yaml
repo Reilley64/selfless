@@ -507,11 +507,11 @@ paths:
     get:
       operationId: getHome
       summary: The featured title and the rows of Home
-      description: The rows come in this order, each with up to 20 tiles, and empty rows are left out. Recently added holds one tile per movie and per show, newest added first; a show counts the newest added date among its visible episodes. The genre rows are the 6 genres with the most visible titles, movies and shows together, each sorted by sort title. With nobody having played anything, the featured title is the latest released title, a movie by its premiere date and a show by the air date of its newest visible episode. Undated titles are skipped and ties go by sort title.
+      description: The rows come in this order, each with up to 20 tiles, and empty rows are left out. Continue watching holds the user's movies with a resume position and one episode tile per show, the episode with a resume position played most recently or else the next up episode. It sorts newest first by the user's last played time for the movie or show, or the next up episode's added time when that is later. Recently added holds one tile per movie and per show, newest added first; a show counts the newest added date among its visible episodes. Popular now holds the movies and shows with the most different users whose last played time is in the last 14 days, a show counted once per user, with ties going to the most recent play. The genre rows are the 6 genres with the most visible titles, movies and shows together, each sorted by sort title. The featured title is the first title in Popular now. With nobody having played anything in the last 14 days, it is the latest released title, a movie by its premiere date and a show by the air date of its newest visible episode. Undated titles are skipped and ties go by sort title.
       tags: [browsing]
       responses:
         "200":
-          description: The featured title, or null when no title has a release date, and the rows.
+          description: The featured title, or null when Popular now is empty and no title has a release date, and the rows.
           content:
             application/json:
               schema:
@@ -1752,7 +1752,7 @@ components:
       required: [featured, rows]
       properties:
         featured:
-          description: The featured title, or null when no title has a release date.
+          description: The featured title, or null when Popular now is empty and no title has a release date.
           anyOf:
             - $ref: "#/components/schemas/FeaturedTitle"
             - type: "null"

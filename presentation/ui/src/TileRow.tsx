@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { Platform, type ScrollViewInstance } from "react-native";
 import { Pressable, ScrollView, Text, View } from "react-native-css/components";
 import { ActionButton } from "./ActionButton";
+import { episodeLabel } from "./episodeLabel";
+import { playHref } from "./playHref";
 import { ArtworkImage, Tile } from "./Tile";
 import { TitleMeta } from "./TitleMeta";
 
@@ -13,6 +15,7 @@ const EXPANDED_WIDTH = 520;
 
 function TileCard({ tile, onPress }: { tile: TileData; onPress?: () => void }) {
   const router = useRouter();
+  const { episode } = tile;
   return (
     <Pressable
       className="aspect-video w-full justify-end overflow-hidden rounded-medium bg-surface px-6 py-5 shadow-2xl ring-3 ring-focus-ring"
@@ -24,19 +27,29 @@ function TileCard({ tile, onPress }: { tile: TileData; onPress?: () => void }) {
       )}
       <View className="absolute inset-0 bg-linear-to-r from-black/90 via-black/65 via-60% to-black/10" />
       <Text className="font-sans font-extrabold text-web-heading text-text-primary leading-title" numberOfLines={1}>
-        {tile.title}
+        {episode ? episode.show.title : tile.title}
       </Text>
       <View className="mt-2">
         <TitleMeta tile={tile} small />
       </View>
+      {episode && (
+        <Text className="mt-2 font-sans text-web-meta text-text-primary" numberOfLines={1}>
+          <Text className="font-bold">{episodeLabel(episode.seasonNumber, episode.episodeNumber)}</Text> {tile.title}
+        </Text>
+      )}
       {tile.plot && (
         <Text className="mt-2 font-sans text-web-meta text-text-secondary leading-body" numberOfLines={2}>
           {tile.plot}
         </Text>
       )}
       <View className="mt-3 flex-row gap-2">
-        {tile.kind === "movie" && (
-          <ActionButton label="Play" primary small onPress={() => router.push(`/play/movies/${tile.id}`)} />
+        {tile.kind !== "show" && (
+          <ActionButton
+            label="Play"
+            primary
+            small
+            onPress={() => router.push(playHref(episode ? { episodeId: tile.id } : { movieId: tile.id }))}
+          />
         )}
         {onPress && <ActionButton label="More info" small onPress={onPress} />}
       </View>

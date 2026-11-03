@@ -1,5 +1,7 @@
 use crate::Episode;
 use crate::EpisodeWatchState;
+use crate::Movie;
+use crate::MovieWatchState;
 use crate::Season;
 use jiff::Timestamp;
 use toasty::Deferred;
@@ -9,10 +11,10 @@ pub(crate) const EARLIER: &str = "2026-10-01T20:00:00Z";
 pub(crate) const LATER: &str = "2026-11-03T21:00:00Z";
 pub(crate) const LATEST: &str = "2026-11-04T21:00:00Z";
 
-fn season(number: i64) -> Season {
+fn season(show_id: Uuid, number: i64) -> Season {
     Season {
         id: Uuid::new_v4(),
-        show_id: Uuid::nil(),
+        show_id,
         show: Deferred::default(),
         number,
         episodes: Deferred::default(),
@@ -67,12 +69,14 @@ pub(crate) fn resuming_at(seconds: i64, last_played: &str) -> EpisodeWatchState 
 }
 
 pub(crate) struct ShowEpisodes {
+    pub(crate) show_id: Uuid,
     seasons: Vec<Season>,
     episodes: Vec<(usize, Episode, Option<EpisodeWatchState>)>,
 }
 
 impl ShowEpisodes {
     pub(crate) fn new(episodes: Vec<(i64, i64, bool, Option<EpisodeWatchState>)>) -> Self {
+        let show_id = Uuid::new_v4();
         let mut seasons: Vec<Season> = Vec::new();
         let episodes = episodes
             .into_iter()
@@ -80,14 +84,27 @@ impl ShowEpisodes {
                 let index = match seasons.iter().position(|x| x.number == season_number) {
                     Some(index) => index,
                     None => {
-                        seasons.push(season(season_number));
+                        seasons.push(season(show_id, season_number));
                         seasons.len() - 1
                     }
                 };
                 (index, episode(number, in_library), state)
             })
             .collect();
-        Self { seasons, episodes }
+        Self {
+            show_id,
+            seasons,
+            episodes,
+        }
+    }
+
+    pub(crate) fn added_at(mut self, season_number: i64, number: i64, added_at: &str) -> Self {
+        for (index, episode, _) in &mut self.episodes {
+            if (self.seasons[*index].number, episode.number) == (season_number, number) {
+                episode.added_at = Some(added_at.parse().unwrap());
+            }
+        }
+        self
     }
 
     pub(crate) fn episodes(&self) -> Vec<(&Season, &Episode, Option<&EpisodeWatchState>)> {
@@ -95,6 +112,52 @@ impl ShowEpisodes {
             .iter()
             .map(|(index, episode, state)| (&self.seasons[*index], episode, state.as_ref()))
             .collect()
+    }
+}
+
+pub(crate) fn movie(in_library: bool) -> Movie {
+    Movie {
+        id: Uuid::new_v4(),
+        tmdb_id: crate::TmdbId(0),
+        radarr_id: crate::RadarrId(0),
+        title: String::new(),
+        year: 2016,
+        overview: None,
+        genres: Vec::new(),
+        added_at: None,
+        media_file_id: None,
+        media_file: Deferred::default(),
+        in_library,
+        sort_title: None,
+        original_title: None,
+        runtime_minutes: None,
+        certification: None,
+        premiered: None,
+        studio: None,
+        rating: None,
+        directors: Vec::new(),
+        nfo_modified_at: None,
+        actors: Deferred::default(),
+        artwork: Deferred::default(),
+        sync_problems: Deferred::default(),
+    }
+}
+
+pub(crate) fn movie_watch_state(
+    movie: &Movie,
+    resume_position_seconds: Option<i64>,
+    last_played: &str,
+) -> MovieWatchState {
+    MovieWatchState {
+        id: Uuid::nil(),
+        user_id: Uuid::nil(),
+        user: Deferred::default(),
+        movie_id: movie.id,
+        movie: Deferred::default(),
+        resume_position_seconds,
+        watched: resume_position_seconds.is_none(),
+        watched_at: None,
+        last_played: Some(last_played.parse().unwrap()),
     }
 }
 

@@ -127,7 +127,7 @@ pub(crate) struct TileBody {
     images: TileImagesBody,
     progress: Option<f64>,
     watched: bool,
-    episode: (),
+    episode: Option<TileEpisodeBody>,
 }
 
 #[derive(Serialize)]
@@ -135,6 +135,22 @@ pub(crate) struct TileBody {
 enum Kind {
     Movie,
     Show,
+    Episode,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TileEpisodeBody {
+    show: TileShowBody,
+    season_number: i64,
+    episode_number: i64,
+}
+
+#[derive(Serialize)]
+struct TileShowBody {
+    id: Uuid,
+    title: String,
+    logo: Option<ImageBody>,
 }
 
 #[derive(Serialize)]
@@ -146,9 +162,28 @@ struct TileImagesBody {
 
 impl From<Tile> for TileBody {
     fn from(tile: Tile) -> Self {
-        let (kind, runtime_minutes, season_count) = match tile.kind {
-            TileKind::Movie { runtime_minutes } => (Kind::Movie, runtime_minutes, None),
-            TileKind::Show { season_count } => (Kind::Show, None, Some(season_count)),
+        let (kind, runtime_minutes, season_count, episode) = match tile.kind {
+            TileKind::Movie { runtime_minutes } => (Kind::Movie, runtime_minutes, None, None),
+            TileKind::Show { season_count } => (Kind::Show, None, Some(season_count), None),
+            TileKind::Episode {
+                runtime_minutes,
+                show,
+                season_number,
+                episode_number,
+            } => (
+                Kind::Episode,
+                runtime_minutes,
+                None,
+                Some(TileEpisodeBody {
+                    show: TileShowBody {
+                        id: show.id,
+                        title: show.title,
+                        logo: show.logo.map(ImageBody::from),
+                    },
+                    season_number,
+                    episode_number,
+                }),
+            ),
         };
         Self {
             id: tile.id,
@@ -167,7 +202,7 @@ impl From<Tile> for TileBody {
             },
             progress: tile.progress,
             watched: tile.watched,
-            episode: (),
+            episode,
         }
     }
 }

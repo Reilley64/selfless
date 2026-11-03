@@ -2,6 +2,7 @@ import type { Artwork, Tile as TileData } from "@selfless/api-client";
 import { type Ref, useState } from "react";
 import { type ImageResizeMode, PixelRatio, Platform, type View as HostView } from "react-native";
 import { Image, Pressable, Text, View } from "react-native-css/components";
+import { episodeLabel } from "./episodeLabel";
 import { imageUrl } from "./imageUrl";
 import { ProgressBar } from "./ProgressBar";
 import { WatchedMark } from "./WatchedMark";
@@ -43,7 +44,10 @@ export function Tile({
   onPress?: () => void;
   onFocus?: () => void;
 }) {
-  const { fanart, logo } = tile.images;
+  const { episode } = tile;
+  const art = tile.images.thumb ?? tile.images.fanart;
+  const logo = episode ? episode.show.logo : tile.images.logo;
+  const label = episode && episodeLabel(episode.seasonNumber, episode.episodeNumber);
   return (
     <Pressable
       ref={ref}
@@ -54,19 +58,31 @@ export function Tile({
     >
       {({ focused }) => (
         <>
-          {fanart && (
-            <ArtworkImage artwork={fanart} testID="tile-fanart" className="absolute inset-0" resizeMode="cover" />
+          {art && (
+            <ArtworkImage
+              artwork={art}
+              testID={tile.images.thumb ? "tile-thumb" : "tile-fanart"}
+              className="absolute inset-0"
+              resizeMode="cover"
+            />
           )}
-          {fanart && logo ? (
+          {art && logo ? (
             <View className="h-2/5 w-3/5">
               <ArtworkImage artwork={logo} testID="tile-logo" className="h-full w-full" resizeMode="contain" />
             </View>
           ) : (
             <Text
-              className={`self-start font-sans font-extrabold text-text-primary ${fanart ? "rounded-medium bg-scrim px-2 py-1" : ""} ${Platform.isTV ? "text-tv-row" : "text-web-row"}`}
+              className={`self-start font-sans font-extrabold text-text-primary ${art ? "rounded-medium bg-scrim px-2 py-1" : ""} ${Platform.isTV ? "text-tv-row" : "text-web-row"}`}
               numberOfLines={2}
             >
-              {tile.title}
+              {episode ? episode.show.title : tile.title}
+            </Text>
+          )}
+          {label && (
+            <Text
+              className={`absolute top-2 left-2 rounded-small bg-scrim px-2 py-0.5 font-sans font-bold text-text-primary ${Platform.isTV ? "text-tv-caption" : "text-web-caption"}`}
+            >
+              {label}
             </Text>
           )}
           {tile.progress != null && <ProgressBar progress={tile.progress} className="absolute right-2 bottom-2 left-2" />}

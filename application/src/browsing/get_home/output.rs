@@ -21,6 +21,8 @@ pub struct Row {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum RowKind {
+    ContinueWatching,
     RecentlyAdded,
+    PopularNow,
     Genre(String),
 }
