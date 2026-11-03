@@ -16,18 +16,24 @@ const colours: Record<UserColour, string> = {
 function PickerButton({
   label,
   className,
+  dimmed = false,
   onPress,
   onLongPress,
   children,
 }: {
   label: string;
   className: string;
+  dimmed?: boolean;
   onPress: () => void;
   onLongPress?: () => void;
   children: ReactNode;
 }) {
   return (
-    <Pressable className="items-center gap-6" onPress={onPress} onLongPress={onLongPress}>
+    <Pressable
+      className={`items-center gap-6 ${dimmed ? "opacity-40" : ""}`}
+      onPress={onPress}
+      onLongPress={onLongPress}
+    >
       {({ focused }) => (
         <>
           <View
@@ -65,7 +71,8 @@ export function UserPicker({ onSignIn }: { onSignIn: (name: string) => void }) {
           <PickerButton
             key={user.id}
             label={user.name}
-            className={`${colours[user.colour]} ${user.signedOut ? "opacity-40" : ""}`}
+            className={colours[user.colour]}
+            dimmed={user.signedOut}
             onPress={() => (user.signedOut ? onSignIn(user.name) : session.pick(user.id))}
             onLongPress={() =>
               Alert.alert(user.name, undefined, [

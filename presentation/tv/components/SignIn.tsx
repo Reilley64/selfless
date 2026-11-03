@@ -25,11 +25,12 @@ export function SignIn({
   const submit = () => canSignIn && signIn.mutate();
 
   return (
-    <FocusGuide autoFocus className="flex-1 justify-center bg-background p-tv-inset">
-      <View className="w-[760px] gap-6">
+    <FocusGuide autoFocus className="flex-1 items-center justify-center bg-background">
+      <View className="w-4/5 gap-6">
         <Text className="font-sans font-bold text-tv-title text-text-primary">Sign in</Text>
         <TextInput
           className={input}
+          hasTVPreferredFocus
           placeholder="Name"
           textContentType="username"
           autoComplete="username"

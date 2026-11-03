@@ -12,14 +12,15 @@ export function ServerAddress() {
   const submit = () => canConnect && connect.mutate();
 
   return (
-    <FocusGuide autoFocus className="flex-1 justify-center bg-background p-tv-inset">
-      <View className="w-[760px] gap-6">
+    <FocusGuide autoFocus className="flex-1 items-center justify-center bg-background">
+      <View className="w-4/5 gap-6">
         <Text className="font-sans font-bold text-tv-title text-text-primary">Server address</Text>
         <Text className="font-sans text-tv-body text-text-secondary">
           Enter the address of your selfless server, such as 192.168.1.20:8080.
         </Text>
         <TextInput
           className={input}
+          hasTVPreferredFocus
           placeholder="Server address"
           keyboardType="url"
           textContentType="URL"

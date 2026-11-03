@@ -102,6 +102,18 @@
         },
         "$description": "Inactive menu items and row labels."
       },
+      "placeholder": {
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.5569,
+            0.5569,
+            0.5765
+          ],
+          "hex": "#8e8e93"
+        },
+        "$description": "Placeholder in a text field, readable on the field's unfocused and focused fill."
+      },
       "inverse": {
         "$value": {
           "colorSpace": "srgb",
