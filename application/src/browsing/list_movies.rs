@@ -16,8 +16,7 @@ use crate::ports::persistence::DbScope;
 use domain::Artwork;
 use domain::GridSort;
 use domain::Movie;
-use domain::sort_key;
-use std::cmp::Reverse;
+use domain::Title;
 use uuid::Uuid;
 
 pub async fn call(
@@ -41,13 +40,7 @@ pub async fn call(
         .into_iter()
         .filter(|movie| genre.as_ref().is_none_or(|x| movie.genres.contains(x)))
         .map(|movie| {
-            let key = match sort {
-                GridSort::Title => {
-                    SortKey::Title(sort_key(movie.sort_title.as_deref(), &movie.title).0)
-                }
-                GridSort::Added => SortKey::Added(Reverse(movie.added_at)),
-                GridSort::Released => SortKey::Released(Reverse(movie.premiered)),
-            };
+            let key = SortKey::new(sort, &Title::movie(&movie));
             (Cursor { key, id: movie.id }, movie)
         })
         .collect();

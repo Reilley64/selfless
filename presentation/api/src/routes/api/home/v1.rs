@@ -2,7 +2,7 @@ use crate::routes::api::tile::TileBody;
 use crate::user_auth::CurrentSession;
 use application::browsing::get_home::FeaturedTitle;
 use application::browsing::get_home::Row;
-use application::browsing::get_home::RowKind;
+use domain::RowKind;
 use infrastructure::AppState;
 use serde::Serialize;
 use topcoat::context::Cx;

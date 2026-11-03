@@ -1,4 +1,5 @@
 use crate::browsing::Tile;
+use domain::RowKind;
 use uuid::Uuid;
 
 #[derive(Debug)]
@@ -17,12 +18,4 @@ pub struct FeaturedTitle {
 pub struct Row {
     pub kind: RowKind,
     pub tiles: Vec<Tile>,
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum RowKind {
-    ContinueWatching,
-    RecentlyAdded,
-    PopularNow,
-    Genre(String),
 }

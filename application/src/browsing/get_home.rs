@@ -7,7 +7,6 @@ pub use error::Error;
 pub use output::FeaturedTitle;
 pub use output::Output;
 pub use output::Row;
-pub use output::RowKind;
 
 use crate::browsing::Image;
 use crate::browsing::Tile;
@@ -23,32 +22,22 @@ use domain::MediaFile;
 use domain::Movie;
 use domain::MovieContinueWatchingRemoval;
 use domain::MovieWatchState;
+use domain::RowKind;
 use domain::Season;
 use domain::Show;
 use domain::ShowContinueWatchingRemoval;
 use domain::ShowEpisode;
+use domain::Title;
 use domain::continue_watching;
+use domain::featured_title;
+use domain::genre_rows;
 use domain::popular_now;
 use domain::popular_now_start;
+use domain::recently_added;
 use domain::show_play_target;
-use domain::sort_key;
-use jiff::Timestamp;
-use jiff::civil::Date;
-use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use uuid::Uuid;
-
-const ROW_SIZE: usize = 20;
-const GENRE_ROWS: usize = 6;
-
-struct Title<'a> {
-    id: Uuid,
-    genres: &'a [String],
-    sort_key: (String, String),
-    added_at: Option<Timestamp>,
-    released: Option<Date>,
-}
 
 pub async fn call(dependencies: impl Into<Dependencies>, user_id: Uuid) -> Result<Output, Error> {
     let Dependencies {
@@ -154,17 +143,14 @@ pub async fn call(dependencies: impl Into<Dependencies>, user_id: Uuid) -> Resul
                 });
         }
     }
-    let continue_watching: Vec<ContinueWatching> = continue_watching(
+    let continue_watching = continue_watching(
         user_movie_states
             .iter()
             .filter_map(|x| Some((*movie_of.get(&x.movie_id)?, x))),
         show_episodes.values().cloned(),
         &movie_removals,
         &show_removals,
-    )
-    .into_iter()
-    .take(ROW_SIZE)
-    .collect();
+    );
     let episode_tiles: Vec<ShowEpisode> = continue_watching
         .iter()
         .filter_map(|x| match *x {
@@ -183,7 +169,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, user_id: Uuid) -> Resul
         .iter()
         .flat_map(|(show_id, episodes)| episodes.iter().map(|x| (x.episode.id, *show_id)))
         .collect();
-    let popular_now: Vec<Uuid> = popular_now(
+    let popular_now = popular_now(
         recent_movie_states
             .iter()
             .filter(|x| movie_of.contains_key(&x.movie_id)),
@@ -191,91 +177,35 @@ pub async fn call(dependencies: impl Into<Dependencies>, user_id: Uuid) -> Resul
             .iter()
             .filter_map(|x| Some((*show_of_episode.get(&x.episode_id)?, x))),
         now,
-    )
-    .into_iter()
-    .take(ROW_SIZE)
-    .collect();
-
-    let mut newest = HashMap::<Uuid, (Option<Timestamp>, Option<Date>)>::new();
-    for episode in episodes.iter().filter(|x| x.in_library) {
-        if let Some(season) = season_of.get(&episode.season_id) {
-            let (added_at, air_date) = newest.entry(season.show_id).or_default();
-            *added_at = episode.added_at.max(*added_at);
-            *air_date = episode.air_date.max(*air_date);
-        }
-    }
+    );
     let titles: Vec<Title> = movies
         .iter()
-        .map(|movie| Title {
-            id: movie.id,
-            genres: &movie.genres,
-            sort_key: sort_key(movie.sort_title.as_deref(), &movie.title),
-            added_at: movie.added_at,
-            released: movie.premiered,
-        })
+        .map(Title::movie)
         .chain(shows.iter().map(|show| {
-            let (added_at, released) = newest.get(&show.id).copied().unwrap_or_default();
-            Title {
-                id: show.id,
-                genres: &show.genres,
-                sort_key: sort_key(show.sort_title.as_deref(), &show.title),
-                added_at,
-                released,
-            }
+            Title::show(
+                show,
+                show_episodes
+                    .get(&show.id)
+                    .into_iter()
+                    .flatten()
+                    .map(|x| x.episode),
+            )
         }))
         .collect();
-
-    let mut recently_added: Vec<&Title> = titles.iter().filter(|x| x.added_at.is_some()).collect();
-    recently_added.sort_by(|a, b| {
-        (Reverse(a.added_at), &a.sort_key, a.id).cmp(&(Reverse(b.added_at), &b.sort_key, b.id))
-    });
-    recently_added.truncate(ROW_SIZE);
-    let mut genre_counts = HashMap::<&str, usize>::new();
-    for name in titles.iter().flat_map(|x| x.genres) {
-        *genre_counts.entry(name).or_default() += 1;
-    }
-    let mut top_genres: Vec<_> = genre_counts.into_iter().collect();
-    top_genres.sort_by(|a, b| (Reverse(a.1), a.0).cmp(&(Reverse(b.1), b.0)));
-    top_genres.truncate(GENRE_ROWS);
-    let mut by_sort_title: Vec<&Title> = titles.iter().collect();
-    by_sort_title.sort_by(|a, b| (&a.sort_key, a.id).cmp(&(&b.sort_key, b.id)));
-    let genre_rows = top_genres.into_iter().map(|(name, _)| {
-        (
-            RowKind::Genre(name.to_owned()),
-            by_sort_title
-                .iter()
-                .filter(|x| x.genres.iter().any(|x| x == name))
-                .take(ROW_SIZE)
-                .map(|x| x.id)
-                .collect::<Vec<_>>(),
-        )
-    });
+    let featured = featured_title(&popular_now, &titles);
     let rows: Vec<(RowKind, Vec<Uuid>)> = [
         (RowKind::ContinueWatching, continue_watching),
-        (
-            RowKind::RecentlyAdded,
-            recently_added.iter().map(|x| x.id).collect::<Vec<_>>(),
-        ),
-        (RowKind::PopularNow, popular_now.clone()),
+        (RowKind::RecentlyAdded, recently_added(&titles)),
+        (RowKind::PopularNow, popular_now),
     ]
     .into_iter()
-    .chain(genre_rows)
+    .chain(
+        genre_rows(&titles)
+            .into_iter()
+            .map(|(genre, ids)| (RowKind::Genre(genre), ids)),
+    )
     .filter(|(_, ids)| !ids.is_empty())
     .collect();
-
-    let featured = popular_now.first().copied().or_else(|| {
-        titles
-            .iter()
-            .filter(|x| x.released.is_some())
-            .min_by(|a, b| {
-                (Reverse(a.released), &a.sort_key, a.id).cmp(&(
-                    Reverse(b.released),
-                    &b.sort_key,
-                    b.id,
-                ))
-            })
-            .map(|x| x.id)
-    });
     let shown: HashSet<Uuid> = rows
         .iter()
         .flat_map(|(_, ids)| ids.iter().copied())
@@ -493,14 +423,6 @@ mod tests {
         ids
     }
 
-    async fn add_movie(db_context: &mut DbContext, title: &str, added_at: Option<&str>) {
-        movie(db_context, title)
-            .added_at(added_at.map(at))
-            .exec(db_context.executor_mut())
-            .await
-            .unwrap();
-    }
-
     async fn home(db_context: &DbContext) -> Output {
         home_for(db_context, Uuid::new_v4()).await
     }
@@ -579,227 +501,8 @@ mod tests {
         tiles.iter().map(|x| x.title.as_str()).collect()
     }
 
-    fn rows(output: &Output) -> Vec<(&RowKind, Vec<&str>)> {
-        output
-            .rows
-            .iter()
-            .map(|row| {
-                (
-                    &row.kind,
-                    row.tiles.iter().map(|x| x.title.as_str()).collect(),
-                )
-            })
-            .collect()
-    }
-
-    #[tokio::test]
-    async fn recently_added_has_one_tile_per_title_and_a_show_sorts_by_its_newest_episode_in_the_library()
-     {
-        let mut db_context = mock_db_context().await;
-        add_movie(&mut db_context, "Arrival", Some("2026-10-29T08:00:00Z")).await;
-        add_movie(&mut db_context, "Dune", Some("2026-10-20T08:00:00Z")).await;
-        let severance = show(&db_context, "Severance");
-        let season_pack: Vec<_> = (1..=3)
-            .map(|number| Episode {
-                number,
-                added_at: Some("2026-10-25T08:00:00Z"),
-                ..EPISODE
-            })
-            .chain([Episode {
-                number: 4,
-                in_library: false,
-                added_at: Some("2026-10-30T08:00:00Z"),
-                ..EPISODE
-            }])
-            .collect();
-        add_show(&mut db_context, severance, &season_pack).await;
-        let andor = show(&db_context, "Andor");
-        add_show(
-            &mut db_context,
-            andor,
-            &[
-                Episode {
-                    added_at: Some("2026-10-21T08:00:00Z"),
-                    ..EPISODE
-                },
-                Episode {
-                    number: 2,
-                    added_at: Some("2026-10-27T08:00:00Z"),
-                    ..EPISODE
-                },
-            ],
-        )
-        .await;
-
-        let output = home(&db_context).await;
-
-        assert_eq!(
-            rows(&output),
-            [(
-                &RowKind::RecentlyAdded,
-                vec!["Arrival", "Andor", "Severance", "Dune"]
-            )]
-        );
-    }
     fn genres(names: &[&str]) -> Vec<String> {
         names.iter().map(|x| (*x).to_owned()).collect()
-    }
-
-    #[tokio::test]
-    async fn the_genre_rows_are_the_6_genres_with_the_most_titles_in_the_library_sorted_by_sort_title()
-     {
-        let mut db_context = mock_db_context().await;
-        for (title, sort_title, names, in_library) in [
-            ("Arrival", None, &["Drama", "Mystery"][..], true),
-            (
-                "The Departed",
-                Some("Departed"),
-                &["Drama", "Crime", "Thriller"][..],
-                true,
-            ),
-            ("Zodiac", None, &["Crime", "Mystery", "Thriller"][..], true),
-            ("Airplane!", None, &["Comedy"][..], true),
-            ("Heat", None, &["Action"][..], true),
-            ("Gone", None, &["Action"][..], false),
-        ] {
-            movie(&db_context, title)
-                .sort_title(sort_title.map(str::to_owned))
-                .genres(genres(names))
-                .in_library(in_library)
-                .exec(db_context.executor_mut())
-                .await
-                .unwrap();
-        }
-        for (title, names, in_library) in [
-            ("Severance", &["Drama", "Comedy", "Horror"][..], true),
-            ("Barry", &["Drama", "Comedy", "Crime", "Horror"][..], true),
-            ("Gone", &["Action", "Western"][..], false),
-        ] {
-            let show = show(&db_context, title).genres(genres(names));
-            add_show(
-                &mut db_context,
-                show,
-                &[Episode {
-                    in_library,
-                    ..EPISODE
-                }],
-            )
-            .await;
-        }
-
-        let output = home(&db_context).await;
-
-        let genre = |name: &str| RowKind::Genre(name.to_owned());
-        assert_eq!(
-            rows(&output),
-            [
-                (
-                    &genre("Drama"),
-                    vec!["Arrival", "Barry", "The Departed", "Severance"]
-                ),
-                (&genre("Comedy"), vec!["Airplane!", "Barry", "Severance"]),
-                (&genre("Crime"), vec!["Barry", "The Departed", "Zodiac"]),
-                (&genre("Horror"), vec!["Barry", "Severance"]),
-                (&genre("Mystery"), vec!["Arrival", "Zodiac"]),
-                (&genre("Thriller"), vec!["The Departed", "Zodiac"]),
-            ]
-        );
-    }
-
-    #[tokio::test]
-    async fn a_row_holds_up_to_20_tiles() {
-        let mut db_context = mock_db_context().await;
-        for number in 0..21 {
-            movie(&db_context, &format!("Movie {number:02}"))
-                .genres(genres(&["Drama"]))
-                .added_at(Some(at("2026-10-01T08:00:00Z")))
-                .exec(db_context.executor_mut())
-                .await
-                .unwrap();
-        }
-
-        let output = home(&db_context).await;
-
-        assert_eq!(
-            output
-                .rows
-                .iter()
-                .map(|x| x.tiles.len())
-                .collect::<Vec<_>>(),
-            [20, 20]
-        );
-    }
-    #[tokio::test]
-    async fn with_no_plays_the_featured_title_is_the_latest_released_and_ties_go_by_sort_title() {
-        let mut db_context = mock_db_context().await;
-        for (title, premiered) in [
-            ("Sicario", Some(date(2025, 5, 13))),
-            ("Arrival", Some(date(2016, 11, 11))),
-            ("Dune", None),
-        ] {
-            movie(&db_context, title)
-                .premiered(premiered)
-                .exec(db_context.executor_mut())
-                .await
-                .unwrap();
-        }
-        let andor = show(&db_context, "Andor");
-        add_show(
-            &mut db_context,
-            andor,
-            &[
-                Episode {
-                    air_date: Some(date(2022, 9, 21)),
-                    ..EPISODE
-                },
-                Episode {
-                    season: 2,
-                    air_date: Some(date(2025, 5, 13)),
-                    ..EPISODE
-                },
-            ],
-        )
-        .await;
-        let severance = show(&db_context, "Severance");
-        add_show(
-            &mut db_context,
-            severance,
-            &[
-                Episode {
-                    air_date: Some(date(2025, 3, 21)),
-                    ..EPISODE
-                },
-                Episode {
-                    number: 2,
-                    in_library: false,
-                    air_date: Some(date(2026, 1, 1)),
-                    ..EPISODE
-                },
-            ],
-        )
-        .await;
-
-        let output = home(&db_context).await;
-
-        assert_eq!(
-            output.featured.map(|x| x.tile.title).as_deref(),
-            Some("Andor")
-        );
-    }
-
-    #[tokio::test]
-    async fn with_no_dated_titles_there_is_no_featured_title() {
-        let mut db_context = mock_db_context().await;
-        movie(&db_context, "Dune")
-            .exec(db_context.executor_mut())
-            .await
-            .unwrap();
-        let severance = show(&db_context, "Severance");
-        add_show(&mut db_context, severance, &[EPISODE]).await;
-
-        let output = home(&db_context).await;
-
-        assert!(output.featured.is_none(), "{:?}", output.featured);
     }
 
     #[tokio::test]
@@ -1202,35 +905,6 @@ mod tests {
         assert_eq!(
             titles(row(&output, &RowKind::PopularNow)),
             ["Arrival", "Severance", "Dune"]
-        );
-    }
-
-    #[tokio::test]
-    async fn the_featured_title_switches_from_the_latest_released_to_the_first_of_popular_now() {
-        let mut db_context = mock_db_context().await;
-        let noor = Uuid::new_v4();
-        let dune = movie(&db_context, "Dune").premiered(Some(date(2021, 10, 22)));
-        movie_with_file(&mut db_context, dune).await;
-        let arrival = movie(&db_context, "Arrival").premiered(Some(date(2016, 11, 11)));
-        let arrival_file = movie_with_file(&mut db_context, arrival).await;
-        let fallback = home_for(&db_context, noor).await;
-        watch_to_the_end(
-            &db_context,
-            Uuid::new_v4(),
-            arrival_file,
-            "2026-11-01T20:00:00Z",
-        )
-        .await;
-
-        let output = home_for(&db_context, noor).await;
-
-        assert_eq!(
-            fallback.featured.map(|x| x.tile.title).as_deref(),
-            Some("Dune")
-        );
-        assert_eq!(
-            output.featured.map(|x| x.tile.title).as_deref(),
-            Some("Arrival")
         );
     }
 

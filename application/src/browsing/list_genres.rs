@@ -9,7 +9,7 @@ pub use output::Output;
 
 use crate::ports::persistence::DbScope;
 use domain::TitleKind;
-use std::collections::BTreeMap;
+use domain::genre_counts;
 
 pub async fn call(dependencies: impl Into<Dependencies>, kind: TitleKind) -> Result<Output, Error> {
     let mut db_context = dependencies.into().db_context;
@@ -33,14 +33,13 @@ pub async fn call(dependencies: impl Into<Dependencies>, kind: TitleKind) -> Res
             .map(|x| x.genres)
             .collect(),
     };
-    let mut counts = BTreeMap::<String, i64>::new();
-    for name in titles.into_iter().flatten() {
-        *counts.entry(name).or_default() += 1;
-    }
     Ok(Output {
-        genres: counts
+        genres: genre_counts(titles.iter().map(Vec::as_slice))
             .into_iter()
-            .map(|(name, count)| Genre { name, count })
+            .map(|(name, count)| Genre {
+                name: name.to_owned(),
+                count: count as i64,
+            })
             .collect(),
     })
 }

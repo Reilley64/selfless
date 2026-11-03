@@ -66,11 +66,10 @@ pub(crate) struct CursorParam(Cursor);
 
 impl CursorParam {
     pub(crate) fn for_sort(&self, sort: SortParam) -> Result<Cursor, BadRequestError> {
-        match (&self.0.key, sort) {
-            (SortKey::Title(_), SortParam::Title)
-            | (SortKey::Added(_), SortParam::Added)
-            | (SortKey::Released(_), SortParam::Released) => Ok(self.0.clone()),
-            _ => Err(bad_request("the cursor belongs to another sort")),
+        if self.0.key.sort() == GridSort::from(sort) {
+            Ok(self.0.clone())
+        } else {
+            Err(bad_request("the cursor belongs to another sort"))
         }
     }
 }

@@ -4,8 +4,11 @@ use crate::Movie;
 use crate::MovieContinueWatchingRemoval;
 use crate::MovieWatchState;
 use crate::Season;
+use crate::Show;
 use crate::ShowContinueWatchingRemoval;
 use crate::ShowEpisode;
+use crate::Title;
+use crate::sort_key;
 use jiff::Timestamp;
 use toasty::Deferred;
 use uuid::Uuid;
@@ -25,7 +28,7 @@ fn season(show_id: Uuid, number: i64) -> Season {
     }
 }
 
-fn episode(number: i64, in_library: bool) -> Episode {
+pub(crate) fn episode(number: i64, in_library: bool) -> Episode {
     Episode {
         id: Uuid::new_v4(),
         season_id: Uuid::nil(),
@@ -192,4 +195,38 @@ pub(crate) fn show_removal(show_id: Uuid, removed_at: &str) -> ShowContinueWatch
 
 pub(crate) fn numbers(found: Option<ShowEpisode>) -> Option<(i64, i64)> {
     found.map(|x| (x.season.number, x.episode.number))
+}
+
+pub(crate) fn show(title: &str) -> Show {
+    Show {
+        id: Uuid::new_v4(),
+        tvdb_id: crate::TvdbId(0),
+        sonarr_id: crate::SonarrId(0),
+        title: title.to_owned(),
+        year: None,
+        genres: Vec::new(),
+        overview: None,
+        sort_title: None,
+        certification: None,
+        premiered: None,
+        end_date: None,
+        status: None,
+        network: None,
+        rating: None,
+        nfo_modified_at: None,
+        seasons: Deferred::default(),
+        actors: Deferred::default(),
+        artwork: Deferred::default(),
+        sync_problems: Deferred::default(),
+    }
+}
+
+pub(crate) fn title(name: &str, genres: &[&str]) -> Title {
+    Title {
+        id: Uuid::new_v4(),
+        genres: genres.iter().map(|x| (*x).to_owned()).collect(),
+        sort_key: sort_key(None, name),
+        added_at: None,
+        released: None,
+    }
 }

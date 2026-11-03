@@ -1,10 +1,12 @@
 use crate::browsing::Image;
 use crate::browsing::MovieWatch;
 use crate::browsing::TileImages;
+use domain::GridSort;
 use domain::MediaFile;
 use domain::Movie;
 use domain::Show;
 use domain::ShowEpisode;
+use domain::Title;
 use jiff::Timestamp;
 use jiff::civil::Date;
 use std::cmp::Reverse;
@@ -131,4 +133,22 @@ pub enum SortKey {
     Title(String),
     Added(Reverse<Option<Timestamp>>),
     Released(Reverse<Option<Date>>),
+}
+
+impl SortKey {
+    pub(crate) fn new(sort: GridSort, title: &Title) -> Self {
+        match sort {
+            GridSort::Title => Self::Title(title.sort_key.0.clone()),
+            GridSort::Added => Self::Added(Reverse(title.added_at)),
+            GridSort::Released => Self::Released(Reverse(title.released)),
+        }
+    }
+
+    pub fn sort(&self) -> GridSort {
+        match self {
+            Self::Title(_) => GridSort::Title,
+            Self::Added(_) => GridSort::Added,
+            Self::Released(_) => GridSort::Released,
+        }
+    }
 }

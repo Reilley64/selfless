@@ -261,103 +261,42 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn more_like_this_ranks_titles_in_the_library_by_shared_genres_then_sort_title_without_the_movie()
-     {
+    async fn more_like_this_holds_the_movies_and_shows_in_the_library_that_share_a_genre() {
         let mut db_context = mock_db_context().await;
         let arrival = movie(&db_context, "Arrival")
-            .genres(names(&["Drama", "Science Fiction", "Mystery"]))
+            .genres(names(&["Drama", "Science Fiction"]))
             .exec(db_context.executor_mut())
             .await
             .unwrap();
-        for (title, sort_title, genres, in_library) in [
-            ("Dune", None, &["Science Fiction", "Drama"][..], true),
-            ("Blade Runner 2049", None, &["Science Fiction"][..], true),
-            ("Sicario", None, &["Drama"][..], true),
-            ("The Prestige", Some("Prestige"), &["Mystery"][..], true),
-            ("Amélie", None, &["Comedy"][..], true),
-            (
-                "Gone",
-                None,
-                &["Drama", "Science Fiction", "Mystery"][..],
-                false,
-            ),
-        ] {
+        for (title, in_library) in [("Dune", true), ("Gone", false)] {
             movie(&db_context, title)
-                .sort_title(sort_title.map(str::to_owned))
-                .genres(names(genres))
+                .genres(names(&["Science Fiction"]))
                 .in_library(in_library)
                 .exec(db_context.executor_mut())
                 .await
                 .unwrap();
         }
-        add_show(
-            &mut db_context,
-            "Severance",
-            &["Drama", "Mystery", "Science Fiction"],
-            true,
-        )
-        .await;
-        add_show(
-            &mut db_context,
-            "Andor",
-            &["Drama", "Science Fiction"],
-            true,
-        )
-        .await;
-        add_show(&mut db_context, "Gone", &["Drama", "Mystery"], false).await;
+        add_show(&mut db_context, "Severance", &["Drama"], true).await;
+        add_show(&mut db_context, "Gone", &["Drama"], false).await;
 
         let output = get(&db_context, arrival.id).await;
 
-        assert_eq!(
-            more_like_this(&output),
-            [
-                "Severance",
-                "Andor",
-                "Dune",
-                "Blade Runner 2049",
-                "The Prestige",
-                "Sicario"
-            ]
-        );
+        assert_eq!(more_like_this(&output), ["Dune", "Severance"]);
         let Output::Movie(page) = output else {
             unreachable!()
         };
         assert!(
-            matches!(
-                page.more_like_this[0].kind,
-                TileKind::Show { season_count: 1 }
-            ),
+            matches!(page.more_like_this[0].kind, TileKind::Movie { .. }),
             "{:?}",
             page.more_like_this[0].kind
         );
         assert!(
-            matches!(page.more_like_this[2].kind, TileKind::Movie { .. }),
+            matches!(
+                page.more_like_this[1].kind,
+                TileKind::Show { season_count: 1 }
+            ),
             "{:?}",
-            page.more_like_this[2].kind
-        );
-    }
-
-    #[tokio::test]
-    async fn more_like_this_holds_up_to_20_titles() {
-        let mut db_context = mock_db_context().await;
-        let arrival = movie(&db_context, "Arrival")
-            .genres(names(&["Drama"]))
-            .exec(db_context.executor_mut())
-            .await
-            .unwrap();
-        for number in (0..21).rev() {
-            movie(&db_context, &format!("Movie {number:02}"))
-                .genres(names(&["Drama"]))
-                .exec(db_context.executor_mut())
-                .await
-                .unwrap();
-        }
-
-        let output = get(&db_context, arrival.id).await;
-
-        assert_eq!(
-            more_like_this(&output),
-            (0..20).map(|x| format!("Movie {x:02}")).collect::<Vec<_>>()
+            page.more_like_this[1].kind
         );
     }
 

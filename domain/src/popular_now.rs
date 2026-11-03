@@ -1,5 +1,6 @@
 use crate::EpisodeWatchState;
 use crate::MovieWatchState;
+use crate::row_kind::ROW_SIZE;
 use jiff::SignedDuration;
 use jiff::Timestamp;
 use std::cmp::Reverse;
@@ -43,6 +44,7 @@ pub fn popular_now<'a>(
     ranked.sort();
     ranked
         .into_iter()
+        .take(ROW_SIZE)
         .map(|(_, _, title_id)| title_id)
         .collect()
 }
@@ -139,5 +141,15 @@ mod tests {
         marked_watched.last_played = None;
 
         assert!(ranked(&[marked_watched], &[]).is_empty());
+    }
+
+    #[test]
+    fn popular_now_holds_up_to_20_titles() {
+        let noor = Uuid::new_v4();
+        let plays: Vec<_> = (0..21)
+            .map(|_| movie_play(Uuid::new_v4(), noor, "2026-11-01T20:00:00Z"))
+            .collect();
+
+        assert_eq!(ranked(&plays, &[]).len(), 20);
     }
 }

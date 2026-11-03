@@ -14,11 +14,12 @@ use crate::browsing::season_counts;
 use crate::browsing::title_images;
 use crate::ports::persistence::DbScope;
 use domain::Artwork;
+use domain::Episode;
 use domain::GridSort;
 use domain::Season;
-use domain::sort_key;
-use std::cmp::Reverse;
+use domain::Title;
 use std::collections::HashMap;
+use uuid::Uuid;
 
 pub async fn call(
     dependencies: impl Into<Dependencies>,
@@ -52,34 +53,26 @@ pub async fn call(
         .await
         .map_err(Error::caused_by)?;
     let season_counts = season_counts(&seasons);
-    let mut newest = HashMap::new();
+    let mut show_episodes = HashMap::<Uuid, Vec<Episode>>::new();
     if sort != GridSort::Title {
         let show_of_season: HashMap<_, _> = seasons.iter().map(|x| (x.id, x.show_id)).collect();
         for episode in db_context
             .episodes()
-            .filter(domain::Episode::in_library_filter())
+            .filter(Episode::in_library_filter())
             .exec(db_context.executor_mut())
             .await
             .map_err(Error::caused_by)?
         {
             if let Some(show_id) = show_of_season.get(&episode.season_id) {
-                let (added_at, air_date) = newest.entry(*show_id).or_insert((None, None));
-                *added_at = episode.added_at.max(*added_at);
-                *air_date = episode.air_date.max(*air_date);
+                show_episodes.entry(*show_id).or_default().push(episode);
             }
         }
     }
     let shows = shows
         .into_iter()
         .map(|show| {
-            let (added_at, air_date) = newest.get(&show.id).copied().unwrap_or_default();
-            let key = match sort {
-                GridSort::Title => {
-                    SortKey::Title(sort_key(show.sort_title.as_deref(), &show.title).0)
-                }
-                GridSort::Added => SortKey::Added(Reverse(added_at)),
-                GridSort::Released => SortKey::Released(Reverse(air_date)),
-            };
+            let title = Title::show(&show, show_episodes.get(&show.id).into_iter().flatten());
+            let key = SortKey::new(sort, &title);
             (Cursor { key, id: show.id }, show)
         })
         .collect();

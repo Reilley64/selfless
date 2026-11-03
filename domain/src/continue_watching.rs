@@ -5,6 +5,7 @@ use crate::ShowContinueWatchingRemoval;
 use crate::ShowEpisode;
 use crate::episode_to_resume;
 use crate::next_up;
+use crate::row_kind::ROW_SIZE;
 use jiff::Timestamp;
 use std::cmp::Reverse;
 use std::collections::HashMap;
@@ -62,7 +63,11 @@ pub fn continue_watching<'a>(
         .chain(shows)
         .collect();
     tiles.sort_by_key(|(sort_key, _)| Reverse(*sort_key));
-    tiles.into_iter().map(|(_, tile)| tile).collect()
+    tiles
+        .into_iter()
+        .take(ROW_SIZE)
+        .map(|(_, tile)| tile)
+        .collect()
 }
 
 #[cfg(test)]
@@ -267,5 +272,18 @@ mod tests {
         );
 
         assert_eq!(tiles(found), [Tile::NextUp(andor.show_id, 1, 3)]);
+    }
+
+    #[test]
+    fn continue_watching_holds_up_to_20_titles() {
+        let movies: Vec<_> = (0..21).map(|_| movie(true)).collect();
+        let states: Vec<_> = movies
+            .iter()
+            .map(|x| movie_watch_state(x, Some(600), LATER))
+            .collect();
+
+        let found = continue_watching(movies.iter().zip(&states), [], &[], &[]);
+
+        assert_eq!(found.len(), 20);
     }
 }
