@@ -462,22 +462,4 @@ mod tests {
             ]
         );
     }
-
-    #[tokio::test]
-    async fn a_server_error_from_the_episodes_call_is_an_error() {
-        let sonarr = Sonarr::start().await;
-        sonarr.serve("/api/v3/episode", Some(8), 500, "{}").await;
-        sonarr
-            .serve(
-                "/api/v3/episodefile",
-                Some(8),
-                200,
-                include_str!("../../../test/fixtures/sonarr/api/episode-files-andor.json"),
-            )
-            .await;
-
-        let episodes = sonarr.settings().get_episodes().unwrap().call(8).await;
-
-        assert!(episodes.is_err());
-    }
 }

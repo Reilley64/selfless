@@ -401,13 +401,12 @@ async fn write(
                 let (id, on_disk) = match inspected.remove(&sonarr_file.path) {
                     Some(inspected) => {
                         let on_disk = inspected.on_disk();
-                        let (id, file_changed) =
-                            media_files::save(scope, &sonarr_file.path, inspected)
-                                .await
-                                .map_err(Error::caused_by)?;
-                        changed |= file_changed;
-                        saved.insert(sonarr_file.path.clone(), (id, on_disk));
-                        (id, on_disk)
+                        let file = media_files::save(scope, &sonarr_file.path, inspected)
+                            .await
+                            .map_err(Error::caused_by)?;
+                        changed |= file.changed;
+                        saved.insert(sonarr_file.path.clone(), (file.id, on_disk));
+                        (file.id, on_disk)
                     }
                     None => saved[&sonarr_file.path],
                 };
