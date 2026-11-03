@@ -18,4 +18,6 @@ pub struct VideoStream {
     pub height: i64,
     pub frame_rate: Option<f64>,
     pub hdr_type: HdrType,
+    pub interlaced: bool,
+    pub bit_rate: Option<i64>,
 }

@@ -311,6 +311,8 @@ mod tests {
                 height: 90,
                 frame_rate: Some(25.0),
                 hdr_type: HdrType::Sdr,
+                interlaced: false,
+                bit_rate: None,
             },
             audio: Some(AudioStream {
                 index: 1,

@@ -490,6 +490,7 @@ mod tests {
             .width(1920)
             .height(800)
             .hdr_type(HdrType::Sdr)
+            .interlaced(false)
             .exec(db_context.executor_mut())
             .await
             .unwrap();

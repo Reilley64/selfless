@@ -85,6 +85,8 @@ mod tests {
             height,
             frame_rate: None,
             hdr_type,
+            interlaced: false,
+            bit_rate: None,
         }
     }
 

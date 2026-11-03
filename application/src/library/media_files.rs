@@ -195,6 +195,8 @@ async fn save_probe(
             .height(stream.height)
             .frame_rate(stream.frame_rate)
             .hdr_type(stream.hdr_type)
+            .interlaced(stream.interlaced)
+            .bit_rate(stream.bit_rate)
             .exec(scope.executor_mut())
             .await?;
     }
@@ -313,6 +315,8 @@ mod tests {
                 height: 1600,
                 frame_rate: Some(24000.0 / 1001.0),
                 hdr_type: HdrType::Hdr10,
+                interlaced: false,
+                bit_rate: Some(48_000_000),
             }],
             audio_streams: vec![ProbedAudioStream {
                 index: 1,
@@ -347,6 +351,8 @@ mod tests {
                 height: 800,
                 frame_rate: Some(24000.0 / 1001.0),
                 hdr_type: HdrType::Sdr,
+                interlaced: false,
+                bit_rate: None,
             }],
             audio_streams: Vec::new(),
             subtitle_streams: Vec::new(),
@@ -410,6 +416,8 @@ mod tests {
                     height: x.height,
                     frame_rate: x.frame_rate,
                     hdr_type: x.hdr_type,
+                    interlaced: x.interlaced,
+                    bit_rate: x.bit_rate,
                 })
                 .collect(),
             audio_streams: audio_streams

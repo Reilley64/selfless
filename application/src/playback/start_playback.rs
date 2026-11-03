@@ -207,6 +207,8 @@ pub async fn call(
                     height: video.height,
                     frame_rate: video.frame_rate,
                     hdr_type: video.hdr_type,
+                    interlaced: video.interlaced,
+                    bit_rate: video.bit_rate,
                 },
                 audio: audio.map(|x| ports::AudioStream {
                     index: x.index,
