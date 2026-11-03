@@ -132,6 +132,7 @@ async fn movie_syncs_count_movies_added_changed_and_removed_by_source() {
     sync().await;
     assert_eq!(count("selfless.library.items.added"), Some(1));
     sync().await;
+    assert_eq!(count("selfless.library.items.added"), Some(1));
     assert_eq!(count("selfless.library.items.changed"), None);
     file_on_disk.lock().unwrap().size = 2_000;
     sync().await;
