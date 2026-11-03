@@ -19,7 +19,7 @@ const EMPTY_REACT_NATIVE_WEB_STYLE_ELEMENT: &str =
 
 static POLICY: LazyLock<HeaderValue> = LazyLock::new(|| {
     HeaderValue::try_from(format!(
-        "default-src 'self'; script-src 'self'; media-src 'self' blob:; style-src 'self' {EMPTY_REACT_NATIVE_WEB_STYLE_ELEMENT}; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+        "default-src 'self'; script-src 'self'; media-src 'self' blob: data:; style-src 'self' {EMPTY_REACT_NATIVE_WEB_STYLE_ELEMENT}; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
     ))
     .unwrap()
 });
@@ -122,7 +122,11 @@ mod tests {
         let directives = directives(policy);
         assert_eq!(directives["default-src"], ["'self'"], "{policy}");
         assert_eq!(directives["script-src"], ["'self'"], "{policy}");
-        assert_eq!(directives["media-src"], ["'self'", "blob:"], "{policy}");
+        assert_eq!(
+            directives["media-src"],
+            ["'self'", "blob:", "data:"],
+            "{policy}"
+        );
         assert_eq!(directives["object-src"], ["'none'"], "{policy}");
         assert_eq!(directives["base-uri"], ["'none'"], "{policy}");
         assert_eq!(directives["frame-ancestors"], ["'none'"], "{policy}");
