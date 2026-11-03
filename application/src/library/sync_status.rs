@@ -558,7 +558,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_last_api_call_and_kodi_metadata_setting_are_shown_per_source() {
+    async fn the_last_api_call_is_shown_per_source() {
         let seeded = Seeded::new().await;
         let source_health = SourceHealth::default();
         let _ = source_health.api_call(
@@ -566,7 +566,6 @@ mod tests {
             Err::<(), _>(RadarrError::caused_by("500 Internal Server Error")),
         );
         let _ = source_health.api_call(Source::Sonarr, Ok::<_, RadarrError>(()));
-        source_health.set_kodi_metadata(Source::Sonarr, false);
 
         let status = seeded.status(&source_health).await;
 
@@ -575,8 +574,6 @@ mod tests {
             "{:?}",
             status.radarr.last_api_call
         );
-        assert_eq!(status.radarr.kodi_metadata, None);
         assert_eq!(status.sonarr.last_api_call, Some(ApiCall::Succeeded));
-        assert_eq!(status.sonarr.kodi_metadata, Some(false));
     }
 }

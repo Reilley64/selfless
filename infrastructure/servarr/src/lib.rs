@@ -113,6 +113,7 @@ mod tests {
     use wiremock::matchers::path;
 
     const METADATA: &str = include_str!("../../../test/fixtures/radarr/api/metadata.json");
+    const API_KEY: &str = "api-key";
 
     async fn serve_metadata(response: ResponseTemplate) -> (MockServer, Api) {
         let server = MockServer::start().await;
@@ -121,7 +122,7 @@ mod tests {
             .respond_with(response)
             .mount(&server)
             .await;
-        let api = Api::new(server.uri().parse().unwrap(), "api-key".to_owned());
+        let api = Api::new(server.uri().parse().unwrap(), API_KEY.to_owned());
         (server, api)
     }
 
@@ -141,6 +142,19 @@ mod tests {
         ))
         .await;
         assert!(!api.kodi_metadata().await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn requests_send_the_api_key() {
+        let (server, api) =
+            serve_metadata(ResponseTemplate::new(200).set_body_raw(METADATA, "application/json"))
+                .await;
+
+        api.kodi_metadata().await.unwrap();
+
+        let requests = server.received_requests().await.unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].headers["X-Api-Key"], API_KEY);
     }
 
     #[tokio::test]
