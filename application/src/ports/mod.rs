@@ -4,6 +4,7 @@ use domain::EmailAddress;
 use domain::EpisodeNfo;
 use domain::HdrType;
 use domain::MovieNfo;
+use domain::PlayMethod;
 use domain::RadarrId;
 use domain::ShowNfo;
 use domain::SonarrId;
@@ -169,8 +170,9 @@ impl DeleteCachedImage {
 }
 
 #[derive(Clone, Debug)]
-pub struct HlsSession {
+pub struct HlsOutput {
     pub playback_id: Uuid,
+    pub method: PlayMethod,
     pub path: String,
     pub duration: Duration,
     pub keyframes: Vec<Duration>,
@@ -192,7 +194,7 @@ pub struct HlsAudioTrack {
 
 #[derive(ohno::Error, Default)]
 #[no_constructors]
-#[display("failed to run an HLS session")]
+#[display("failed to run an HLS output")]
 pub struct HlsError {
     core: ohno::OhnoCore,
 }
@@ -205,12 +207,12 @@ impl HlsError {
     }
 }
 
-type EndHlsSessionFn = dyn Fn(Uuid) -> PortFuture<()> + Send + Sync;
+type EndHlsOutputFn = dyn Fn(Uuid) -> PortFuture<()> + Send + Sync;
 
 #[derive(Clone)]
-pub struct EndHlsSession(Arc<EndHlsSessionFn>);
+pub struct EndHlsOutput(Arc<EndHlsOutputFn>);
 
-impl EndHlsSession {
+impl EndHlsOutput {
     pub fn new(f: impl Fn(Uuid) -> PortFuture<()> + Send + Sync + 'static) -> Self {
         Self(Arc::new(f))
     }
@@ -585,10 +587,14 @@ pub struct VideoStream {
     pub index: i64,
     pub codec: String,
     pub profile: Option<String>,
+    pub level: Option<i64>,
+    pub bit_depth: Option<i64>,
     pub width: i64,
     pub height: i64,
     pub frame_rate: Option<f64>,
     pub hdr_type: HdrType,
+    pub dolby_vision_profile: Option<i64>,
+    pub dolby_vision_compatibility_id: Option<i64>,
     pub interlaced: bool,
     pub bit_rate: Option<i64>,
 }
@@ -1117,19 +1123,19 @@ impl EmailRefused {
     }
 }
 
-type StartHlsSessionFn = dyn Fn(HlsSession) -> PortFuture<Result<(), HlsError>> + Send + Sync;
+type StartHlsOutputFn = dyn Fn(HlsOutput) -> PortFuture<Result<(), HlsError>> + Send + Sync;
 
 #[derive(Clone)]
-pub struct StartHlsSession(Arc<StartHlsSessionFn>);
+pub struct StartHlsOutput(Arc<StartHlsOutputFn>);
 
-impl StartHlsSession {
+impl StartHlsOutput {
     pub fn new(
-        f: impl Fn(HlsSession) -> PortFuture<Result<(), HlsError>> + Send + Sync + 'static,
+        f: impl Fn(HlsOutput) -> PortFuture<Result<(), HlsError>> + Send + Sync + 'static,
     ) -> Self {
         Self(Arc::new(f))
     }
 
-    pub fn call(&self, session: HlsSession) -> PortFuture<Result<(), HlsError>> {
+    pub fn call(&self, session: HlsOutput) -> PortFuture<Result<(), HlsError>> {
         (self.0)(session)
     }
 }

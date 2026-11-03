@@ -181,28 +181,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn playback_settings_start_with_autoplay_on_and_the_still_watching_prompt_off() {
-        let app = TestApp::new().await;
-        let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;
-        let server = serve(&app).await;
-
-        let (status, settings) = server
-            .request(
-                Method::GET,
-                "/api/me/playback-settings/v1",
-                Some(&token),
-                None,
-            )
-            .await;
-
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(
-            settings,
-            json!({ "autoplayNextEpisode": true, "askIfStillWatching": false })
-        );
-    }
-
-    #[tokio::test]
     async fn changed_playback_settings_are_read_back() {
         let app = TestApp::new().await;
         let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;

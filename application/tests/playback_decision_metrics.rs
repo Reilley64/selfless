@@ -1,8 +1,9 @@
+use application::playback::SubtitleChoice;
 use application::playback::start_playback;
 use application::ports::Clock;
-use application::ports::EndHlsSession;
+use application::ports::EndHlsOutput;
 use application::ports::ReadKeyframes;
-use application::ports::StartHlsSession;
+use application::ports::StartHlsOutput;
 use application::ports::persistence;
 use application::ports::persistence::DbContext;
 use application::ports::persistence::DbLocation;
@@ -79,8 +80,8 @@ fn dependencies(db_context: &DbContext) -> start_playback::Dependencies {
         read_keyframes: ReadKeyframes::new(|_| {
             Box::pin(async { Ok((0..10).map(|x| Duration::from_secs(x * 6)).collect()) })
         }),
-        start_hls_session: StartHlsSession::new(|_| Box::pin(async { Ok(()) })),
-        end_hls_session: EndHlsSession::new(|_| Box::pin(async {})),
+        start_hls_output: StartHlsOutput::new(|_| Box::pin(async { Ok(()) })),
+        end_hls_output: EndHlsOutput::new(|_| Box::pin(async {})),
     }
 }
 
@@ -111,9 +112,12 @@ async fn play_requests_are_counted_by_play_method_client_kind_and_reason_kinds()
         video_codecs: vec![domain::VideoCodecSupport {
             codec: "h264".to_owned(),
             profiles: vec!["high".to_owned()],
+            max_level: 51,
             max_width: 1920,
             max_height: 1080,
+            bit_depths: vec![8],
             hdr_types: vec![HdrType::Sdr],
+            dolby_vision_profiles: Vec::new(),
         }],
         ..CapabilityProfile::default()
     };
@@ -133,7 +137,7 @@ async fn play_requests_are_counted_by_play_method_client_kind_and_reason_kinds()
             media_file_id,
             0.0,
             None,
-            None,
+            SubtitleChoice::Default,
             &profile,
             force_hls,
         )

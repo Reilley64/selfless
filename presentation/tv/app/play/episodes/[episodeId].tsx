@@ -1,4 +1,5 @@
 import { useGetEpisode } from "@selfless/api-client";
+import { noLongerAvailable } from "@selfless/ui";
 import { useLocalSearchParams } from "expo-router";
 import { View } from "react-native-css/components";
 import { NotFound } from "../../../components/NotFound";
@@ -14,7 +15,7 @@ export default function PlayEpisode() {
   }>();
   const { data, isError } = useGetEpisode(episodeId, { query: { staleTime: Infinity, refetchOnWindowFocus: false } });
   if (data?.status === 404 || (data?.status === 200 && !data.data.mediaFileId)) {
-    return <NotFound />;
+    return <NotFound message={noLongerAvailable} />;
   }
   if (isError || (data && data.status !== 200)) {
     return <ServerUnreachable />;

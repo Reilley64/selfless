@@ -45,6 +45,10 @@ impl MediaFile {
         self.size != Some(size) || needs_reread(self.modified_at, modified_at)
     }
 
+    pub fn video_stream(&self) -> Option<&VideoStream> {
+        self.video_streams.get().iter().min_by_key(|x| x.index)
+    }
+
     pub fn runtime_minutes(&self) -> Option<i64> {
         self.duration_ms.map(|x| (x + 30_000) / 60_000)
     }

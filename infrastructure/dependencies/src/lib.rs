@@ -8,7 +8,7 @@ use application::ports::CheckRadarrKodiMetadata;
 use application::ports::CheckSonarrKodiMetadata;
 use application::ports::Clock;
 use application::ports::DeleteCachedImage;
-use application::ports::EndHlsSession;
+use application::ports::EndHlsOutput;
 use application::ports::ExportTelemetry;
 use application::ports::FindMediaFile;
 use application::ports::GetHlsFile;
@@ -32,7 +32,7 @@ use application::ports::ReadSonarrWebhook;
 use application::ports::ReadWebhookEventType;
 use application::ports::SaveCachedImage;
 use application::ports::SendEmail;
-use application::ports::StartHlsSession;
+use application::ports::StartHlsOutput;
 use application::ports::TryAcquireLock;
 use application::ports::persistence::DbContext;
 use application::url_signer::UrlSigner;
@@ -49,7 +49,7 @@ pub struct AppState {
     pub clock: Clock,
     pub db_context: DbContext,
     pub delete_cached_image: DeleteCachedImage,
-    pub end_hls_session: EndHlsSession,
+    pub end_hls_output: EndHlsOutput,
     pub export_telemetry: ExportTelemetry,
     pub find_media_file: FindMediaFile,
     pub get_hls_file: GetHlsFile,
@@ -77,7 +77,7 @@ pub struct AppState {
     pub save_cached_image: SaveCachedImage,
     pub send_email: SendEmail,
     pub source_health: SourceHealth,
-    pub start_hls_session: StartHlsSession,
+    pub start_hls_output: StartHlsOutput,
     pub try_acquire_lock: TryAcquireLock,
     pub url_signer: UrlSigner,
     pub webhook_passwords: WebhookPasswords,

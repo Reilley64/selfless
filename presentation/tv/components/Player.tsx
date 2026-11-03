@@ -4,8 +4,6 @@ import {
   type PlaybackSubtitleTrack,
   reportPlaybackProgress,
   serverUrl,
-  startPlayback,
-  useGetMe,
 } from "@selfless/api-client";
 import {
   ActionButton,
@@ -15,12 +13,14 @@ import {
   matchTrack,
   NextEpisodeButton,
   type NextEpisodeButtonState,
+  nextEpisodeHref,
   type PlaybackSpans,
   playerTrackFor,
   type Resume,
+  noLongerAvailable,
   serverUnreachable,
   StillWatchingPrompt,
-  startPlaybackSpans,
+  usePlaybackStart,
 } from "@selfless/ui";
 import { type Href, useRouter } from "expo-router";
 import { type AudioTrack, type SubtitleTrack, useVideoPlayer, type VideoPlayer, VideoView } from "expo-video";
@@ -32,8 +32,6 @@ import { androidTvProfile } from "../modules/capability-profile";
 import { useFirstFieldFocus } from "./form";
 import { NotFound } from "./NotFound";
 
-type Start = { response: Awaited<ReturnType<typeof startPlayback>>; spans: PlaybackSpans } | "unreachable";
-
 type PlayerProps = {
   mediaFileId: string;
   startPosition: number;
@@ -44,70 +42,22 @@ type PlayerProps = {
 
 const seekJump = 3;
 
+const tvProfile = () => (Platform.OS === "android" ? androidTvProfile() : Promise.resolve(appleTvProfile));
+
 export function Player(props: PlayerProps) {
   return <Playing key={`${props.mediaFileId}@${props.startPosition}`} {...props} />;
 }
 
 function Playing({ mediaFileId, startPosition, autoplayed, stillWatching, titleHref }: PlayerProps) {
-  const { data: me, isError } = useGetMe();
-  const userId = me?.status === 200 ? me.data.id : undefined;
-  const [start, setStart] = useState<Start>();
-  const [resume, setResume] = useState<Resume>({
-    position: startPosition,
-    paused: stillWatching,
-    forceHls: false,
+  const { start, resume, restart } = usePlaybackStart({
+    mediaFileId,
+    startPosition,
     autoplayed,
     stillWatching,
+    profile: tvProfile,
   });
-  useEffect(() => {
-    if (userId === undefined) {
-      return;
-    }
-    let current = true;
-    let answered = false;
-    const spans = startPlaybackSpans(userId, mediaFileId);
-    (Platform.OS === "android" ? androidTvProfile() : Promise.resolve(appleTvProfile))
-      .then((profile) =>
-        spans.during(() =>
-          startPlayback({
-            mediaFileId,
-            startPosition: resume.position,
-            profile,
-            forceHls: resume.forceHls,
-            ...(resume.tracks && {
-              audioTrackId: resume.tracks.audioTrackId ?? undefined,
-              subtitleTrackId: resume.tracks.subtitleTrackId,
-            }),
-          }),
-        ),
-      )
-      .then(
-        (response) => {
-          answered = true;
-          if (response.status !== 201) {
-            spans.failed(String(response.status));
-          }
-          if (current) {
-            setStart({ response, spans });
-          }
-        },
-        (error: unknown) => {
-          answered = true;
-          spans.failed(error instanceof Error ? error.name : "_OTHER");
-          if (current) {
-            setStart("unreachable");
-          }
-        },
-      );
-    return () => {
-      current = false;
-      if (!answered) {
-        spans.stopped();
-      }
-    };
-  }, [userId, mediaFileId, resume]);
-  const retry = () => setResume({ ...resume });
-  if (isError || start === "unreachable") {
+  const retry = () => restart({ ...resume });
+  if (start === "unreachable") {
     return <Failure message={serverUnreachable} onRetry={retry} />;
   }
   if (start === undefined) {
@@ -121,16 +71,14 @@ function Playing({ mediaFileId, startPosition, autoplayed, stillWatching, titleH
           playback={start.response.data}
           spans={start.spans}
           resume={resume}
-          restart={setResume}
+          restart={restart}
           titleHref={titleHref}
         />
       );
     case 404:
-      return <NotFound />;
+      return <NotFound message={noLongerAvailable} />;
     case 422:
       return <Failure message="selfless can't read this file." />;
-    case 501:
-      return <Failure message="This TV can't play this file yet." />;
     default:
       return <Failure message={serverUnreachable} onRetry={retry} />;
   }
@@ -176,11 +124,11 @@ function Video({
     const showAudio = (track: PlaybackAudioTrack) => {
       const playerTrack = playerTrackFor(track, available.current.audio, playback.audioTracks);
       if (playerTrack) {
-        play(player, { audioTrack: playerTrack });
+        showTracks(player, { audioTrack: playerTrack });
       }
     };
     const showSubtitle = (track: PlaybackSubtitleTrack | null) => {
-      play(player, {
+      showTracks(player, {
         subtitleTrack: track && (playerTrackFor(track, available.current.subtitle, playback.subtitleTracks) ?? null),
       });
     };
@@ -197,10 +145,7 @@ function Video({
         switchAudio: () => undefined,
         switchSubtitle: () => undefined,
         showNextEpisode: setNextButton,
-        playNextEpisode: (episode, { autoplayed, stillWatching }) =>
-          router.replace(
-            `/play/episodes/${episode.id}?position=0&autoplayed=${autoplayed}&stillWatching=${stillWatching}`,
-          ),
+        playNextEpisode: (episode, start) => router.replace(nextEpisodeHref(episode, start)),
         returnToTitle: () => router.dismissTo(titleHref),
         showStillWatching: setStillWatching,
         play: () => player.play(),
@@ -234,6 +179,7 @@ function Video({
         }
         logic.showSubtitle(playback.subtitleTracks.find((track) => track.id === subtitleTrackId) ?? null);
         selectionShown = true;
+        logic.handle({ type: "loaded", position: position.current });
       }),
       player.addListener("availableAudioTracksChange", ({ availableAudioTracks }) => {
         available.current = { ...available.current, audio: availableAudioTracks };
@@ -317,7 +263,7 @@ function Video({
   );
 }
 
-function play(player: VideoPlayer, tracks: Partial<Pick<VideoPlayer, "audioTrack" | "subtitleTrack">>) {
+function showTracks(player: VideoPlayer, tracks: Partial<Pick<VideoPlayer, "audioTrack" | "subtitleTrack">>) {
   Object.assign(player, tracks);
 }
 

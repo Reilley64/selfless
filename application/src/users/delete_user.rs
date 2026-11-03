@@ -11,6 +11,7 @@ use domain::EpisodeWatchState;
 use domain::MovieContinueWatchingRemoval;
 use domain::MovieWatchState;
 use domain::Playback;
+use domain::PlaybackReason;
 use domain::PlaybackSettings;
 use domain::Session;
 use domain::ShowContinueWatchingRemoval;
@@ -20,7 +21,7 @@ use uuid::Uuid;
 pub async fn call(dependencies: impl Into<Dependencies>, id: Uuid) -> Result<Output, Error> {
     let Dependencies {
         mut db_context,
-        end_hls_session,
+        end_hls_output,
     } = dependencies.into();
     let mut transaction = db_context.transaction().await.map_err(Error::caused_by)?;
     let open = transaction
@@ -44,6 +45,22 @@ pub async fn call(dependencies: impl Into<Dependencies>, id: Uuid) -> Result<Out
     transaction
         .sessions()
         .filter(Session::fields().user_id().eq(id))
+        .delete()
+        .exec(transaction.executor_mut())
+        .await
+        .map_err(Error::caused_by)?;
+    let playbacks = transaction
+        .playbacks()
+        .filter(Playback::fields().user_id().eq(id))
+        .exec(transaction.executor_mut())
+        .await
+        .map_err(Error::caused_by)?
+        .into_iter()
+        .map(|x| x.id)
+        .collect::<Vec<_>>();
+    transaction
+        .playback_reasons()
+        .filter(PlaybackReason::fields().playback_id().in_list(playbacks))
         .delete()
         .exec(transaction.executor_mut())
         .await
@@ -92,7 +109,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, id: Uuid) -> Result<Out
         .map_err(Error::caused_by)?;
     transaction.commit().await.map_err(Error::caused_by)?;
     for playback in open {
-        end_hls_session.call(playback.id).await;
+        end_hls_output.call(playback.id).await;
     }
     Ok(Output)
 }
@@ -101,12 +118,14 @@ pub async fn call(dependencies: impl Into<Dependencies>, id: Uuid) -> Result<Out
 mod tests {
     use super::*;
     use crate::ports::persistence::DbContext;
-    use crate::test::EndedHlsSessions;
+    use crate::test::EndedHlsOutputs;
+    use crate::test::add_playback_reason;
     use crate::test::add_season;
     use crate::test::episode;
     use crate::test::mock_db_context;
     use crate::test::movie;
     use crate::test::playback;
+    use crate::test::playback_reason_owners;
     use crate::test::show;
     use crate::users::create_user;
     use domain::ClientKind;
@@ -158,7 +177,7 @@ mod tests {
         call(
             Dependencies {
                 db_context: db_context.clone(),
-                end_hls_session: EndedHlsSessions::default().port(),
+                end_hls_output: EndedHlsOutputs::default().port(),
             },
             noor,
         )
@@ -205,7 +224,7 @@ mod tests {
         call(
             Dependencies {
                 db_context: db_context.clone(),
-                end_hls_session: EndedHlsSessions::default().port(),
+                end_hls_output: EndedHlsOutputs::default().port(),
             },
             noor,
         )
@@ -225,27 +244,27 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn deleting_a_user_deletes_their_playbacks_and_ends_their_hls_sessions() {
+    async fn deleting_a_user_deletes_their_playbacks_and_ends_their_hls_outputs() {
         let mut db_context = mock_db_context().await;
         let noor = create_user(&db_context, "Noor").await;
         let ravi = create_user(&db_context, "Ravi").await;
         let mut ids = Vec::new();
         for user_id in [noor, ravi] {
-            ids.push(
-                playback(&db_context, Timestamp::UNIX_EPOCH)
-                    .user_id(user_id)
-                    .exec(db_context.executor_mut())
-                    .await
-                    .unwrap()
-                    .id,
-            );
+            let id = playback(&db_context, Timestamp::UNIX_EPOCH)
+                .user_id(user_id)
+                .exec(db_context.executor_mut())
+                .await
+                .unwrap()
+                .id;
+            add_playback_reason(&mut db_context, id).await;
+            ids.push(id);
         }
-        let ended = EndedHlsSessions::default();
+        let ended = EndedHlsOutputs::default();
 
         call(
             Dependencies {
                 db_context: db_context.clone(),
-                end_hls_session: ended.port(),
+                end_hls_output: ended.port(),
             },
             noor,
         )
@@ -262,6 +281,7 @@ mod tests {
             .map(|x| x.user_id)
             .collect::<Vec<_>>();
         assert_eq!(playbacks, [ravi]);
+        assert_eq!(playback_reason_owners(&mut db_context).await, [ids[1]]);
         assert_eq!(ended.playback_ids(), [ids[0]]);
     }
 
@@ -303,7 +323,7 @@ mod tests {
         call(
             Dependencies {
                 db_context: db_context.clone(),
-                end_hls_session: EndedHlsSessions::default().port(),
+                end_hls_output: EndedHlsOutputs::default().port(),
             },
             noor,
         )
@@ -363,7 +383,7 @@ mod tests {
         call(
             Dependencies {
                 db_context: db_context.clone(),
-                end_hls_session: EndedHlsSessions::default().port(),
+                end_hls_output: EndedHlsOutputs::default().port(),
             },
             noor,
         )

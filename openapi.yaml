@@ -746,7 +746,7 @@ paths:
     post:
       operationId: startPlayback
       summary: Start a playback of a media file
-      description: The server compares the capability profile with the media file and picks the play method. The request may name the audio and subtitle tracks. Otherwise the audio is the first track in the user's remembered audio language, else the file's default track, else its first. With a remembered subtitle language, the subtitle is a track in that language that the device can show, preferring one that is neither forced nor for the hearing impaired. Without one, a forced subtitle in the audio's language turns on. It plays the file directly when the profile covers its container, its video stream, the selected audio track and the selected subtitle embedded in a codec the profile lists. A session on an Apple TV or Google TV also needs every text subtitle of the file embedded in a codec the profile lists, because the TV's native menus show no other subtitle. Otherwise the URL is the HLS master playlist, which lists every audio track. When only the container is wrong, or when the request forces HLS, it remuxes the file. When the profile doesn't cover the video stream, or the file has no keyframe at least every 20 seconds, it transcodes the video to H.264 at the source size up to 1080p and the source bitrate up to 10 Mbps, tone-mapping HDR to SDR and deinterlacing interlaced video. Dolby Vision plays as its HDR10 base layer where the profile lists hdr10. Audio tracks the profile covers are copied. Others become E-AC-3 when the profile lists it, otherwise AAC, with the source's channels up to the profile's maximum and up to 5.1. Any converted video or audio makes the method transcode. A file without a video stream or a known duration that the profile doesn't cover fails with the needs-transcode problem. Starting a playback ends any playback the same session has not ended. A media file is hidden when no visible movie or episode plays from it.
+      description: The server compares the capability profile with the media file and picks the play method. The request may name the audio and subtitle tracks. Otherwise the audio is the first track in the user's remembered audio language, else the file's default track, else its first. With a remembered subtitle language, the subtitle is a track in that language that the device can show, preferring one that is neither forced nor for the hearing impaired. Without one, a forced subtitle in the audio's language turns on. It plays the file directly when the profile covers its container, its video stream's codec, profile, level, size, bit depth and dynamic range, the selected audio track and the selected subtitle embedded in a codec the profile lists. A session on an Apple TV or Google TV also needs every text subtitle of the file embedded in a codec the profile lists, because the TV's native menus show no other subtitle. Otherwise the URL is the HLS master playlist, which lists every audio track. When only the container is wrong, or when the request forces HLS, it remuxes the file. When the profile doesn't cover the video stream, or the file has no keyframe at least every 20 seconds, it transcodes the video to H.264 at the source size up to 1080p and the source bitrate up to 10 Mbps, tone-mapping HDR to SDR and deinterlacing interlaced video. Dolby Vision plays as Dolby Vision where the profile lists its profile, and Dolby Vision 8.1 or 7, which have an HDR10 base layer, plays as HDR10 where the profile lists hdr10. Profile 5 transcodes there. Audio tracks the profile covers are copied. Others become E-AC-3 when the profile lists it, otherwise AAC, with the source's channels up to the profile's maximum and up to 5.1. Any converted video or audio makes the method transcode. A media file whose container, video stream or duration library sync couldn't read fails with the unreadable-media-file problem. The stored playback holds the default tracks until its first progress report, even when the request names others, so that the report counts as a track change and updates the remembered languages. Starting a playback ends any playback the same session has not ended. A media file is hidden when no visible movie or episode plays from it.
       tags: [playback]
       requestBody:
         description: The media file, the start position and the device's capability profile.
@@ -755,7 +755,7 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/StartPlaybackRequest"
-            example: {"mediaFileId":"0190f3c4-c2d3-7e4f-8a5b-6c7d8e9f0a1b","startPosition":0,"profile":{"containers":["mp4","webm"],"videoCodecs":[{"codec":"h264","profiles":["main","high"],"maxWidth":3840,"maxHeight":2160,"hdrTypes":["sdr"]}],"audioCodecs":[{"codec":"aac","maxChannels":2}],"subtitleCodecs":[]}}
+            example: {"mediaFileId":"0190f3c4-c2d3-7e4f-8a5b-6c7d8e9f0a1b","startPosition":0,"profile":{"containers":["mp4","webm"],"videoCodecs":[{"codec":"h264","profiles":["main","high"],"maxLevel":51,"maxWidth":3840,"maxHeight":2160,"bitDepths":[8],"hdrTypes":["sdr"],"dolbyVisionProfiles":[]}],"audioCodecs":[{"codec":"aac","maxChannels":2}],"subtitleCodecs":[]}}
       responses:
         "201":
           description: The playback, with the URL the player plays.
@@ -774,8 +774,6 @@ paths:
           $ref: "#/components/responses/UnreadableMediaFile"
         "500":
           $ref: "#/components/responses/InternalError"
-        "501":
-          $ref: "#/components/responses/NeedsTranscode"
   /api/playbacks/{playbackId}/progress/v1:
     put:
       operationId: reportPlaybackProgress
@@ -1209,7 +1207,7 @@ components:
                     const: 403
           example: {"type":"urn:selfless:problem:invalid-signature","title":"The signed URL is not valid or has expired.","status":403}
     UnreadableMediaFile:
-      description: Library sync couldn't read the media file's container or streams, so selfless can't play it.
+      description: Library sync couldn't read the media file's container, video stream or duration, so selfless can't play it.
       content:
         application/problem+json:
           schema:
@@ -1221,19 +1219,6 @@ components:
                   status:
                     const: 422
           example: {"type":"urn:selfless:problem:unreadable-media-file","title":"selfless can't read this media file.","status":422}
-    NeedsTranscode:
-      description: The profile doesn't cover the media file, and the file has no video stream or no known duration, so the server can't play it through HLS.
-      content:
-        application/problem+json:
-          schema:
-            allOf:
-              - $ref: "#/components/schemas/Problem"
-              - properties:
-                  type:
-                    const: urn:selfless:problem:needs-transcode
-                  status:
-                    const: 501
-          example: {"type":"urn:selfless:problem:needs-transcode","title":"The media file needs a transcode the server can't do yet.","status":501}
     InternalError:
       description: The server failed. The body holds no error details, and the server logs the error.
       content:
@@ -2258,7 +2243,7 @@ components:
     VideoCodecSupport:
       description: One video codec the device decodes.
       type: object
-      required: [codec, profiles, maxWidth, maxHeight, hdrTypes]
+      required: [codec, profiles, maxLevel, maxWidth, maxHeight, bitDepths, hdrTypes, dolbyVisionProfiles]
       properties:
         codec:
           description: The codec, such as h264, hevc, av1 or vp9.
@@ -2270,6 +2255,11 @@ components:
           items:
             type: string
           examples: [[main, high]]
+        maxLevel:
+          description: The highest level the device decodes, as the codec numbers it in its codec string, such as 51 for H.264 level 5.1, 153 for HEVC level 5.1 or 13 for AV1 level 5.1.
+          type: integer
+          minimum: 0
+          examples: [51]
         maxWidth:
           type: integer
           minimum: 1
@@ -2278,12 +2268,26 @@ components:
           type: integer
           minimum: 1
           examples: [2160]
+        bitDepths:
+          description: The bit depths the device decodes, such as 8 and 10.
+          type: array
+          items:
+            type: integer
+            minimum: 1
+          examples: [[8, 10]]
         hdrTypes:
-          description: The dynamic ranges the device shows. Dolby Vision plays as its HDR10 base layer where only hdr10 is listed.
+          description: The dynamic ranges the device shows. Dolby Vision plays as Dolby Vision only in a profile dolbyVisionProfiles lists. Dolby Vision with an HDR10 base layer, profile 8.1 or 7, plays as HDR10 where hdr10 is listed.
           type: array
           items:
             $ref: "#/components/schemas/HdrType"
           examples: [[sdr]]
+        dolbyVisionProfiles:
+          description: The Dolby Vision profiles the device decodes, such as 5 and 8. It is empty when hdrTypes leaves out dolbyVision.
+          type: array
+          items:
+            type: integer
+            minimum: 0
+          examples: [[]]
     AudioCodecSupport:
       description: One audio codec the device decodes or passes through.
       type: object
@@ -2352,8 +2356,8 @@ components:
           format: uri-reference
           examples: ["/api/playbacks/0190f3c4-d3e4-7f5a-8b6c-7d8e9f0a1b2c/media/Jm2vX8kQ0rH3c1yF5bR7tVw9nL4pA6sD0eG2iK8uO1M/v1/file"]
         duration:
-          description: The length of the media file in seconds, or null when probing it gave none.
-          type: [number, "null"]
+          description: The length of the media file in seconds.
+          type: number
           minimum: 0
           examples: [6981.0]
         movie:
@@ -2417,10 +2421,10 @@ components:
       properties:
         kind:
           type: string
-          enum: [container, videoCodec, videoProfile, videoSize, videoRange, audioCodec, audioChannels, subtitle, noKeyframeIndex, forcedHls]
+          enum: [container, videoCodec, videoProfile, videoLevel, videoSize, videoBitDepth, videoRange, audioCodec, audioChannels, subtitle, noKeyframeIndex, forcedHls]
           examples: [audioCodec]
         value:
-          description: The media file's value the profile doesn't cover, such as dts, 3840x2160, hdr10 or 6, or the codec of the selected subtitle, such as srt. It is null for noKeyframeIndex and forcedHls.
+          description: The media file's value the profile doesn't cover, such as dts, 153 for a level, 3840x2160, 10 for a bit depth, hdr10 or 6, or the codec of the selected subtitle, such as srt. It is null for noKeyframeIndex and forcedHls.
           type: [string, "null"]
           examples: [dts]
       additionalProperties: false

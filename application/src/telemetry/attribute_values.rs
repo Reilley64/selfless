@@ -1,12 +1,14 @@
 use crate::attributes::selfless_auth_client_kind;
 use crate::attributes::selfless_library_source;
 use crate::attributes::selfless_playback_method;
+use crate::attributes::selfless_playback_reason_kind;
 use crate::attributes::selfless_reconcile_result;
 use crate::attributes::selfless_watch_progress_outcome;
 use crate::attributes::selfless_webhook_source;
 use domain::ClientKind;
 use domain::PlayMethod;
 use domain::PlayReason;
+use domain::PlayReasonKind;
 use domain::ReconcileResult;
 use domain::ReportOutcome;
 use domain::Source;
@@ -54,23 +56,26 @@ pub(crate) fn reason_kinds(reasons: &[PlayReason]) -> Value {
     Value::Array(Array::String(
         reasons
             .iter()
-            .map(|x| {
-                match x {
-                    PlayReason::Container(_) => "container",
-                    PlayReason::VideoCodec(_) => "videoCodec",
-                    PlayReason::VideoProfile(_) => "videoProfile",
-                    PlayReason::VideoSize { .. } => "videoSize",
-                    PlayReason::VideoRange(_) => "videoRange",
-                    PlayReason::AudioCodec(_) => "audioCodec",
-                    PlayReason::AudioChannels(_) => "audioChannels",
-                    PlayReason::Subtitle(_) => "subtitle",
-                    PlayReason::NoKeyframeIndex => "noKeyframeIndex",
-                    PlayReason::ForcedHls => "forcedHls",
-                }
-                .into()
-            })
+            .map(|x| reason_kind(x.kind()).into())
             .collect(),
     ))
+}
+
+fn reason_kind(kind: PlayReasonKind) -> &'static str {
+    match kind {
+        PlayReasonKind::Container => selfless_playback_reason_kind::CONTAINER,
+        PlayReasonKind::VideoCodec => selfless_playback_reason_kind::VIDEO_CODEC,
+        PlayReasonKind::VideoProfile => selfless_playback_reason_kind::VIDEO_PROFILE,
+        PlayReasonKind::VideoLevel => selfless_playback_reason_kind::VIDEO_LEVEL,
+        PlayReasonKind::VideoSize => selfless_playback_reason_kind::VIDEO_SIZE,
+        PlayReasonKind::VideoBitDepth => selfless_playback_reason_kind::VIDEO_BIT_DEPTH,
+        PlayReasonKind::VideoRange => selfless_playback_reason_kind::VIDEO_RANGE,
+        PlayReasonKind::AudioCodec => selfless_playback_reason_kind::AUDIO_CODEC,
+        PlayReasonKind::AudioChannels => selfless_playback_reason_kind::AUDIO_CHANNELS,
+        PlayReasonKind::Subtitle => selfless_playback_reason_kind::SUBTITLE,
+        PlayReasonKind::NoKeyframeIndex => selfless_playback_reason_kind::NO_KEYFRAME_INDEX,
+        PlayReasonKind::ForcedHls => selfless_playback_reason_kind::FORCED_HLS,
+    }
 }
 
 pub(crate) fn watch_progress_outcome(outcome: ReportOutcome) -> &'static str {

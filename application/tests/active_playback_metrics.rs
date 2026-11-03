@@ -42,6 +42,7 @@ async fn playbacks_that_have_not_ended_are_recorded_by_play_method() {
             .media_file_id(Uuid::new_v4())
             .method(method)
             .position(0.0)
+            .duration(6981.0)
             .paused(false)
             .started_at(Timestamp::UNIX_EPOCH)
             .last_reported_at(Timestamp::UNIX_EPOCH)

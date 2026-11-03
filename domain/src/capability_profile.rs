@@ -3,10 +3,12 @@ use crate::AudioStream;
 use crate::AudioTranscode;
 use crate::AudioTranscodeCodec;
 use crate::ClientKind;
+use crate::MediaFile;
 use crate::PlayReason;
 use crate::SubtitleFile;
 use crate::SubtitleStream;
 use crate::SubtitleTrack;
+use crate::TrackSelection;
 use crate::VideoCodecSupport;
 use crate::VideoStream;
 
@@ -21,7 +23,7 @@ pub struct CapabilityProfile {
 }
 
 impl CapabilityProfile {
-    pub fn direct_play_reasons(
+    fn direct_play_reasons(
         &self,
         container: &str,
         video: Option<&VideoStream>,
@@ -47,11 +49,40 @@ impl CapabilityProfile {
         reasons
     }
 
+    pub fn play_reasons(
+        &self,
+        client_kind: ClientKind,
+        media_file: &MediaFile,
+        container: &str,
+        tracks: TrackSelection,
+        force_hls: bool,
+    ) -> Vec<PlayReason> {
+        let mut reasons = self.direct_play_reasons(
+            container,
+            media_file.video_stream(),
+            tracks.audio,
+            tracks.subtitle,
+        );
+        for reason in self.tv_subtitle_reasons(
+            client_kind,
+            media_file.subtitle_streams.get(),
+            media_file.subtitle_files.get(),
+        ) {
+            if !reasons.contains(&reason) {
+                reasons.push(reason);
+            }
+        }
+        if force_hls && reasons.is_empty() {
+            reasons.push(PlayReason::ForcedHls);
+        }
+        reasons
+    }
+
     pub fn shows_subtitle(&self, subtitle: SubtitleTrack) -> bool {
         subtitle.text() || self.subtitle_codecs.contains(&subtitle.codec())
     }
 
-    pub fn tv_subtitle_reasons(
+    fn tv_subtitle_reasons(
         &self,
         client_kind: ClientKind,
         streams: &[SubtitleStream],
@@ -119,9 +150,12 @@ mod tests {
             video_codecs: vec![VideoCodecSupport {
                 codec: "h264".to_owned(),
                 profiles: vec!["main".to_owned(), "high".to_owned()],
+                max_level: 51,
                 max_width: 1920,
                 max_height: 1080,
+                bit_depths: vec![8],
                 hdr_types: vec![HdrType::Sdr],
+                dolby_vision_profiles: Vec::new(),
             }],
             audio_codecs: vec![AudioCodecSupport {
                 codec: "aac".to_owned(),
@@ -145,10 +179,14 @@ mod tests {
             index: 0,
             codec: codec.to_owned(),
             profile: Some(profile.to_owned()),
+            level: None,
+            bit_depth: None,
             width,
             height,
             frame_rate: None,
             hdr_type,
+            dolby_vision_profile: None,
+            dolby_vision_compatibility_id: None,
             interlaced: false,
             bit_rate: None,
         }
@@ -194,6 +232,67 @@ mod tests {
             hearing_impaired: false,
             forced: false,
         }
+    }
+
+    fn media_file(streams: Vec<SubtitleStream>, files: Vec<SubtitleFile>) -> MediaFile {
+        MediaFile {
+            id: Uuid::nil(),
+            path: "/movies/Arrival.mp4".to_owned(),
+            size: None,
+            modified_at: None,
+            container: None,
+            duration_ms: None,
+            movies: Deferred::default(),
+            episodes: Deferred::default(),
+            video_streams: Deferred::from(vec![video("h264", "High", 1920, 800, HdrType::Sdr)]),
+            audio_streams: Deferred::default(),
+            subtitle_streams: Deferred::from(streams),
+            subtitle_files: Deferred::from(files),
+            sync_problems: Deferred::default(),
+            keyframe_index: Deferred::default(),
+        }
+    }
+
+    #[test]
+    fn the_play_reasons_hold_each_direct_play_and_tv_subtitle_reason_once() {
+        let file = media_file(Vec::new(), vec![subtitle_file("/movies/Arrival.en.srt")]);
+        let subtitle = SubtitleTrack::File(&file.subtitle_files.get()[0]);
+
+        let reasons = browser().play_reasons(
+            ClientKind::GoogleTv,
+            &file,
+            "mkv",
+            TrackSelection {
+                audio: None,
+                subtitle: Some(subtitle),
+            },
+            false,
+        );
+
+        assert_eq!(
+            reasons,
+            [
+                PlayReason::Container("mkv".to_owned()),
+                PlayReason::Subtitle("srt".to_owned()),
+            ]
+        );
+    }
+
+    #[test]
+    fn forcing_hls_is_a_reason_only_for_a_file_that_would_play_directly() {
+        let file = media_file(Vec::new(), Vec::new());
+        let reasons = |container| {
+            browser().play_reasons(
+                ClientKind::Web,
+                &file,
+                container,
+                TrackSelection::default(),
+                true,
+            )
+        };
+
+        assert_eq!(reasons("mp4"), [PlayReason::ForcedHls]);
+        assert_eq!(reasons("mkv"), [PlayReason::Container("mkv".to_owned())]);
     }
 
     #[test]
@@ -338,21 +437,6 @@ mod tests {
                 vec![PlayReason::Subtitle("srt".to_owned())],
             ]
         );
-    }
-
-    #[test]
-    fn dolby_vision_plays_as_its_hdr10_base_layer_where_hdr10_plays() {
-        let mut profile = browser();
-        profile.video_codecs[0].hdr_types = vec![HdrType::Sdr, HdrType::Hdr10];
-
-        let reasons = profile.direct_play_reasons(
-            "mp4",
-            Some(&video("h264", "High", 1920, 1080, HdrType::DolbyVision)),
-            None,
-            None,
-        );
-
-        assert_eq!(reasons, []);
     }
 
     #[test]

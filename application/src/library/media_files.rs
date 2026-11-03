@@ -191,10 +191,14 @@ async fn save_probe(
             .index(stream.index)
             .codec(stream.codec)
             .profile(stream.profile)
+            .level(stream.level)
+            .bit_depth(stream.bit_depth)
             .width(stream.width)
             .height(stream.height)
             .frame_rate(stream.frame_rate)
             .hdr_type(stream.hdr_type)
+            .dolby_vision_profile(stream.dolby_vision_profile)
+            .dolby_vision_compatibility_id(stream.dolby_vision_compatibility_id)
             .interlaced(stream.interlaced)
             .bit_rate(stream.bit_rate)
             .exec(scope.executor_mut())
@@ -303,7 +307,7 @@ mod tests {
     use domain::Movie;
     use std::time::Duration;
 
-    fn hdr10_movie() -> Probe {
+    fn dolby_vision_movie() -> Probe {
         Probe {
             container: "matroska,webm".to_owned(),
             duration: Some(Duration::from_millis(6_981_000)),
@@ -311,10 +315,14 @@ mod tests {
                 index: 0,
                 codec: "hevc".to_owned(),
                 profile: Some("Main 10".to_owned()),
+                level: Some(153),
+                bit_depth: Some(10),
                 width: 3840,
                 height: 1600,
                 frame_rate: Some(24000.0 / 1001.0),
-                hdr_type: HdrType::Hdr10,
+                hdr_type: HdrType::DolbyVision,
+                dolby_vision_profile: Some(8),
+                dolby_vision_compatibility_id: Some(1),
                 interlaced: false,
                 bit_rate: Some(48_000_000),
             }],
@@ -347,10 +355,14 @@ mod tests {
                 index: 0,
                 codec: "h264".to_owned(),
                 profile: Some("High".to_owned()),
+                level: Some(41),
+                bit_depth: Some(8),
                 width: 1920,
                 height: 800,
                 frame_rate: Some(24000.0 / 1001.0),
                 hdr_type: HdrType::Sdr,
+                dolby_vision_profile: None,
+                dolby_vision_compatibility_id: None,
                 interlaced: false,
                 bit_rate: None,
             }],
@@ -412,10 +424,14 @@ mod tests {
                     index: x.index,
                     codec: x.codec,
                     profile: x.profile,
+                    level: x.level,
+                    bit_depth: x.bit_depth,
                     width: x.width,
                     height: x.height,
                     frame_rate: x.frame_rate,
                     hdr_type: x.hdr_type,
+                    dolby_vision_profile: x.dolby_vision_profile,
+                    dolby_vision_compatibility_id: x.dolby_vision_compatibility_id,
                     interlaced: x.interlaced,
                     bit_rate: x.bit_rate,
                 })
@@ -524,11 +540,11 @@ mod tests {
         library
             .sources()
             .probes
-            .insert(MOVIE_FILE.to_owned(), hdr10_movie());
+            .insert(MOVIE_FILE.to_owned(), dolby_vision_movie());
 
         library.sync_movie().await.unwrap();
 
-        assert_eq!(streams(&library).await, hdr10_movie());
+        assert_eq!(streams(&library).await, dolby_vision_movie());
         assert_eq!(media_file(&library).await.size, Some(1_000));
         assert_eq!(library.sources().probe_calls, 1);
     }
@@ -539,7 +555,7 @@ mod tests {
         library
             .sources()
             .probes
-            .insert(MOVIE_FILE.to_owned(), hdr10_movie());
+            .insert(MOVIE_FILE.to_owned(), dolby_vision_movie());
         library.sync_movie().await.unwrap();
         library.sync_movie().await.unwrap();
         let unchanged_calls = library.sources().probe_calls;
@@ -609,10 +625,10 @@ mod tests {
         library
             .sources()
             .probes
-            .insert(MOVIE_FILE.to_owned(), hdr10_movie());
+            .insert(MOVIE_FILE.to_owned(), dolby_vision_movie());
         library.put_file(MOVIE_FILE, 1_000, "2026-10-30T09:00:00Z");
         library.sync_movie().await.unwrap();
-        assert_eq!(streams(&library).await, hdr10_movie());
+        assert_eq!(streams(&library).await, dolby_vision_movie());
         assert_eq!(problems(&library).await, []);
     }
 

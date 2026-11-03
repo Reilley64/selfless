@@ -14,6 +14,7 @@ use domain::MovieContinueWatchingRemoval;
 use domain::MovieWatchState;
 use domain::Outbox;
 use domain::Playback;
+use domain::PlaybackReason;
 use domain::PlaybackSettings;
 use domain::Season;
 use domain::Session;
@@ -139,6 +140,10 @@ pub trait DbScope {
     }
 
     fn playbacks(&self) -> DbSet<Playback> {
+        DbSet::new()
+    }
+
+    fn playback_reasons(&self) -> DbSet<PlaybackReason> {
         DbSet::new()
     }
 

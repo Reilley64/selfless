@@ -1,5 +1,6 @@
 use crate::AudioStream;
 use crate::CapabilityProfile;
+use crate::PlayMethod;
 use crate::SubtitleFile;
 use crate::SubtitleStream;
 use crate::TrackLanguage;
@@ -69,6 +70,14 @@ impl<'a> SubtitleTrack<'a> {
         match self {
             Self::Stream(x) => x.language.as_deref(),
             Self::File(x) => x.language.as_deref(),
+        }
+    }
+
+    pub fn in_stream(&self, method: PlayMethod, profile: &CapabilityProfile) -> bool {
+        match (method, self) {
+            (PlayMethod::DirectPlay, Self::Stream(x)) => profile.subtitle_codecs.contains(&x.codec),
+            (PlayMethod::DirectPlay, Self::File(_)) => false,
+            (PlayMethod::Remux | PlayMethod::Transcode, x) => x.text(),
         }
     }
 
@@ -280,5 +289,44 @@ mod tests {
 
         assert_eq!(english, Some(files[0].id));
         assert_eq!(japanese, None);
+    }
+
+    #[test]
+    fn a_direct_play_carries_only_embedded_subtitles_the_profile_lists_and_hls_carries_every_text_subtitle()
+     {
+        let streams = streams(&[
+            REGULAR,
+            Subtitle {
+                codec: "hdmv_pgs_subtitle",
+                ..REGULAR
+            },
+        ]);
+        let files = [file("en", false)];
+        let tracks = SubtitleTrack::all(&streams, &files);
+        let google_tv = CapabilityProfile {
+            subtitle_codecs: vec!["hdmv_pgs_subtitle".to_owned()],
+            ..CapabilityProfile::default()
+        };
+
+        let in_stream = [
+            PlayMethod::DirectPlay,
+            PlayMethod::Remux,
+            PlayMethod::Transcode,
+        ]
+        .map(|method| {
+            tracks
+                .iter()
+                .map(|x| x.in_stream(method, &google_tv))
+                .collect::<Vec<_>>()
+        });
+
+        assert_eq!(
+            in_stream,
+            [
+                vec![false, true, false],
+                vec![true, false, true],
+                vec![true, false, true],
+            ]
+        );
     }
 }

@@ -8,7 +8,7 @@ use crate::ports::CachedImage;
 use crate::ports::Clock;
 use crate::ports::DeleteCachedImage;
 use crate::ports::EmailRefused;
-use crate::ports::EndHlsSession;
+use crate::ports::EndHlsOutput;
 use crate::ports::EpisodeFolder;
 use crate::ports::FindMediaFile;
 use crate::ports::FoundFile;
@@ -16,6 +16,7 @@ use crate::ports::FoundMediaFile;
 use crate::ports::FoundSubtitleFile;
 use crate::ports::GetRadarrMovie;
 use crate::ports::GetSonarrShow;
+use crate::ports::HlsOutput;
 use crate::ports::ImageFile;
 use crate::ports::ImageFormat;
 use crate::ports::ListCachedImages;
@@ -43,6 +44,7 @@ use crate::ports::SourceMediaFile;
 use crate::ports::SourceMovie;
 use crate::ports::SourceShow;
 use crate::ports::SourceShowListing;
+use crate::ports::StartHlsOutput;
 use crate::ports::UnreadableFile;
 use crate::ports::UnreadableNfo;
 use crate::ports::persistence;
@@ -56,6 +58,7 @@ use domain::EpisodeNfo;
 use domain::Movie;
 use domain::MovieNfo;
 use domain::PlayMethod;
+use domain::PlayReasonKind;
 use domain::Playback;
 use domain::RadarrId;
 use domain::Show;
@@ -126,14 +129,14 @@ impl RecordingLock {
 }
 
 #[derive(Clone, Default)]
-pub(crate) struct EndedHlsSessions {
+pub(crate) struct EndedHlsOutputs {
     playback_ids: Arc<Mutex<Vec<Uuid>>>,
 }
 
-impl EndedHlsSessions {
-    pub(crate) fn port(&self) -> EndHlsSession {
+impl EndedHlsOutputs {
+    pub(crate) fn port(&self) -> EndHlsOutput {
         let playback_ids = self.playback_ids.clone();
-        EndHlsSession::new(move |playback_id| {
+        EndHlsOutput::new(move |playback_id| {
             playback_ids.lock().unwrap().push(playback_id);
             Box::pin(async {})
         })
@@ -141,6 +144,34 @@ impl EndedHlsSessions {
 
     pub(crate) fn playback_ids(&self) -> Vec<Uuid> {
         self.playback_ids.lock().unwrap().clone()
+    }
+}
+
+#[derive(Clone, Default)]
+pub(crate) struct StartedHlsOutputs {
+    outputs: Arc<Mutex<Vec<HlsOutput>>>,
+}
+
+impl StartedHlsOutputs {
+    pub(crate) fn port(&self) -> StartHlsOutput {
+        let outputs = self.outputs.clone();
+        StartHlsOutput::new(move |output| {
+            outputs.lock().unwrap().push(output);
+            Box::pin(async { Ok(()) })
+        })
+    }
+
+    pub(crate) fn last(&self) -> HlsOutput {
+        self.outputs
+            .lock()
+            .unwrap()
+            .last()
+            .cloned()
+            .expect("an HLS output started")
+    }
+
+    pub(crate) fn count(&self) -> usize {
+        self.outputs.lock().unwrap().len()
     }
 }
 
@@ -284,9 +315,37 @@ pub(crate) fn playback(
         .media_file_id(Uuid::new_v4())
         .method(PlayMethod::DirectPlay)
         .position(0.0)
+        .duration(6981.0)
         .paused(false)
         .started_at(last_reported_at)
         .last_reported_at(last_reported_at)
+}
+
+pub(crate) async fn add_playback_reason(db_context: &mut DbContext, playback_id: Uuid) {
+    db_context
+        .playback_reasons()
+        .create()
+        .playback_id(playback_id)
+        .index(0)
+        .kind(PlayReasonKind::Container)
+        .value(Some("mkv".to_owned()))
+        .exec(db_context.executor_mut())
+        .await
+        .unwrap();
+}
+
+pub(crate) async fn playback_reason_owners(db_context: &mut DbContext) -> Vec<Uuid> {
+    let mut owners = db_context
+        .playback_reasons()
+        .all()
+        .exec(db_context.executor_mut())
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|x| x.playback_id)
+        .collect::<Vec<_>>();
+    owners.sort();
+    owners
 }
 
 pub(crate) async fn add_media_file(db_context: &DbContext, duration_ms: Option<i64>) -> Uuid {

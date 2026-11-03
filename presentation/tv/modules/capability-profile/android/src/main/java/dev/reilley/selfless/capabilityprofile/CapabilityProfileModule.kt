@@ -17,7 +17,16 @@ import expo.modules.kotlin.exception.Exceptions
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 
-private class VideoCandidate(val codec: String, val mimeType: String, val profiles: Map<Int, String>)
+private class VideoCandidate(
+  val codec: String,
+  val mimeType: String,
+  val profiles: Map<Int, String>,
+  val levels: List<Int>,
+)
+
+private val avcLevels = listOf(10, 9, 11, 12, 13, 20, 21, 22, 30, 31, 32, 40, 41, 42, 50, 51, 52, 60, 61, 62)
+
+private val hevcLevels = listOf(30, 60, 63, 90, 93, 120, 123, 150, 153, 156, 180, 183, 186)
 
 private val videoCandidates = listOf(
   VideoCandidate(
@@ -31,6 +40,7 @@ private val videoCandidates = listOf(
       CodecProfileLevel.AVCProfileHigh to "high",
       CodecProfileLevel.AVCProfileHigh10 to "high10",
     ),
+    avcLevels,
   ),
   VideoCandidate(
     "hevc",
@@ -41,6 +51,7 @@ private val videoCandidates = listOf(
       CodecProfileLevel.HEVCProfileMain10HDR10 to "main10",
       CodecProfileLevel.HEVCProfileMain10HDR10Plus to "main10",
     ),
+    hevcLevels.flatMap { listOf(it, it) },
   ),
   VideoCandidate(
     "av1",
@@ -51,10 +62,12 @@ private val videoCandidates = listOf(
       CodecProfileLevel.AV1ProfileMain10HDR10 to "main",
       CodecProfileLevel.AV1ProfileMain10HDR10Plus to "main",
     ),
+    (0..23).toList(),
   ),
 )
 
 private val tenBitProfiles = setOf(
+  CodecProfileLevel.AVCProfileHigh10,
   CodecProfileLevel.HEVCProfileMain10,
   CodecProfileLevel.HEVCProfileMain10HDR10,
   CodecProfileLevel.HEVCProfileMain10HDR10Plus,
@@ -134,21 +147,35 @@ private fun videoSupport(candidate: VideoCandidate, decoders: List<MediaCodecInf
     return null
   }
   val tenBit = profileLevels.any { it in tenBitProfiles }
-  val dolbyVision = candidate.codec == "hevc" &&
+  val maxLevel = capabilities
+    .flatMap { it.profileLevels.asList() }
+    .filter { it.profile in candidate.profiles }
+    .mapNotNull { candidate.levels.getOrNull(Integer.numberOfTrailingZeros(it.level)) }
+    .maxOrNull() ?: 0
+  val dolbyVisionProfiles = if (candidate.codec == "hevc" && HdrCapabilities.HDR_TYPE_DOLBY_VISION in displayHdrTypes) {
     decodersFor(decoders, MimeTypes.VIDEO_DOLBY_VISION)
-      .any { decoder -> decoder.profileLevels.any { it.profile == CodecProfileLevel.DolbyVisionProfileDvheSt } }
+      .flatMap { it.profileLevels.asList() }
+      .map { Integer.numberOfTrailingZeros(it.profile) }
+      .distinct()
+      .sorted()
+  } else {
+    emptyList()
+  }
   val hdrTypes = listOfNotNull(
     "sdr",
     "hdr10".takeIf { tenBit && HdrCapabilities.HDR_TYPE_HDR10 in displayHdrTypes },
     "hlg".takeIf { tenBit && HdrCapabilities.HDR_TYPE_HLG in displayHdrTypes },
-    "dolbyVision".takeIf { dolbyVision && HdrCapabilities.HDR_TYPE_DOLBY_VISION in displayHdrTypes },
+    "dolbyVision".takeIf { dolbyVisionProfiles.isNotEmpty() },
   )
   return mapOf(
     "codec" to candidate.codec,
     "profiles" to profiles,
+    "maxLevel" to maxLevel,
     "maxWidth" to size.first,
     "maxHeight" to size.second,
+    "bitDepths" to if (tenBit) listOf(8, 10) else listOf(8),
     "hdrTypes" to hdrTypes,
+    "dolbyVisionProfiles" to dolbyVisionProfiles,
   )
 }
 

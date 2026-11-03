@@ -9,6 +9,7 @@ use std::io;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Stdio;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::fs;
 use tokio::io::AsyncBufReadExt;
@@ -107,155 +108,166 @@ impl Segments {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-pub async fn write_segments(
-    input: &Path,
-    video: &VideoStream,
-    video_transcode: Option<&VideoTranscode>,
-    audio: &[HlsAudioTrack],
-    subtitles: &[SubtitleStream],
-    segments: &Segments,
-    segment: usize,
-    folder: &Path,
-    written: &watch::Sender<usize>,
-) -> io::Result<()> {
-    let first = segments.starts[segment];
-    let start = if segment == 0 { Duration::ZERO } else { first };
-    let cuts = segments.starts[segment + 1..]
-        .iter()
-        .map(|x| seconds(*x - first))
-        .collect::<Vec<_>>()
-        .join(",");
-    let segment_output = |command: &mut Command, pattern: &str| {
-        command
-            .args(["-copypriorss", "0", "-avoid_negative_ts", "disabled"])
-            .args(["-f", "segment", "-segment_format", "mp4"])
-            .args(["-segment_format_options", SEGMENT_FORMAT_OPTIONS])
-            .args(["-segment_times", &cuts, "-segment_time_delta", "0.001"])
-            .args(["-segment_start_number", &segment.to_string()])
-            .args(["-segment_list", "pipe:1", "-segment_list_type", "flat"])
-            .arg(folder.join(pattern));
-    };
-    let mut command = Command::new("ffmpeg");
-    command.args(["-hide_banner", "-nostdin", "-nostats", "-loglevel", "error"]);
-    let hardware_decoded = match video.codec.as_str() {
-        "h264" => video
-            .profile
-            .as_deref()
-            .is_some_and(|x| HARDWARE_DECODED_H264_PROFILES.contains(&x)),
-        codec => HARDWARE_DECODED_CODECS.contains(&codec),
-    };
-    if video_transcode.is_some() {
-        command
-            .args(["-init_hw_device", "vaapi=va:/dev/dri/renderD128,driver=iHD"])
-            .args(["-init_hw_device", "qsv=qs@va", "-filter_hw_device", "qs"]);
-        if hardware_decoded {
-            command.args(["-hwaccel", "vaapi", "-hwaccel_output_format", "vaapi"]);
-        }
-    }
-    command
-        .args(["-ss", &seconds(start), "-copyts", "-i"])
-        .arg(input)
-        .args(["-map", &format!("0:{}", video.index)]);
-    match video_transcode {
-        Some(transcode) => {
-            let mut filter = if hardware_decoded {
-                "hwmap=derive_device=qsv".to_owned()
-            } else {
-                "format=nv12,hwupload=extra_hw_frames=64".to_owned()
-            };
-            filter.push_str(&format!(
-                ",vpp_qsv=w={}:h={}:format=nv12",
-                transcode.width, transcode.height
-            ));
-            if transcode.deinterlace {
-                filter.push_str(":deinterlace=2");
+#[derive(Clone)]
+pub struct SegmentWriter {
+    pub input: PathBuf,
+    pub video: VideoStream,
+    pub video_transcode: Option<VideoTranscode>,
+    pub audio: Vec<HlsAudioTrack>,
+    pub subtitles: Vec<SubtitleStream>,
+    pub segments: Arc<Segments>,
+    pub folder: PathBuf,
+}
+
+impl SegmentWriter {
+    pub async fn write(&self, segment: usize, written: &watch::Sender<usize>) -> io::Result<()> {
+        let Self {
+            input,
+            video,
+            video_transcode,
+            audio,
+            subtitles,
+            segments,
+            folder,
+        } = self;
+        let first = segments.starts[segment];
+        let start = if segment == 0 { Duration::ZERO } else { first };
+        let cuts = segments.starts[segment + 1..]
+            .iter()
+            .map(|x| seconds(*x - first))
+            .collect::<Vec<_>>()
+            .join(",");
+        let segment_output = |command: &mut Command, pattern: &str| {
+            command
+                .args(["-copypriorss", "0", "-avoid_negative_ts", "disabled"])
+                .args(["-f", "segment", "-segment_format", "mp4"])
+                .args(["-segment_format_options", SEGMENT_FORMAT_OPTIONS])
+                .args(["-segment_times", &cuts, "-segment_time_delta", "0.001"])
+                .args(["-segment_start_number", &segment.to_string()])
+                .args(["-segment_list", "pipe:1", "-segment_list_type", "flat"])
+                .arg(folder.join(pattern));
+        };
+        let mut command = Command::new("ffmpeg");
+        command.args(["-hide_banner", "-nostdin", "-nostats", "-loglevel", "error"]);
+        let hardware_decoded = match video.codec.as_str() {
+            "h264" => video
+                .profile
+                .as_deref()
+                .is_some_and(|x| HARDWARE_DECODED_H264_PROFILES.contains(&x)),
+            codec => HARDWARE_DECODED_CODECS.contains(&codec),
+        };
+        if video_transcode.is_some() {
+            command
+                .args(["-init_hw_device", "vaapi=va:/dev/dri/renderD128,driver=iHD"])
+                .args(["-init_hw_device", "qsv=qs@va", "-filter_hw_device", "qs"]);
+            if hardware_decoded {
+                command.args(["-hwaccel", "vaapi", "-hwaccel_output_format", "vaapi"]);
             }
-            if transcode.tone_map {
-                filter.push_str(
+        }
+        command
+            .args(["-ss", &seconds(start), "-copyts", "-i"])
+            .arg(input)
+            .args(["-map", &format!("0:{}", video.index)]);
+        match video_transcode {
+            Some(transcode) => {
+                let mut filter = if hardware_decoded {
+                    "hwmap=derive_device=qsv".to_owned()
+                } else {
+                    "format=nv12,hwupload=extra_hw_frames=64".to_owned()
+                };
+                filter.push_str(&format!(
+                    ",vpp_qsv=w={}:h={}:format=nv12",
+                    transcode.width, transcode.height
+                ));
+                if transcode.deinterlace {
+                    filter.push_str(":deinterlace=2");
+                }
+                if transcode.tone_map {
+                    filter.push_str(
                     ":tonemap=1:out_color_matrix=bt709:out_color_primaries=bt709:out_color_transfer=bt709",
                 );
+                }
+                let gop = gop(video.frame_rate.unwrap_or(DEFAULT_FRAME_RATE)).to_string();
+                command
+                    .args(["-vf", &filter, "-c:v", "h264_qsv", "-low_power", "1"])
+                    .args(["-preset", "veryfast", "-profile:v", "high"])
+                    .args(["-b:v", &transcode.bit_rate.to_string()])
+                    .args(["-maxrate", &transcode.bit_rate.to_string()])
+                    .args(["-bufsize", &(transcode.bit_rate * 2).to_string()])
+                    .args(["-g", &gop, "-keyint_min", &gop, "-bf", "0"]);
             }
-            let gop = gop(video.frame_rate.unwrap_or(DEFAULT_FRAME_RATE)).to_string();
+            None => {
+                command.args(["-c", "copy"]);
+                if video.codec == "hevc" {
+                    command.args(["-tag:v", "hvc1"]);
+                }
+            }
+        }
+        segment_output(&mut command, "%d.mp4");
+        let mut progress = HashMap::from([(String::new(), segment)]);
+        for (rendition, track) in audio.iter().enumerate() {
+            command.args(["-map", &format!("0:{}", track.stream.index)]);
+            match track.transcode {
+                None => command.args(["-c", "copy"]),
+                Some(transcode) => command.args([
+                    "-c",
+                    match transcode.codec {
+                        AudioTranscodeCodec::Eac3 => "eac3",
+                        AudioTranscodeCodec::Aac => "aac",
+                    },
+                    "-ac",
+                    &transcode.channels.to_string(),
+                ]),
+            };
+            command.args(["-bsf:a", "noise=drop=lt(pts\\,0)"]);
+            segment_output(&mut command, &format!("{AUDIO}-{rendition}-%d.mp4"));
+            progress.insert(format!("{AUDIO}-{rendition}"), segment);
+        }
+        let subtitle_runs = (0..subtitles.len())
+            .map(|x| folder.join(format!("subtitles-{x}-from-{segment}.webvtt")))
+            .collect::<Vec<_>>();
+        for (subtitle, run) in subtitles.iter().zip(&subtitle_runs) {
             command
-                .args(["-vf", &filter, "-c:v", "h264_qsv", "-low_power", "1"])
-                .args(["-preset", "veryfast", "-profile:v", "high"])
-                .args(["-b:v", &transcode.bit_rate.to_string()])
-                .args(["-maxrate", &transcode.bit_rate.to_string()])
-                .args(["-bufsize", &(transcode.bit_rate * 2).to_string()])
-                .args(["-g", &gop, "-keyint_min", &gop, "-bf", "0"]);
+                .args(["-map", &format!("0:{}", subtitle.index), "-c:s", "webvtt"])
+                .args(["-flush_packets", "1", "-f", "webvtt"])
+                .arg(run);
         }
-        None => {
-            command.args(["-c", "copy"]);
-            if video.codec == "hevc" {
-                command.args(["-tag:v", "hvc1"]);
+        let mut child = command
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .inspect_err(|_| {
+                Span::current().record("otel.status_code", "ERROR");
+                Span::current().record("error.type", "spawn");
+            })?;
+        let mut finished = BufReader::new(child.stdout.take().expect("stdout is piped")).lines();
+        let mut last = HashMap::new();
+        while let Some(next) = finished.next_line().await? {
+            let (rendition, _) = segment_name(&next)?;
+            if let Some(name) = last.insert(rendition.to_owned(), next) {
+                finish_segment(folder, &name, &subtitle_runs, segments, &mut progress).await?;
+                written.send_replace(progress.values().copied().min().unwrap_or(segment));
             }
         }
-    }
-    segment_output(&mut command, "%d.mp4");
-    let mut progress = HashMap::from([(String::new(), segment)]);
-    for (rendition, track) in audio.iter().enumerate() {
-        command.args(["-map", &format!("0:{}", track.stream.index)]);
-        match track.transcode {
-            None => command.args(["-c", "copy"]),
-            Some(transcode) => command.args([
-                "-c",
-                match transcode.codec {
-                    AudioTranscodeCodec::Eac3 => "eac3",
-                    AudioTranscodeCodec::Aac => "aac",
-                },
-                "-ac",
-                &transcode.channels.to_string(),
-            ]),
-        };
-        command.args(["-bsf:a", "noise=drop=lt(pts\\,0)"]);
-        segment_output(&mut command, &format!("{AUDIO}-{rendition}-%d.mp4"));
-        progress.insert(format!("{AUDIO}-{rendition}"), segment);
-    }
-    let subtitle_runs = (0..subtitles.len())
-        .map(|x| folder.join(format!("subtitles-{x}-from-{segment}.webvtt")))
-        .collect::<Vec<_>>();
-    for (subtitle, run) in subtitles.iter().zip(&subtitle_runs) {
-        command
-            .args(["-map", &format!("0:{}", subtitle.index), "-c:s", "webvtt"])
-            .args(["-flush_packets", "1", "-f", "webvtt"])
-            .arg(run);
-    }
-    let mut child = command
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()
-        .inspect_err(|_| {
-            Span::current().record("otel.status_code", "ERROR");
-            Span::current().record("error.type", "spawn");
-        })?;
-    let mut finished = BufReader::new(child.stdout.take().expect("stdout is piped")).lines();
-    let mut last = HashMap::new();
-    while let Some(next) = finished.next_line().await? {
-        let (rendition, _) = segment_name(&next)?;
-        if let Some(name) = last.insert(rendition.to_owned(), next) {
-            finish_segment(folder, &name, &subtitle_runs, segments, &mut progress).await?;
-            written.send_replace(progress.values().copied().min().unwrap_or(segment));
+        let output = child.wait_with_output().await?;
+        if let Some(code) = output.status.code() {
+            Span::current().record("process.exit.code", code);
         }
+        if !output.status.success() {
+            Span::current().record("otel.status_code", "ERROR");
+            Span::current().record("error.type", "exit");
+            return Err(io::Error::other(
+                String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+            ));
+        }
+        for name in last.into_values() {
+            finish_segment(folder, &name, &subtitle_runs, segments, &mut progress).await?;
+        }
+        written.send_replace(progress.values().copied().min().unwrap_or(segment));
+        Ok(())
     }
-    let output = child.wait_with_output().await?;
-    if let Some(code) = output.status.code() {
-        Span::current().record("process.exit.code", code);
-    }
-    if !output.status.success() {
-        Span::current().record("otel.status_code", "ERROR");
-        Span::current().record("error.type", "exit");
-        return Err(io::Error::other(
-            String::from_utf8_lossy(&output.stderr).trim().to_owned(),
-        ));
-    }
-    for name in last.into_values() {
-        finish_segment(folder, &name, &subtitle_runs, segments, &mut progress).await?;
-    }
-    written.send_replace(progress.values().copied().min().unwrap_or(segment));
-    Ok(())
 }
 
 const AUDIO: &str = "audio";
@@ -357,10 +369,10 @@ fn seconds(duration: Duration) -> String {
 
 #[cfg(test)]
 mod tests {
+    use super::SegmentWriter;
     use super::Segments;
     use super::audio_init;
     use super::audio_segment;
-    use super::write_segments;
     use crate::keyframes::read_keyframes;
     use application::ports::AudioStream;
     use application::ports::HlsAudioTrack;
@@ -371,6 +383,7 @@ mod tests {
     use mp4_atom::Any;
     use mp4_atom::Decode;
     use std::path::Path;
+    use std::sync::Arc;
     use std::time::Duration;
     use tempfile::TempDir;
 
@@ -518,7 +531,7 @@ mod tests {
         audio_codec: &str,
         transcode: Option<AudioTranscode>,
         segment: usize,
-    ) -> (Segments, TempDir) {
+    ) -> (Arc<Segments>, TempDir) {
         let input = fixture(name);
         let keyframes = read_keyframes(&input).await.unwrap();
         let segments = Segments::new(&keyframes, FIXTURE_DURATION);
@@ -527,10 +540,14 @@ mod tests {
             index: 0,
             codec: "h264".to_owned(),
             profile: Some("High".to_owned()),
+            level: None,
+            bit_depth: None,
             width: 160,
             height: 90,
             frame_rate: Some(25.0),
             hdr_type: HdrType::Sdr,
+            dolby_vision_profile: None,
+            dolby_vision_compatibility_id: None,
             interlaced: false,
             bit_rate: None,
         };
@@ -546,20 +563,20 @@ mod tests {
             transcode,
             selected: true,
         };
-        write_segments(
-            &input,
-            &video,
-            None,
-            &[audio],
-            &[],
-            &segments,
-            segment,
-            folder.path(),
-            &tokio::sync::watch::channel(segment).0,
-        )
-        .await
-        .unwrap();
-        (segments, folder)
+        let writer = SegmentWriter {
+            input,
+            video,
+            video_transcode: None,
+            audio: vec![audio],
+            subtitles: Vec::new(),
+            segments: Arc::new(segments),
+            folder: folder.path().to_owned(),
+        };
+        writer
+            .write(segment, &tokio::sync::watch::channel(segment).0)
+            .await
+            .unwrap();
+        (writer.segments, folder)
     }
 
     async fn assert_remux_matches_the_playlist(name: &str, audio_codec: &str) {

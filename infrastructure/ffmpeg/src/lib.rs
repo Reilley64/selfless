@@ -16,16 +16,18 @@ use tracing::Instrument;
 use tracing::field;
 
 mod hls;
-mod hls_sessions;
+mod hls_outputs;
 mod keyframes;
 mod matroska;
 mod mp4;
 mod rendition;
 mod subtitles;
 
-pub use hls_sessions::HlsSessions;
+pub use hls_outputs::HlsOutputs;
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(120);
+
+const HIGH_BIT_DEPTHS: [i64; 4] = [9, 10, 12, 16];
 
 const IMAGE_SUBTITLE_CODECS: [&str; 4] =
     ["hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle", "xsub"];
@@ -129,24 +131,7 @@ struct Format {
 #[derive(Deserialize)]
 #[serde(tag = "codec_type", rename_all = "lowercase")]
 enum Stream {
-    Video {
-        index: i64,
-        codec_name: String,
-        profile: Option<String>,
-        width: i64,
-        height: i64,
-        avg_frame_rate: Option<String>,
-        r_frame_rate: Option<String>,
-        color_transfer: Option<String>,
-        field_order: Option<String>,
-        bit_rate: Option<String>,
-        #[serde(default)]
-        tags: Tags,
-        #[serde(default)]
-        side_data_list: Vec<SideData>,
-        #[serde(default)]
-        disposition: Disposition,
-    },
+    Video(Box<VideoJson>),
     Audio {
         index: i64,
         codec_name: String,
@@ -169,8 +154,33 @@ enum Stream {
 }
 
 #[derive(Deserialize)]
+struct VideoJson {
+    index: i64,
+    codec_name: String,
+    profile: Option<String>,
+    level: Option<i64>,
+    pix_fmt: Option<String>,
+    bits_per_raw_sample: Option<String>,
+    width: i64,
+    height: i64,
+    avg_frame_rate: Option<String>,
+    r_frame_rate: Option<String>,
+    color_transfer: Option<String>,
+    field_order: Option<String>,
+    bit_rate: Option<String>,
+    #[serde(default)]
+    tags: Tags,
+    #[serde(default)]
+    side_data_list: Vec<SideData>,
+    #[serde(default)]
+    disposition: Disposition,
+}
+
+#[derive(Deserialize)]
 struct SideData {
     side_data_type: String,
+    dv_profile: Option<i64>,
+    dv_bl_signal_compatibility_id: Option<i64>,
 }
 
 #[derive(Default, Deserialize)]
@@ -215,53 +225,58 @@ fn parse(output: &[u8]) -> Result<Probe, ProbeError> {
     };
     for stream in output.streams {
         match stream {
-            Stream::Video {
-                disposition: Disposition {
-                    attached_pic: 1, ..
-                },
-                ..
+            Stream::Video(video) if video.disposition.attached_pic == 1 => {}
+            Stream::Other => {}
+            Stream::Video(video) => {
+                let VideoJson {
+                    index,
+                    codec_name,
+                    profile,
+                    level,
+                    pix_fmt,
+                    bits_per_raw_sample,
+                    width,
+                    height,
+                    avg_frame_rate,
+                    r_frame_rate,
+                    color_transfer,
+                    field_order,
+                    bit_rate,
+                    tags,
+                    side_data_list,
+                    ..
+                } = *video;
+                let dolby_vision = side_data_list
+                    .iter()
+                    .find(|x| x.side_data_type == "DOVI configuration record");
+                probe.video_streams.push(VideoStream {
+                    index,
+                    codec: codec_name,
+                    profile,
+                    level: level.filter(|x| *x > 0),
+                    bit_depth: bits_per_raw_sample
+                        .and_then(|x| x.parse().ok())
+                        .or_else(|| pix_fmt.as_deref().map(bit_depth)),
+                    width,
+                    height,
+                    frame_rate: [avg_frame_rate, r_frame_rate]
+                        .iter()
+                        .find_map(|x| frame_rate(x.as_deref()?)),
+                    hdr_type: match (dolby_vision, color_transfer.as_deref()) {
+                        (Some(_), _) => HdrType::DolbyVision,
+                        (None, Some("smpte2084")) => HdrType::Hdr10,
+                        (None, Some("arib-std-b67")) => HdrType::Hlg,
+                        (None, _) => HdrType::Sdr,
+                    },
+                    dolby_vision_profile: dolby_vision.and_then(|x| x.dv_profile),
+                    dolby_vision_compatibility_id: dolby_vision
+                        .and_then(|x| x.dv_bl_signal_compatibility_id),
+                    interlaced: matches!(field_order.as_deref(), Some("tt" | "bb" | "tb" | "bt")),
+                    bit_rate: [bit_rate, tags.bps]
+                        .into_iter()
+                        .find_map(|x| x?.parse().ok()),
+                });
             }
-            | Stream::Other => {}
-            Stream::Video {
-                index,
-                codec_name,
-                profile,
-                width,
-                height,
-                avg_frame_rate,
-                r_frame_rate,
-                color_transfer,
-                field_order,
-                bit_rate,
-                tags,
-                side_data_list,
-                ..
-            } => probe.video_streams.push(VideoStream {
-                index,
-                codec: codec_name,
-                profile,
-                width,
-                height,
-                frame_rate: [avg_frame_rate, r_frame_rate]
-                    .iter()
-                    .find_map(|x| frame_rate(x.as_deref()?)),
-                hdr_type: if side_data_list
-                    .iter()
-                    .any(|x| x.side_data_type == "DOVI configuration record")
-                {
-                    HdrType::DolbyVision
-                } else {
-                    match color_transfer.as_deref() {
-                        Some("smpte2084") => HdrType::Hdr10,
-                        Some("arib-std-b67") => HdrType::Hlg,
-                        _ => HdrType::Sdr,
-                    }
-                },
-                interlaced: matches!(field_order.as_deref(), Some("tt" | "bb" | "tb" | "bt")),
-                bit_rate: [bit_rate, tags.bps]
-                    .into_iter()
-                    .find_map(|x| x?.parse().ok()),
-            }),
             Stream::Audio {
                 index,
                 codec_name,
@@ -294,6 +309,20 @@ fn parse(output: &[u8]) -> Result<Probe, ProbeError> {
         }
     }
     Ok(probe)
+}
+
+fn bit_depth(pixel_format: &str) -> i64 {
+    let digits = pixel_format
+        .trim_end_matches("le")
+        .trim_end_matches("be")
+        .rsplit(|x: char| !x.is_ascii_digit())
+        .next()
+        .unwrap_or_default();
+    digits
+        .parse()
+        .ok()
+        .filter(|x| HIGH_BIT_DEPTHS.contains(x))
+        .unwrap_or(8)
 }
 
 fn frame_rate(rational: &str) -> Option<f64> {
@@ -342,10 +371,14 @@ mod tests {
                     index: 0,
                     codec: "hevc".to_owned(),
                     profile: Some("Main 10".to_owned()),
+                    level: Some(60),
+                    bit_depth: Some(10),
                     width: 320,
                     height: 134,
                     frame_rate: Some(24000.0 / 1001.0),
                     hdr_type: HdrType::Hdr10,
+                    dolby_vision_profile: None,
+                    dolby_vision_compatibility_id: None,
                     interlaced: false,
                     bit_rate: None,
                 }],
@@ -406,10 +439,14 @@ mod tests {
                     index: 0,
                     codec: "h264".to_owned(),
                     profile: Some("High".to_owned()),
+                    level: Some(12),
+                    bit_depth: Some(8),
                     width: 320,
                     height: 180,
                     frame_rate: Some(25.0),
                     hdr_type: HdrType::Sdr,
+                    dolby_vision_profile: None,
+                    dolby_vision_compatibility_id: None,
                     interlaced: false,
                     bit_rate: Some(227_660),
                 }],
@@ -454,10 +491,14 @@ mod tests {
                 index: 0,
                 codec: "mpeg2video".to_owned(),
                 profile: Some("Main".to_owned()),
+                level: Some(8),
+                bit_depth: Some(8),
                 width: 720,
                 height: 480,
                 frame_rate: Some(30000.0 / 1001.0),
                 hdr_type: HdrType::Sdr,
+                dolby_vision_profile: None,
+                dolby_vision_compatibility_id: None,
                 interlaced: true,
                 bit_rate: Some(5_982_144),
             }]
@@ -465,13 +506,23 @@ mod tests {
     }
 
     #[test]
-    fn a_dolby_vision_video_has_the_dolby_vision_hdr_type() {
+    fn a_dolby_vision_video_has_the_dolby_vision_hdr_type_with_its_profile_and_base_layer() {
         let probe = parse(include_bytes!(
             "../../../test/fixtures/ffprobe/dolby-vision.mp4.json"
         ))
         .unwrap();
 
-        assert_eq!(probe.video_streams[0].hdr_type, HdrType::DolbyVision);
+        let video = &probe.video_streams[0];
+        assert_eq!(
+            (
+                video.hdr_type,
+                video.dolby_vision_profile,
+                video.dolby_vision_compatibility_id,
+                video.level,
+                video.bit_depth,
+            ),
+            (HdrType::DolbyVision, Some(8), Some(1), Some(120), Some(10))
+        );
         assert_eq!(probe.video_streams[0].width, 1920);
         assert_eq!(probe.video_streams[0].height, 1080);
     }

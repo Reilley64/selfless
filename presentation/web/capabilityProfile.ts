@@ -1,16 +1,27 @@
 import type { AudioCodecSupport, CapabilityProfile, HdrType, VideoCodecSupport } from "@selfless/api-client";
 
-type VideoCandidate = { codec: string; profiles: string[]; contentType: string; tenBit: boolean };
+type VideoCandidate = { codec: string; profiles: string[]; contentType: string; level: number; bitDepth: number };
 
 const videoCandidates: VideoCandidate[] = [
-  { codec: "h264", profiles: ["constrainedbaseline", "baseline"], contentType: 'video/mp4; codecs="avc1.42E01E"', tenBit: false },
-  { codec: "h264", profiles: ["main"], contentType: 'video/mp4; codecs="avc1.4D4028"', tenBit: false },
-  { codec: "h264", profiles: ["high"], contentType: 'video/mp4; codecs="avc1.640033"', tenBit: false },
-  { codec: "hevc", profiles: ["main"], contentType: 'video/mp4; codecs="hvc1.1.6.L153.B0"', tenBit: false },
-  { codec: "hevc", profiles: ["main10"], contentType: 'video/mp4; codecs="hvc1.2.4.L153.B0"', tenBit: true },
-  { codec: "vp9", profiles: ["profile0"], contentType: 'video/webm; codecs="vp09.00.51.08"', tenBit: false },
-  { codec: "vp9", profiles: ["profile2"], contentType: 'video/webm; codecs="vp09.02.51.10"', tenBit: true },
-  { codec: "av1", profiles: ["main"], contentType: 'video/mp4; codecs="av01.0.13M.10"', tenBit: true },
+  {
+    codec: "h264",
+    profiles: ["constrainedbaseline", "baseline"],
+    contentType: 'video/mp4; codecs="avc1.42E01E"',
+    level: 30,
+    bitDepth: 8,
+  },
+  { codec: "h264", profiles: ["main"], contentType: 'video/mp4; codecs="avc1.4D4028"', level: 40, bitDepth: 8 },
+  { codec: "h264", profiles: ["high"], contentType: 'video/mp4; codecs="avc1.640033"', level: 51, bitDepth: 8 },
+  { codec: "hevc", profiles: ["main"], contentType: 'video/mp4; codecs="hvc1.1.6.L153.B0"', level: 153, bitDepth: 8 },
+  { codec: "hevc", profiles: ["main10"], contentType: 'video/mp4; codecs="hvc1.2.4.L153.B0"', level: 153, bitDepth: 10 },
+  { codec: "vp9", profiles: ["profile0"], contentType: 'video/webm; codecs="vp09.00.51.08"', level: 51, bitDepth: 8 },
+  { codec: "vp9", profiles: ["profile2"], contentType: 'video/webm; codecs="vp09.02.51.10"', level: 51, bitDepth: 10 },
+  { codec: "av1", profiles: ["main"], contentType: 'video/mp4; codecs="av01.0.13M.10"', level: 13, bitDepth: 10 },
+];
+
+const dolbyVisionCandidates = [
+  { profile: 5, contentType: 'video/mp4; codecs="dvh1.05.06"' },
+  { profile: 8, contentType: 'video/mp4; codecs="dvh1.08.06"' },
 ];
 
 const sizes = [
@@ -22,6 +33,8 @@ const hdrCandidates: { hdrType: HdrType; transferFunction: TransferFunction; hdr
   { hdrType: "hdr10", transferFunction: "pq", hdrMetadataType: "smpteSt2086" },
   { hdrType: "hlg", transferFunction: "hlg" },
 ];
+
+const dolbyVisionRange = { transferFunction: "pq" as const };
 
 const audioCandidates = [
   { codec: "aac", contentType: 'audio/mp4; codecs="mp4a.40.2"' },
@@ -40,7 +53,11 @@ function supported(configuration: MediaDecodingConfiguration) {
   );
 }
 
-function video(contentType: string, size: (typeof sizes)[number], hdr?: (typeof hdrCandidates)[number]) {
+function video(
+  contentType: string,
+  size: (typeof sizes)[number],
+  hdr?: { transferFunction: TransferFunction; hdrMetadataType?: HdrMetadataType },
+) {
   return supported({
     type: "file",
     video: {
@@ -60,14 +77,25 @@ async function videoSupport(candidate: VideoCandidate, highDynamicRange: boolean
   if (!size) {
     return undefined;
   }
-  const hdr = highDynamicRange && candidate.tenBit ? hdrCandidates : [];
+  const tenBit = candidate.bitDepth === 10;
+  const hdr = highDynamicRange && tenBit ? hdrCandidates : [];
   const hdrFits = await Promise.all(hdr.map((x) => video(candidate.contentType, size, x)));
+  const dolbyVision = highDynamicRange && tenBit && candidate.codec === "hevc" ? dolbyVisionCandidates : [];
+  const dolbyVisionFits = await Promise.all(dolbyVision.map((x) => video(x.contentType, size, dolbyVisionRange)));
+  const dolbyVisionProfiles = dolbyVision.filter((_, index) => dolbyVisionFits[index]).map((x) => x.profile);
   return {
     codec: candidate.codec,
     profiles: candidate.profiles,
+    maxLevel: candidate.level,
     maxWidth: size.width,
     maxHeight: size.height,
-    hdrTypes: ["sdr", ...hdr.filter((_, index) => hdrFits[index]).map((x) => x.hdrType)],
+    bitDepths: [candidate.bitDepth],
+    hdrTypes: [
+      "sdr",
+      ...hdr.filter((_, index) => hdrFits[index]).map((x) => x.hdrType),
+      ...(dolbyVisionProfiles.length > 0 ? (["dolbyVision"] as const) : []),
+    ],
+    dolbyVisionProfiles,
   } satisfies VideoCodecSupport;
 }
 
@@ -79,9 +107,12 @@ export async function capabilityProfile(): Promise<CapabilityProfile> {
     const same = support && videoCodecs.find((x) => x.codec === support.codec);
     if (same) {
       same.profiles.push(...support.profiles);
+      same.maxLevel = Math.max(same.maxLevel, support.maxLevel);
       same.maxWidth = Math.max(same.maxWidth, support.maxWidth);
       same.maxHeight = Math.max(same.maxHeight, support.maxHeight);
+      same.bitDepths = [...new Set([...same.bitDepths, ...support.bitDepths])];
       same.hdrTypes = [...new Set([...same.hdrTypes, ...support.hdrTypes])];
+      same.dolbyVisionProfiles = [...new Set([...same.dolbyVisionProfiles, ...support.dolbyVisionProfiles])];
     } else if (support) {
       videoCodecs.push({ ...support, profiles: [...support.profiles] });
     }
