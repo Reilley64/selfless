@@ -124,6 +124,12 @@ pub(crate) enum InspectedMovie {
     Unreadable(UnreadableFile),
 }
 
+impl InspectedMovie {
+    pub(crate) fn unreadable(&self) -> bool {
+        matches!(self, InspectedMovie::Unreadable(_))
+    }
+}
+
 pub(crate) async fn inspect(
     files: &MovieFiles,
     stored_file: Option<&MediaFile>,

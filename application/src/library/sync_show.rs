@@ -122,6 +122,12 @@ pub(crate) enum InspectedShow {
     Unreadable(UnreadableFile),
 }
 
+impl InspectedShow {
+    pub(crate) fn unreadable(&self) -> bool {
+        matches!(self, InspectedShow::Unreadable(_))
+    }
+}
+
 pub(crate) async fn inspect(
     db_context: &mut DbContext,
     files: &ShowFiles,

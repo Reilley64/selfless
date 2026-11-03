@@ -134,6 +134,13 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
                 source.name()
             )));
         }
+        if listing.unreadable_items > 0 {
+            return Err(Error::caused_by(format!(
+                "{} items from {} had unreadable files, so nothing was removed",
+                listing.unreadable_items,
+                source.name()
+            )));
+        }
         remove_or_hold(&mut db_context, source, &listing).await
     }
     .instrument(span.clone())
@@ -208,6 +215,7 @@ struct Listing {
     total: usize,
     absent: Vec<Uuid>,
     failed_calls: usize,
+    unreadable_items: usize,
 }
 
 async fn sync_movies(
@@ -270,8 +278,10 @@ async fn sync_movies(
             }
         })
         .buffered(CONCURRENT_PROBES);
+    let mut unreadable_items = 0;
     while let Some((radarr_movie, inspected, span)) = inspections.next().await {
         let inspected = inspected.map_err(Error::caused_by)?;
+        unreadable_items += usize::from(inspected.unreadable());
         sync_movie::save(db_context, radarr_movie, inspected)
             .instrument(span)
             .await
@@ -283,6 +293,7 @@ async fn sync_movies(
         total,
         absent,
         failed_calls: 0,
+        unreadable_items,
     })
 }
 
@@ -312,6 +323,7 @@ async fn sync_shows(
         .map(|x| x.id)
         .collect();
     let mut failed_calls = 0;
+    let mut unreadable_items = 0;
     for listing in listings {
         let span = sync_show::span();
         let episodes = get_sonarr_episodes
@@ -325,7 +337,8 @@ async fn sync_shows(
                     .instrument(span.clone())
                     .await
                     .map_err(Error::caused_by)?;
-                        sync_show::save(db_context, sonarr_show, inspected)
+                unreadable_items += usize::from(inspected.unreadable());
+                sync_show::save(db_context, sonarr_show, inspected)
                     .instrument(span)
                     .await
                     .map_err(Error::caused_by)?;
@@ -347,6 +360,7 @@ async fn sync_shows(
         total,
         absent,
         failed_calls,
+        unreadable_items,
     })
 }
 
@@ -817,6 +831,52 @@ mod tests {
         let failed = library.reconcile(Source::Sonarr).await;
         let after_failure = library.show_titles().await;
         library.failing_episodes.lock().unwrap().clear();
+        let succeeded = library.reconcile(Source::Sonarr).await;
+
+        assert_eq!(failed, Some(ReconcileResult::Failed));
+        assert_eq!(after_failure, ["Andor", "Severance"]);
+        assert_eq!(succeeded, Some(ReconcileResult::Succeeded));
+        assert_eq!(library.show_titles().await, ["Severance"]);
+    }
+
+    #[tokio::test]
+    async fn an_unreadable_movie_file_removes_no_movie_until_it_can_be_read() {
+        let library = Library::new().await;
+        library.radarr_lists(&[ARRIVAL, DUNE, SICARIO]);
+        library.reconcile(Source::Radarr).await;
+
+        library.radarr_lists(&[ARRIVAL, DUNE]);
+        library
+            .unreadable_files
+            .lock()
+            .unwrap()
+            .insert("/movies/Arrival.mkv".to_owned());
+        let failed = library.reconcile(Source::Radarr).await;
+        let after_failure = movie_titles(&library.db_context).await;
+        library.unreadable_files.lock().unwrap().clear();
+        let succeeded = library.reconcile(Source::Radarr).await;
+
+        assert_eq!(failed, Some(ReconcileResult::Failed));
+        assert_eq!(after_failure, ["Arrival", "Dune", "Sicario"]);
+        assert_eq!(succeeded, Some(ReconcileResult::Succeeded));
+        assert_eq!(movie_titles(&library.db_context).await, ["Arrival", "Dune"]);
+    }
+
+    #[tokio::test]
+    async fn an_unreadable_episode_file_removes_no_show_until_it_can_be_read() {
+        let library = Library::new().await;
+        library.sonarr_lists(&[SEVERANCE, ANDOR]);
+        library.reconcile(Source::Sonarr).await;
+
+        library.sonarr_lists(&[SEVERANCE]);
+        library
+            .unreadable_files
+            .lock()
+            .unwrap()
+            .insert("/tv/Severance/S01E01.mkv".to_owned());
+        let failed = library.reconcile(Source::Sonarr).await;
+        let after_failure = library.show_titles().await;
+        library.unreadable_files.lock().unwrap().clear();
         let succeeded = library.reconcile(Source::Sonarr).await;
 
         assert_eq!(failed, Some(ReconcileResult::Failed));
