@@ -66,6 +66,18 @@ pub(crate) struct ShowOnDisk {
     episode_nfos: Vec<Nfo<EpisodeNfo>>,
 }
 
+impl ShowOnDisk {
+    fn empty(source_show: &SourceShow) -> Self {
+        Self {
+            episode_folders: HashMap::new(),
+            media_files: HashMap::new(),
+            folder: ShowFolder::default(),
+            nfo: Nfo::Missing,
+            episode_nfos: source_show.episodes.iter().map(|_| Nfo::Missing).collect(),
+        }
+    }
+}
+
 pub(crate) enum InspectedShow {
     Read(Box<ShowOnDisk>),
     Unreadable(UnreadableFile),
@@ -248,51 +260,50 @@ pub(crate) async fn save(
     inspected: InspectedShow,
 ) -> Result<(), Error> {
     let mut transaction = db_context.transaction().await.map_err(Error::caused_by)?;
-    let change = match inspected {
-        InspectedShow::Read(on_disk) => {
-            write(&mut transaction, source_show, *on_disk, None).await?
-        }
-        InspectedShow::Unreadable(error) => match transaction
-            .shows()
-            .filter(Show::fields().tvdb_id().eq(source_show.listing.tvdb_id))
-            .first()
-            .exec(transaction.executor_mut())
+    let stored = transaction
+        .shows()
+        .filter(Show::fields().tvdb_id().eq(source_show.listing.tvdb_id))
+        .first()
+        .exec(transaction.executor_mut())
+        .await
+        .map_err(Error::caused_by)?;
+    let change = match (inspected, stored) {
+        (InspectedShow::Unreadable(error), Some(show)) => {
+            sync_problems::replace(
+                &mut transaction,
+                ProblemOwner::Item(Owner::Show(show.id)),
+                SyncProblemKind::UnreadableFile,
+                Some(&error.path),
+            )
             .await
-            .map_err(Error::caused_by)?
-        {
-            Some(show) => {
-                sync_problems::replace(
-                    &mut transaction,
-                    ProblemOwner::Item(Owner::Show(show.id)),
-                    SyncProblemKind::UnreadableFile,
-                    Some(&error.path),
-                )
-                .await
-                .map_err(Error::caused_by)?;
-                None
-            }
-            None => {
-                let on_disk = ShowOnDisk {
-                    episode_folders: HashMap::new(),
-                    media_files: HashMap::new(),
-                    folder: ShowFolder::default(),
-                    nfo: Nfo::Missing,
-                    episode_nfos: source_show.episodes.iter().map(|_| Nfo::Missing).collect(),
-                };
-                let source_show = SourceShow {
-                    episodes: source_show
-                        .episodes
-                        .into_iter()
-                        .map(|x| SourceEpisode {
-                            media_file: None,
-                            ..x
-                        })
-                        .collect(),
-                    ..source_show
-                };
-                write(&mut transaction, source_show, on_disk, Some(error.path)).await?
-            }
-        },
+            .map_err(Error::caused_by)?;
+            None
+        }
+        (InspectedShow::Unreadable(error), None) => {
+            let source_show = SourceShow {
+                episodes: source_show
+                    .episodes
+                    .into_iter()
+                    .map(|x| SourceEpisode {
+                        media_file: None,
+                        ..x
+                    })
+                    .collect(),
+                ..source_show
+            };
+            let on_disk = ShowOnDisk::empty(&source_show);
+            write(
+                &mut transaction,
+                source_show,
+                on_disk,
+                None,
+                Some(error.path),
+            )
+            .await?
+        }
+        (InspectedShow::Read(on_disk), stored) => {
+            write(&mut transaction, source_show, *on_disk, stored, None).await?
+        }
     };
     transaction.commit().await.map_err(Error::caused_by)?;
     if let Some(change) = change {
@@ -426,6 +437,7 @@ async fn write(
     scope: &mut impl DbScope,
     source_show: SourceShow,
     on_disk: ShowOnDisk,
+    stored: Option<Show>,
     unreadable: Option<String>,
 ) -> Result<Option<Change>, Error> {
     let ShowOnDisk {
@@ -436,13 +448,6 @@ async fn write(
         episode_nfos,
     } = on_disk;
     let listing = source_show.listing;
-    let stored = scope
-        .shows()
-        .filter(Show::fields().tvdb_id().eq(listing.tvdb_id))
-        .first()
-        .exec(scope.executor_mut())
-        .await
-        .map_err(Error::caused_by)?;
     let had_nfo = stored.as_ref().is_some_and(|x| x.nfo_modified_at.is_some());
     let source_metadata =
         ShowMetadata::from_source(listing.title, listing.overview, listing.genres);

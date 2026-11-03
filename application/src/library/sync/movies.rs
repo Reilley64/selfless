@@ -48,6 +48,16 @@ pub(crate) struct MovieOnDisk {
     nfo: Nfo<MovieNfo>,
 }
 
+impl MovieOnDisk {
+    fn empty() -> Self {
+        Self {
+            media_file: None,
+            artwork: Vec::new(),
+            nfo: Nfo::Missing,
+        }
+    }
+}
+
 pub(crate) enum InspectedMovie {
     Read(Box<MovieOnDisk>),
     Unreadable(UnreadableFile),
@@ -66,11 +76,7 @@ pub(crate) async fn inspect(
     source_movie: &SourceMovie,
 ) -> Result<InspectedMovie, Error> {
     let Some(file) = &source_movie.media_file else {
-        return Ok(InspectedMovie::Read(Box::new(MovieOnDisk {
-            media_file: None,
-            artwork: Vec::new(),
-            nfo: Nfo::Missing,
-        })));
+        return Ok(InspectedMovie::Read(Box::new(MovieOnDisk::empty())));
     };
     let read = async {
         let found = files.find_media_file.call(&file.path).await?;
@@ -160,7 +166,7 @@ macro_rules! set_movie {
 
 pub(crate) async fn save(
     db_context: &mut DbContext,
-    mut source_movie: SourceMovie,
+    source_movie: SourceMovie,
     inspected: InspectedMovie,
 ) -> Result<(), Error> {
     let mut transaction = db_context.transaction().await.map_err(Error::caused_by)?;
@@ -171,32 +177,55 @@ pub(crate) async fn save(
         .exec(transaction.executor_mut())
         .await
         .map_err(Error::caused_by)?;
-    let (media_file, artwork, nfo, unreadable) = match inspected {
-        InspectedMovie::Read(on_disk) => {
-            let MovieOnDisk {
-                media_file,
-                artwork,
-                nfo,
-            } = *on_disk;
-            (media_file, artwork, nfo, None)
-        }
-        InspectedMovie::Unreadable(error) => (None, Vec::new(), Nfo::Missing, Some(error.path)),
-    };
-    if unreadable.is_some() {
-        if let Some(movie) = &stored {
+    let change = match (inspected, stored) {
+        (InspectedMovie::Unreadable(error), Some(movie)) => {
             sync_problems::replace(
                 &mut transaction,
                 ProblemOwner::Item(Owner::Movie(movie.id)),
                 SyncProblemKind::UnreadableFile,
-                unreadable.as_deref(),
+                Some(&error.path),
             )
             .await
             .map_err(Error::caused_by)?;
-            transaction.commit().await.map_err(Error::caused_by)?;
-            return Ok(());
+            None
         }
-        source_movie.media_file = None;
+        (InspectedMovie::Unreadable(error), None) => {
+            let source_movie = SourceMovie {
+                media_file: None,
+                ..source_movie
+            };
+            write(
+                &mut transaction,
+                source_movie,
+                MovieOnDisk::empty(),
+                None,
+                Some(error.path),
+            )
+            .await?
+        }
+        (InspectedMovie::Read(on_disk), stored) => {
+            write(&mut transaction, source_movie, *on_disk, stored, None).await?
+        }
+    };
+    transaction.commit().await.map_err(Error::caused_by)?;
+    if let Some(change) = change {
+        library_items::count(Source::Radarr, change);
     }
+    Ok(())
+}
+
+async fn write(
+    scope: &mut impl DbScope,
+    source_movie: SourceMovie,
+    on_disk: MovieOnDisk,
+    stored: Option<Movie>,
+    unreadable: Option<String>,
+) -> Result<Option<Change>, Error> {
+    let MovieOnDisk {
+        media_file,
+        artwork,
+        nfo,
+    } = on_disk;
     let in_library = Movie::in_library(
         source_movie.media_file.is_some(),
         media_file.as_ref().is_some_and(Inspected::on_disk),
@@ -204,7 +233,7 @@ pub(crate) async fn save(
     let source_added_at = source_movie.media_file.as_ref().map(|x| x.added_at);
     let (media_file_id, media_file_changed) = match (&source_movie.media_file, media_file) {
         (Some(file), Some(inspected)) => {
-            let saved = media_files::save(&mut transaction, &file.path, inspected)
+            let saved = media_files::save(scope, &file.path, inspected)
                 .await
                 .map_err(Error::caused_by)?;
             (Some(saved.id), saved.changed)
@@ -237,14 +266,14 @@ pub(crate) async fn save(
             let changed = media_file_changed || SyncedMovie::from(&movie) != synced;
             if changed {
                 set_movie!(movie.update(), synced)
-                    .exec(transaction.executor_mut())
+                    .exec(scope.executor_mut())
                     .await
                     .map_err(Error::caused_by)?;
             }
             if let Some(old_media_file_id) = old_media_file_id
                 && Some(old_media_file_id) != media_file_id
             {
-                media_files::delete(&mut transaction, vec![old_media_file_id])
+                media_files::delete(scope, vec![old_media_file_id])
                     .await
                     .map_err(Error::caused_by)?;
             }
@@ -252,20 +281,20 @@ pub(crate) async fn save(
         }
         None => {
             let movie = set_movie!(
-                transaction.movies().create().tmdb_id(source_movie.tmdb_id),
+                scope.movies().create().tmdb_id(source_movie.tmdb_id),
                 synced
             )
-            .exec(transaction.executor_mut())
+            .exec(scope.executor_mut())
             .await
             .map_err(Error::caused_by)?;
             (movie.id, Some(Change::Added))
         }
     };
     let owner = Owner::Movie(movie_id);
-    metadata::save_actors(&mut transaction, owner, had_nfo, &nfo, |x| &x.actors)
+    metadata::save_actors(scope, owner, had_nfo, &nfo, |x| &x.actors)
         .await
         .map_err(Error::caused_by)?;
-    let artwork_changed = metadata::save_artwork(&mut transaction, owner, artwork)
+    let artwork_changed = metadata::save_artwork(scope, owner, artwork)
         .await
         .map_err(Error::caused_by)?;
     let unreadable_nfos = nfo
@@ -273,22 +302,18 @@ pub(crate) async fn save(
         .map(|path| (None, path.to_owned()))
         .into_iter()
         .collect::<HashSet<_>>();
-    metadata::save_unreadable_nfos(&mut transaction, owner, Vec::new(), unreadable_nfos)
+    metadata::save_unreadable_nfos(scope, owner, Vec::new(), unreadable_nfos)
         .await
         .map_err(Error::caused_by)?;
     sync_problems::replace(
-        &mut transaction,
+        scope,
         ProblemOwner::Item(owner),
         SyncProblemKind::UnreadableFile,
         unreadable.as_deref(),
     )
     .await
     .map_err(Error::caused_by)?;
-    transaction.commit().await.map_err(Error::caused_by)?;
-    if let Some(change) = change.or(artwork_changed.then_some(Change::Changed)) {
-        library_items::count(Source::Radarr, change);
-    }
-    Ok(())
+    Ok(change.or(artwork_changed.then_some(Change::Changed)))
 }
 
 pub(crate) async fn remove(db_context: &mut DbContext, movies: Vec<Movie>) -> Result<(), Error> {
