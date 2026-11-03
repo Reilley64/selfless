@@ -6,6 +6,8 @@ use crate::library::media_files::Inspected;
 use crate::library::metadata;
 use crate::library::metadata::FoundArtwork;
 use crate::library::sync::Error;
+use crate::library::sync_problems;
+use crate::library::sync_problems::ProblemOwner;
 use crate::ports::FindMediaFile;
 use crate::ports::ListSubtitleFiles;
 use crate::ports::ReadMovieFolder;
@@ -22,6 +24,7 @@ use domain::Nfo;
 use domain::Owner;
 use domain::RadarrId;
 use domain::Source;
+use domain::SyncProblemKind;
 use jiff::Timestamp;
 use std::collections::HashSet;
 use tracing::Span;
@@ -181,9 +184,14 @@ pub(crate) async fn save(
     };
     if unreadable.is_some() {
         if let Some(movie) = &stored {
-            metadata::save_unreadable_file(&mut transaction, Owner::Movie(movie.id), unreadable)
-                .await
-                .map_err(Error::caused_by)?;
+            sync_problems::replace(
+                &mut transaction,
+                ProblemOwner::Item(Owner::Movie(movie.id)),
+                SyncProblemKind::UnreadableFile,
+                unreadable.as_deref(),
+            )
+            .await
+            .map_err(Error::caused_by)?;
             transaction.commit().await.map_err(Error::caused_by)?;
             return Ok(());
         }
@@ -268,9 +276,14 @@ pub(crate) async fn save(
     metadata::save_unreadable_nfos(&mut transaction, owner, Vec::new(), unreadable_nfos)
         .await
         .map_err(Error::caused_by)?;
-    metadata::save_unreadable_file(&mut transaction, owner, unreadable)
-        .await
-        .map_err(Error::caused_by)?;
+    sync_problems::replace(
+        &mut transaction,
+        ProblemOwner::Item(owner),
+        SyncProblemKind::UnreadableFile,
+        unreadable.as_deref(),
+    )
+    .await
+    .map_err(Error::caused_by)?;
     transaction.commit().await.map_err(Error::caused_by)?;
     if let Some(change) = change.or(artwork_changed.then_some(Change::Changed)) {
         library_items::count(Source::Radarr, change);

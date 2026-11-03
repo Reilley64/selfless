@@ -6,6 +6,8 @@ use crate::library::media_files::Inspected;
 use crate::library::metadata;
 use crate::library::metadata::FoundArtwork;
 use crate::library::sync::Error;
+use crate::library::sync_problems;
+use crate::library::sync_problems::ProblemOwner;
 use crate::ports::EpisodeFolder;
 use crate::ports::FindMediaFile;
 use crate::ports::ListSubtitleFiles;
@@ -32,6 +34,7 @@ use domain::ShowMetadata;
 use domain::ShowNfo;
 use domain::SonarrId;
 use domain::Source;
+use domain::SyncProblemKind;
 use futures_util::future::try_join_all;
 use jiff::Timestamp;
 use std::collections::BTreeMap;
@@ -258,10 +261,11 @@ pub(crate) async fn save(
             .map_err(Error::caused_by)?
         {
             Some(show) => {
-                metadata::save_unreadable_file(
+                sync_problems::replace(
                     &mut transaction,
-                    Owner::Show(show.id),
-                    Some(error.path),
+                    ProblemOwner::Item(Owner::Show(show.id)),
+                    SyncProblemKind::UnreadableFile,
+                    Some(&error.path),
                 )
                 .await
                 .map_err(Error::caused_by)?;
@@ -671,8 +675,13 @@ async fn write(
     )
     .await
     .map_err(Error::caused_by)?;
-    metadata::save_unreadable_file(scope, owner, unreadable)
-        .await
-        .map_err(Error::caused_by)?;
+    sync_problems::replace(
+        scope,
+        ProblemOwner::Item(owner),
+        SyncProblemKind::UnreadableFile,
+        unreadable.as_deref(),
+    )
+    .await
+    .map_err(Error::caused_by)?;
     Ok(show_change.or(changed.then_some(Change::Changed)))
 }

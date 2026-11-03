@@ -6,6 +6,7 @@ mod reconciles;
 mod source_health;
 pub(crate) mod source_states;
 mod sync;
+mod sync_problems;
 
 pub mod confirm_held_removal;
 pub mod get_media_file;

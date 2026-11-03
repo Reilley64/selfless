@@ -48,42 +48,6 @@ pub(crate) fn warn_unreadable_file(error: &UnreadableFile) {
     );
 }
 
-pub(crate) async fn save_unreadable_file(
-    scope: &mut impl DbScope,
-    owner: Owner,
-    path: Option<String>,
-) -> toasty::Result<()> {
-    let stored = scope
-        .sync_problems()
-        .filter(
-            SyncProblem::owner_filter(owner).and(
-                SyncProblem::fields()
-                    .kind()
-                    .eq(SyncProblemKind::UnreadableFile),
-            ),
-        )
-        .exec(scope.executor_mut())
-        .await?;
-    if stored.iter().map(|x| &x.path).eq(path.iter()) {
-        return Ok(());
-    }
-    for problem in stored {
-        problem.delete().exec(scope.executor_mut()).await?;
-    }
-    if let Some(path) = path {
-        scope
-            .sync_problems()
-            .create()
-            .movie_id(owner.movie_id())
-            .show_id(owner.show_id())
-            .kind(SyncProblemKind::UnreadableFile)
-            .path(path)
-            .exec(scope.executor_mut())
-            .await?;
-    }
-    Ok(())
-}
-
 pub(crate) async fn save_actors<T>(
     scope: &mut impl DbScope,
     owner: Owner,

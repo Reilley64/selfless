@@ -1,4 +1,6 @@
 use crate::library::Prober;
+use crate::library::sync_problems;
+use crate::library::sync_problems::ProblemOwner;
 use crate::ports::FoundMediaFile;
 use crate::ports::FoundSubtitleFile;
 use crate::ports::ListSubtitleFiles;
@@ -131,7 +133,13 @@ pub(crate) async fn save(
         }
     };
     if changed {
-        save_missing_media_file(scope, media_file.id, path, inspected.found.is_some()).await?;
+        sync_problems::replace(
+            scope,
+            ProblemOwner::MediaFile(media_file.id),
+            SyncProblemKind::MissingMediaFile,
+            inspected.found.is_none().then_some(path),
+        )
+        .await?;
     }
     match inspected.probed {
         Probed::Unchanged => {}
@@ -166,27 +174,14 @@ async fn save_probe(
         .delete()
         .exec(scope.executor_mut())
         .await?;
-    scope
-        .sync_problems()
-        .filter(
-            SyncProblem::fields().media_file_id().eq(media_file.id).and(
-                SyncProblem::fields()
-                    .kind()
-                    .eq(SyncProblemKind::UnrecognisedMediaFile),
-            ),
-        )
-        .delete()
-        .exec(scope.executor_mut())
-        .await?;
+    sync_problems::replace(
+        scope,
+        ProblemOwner::MediaFile(media_file.id),
+        SyncProblemKind::UnrecognisedMediaFile,
+        probe.is_none().then_some(path),
+    )
+    .await?;
     let Some(probe) = probe else {
-        scope
-            .sync_problems()
-            .create()
-            .media_file_id(Some(media_file.id))
-            .kind(SyncProblemKind::UnrecognisedMediaFile)
-            .path(path)
-            .exec(scope.executor_mut())
-            .await?;
         return Ok(());
     };
     for stream in probe.video_streams {
@@ -273,37 +268,6 @@ async fn save_subtitle_files(
             .await?;
     }
     Ok(true)
-}
-
-async fn save_missing_media_file(
-    scope: &mut impl DbScope,
-    media_file_id: Uuid,
-    path: &str,
-    found: bool,
-) -> toasty::Result<()> {
-    scope
-        .sync_problems()
-        .filter(
-            SyncProblem::fields().media_file_id().eq(media_file_id).and(
-                SyncProblem::fields()
-                    .kind()
-                    .eq(SyncProblemKind::MissingMediaFile),
-            ),
-        )
-        .delete()
-        .exec(scope.executor_mut())
-        .await?;
-    if !found {
-        scope
-            .sync_problems()
-            .create()
-            .media_file_id(Some(media_file_id))
-            .kind(SyncProblemKind::MissingMediaFile)
-            .path(path)
-            .exec(scope.executor_mut())
-            .await?;
-    }
-    Ok(())
 }
 
 pub(crate) async fn delete(scope: &mut impl DbScope, ids: Vec<Uuid>) -> toasty::Result<()> {
