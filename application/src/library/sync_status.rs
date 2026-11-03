@@ -94,6 +94,7 @@ async fn source_status(
     let held_removal = db_context
         .held_removals()
         .filter(StoredHeldRemoval::fields().source().eq(source))
+        .include(StoredHeldRemoval::fields().items())
         .first()
         .exec(db_context.executor_mut())
         .await
@@ -119,7 +120,7 @@ async fn source_status(
             })
         }),
         held_removal: held_removal.map(|x| HeldRemoval {
-            count: x.item_ids.len(),
+            count: x.items.get().len(),
         }),
         visible,
     })
@@ -555,6 +556,36 @@ mod tests {
         assert_eq!(status.radarr.last_webhook_at, None);
         assert_eq!(status.radarr.rejected_webhooks, 0);
         assert!(status.radarr.last_reconcile.is_none());
+    }
+
+    #[tokio::test]
+    async fn a_held_removal_is_shown_with_the_number_of_items_it_holds() {
+        let mut seeded = Seeded::new().await;
+        let severance = seeded.show(7, "Severance").await;
+        let andor = seeded.show(8, "Andor").await;
+        let db_context = &mut seeded.db_context;
+        db_context
+            .held_removals()
+            .create()
+            .source(Source::Sonarr)
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap();
+        for item_id in [severance, andor] {
+            db_context
+                .held_removal_items()
+                .create()
+                .source(Source::Sonarr)
+                .item_id(item_id)
+                .exec(db_context.executor_mut())
+                .await
+                .unwrap();
+        }
+
+        let status = seeded.status(&SourceHealth::default()).await;
+
+        assert_eq!(status.sonarr.held_removal, Some(HeldRemoval { count: 2 }));
+        assert_eq!(status.radarr.held_removal, None);
     }
 
     #[tokio::test]

@@ -368,14 +368,25 @@ async fn remove_or_hold(
             selfless.library.source = source.name(),
             "held a removal of more than half of a source's items"
         );
-        db_context
+        let mut transaction = db_context.transaction().await.map_err(Error::caused_by)?;
+        transaction
             .held_removals()
             .create()
             .source(source)
-            .item_ids(listing.absent.clone())
-            .exec(db_context.executor_mut())
+            .exec(transaction.executor_mut())
             .await
             .map_err(Error::caused_by)?;
+        for item_id in &listing.absent {
+            transaction
+                .held_removal_items()
+                .create()
+                .source(source)
+                .item_id(*item_id)
+                .exec(transaction.executor_mut())
+                .await
+                .map_err(Error::caused_by)?;
+        }
+        transaction.commit().await.map_err(Error::caused_by)?;
         return Ok(());
     }
     remove(db_context, source, listing.absent.clone(), &listing.listed).await
@@ -672,6 +683,35 @@ mod tests {
             titles
         }
 
+        async fn held_movie_titles(&self) -> Option<Vec<String>> {
+            let mut db_context = self.db_context.clone();
+            let held_removal = db_context
+                .held_removals()
+                .filter(HeldRemoval::fields().source().eq(Source::Radarr))
+                .include(HeldRemoval::fields().items())
+                .first()
+                .exec(db_context.executor_mut())
+                .await
+                .unwrap()?;
+            let ids = held_removal
+                .items
+                .get()
+                .iter()
+                .map(|x| x.item_id)
+                .collect::<Vec<_>>();
+            let mut titles = db_context
+                .movies()
+                .filter(Movie::fields().id().in_list(ids))
+                .exec(db_context.executor_mut())
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|x| x.title)
+                .collect::<Vec<_>>();
+            titles.sort();
+            Some(titles)
+        }
+
         async fn show_titles(&self) -> Vec<String> {
             let mut db_context = self.db_context.clone();
             let mut titles = db_context
@@ -774,6 +814,66 @@ mod tests {
         assert_eq!(after_failure, ["Andor", "Severance"]);
         assert_eq!(succeeded, Some(ReconcileResult::Succeeded));
         assert_eq!(library.show_titles().await, ["Severance"]);
+    }
+
+    #[tokio::test]
+    async fn a_removal_of_more_than_half_the_movies_is_held_and_removes_nothing() {
+        let library = Library::new().await;
+        library.radarr_lists(&[ARRIVAL, DUNE, SICARIO, BLADE_RUNNER]);
+        library.reconcile(Source::Radarr).await;
+
+        library.radarr_lists(&[ARRIVAL]);
+        library.reconcile(Source::Radarr).await;
+
+        assert_eq!(
+            library.held_movie_titles().await.unwrap(),
+            ["Blade Runner 2049", "Dune", "Sicario"]
+        );
+        assert_eq!(
+            library.movie_titles().await,
+            ["Arrival", "Blade Runner 2049", "Dune", "Sicario"]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_radarr_that_lists_as_many_other_movies_holds_the_removal_of_every_stored_movie() {
+        let library = Library::new().await;
+        library.radarr_lists(&[ARRIVAL, DUNE]);
+        library.reconcile(Source::Radarr).await;
+
+        library.radarr_lists(&[SICARIO, BLADE_RUNNER]);
+        library.reconcile(Source::Radarr).await;
+
+        assert_eq!(
+            library.held_movie_titles().await.unwrap(),
+            ["Arrival", "Dune"]
+        );
+        assert_eq!(
+            library.movie_titles().await,
+            ["Arrival", "Blade Runner 2049", "Dune", "Sicario"]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_later_reconcile_with_a_smaller_removal_replaces_the_held_one() {
+        let library = Library::new().await;
+        library.radarr_lists(&[ARRIVAL, DUNE, SICARIO, BLADE_RUNNER]);
+        library.reconcile(Source::Radarr).await;
+        library.radarr_lists(&[]);
+        library.reconcile(Source::Radarr).await;
+        let first = library.held_movie_titles().await;
+
+        library.radarr_lists(&[ARRIVAL]);
+        library.reconcile(Source::Radarr).await;
+
+        assert_eq!(
+            first.unwrap(),
+            ["Arrival", "Blade Runner 2049", "Dune", "Sicario"]
+        );
+        assert_eq!(
+            library.held_movie_titles().await.unwrap(),
+            ["Blade Runner 2049", "Dune", "Sicario"]
+        );
     }
 
     #[tokio::test]
