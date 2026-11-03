@@ -5,7 +5,7 @@
 - A target directory grows to 5 to 11 GB. Start a new one as an APFS clone of a built one with `cp -cR <built> <new>`, which copies no data until a file changes. `CARGO_INCREMENTAL=0` keeps it smaller.
 - Remove a ticket worktree and its target directory as soon as its branch merges into the integration branch.
 - In a ticket worktree, run only the checks for what the ticket changes: `cargo fmt`, Clippy and the tests of the crates it touches (`cargo clippy -p <crate> --all-targets`, `cargo test -p <crate>`), `bun run typecheck`, `bun run lint` and `bun run test` in the packages it touches, and `mise run lint:comments origin/<integration branch>`. Do not run `mise run test`, `mise run check` or `mise run test:image` for the whole workspace. The pull request's checks build and test everything, including the container image.
-- Ticket branches merge into the integration branch without waiting for the pull request's checks. They run once, after the spec's last ticket merges. A failing check then gets fixed on the integration branch.
+- Ticket branches merge into the integration branch without waiting for the pull request's checks. They run once, after the spec's last ticket merges. A failing check then gets fixed on the integration branch. Don't run the whole-workspace checks on the integration branch after each merge either, and don't list them in a ticket's brief or acceptance criteria.
 
 ## Before you start
 
