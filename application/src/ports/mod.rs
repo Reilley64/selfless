@@ -1,8 +1,10 @@
 use bytes::Bytes;
 use domain::EmailAddress;
+pub use domain::EpisodeNfo;
 pub use domain::HdrType;
 pub use domain::MovieNfo;
 pub use domain::NfoActor;
+pub use domain::ShowNfo;
 use jiff::Timestamp;
 use jiff::civil::Date;
 use std::error::Error;
@@ -512,17 +514,6 @@ impl ReadEpisodeFolder {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct EpisodeNfo {
-    pub sonarr_id: Option<i64>,
-    pub title: Option<String>,
-    pub season_number: Option<i64>,
-    pub episode_number: Option<i64>,
-    pub air_date: Option<Date>,
-    pub plot: Option<String>,
-    pub rating: Option<f64>,
-}
-
 type ReadEpisodeNfoFn =
     dyn Fn(String) -> PortFuture<Result<Vec<EpisodeNfo>, UnreadableNfo>> + Send + Sync;
 
@@ -664,21 +655,6 @@ impl ReadShowFolder {
     pub fn call(&self, show_path: &str, season_numbers: Vec<i64>) -> PortFuture<ShowFolder> {
         (self.0)(show_path.to_owned(), season_numbers)
     }
-}
-
-#[derive(Clone, Debug)]
-pub struct ShowNfo {
-    pub title: Option<String>,
-    pub sort_title: Option<String>,
-    pub plot: Option<String>,
-    pub certification: Option<String>,
-    pub premiered: Option<Date>,
-    pub end_date: Option<Date>,
-    pub status: Option<String>,
-    pub network: Option<String>,
-    pub genres: Vec<String>,
-    pub rating: Option<f64>,
-    pub actors: Vec<NfoActor>,
 }
 
 type ReadShowNfoFn = dyn Fn(String) -> PortFuture<Result<ShowNfo, UnreadableNfo>> + Send + Sync;
