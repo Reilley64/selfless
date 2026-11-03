@@ -2,7 +2,7 @@ import type { Home as HomeData, Tile } from "@selfless/api-client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { router } from "expo-router";
 import { act, fireEvent, renderRouter, screen, waitFor } from "expo-router/testing-library";
-import { Platform } from "react-native";
+import { Platform, View } from "react-native";
 import { Home } from "./Home";
 
 beforeAll(() => {
@@ -263,14 +263,48 @@ describe("the Continue watching tile menu", () => {
     expect(screen.queryByText("Remove from Continue watching")).not.toBeOnTheScreen();
   });
 
-  test("on TV a long press opens the menu", async () => {
-    jest.spyOn(Platform, "isTV", "get").mockReturnValue(true);
-    await renderWithPendingRemovals();
+  describe("on TV", () => {
+    const view = (View as unknown as { prototype: { requestTVFocus?: () => void } }).prototype;
+    let focused: string[];
 
-    await fireEvent(screen.getByLabelText("Arrival"), "longPress");
-    await fireEvent.press(screen.getByText("Remove from Continue watching"));
+    beforeEach(() => {
+      jest.spyOn(Platform, "isTV", "get").mockReturnValue(true);
+      focused = [];
+      view.requestTVFocus = function (this: { props: { accessibilityLabel?: string } }) {
+        focused.push(this.props.accessibilityLabel ?? "");
+      };
+    });
 
-    await waitFor(() => expect(screen.queryByLabelText("Arrival")).not.toBeOnTheScreen());
-    expect(deletes()).toEqual([`/api/continue-watching/movies/${arrival.id}/v1`]);
+    afterEach(() => {
+      delete view.requestTVFocus;
+    });
+
+    test("a long press opens the menu", async () => {
+      await renderWithPendingRemovals();
+
+      await fireEvent(screen.getByLabelText("Arrival"), "longPress");
+      await fireEvent.press(screen.getByText("Remove from Continue watching"));
+
+      await waitFor(() => expect(screen.queryByLabelText("Arrival")).not.toBeOnTheScreen());
+      expect(deletes()).toEqual([`/api/continue-watching/movies/${arrival.id}/v1`]);
+    });
+
+    test("removing a tile focuses the tile that takes its place", async () => {
+      await renderWithPendingRemovals();
+
+      await fireEvent(screen.getByLabelText("Arrival"), "longPress");
+      await fireEvent.press(screen.getByText("Remove from Continue watching"));
+
+      await waitFor(() => expect(focused).toEqual(["Half Loop"]));
+    });
+
+    test("removing the last tile focuses the tile before it", async () => {
+      await renderWithPendingRemovals();
+
+      await fireEvent(screen.getByLabelText("Half Loop"), "longPress");
+      await fireEvent.press(screen.getByText("Remove from Continue watching"));
+
+      await waitFor(() => expect(focused).toEqual(["Arrival"]));
+    });
   });
 });

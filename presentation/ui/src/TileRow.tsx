@@ -1,10 +1,11 @@
 import type { Tile as TileData } from "@selfless/api-client";
 import { useRouter } from "expo-router";
-import { useEffect, useRef, useState } from "react";
-import { Platform, type ScrollViewInstance } from "react-native";
+import { type Ref, useEffect, useRef, useState } from "react";
+import { type View as HostView, Platform, type ScrollViewInstance } from "react-native";
 import { Pressable, ScrollView, Text, View } from "react-native-css/components";
 import { ActionButton } from "./ActionButton";
 import { episodeLabel } from "./episodeLabel";
+import type { FocusGuideInstance } from "./FocusGuide";
 import { playHref } from "./playHref";
 import { ArtworkImage, Tile } from "./Tile";
 import { TileMenu, type TileMenuItem } from "./TileMenu";
@@ -69,6 +70,7 @@ function TileCard({ tile, onPress, onMenu }: { tile: TileData; onPress?: () => v
 }
 
 function RowTile({
+  tileRef,
   tile,
   onPress,
   onMenu,
@@ -76,6 +78,7 @@ function RowTile({
   onFocus,
   onPlaced,
 }: {
+  tileRef: Ref<HostView>;
   tile: TileData;
   onPress?: () => void;
   onMenu?: () => void;
@@ -119,7 +122,13 @@ function RowTile({
       {open ? (
         <TileCard tile={tile} onPress={onPress} onMenu={onMenu} />
       ) : (
-        <Tile tile={tile} onPress={onPress} onLongPress={onMenu} onFocus={() => onFocus(left.current)} />
+        <Tile
+          ref={tileRef}
+          tile={tile}
+          onPress={onPress}
+          onLongPress={onMenu}
+          onFocus={() => onFocus(left.current)}
+        />
       )}
     </View>
   );
@@ -152,10 +161,20 @@ export function TileRow({
 }) {
   const scroll = useRef<ScrollViewInstance>(null);
   const [menuTile, setMenuTile] = useState<TileData | null>(null);
+  const tileViews = useRef(new Map<string, HostView>());
+  const chosen = useRef<{ id: string; index: number } | null>(null);
   const firstLeft = useRef(0);
   const [offset, setOffset] = useState(0);
   const [viewport, setViewport] = useState(0);
   const [content, setContent] = useState(0);
+  useEffect(() => {
+    const from = chosen.current;
+    chosen.current = null;
+    if (Platform.isTV && from && tiles.length > 0 && !tiles.some((tile) => tile.id === from.id)) {
+      const next = tiles[Math.min(from.index, tiles.length - 1)];
+      (tileViews.current.get(next.id) as unknown as FocusGuideInstance | undefined)?.requestTVFocus();
+    }
+  }, [tiles]);
   const scrollTo = (x: number) => scroll.current?.scrollTo({ x: Math.max(0, x), animated: true });
   const page = viewport - 2 * INSET;
   return (
@@ -181,6 +200,14 @@ export function TileRow({
           {tiles.map((tile, index) => (
             <RowTile
               key={tile.id}
+              tileRef={(view) => {
+                if (view) {
+                  tileViews.current.set(tile.id, view);
+                }
+                return () => {
+                  tileViews.current.delete(tile.id);
+                };
+              }}
               tile={tile}
               onPress={onPressTile && (() => onPressTile(tile))}
               onMenu={menu && (() => setMenuTile(tile))}
@@ -214,7 +241,13 @@ export function TileRow({
       {menu && menuTile && (
         <TileMenu
           title={menuTile.episode ? menuTile.episode.show.title : menuTile.title}
-          items={menu(menuTile)}
+          items={menu(menuTile).map((item) => ({
+            ...item,
+            onPress: () => {
+              chosen.current = { id: menuTile.id, index: tiles.indexOf(menuTile) };
+              item.onPress();
+            },
+          }))}
           onClose={() => setMenuTile(null)}
         />
       )}
