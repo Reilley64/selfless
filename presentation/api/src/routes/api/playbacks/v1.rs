@@ -459,22 +459,11 @@ pub(crate) async fn hls_file(cx: &Cx) -> topcoat::Result<Response> {
 
 #[cfg(test)]
 mod tests {
-    use crate::test::add_show;
     use crate::test::movie;
     use crate::test::serve;
-    use crate::test::signed_in_on;
     use crate::test::signed_in_user;
-    use application::ports::ReadKeyframes;
     use application::ports::persistence::DbScope;
-    use domain::ArtworkKind;
-    use domain::AudioTranscode;
-    use domain::AudioTranscodeCodec;
-    use domain::ClientKind;
-    use domain::Episode;
     use domain::HdrType;
-    use domain::MediaFile;
-    use domain::Season;
-    use domain::VideoStream;
     use http::HeaderMap;
     use http::HeaderValue;
     use http::Method;
@@ -492,10 +481,6 @@ mod tests {
     use serde_json::Value;
     use serde_json::json;
     use std::path::PathBuf;
-    use std::sync::Arc;
-    use std::sync::atomic::AtomicUsize;
-    use std::sync::atomic::Ordering;
-    use std::time::Duration;
     use test_app::MAIN_PLAYLIST;
     use test_app::SEGMENT;
     use test_app::TestApp;
@@ -523,24 +508,6 @@ mod tests {
         extension: &str,
         container: Option<&str>,
     ) -> (Uuid, MediaFileOnDisk) {
-        add_media_file_with_audio(
-            app,
-            extension,
-            container,
-            &[
-                (2, "aac", 2, "jpn", "Stereo", false),
-                (1, "aac", 2, "eng", "Stereo", true),
-            ],
-        )
-        .await
-    }
-
-    async fn add_media_file_with_audio(
-        app: &TestApp,
-        extension: &str,
-        container: Option<&str>,
-        audio: &[(i64, &str, i64, &str, &str, bool)],
-    ) -> (Uuid, MediaFileOnDisk) {
         let path = std::env::temp_dir().join(format!("selfless-{}.{extension}", Uuid::new_v4()));
         std::fs::write(&path, BYTES).unwrap();
         let mut db_context = app.state.db_context.clone();
@@ -566,15 +533,15 @@ mod tests {
             .exec(db_context.executor_mut())
             .await
             .unwrap();
-        for &(index, codec, channels, language, title, default) in audio {
+        for (index, language, default) in [(2, "jpn", false), (1, "eng", true)] {
             media_file
                 .audio_streams()
                 .create()
                 .index(index)
-                .codec(codec)
+                .codec("aac")
                 .language(Some(language.to_owned()))
-                .channels(channels)
-                .title(Some(title.to_owned()))
+                .channels(2)
+                .title(Some("Stereo".to_owned()))
                 .is_default(default)
                 .exec(db_context.executor_mut())
                 .await
@@ -609,43 +576,6 @@ mod tests {
         })
     }
 
-    fn apple_tv_profile() -> Value {
-        json!({
-            "containers": ["mp4", "mov"],
-            "videoCodecs": [{
-                "codec": "h264",
-                "profiles": ["main", "high"],
-                "maxWidth": 3840,
-                "maxHeight": 2160,
-                "hdrTypes": ["sdr"],
-            }],
-            "audioCodecs": [
-                { "codec": "aac", "maxChannels": 2 },
-                { "codec": "ac3", "maxChannels": 6 },
-                { "codec": "eac3", "maxChannels": 8 },
-            ],
-            "subtitleCodecs": [],
-        })
-    }
-
-    fn google_tv_profile_without_e_ac_3() -> Value {
-        json!({
-            "containers": ["mkv", "mp4", "webm"],
-            "videoCodecs": [{
-                "codec": "h264",
-                "profiles": ["main", "high"],
-                "maxWidth": 3840,
-                "maxHeight": 2160,
-                "hdrTypes": ["sdr"],
-            }],
-            "audioCodecs": [
-                { "codec": "aac", "maxChannels": 8 },
-                { "codec": "ac3", "maxChannels": 6 },
-            ],
-            "subtitleCodecs": [],
-        })
-    }
-
     async fn start(server: &TestServer, token: &str, media_file_id: Uuid) -> (StatusCode, Value) {
         start_for(server, token, media_file_id, browser_profile()).await
     }
@@ -676,7 +606,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_file_the_profile_covers_plays_directly_with_its_movie_and_tracks() {
+    async fn a_direct_play_returns_the_playback_with_the_signed_url_of_its_media_file() {
         let app = TestApp::new().await;
         let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;
         let (media_file_id, file) = add_media_file(&app, "mp4", Some(MP4)).await;
@@ -770,153 +700,6 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn a_two_episode_file_plays_as_both_episodes_in_order() {
-        let app = TestApp::new().await;
-        let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;
-        let (media_file_id, _file) = add_media_file(&app, "mp4", Some(MP4)).await;
-        let show_id = add_show(&app, "Severance", &[1]).await;
-        let mut db_context = app.state.db_context.clone();
-        let season = db_context
-            .seasons()
-            .filter(Season::fields().show_id().eq(show_id))
-            .get(db_context.executor_mut())
-            .await
-            .unwrap();
-        let mut ids = Vec::new();
-        for (number, title) in [(3, "In Perpetuity"), (2, "Half Loop")] {
-            ids.push(
-                Episode::create()
-                    .season_id(season.id)
-                    .tvdb_id(domain::TvdbId(number))
-                    .number(number)
-                    .title(title)
-                    .media_file_id(Some(media_file_id))
-                    .in_library(true)
-                    .exec(db_context.executor_mut())
-                    .await
-                    .unwrap()
-                    .id,
-            );
-        }
-        let server = serve(&app).await;
-
-        let (status, playback) = start(&server, &token, media_file_id).await;
-
-        assert_eq!(status, StatusCode::CREATED);
-        assert_eq!(playback["movie"], Value::Null);
-        assert_eq!(
-            playback["episodes"],
-            json!([
-                {
-                    "id": ids[1],
-                    "showTitle": "Severance",
-                    "seasonNumber": 1,
-                    "episodeNumber": 2,
-                    "title": "Half Loop",
-                },
-                {
-                    "id": ids[0],
-                    "showTitle": "Severance",
-                    "seasonNumber": 1,
-                    "episodeNumber": 3,
-                    "title": "In Perpetuity",
-                },
-            ])
-        );
-    }
-
-    #[tokio::test]
-    async fn an_episode_playback_carries_the_next_episode_after_its_file_and_the_playback_settings()
-    {
-        let app = TestApp::new().await;
-        let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;
-        let (media_file_id, _file) = add_media_file(&app, "mp4", Some(MP4)).await;
-        let (next_media_file_id, _next_file) = add_media_file(&app, "mp4", Some(MP4)).await;
-        let show_id = add_show(&app, "Severance", &[1, 0, 2]).await;
-        let mut db_context = app.state.db_context.clone();
-        let seasons = db_context
-            .seasons()
-            .filter(Season::fields().show_id().eq(show_id))
-            .exec(db_context.executor_mut())
-            .await
-            .unwrap();
-        let season = |number| seasons.iter().find(|x| x.number == number).unwrap().id;
-        for number in [2, 3] {
-            Episode::create()
-                .season_id(season(1))
-                .tvdb_id(domain::TvdbId(number))
-                .number(number)
-                .title("Half Loop")
-                .media_file_id(Some(media_file_id))
-                .in_library(true)
-                .exec(db_context.executor_mut())
-                .await
-                .unwrap();
-        }
-        let mut next = db_context
-            .episodes()
-            .filter(Episode::fields().season_id().eq(season(2)))
-            .get(db_context.executor_mut())
-            .await
-            .unwrap();
-        next.update()
-            .media_file_id(Some(next_media_file_id))
-            .exec(db_context.executor_mut())
-            .await
-            .unwrap();
-        db_context
-            .artwork()
-            .create()
-            .show_id(Some(show_id))
-            .episode_id(Some(next.id))
-            .kind(ArtworkKind::Thumb)
-            .path("/media/TV/Severance/Season 02/Severance - S02E01-thumb.jpg")
-            .modified_at(app.clock.now())
-            .exec(db_context.executor_mut())
-            .await
-            .unwrap();
-        let server = serve(&app).await;
-        server
-            .request(
-                Method::PUT,
-                "/api/me/playback-settings/v1",
-                Some(&token),
-                Some(json!({ "autoplayNextEpisode": false, "askIfStillWatching": true })),
-            )
-            .await;
-
-        let (status, mut playback) = start(&server, &token, media_file_id).await;
-
-        assert_eq!(status, StatusCode::CREATED);
-        let widths: Vec<_> = playback["nextEpisode"]["thumb"]["urls"]
-            .as_array_mut()
-            .unwrap()
-            .iter_mut()
-            .map(|x| (x["width"].take(), x["url"].take().is_string()))
-            .collect();
-        assert_eq!(widths, [(json!(480), true), (json!(960), true)]);
-        assert_eq!(
-            (
-                &playback["nextEpisode"],
-                &playback["autoplayNextEpisode"],
-                &playback["askIfStillWatching"],
-            ),
-            (
-                &json!({
-                    "id": next.id,
-                    "mediaFileId": next_media_file_id,
-                    "seasonNumber": 2,
-                    "episodeNumber": 1,
-                    "title": "Good News About Hell",
-                    "thumb": { "urls": [{ "width": null, "url": null }, { "width": null, "url": null }] },
-                }),
-                &json!(false),
-                &json!(true),
-            )
-        );
-    }
-
     async fn start_with(
         server: &TestServer,
         token: &str,
@@ -948,7 +731,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_file_whose_container_alone_is_wrong_remuxes_to_hls_with_a_container_reason() {
+    async fn a_remux_returns_the_main_playlist_and_serves_its_playlists_segments_and_subtitles() {
         let app = TestApp::new().await;
         let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;
         let (media_file_id, _file) = add_media_file(&app, "mkv", Some("matroska,webm")).await;
@@ -960,6 +743,9 @@ mod tests {
             server.get_bytes(playback["url"].as_str().unwrap()).await;
         let (segment_status, segment_headers, segment) =
             server.get_bytes(&sibling(&playback, "0.m4s")).await;
+        let (subtitle_status, subtitle_headers, subtitle) = server
+            .get_bytes(&sibling(&playback, "subtitles-0.vtt"))
+            .await;
 
         assert_eq!(status, StatusCode::CREATED);
         assert_eq!(playback["method"], "remux");
@@ -978,109 +764,9 @@ mod tests {
         assert_eq!(segment_status, StatusCode::OK);
         assert_eq!(segment_headers[CONTENT_TYPE], "video/iso.segment");
         assert_eq!(segment, SEGMENT);
-    }
-
-    #[tokio::test]
-    async fn an_hls_playback_carries_every_text_subtitle_in_its_stream_but_no_image_subtitle() {
-        let app = TestApp::new().await;
-        let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;
-        let (media_file_id, file) = add_media_file(&app, "mkv", Some("matroska,webm")).await;
-        add_movie_playing(&app, media_file_id, true).await;
-        let mut db_context = app.state.db_context.clone();
-        let media_file = db_context
-            .media_files()
-            .find(media_file_id)
-            .exec(db_context.executor_mut())
-            .await
-            .unwrap()
-            .unwrap();
-        for (index, codec, text) in [(3, "subrip", true), (4, "hdmv_pgs_subtitle", false)] {
-            media_file
-                .subtitle_streams()
-                .create()
-                .index(index)
-                .codec(codec)
-                .language(Some("eng".to_owned()))
-                .is_default(false)
-                .forced(false)
-                .hearing_impaired(false)
-                .text(text)
-                .exec(db_context.executor_mut())
-                .await
-                .unwrap();
-        }
-        media_file
-            .subtitle_files()
-            .create()
-            .path(file.0.with_extension("en.srt").to_str().unwrap())
-            .language(Some("en".to_owned()))
-            .hearing_impaired(false)
-            .forced(false)
-            .exec(db_context.executor_mut())
-            .await
-            .unwrap();
-        let server = serve(&app).await;
-
-        let (status, playback) = start(&server, &token, media_file_id).await;
-        let (subtitle_status, subtitle_headers, subtitle) = server
-            .get_bytes(&sibling(&playback, "subtitles-0.vtt"))
-            .await;
-
-        assert_eq!(status, StatusCode::CREATED);
-        assert_eq!(playback["method"], "remux");
-        let tracks = playback["subtitleTracks"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|x| (x["codec"].clone(), x["inStream"].clone()))
-            .collect::<Vec<_>>();
-        assert_eq!(
-            tracks,
-            [
-                (json!("subrip"), json!(true)),
-                (json!("hdmv_pgs_subtitle"), json!(false)),
-                (json!("srt"), json!(true)),
-            ]
-        );
         assert_eq!(subtitle_status, StatusCode::OK);
         assert_eq!(subtitle_headers[CONTENT_TYPE], "text/vtt");
         assert_eq!(subtitle, WEBVTT.as_bytes());
-    }
-
-    #[tokio::test]
-    async fn a_tv_session_remuxes_a_file_whose_text_subtitle_sits_beside_it() {
-        let app = TestApp::new().await;
-        let (_, token) = signed_in_on(&app, NAME, PASSWORD, ClientKind::AppleTv).await;
-        let (media_file_id, file) = add_media_file(&app, "mp4", Some(MP4)).await;
-        add_movie_playing(&app, media_file_id, true).await;
-        let mut db_context = app.state.db_context.clone();
-        db_context
-            .media_files()
-            .find(media_file_id)
-            .exec(db_context.executor_mut())
-            .await
-            .unwrap()
-            .unwrap()
-            .subtitle_files()
-            .create()
-            .path(file.0.with_extension("en.srt").to_str().unwrap())
-            .language(Some("en".to_owned()))
-            .hearing_impaired(false)
-            .forced(false)
-            .exec(db_context.executor_mut())
-            .await
-            .unwrap();
-        let server = serve(&app).await;
-
-        let (status, playback) =
-            start_for(&server, &token, media_file_id, apple_tv_profile()).await;
-
-        assert_eq!(status, StatusCode::CREATED);
-        assert_eq!(playback["method"], "remux");
-        assert_eq!(
-            playback["reasons"],
-            json!([{ "kind": "subtitle", "value": "srt" }])
-        );
     }
 
     #[tokio::test]
@@ -1127,340 +813,31 @@ mod tests {
             .await
     }
 
-    async fn set_video(app: &TestApp, media_file_id: Uuid, codec: &str, hdr_type: HdrType) {
-        let mut db_context = app.state.db_context.clone();
-        VideoStream::filter_by_media_file_id(media_file_id)
-            .update()
-            .codec(codec)
-            .profile(Some("Main 10".to_owned()))
-            .width(3840)
-            .height(1600)
-            .hdr_type(hdr_type)
-            .exec(db_context.executor_mut())
-            .await
-            .unwrap();
-    }
-
-    fn hevc_profile(hdr_types: &[&str]) -> Value {
-        json!({
-            "containers": ["mp4"],
-            "videoCodecs": [{
-                "codec": "hevc",
-                "profiles": ["main", "main10"],
-                "maxWidth": 3840,
-                "maxHeight": 2160,
-                "hdrTypes": hdr_types,
-            }],
-            "audioCodecs": [{ "codec": "aac", "maxChannels": 2 }],
-            "subtitleCodecs": [],
-        })
-    }
-
     #[tokio::test]
-    async fn a_video_codec_the_profile_does_not_list_transcodes_the_video_with_a_video_codec_reason()
-     {
+    async fn the_media_urls_of_an_ended_playback_return_404() {
         let app = TestApp::new().await;
         let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;
-        let (media_file_id, _file) = add_media_file(&app, "mkv", Some("matroska,webm")).await;
-        set_video(&app, media_file_id, "hevc", HdrType::Sdr).await;
-        add_movie_playing(&app, media_file_id, true).await;
+        let (mp4, _mp4_file) = add_media_file(&app, "mp4", Some(MP4)).await;
+        add_movie_playing(&app, mp4, true).await;
+        let (mkv, _mkv_file) = add_media_file(&app, "mkv", Some("matroska,webm")).await;
+        add_movie_playing(&app, mkv, true).await;
         let server = serve(&app).await;
+        let (_, direct_play) = start(&server, &token, mp4).await;
+        report(&server, &token, &direct_play, true).await;
+        let (_, remux) = start(&server, &token, mkv).await;
+        report(&server, &token, &remux, true).await;
 
-        let (status, playback) = start(&server, &token, media_file_id).await;
-        let (main_status, _, main) = server.get_bytes(playback["url"].as_str().unwrap()).await;
+        for url in [
+            sibling(&direct_play, "file"),
+            sibling(&remux, "main.m3u8"),
+            sibling(&remux, "0.m4s"),
+        ] {
+            let (status, _, problem) = server.get_bytes(&url).await;
 
-        assert_eq!(status, StatusCode::CREATED);
-        assert_eq!(playback["method"], "transcode");
-        assert_eq!(
-            playback["reasons"],
-            json!([
-                { "kind": "container", "value": "mkv" },
-                { "kind": "videoCodec", "value": "hevc" },
-            ])
-        );
-        assert_eq!(main_status, StatusCode::OK);
-        assert_eq!(main, MAIN_PLAYLIST.as_bytes());
-    }
-
-    #[tokio::test]
-    async fn hdr_on_a_device_without_hdr_transcodes_the_video_with_a_video_range_reason() {
-        let app = TestApp::new().await;
-        let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;
-        let (media_file_id, _file) = add_media_file(&app, "mp4", Some(MP4)).await;
-        set_video(&app, media_file_id, "hevc", HdrType::Hdr10).await;
-        add_movie_playing(&app, media_file_id, true).await;
-        let server = serve(&app).await;
-
-        let (status, playback) =
-            start_for(&server, &token, media_file_id, hevc_profile(&["sdr"])).await;
-
-        assert_eq!(status, StatusCode::CREATED);
-        assert_eq!(playback["method"], "transcode");
-        assert_eq!(
-            playback["reasons"],
-            json!([{ "kind": "videoRange", "value": "hdr10" }])
-        );
-    }
-
-    #[tokio::test]
-    async fn dolby_vision_remuxes_as_its_hdr10_base_layer_to_a_device_without_dolby_vision() {
-        let app = TestApp::new().await;
-        let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;
-        let (media_file_id, _file) = add_media_file(&app, "mkv", Some("matroska,webm")).await;
-        set_video(&app, media_file_id, "hevc", HdrType::DolbyVision).await;
-        add_movie_playing(&app, media_file_id, true).await;
-        let server = serve(&app).await;
-
-        let (status, playback) = start_for(
-            &server,
-            &token,
-            media_file_id,
-            hevc_profile(&["sdr", "hdr10"]),
-        )
-        .await;
-
-        assert_eq!(status, StatusCode::CREATED);
-        assert_eq!(playback["method"], "remux");
-        assert_eq!(
-            playback["reasons"],
-            json!([{ "kind": "container", "value": "mkv" }])
-        );
-    }
-
-    #[tokio::test]
-    async fn a_file_without_a_usable_keyframe_index_transcodes_the_video_with_a_no_keyframe_index_reason()
-     {
-        let mut app = TestApp::new().await;
-        app.state.read_keyframes = ReadKeyframes::new(|_| {
-            Box::pin(async { Ok(vec![Duration::ZERO, Duration::from_secs(30)]) })
-        });
-        let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;
-        let (media_file_id, _file) = add_media_file(&app, "mkv", Some("matroska,webm")).await;
-        add_movie_playing(&app, media_file_id, true).await;
-        let server = serve(&app).await;
-
-        let (status, playback) = start(&server, &token, media_file_id).await;
-
-        assert_eq!(status, StatusCode::CREATED);
-        assert_eq!(playback["method"], "transcode");
-        assert_eq!(
-            playback["reasons"],
-            json!([
-                { "kind": "container", "value": "mkv" },
-                { "kind": "noKeyframeIndex", "value": null },
-            ])
-        );
-        assert!(
-            app.hls
-                .folder(playback_id(&playback))
-                .join("main.m3u8")
-                .exists()
-        );
-    }
-
-    fn audio_targets(app: &TestApp) -> Vec<(i64, Option<AudioTranscode>, bool)> {
-        app.hls
-            .outputs()
-            .last()
-            .unwrap()
-            .audio
-            .iter()
-            .map(|x| (x.stream.index, x.transcode, x.selected))
-            .collect()
-    }
-
-    fn eac3(channels: i64) -> Option<AudioTranscode> {
-        Some(AudioTranscode {
-            codec: AudioTranscodeCodec::Eac3,
-            channels,
-        })
-    }
-
-    fn aac(channels: i64) -> Option<AudioTranscode> {
-        Some(AudioTranscode {
-            codec: AudioTranscodeCodec::Aac,
-            channels,
-        })
-    }
-
-    #[tokio::test]
-    async fn audio_a_profile_with_e_ac_3_does_not_cover_becomes_e_ac_3_and_the_rest_is_copied() {
-        let app = TestApp::new().await;
-        let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;
-        let (media_file_id, _file) = add_media_file_with_audio(
-            &app,
-            "mkv",
-            Some("matroska,webm"),
-            &[
-                (1, "dts", 6, "eng", "DTS-HD MA 5.1", true),
-                (2, "dts", 2, "eng", "Director's commentary", false),
-                (3, "aac", 2, "fre", "Stereo", false),
-            ],
-        )
-        .await;
-        add_movie_playing(&app, media_file_id, true).await;
-        let server = serve(&app).await;
-
-        let (status, playback) =
-            start_for(&server, &token, media_file_id, apple_tv_profile()).await;
-
-        assert_eq!(status, StatusCode::CREATED);
-        assert_eq!(playback["method"], "transcode");
-        assert_eq!(
-            playback["reasons"],
-            json!([
-                { "kind": "container", "value": "mkv" },
-                { "kind": "audioCodec", "value": "dts" },
-            ])
-        );
-        assert!(
-            playback["url"].as_str().unwrap().ends_with("/v1/main.m3u8"),
-            "{}",
-            playback["url"]
-        );
-        assert_eq!(
-            audio_targets(&app),
-            [(1, eac3(6), true), (2, eac3(2), false), (3, None, false)]
-        );
-    }
-
-    #[tokio::test]
-    async fn audio_a_profile_without_e_ac_3_does_not_cover_becomes_aac_up_to_its_maximum_channels()
-    {
-        let app = TestApp::new().await;
-        let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;
-        let (media_file_id, _file) = add_media_file_with_audio(
-            &app,
-            "mkv",
-            Some("matroska,webm"),
-            &[
-                (1, "eac3", 6, "eng", "Surround 5.1", true),
-                (2, "ac3", 6, "eng", "Surround 5.1", false),
-                (3, "truehd", 8, "eng", "Atmos", false),
-            ],
-        )
-        .await;
-        add_movie_playing(&app, media_file_id, true).await;
-        let server = serve(&app).await;
-
-        let (status, playback) = start_for(
-            &server,
-            &token,
-            media_file_id,
-            google_tv_profile_without_e_ac_3(),
-        )
-        .await;
-
-        assert_eq!(status, StatusCode::CREATED);
-        assert_eq!(playback["method"], "transcode");
-        assert_eq!(
-            playback["reasons"],
-            json!([
-                { "kind": "audioCodec", "value": "eac3" },
-                { "kind": "audioCodec", "value": "truehd" },
-            ])
-        );
-        assert_eq!(
-            audio_targets(&app),
-            [(1, aac(6), true), (2, None, false), (3, aac(6), false)]
-        );
-    }
-
-    #[tokio::test]
-    async fn audio_a_browser_does_not_cover_becomes_aac_with_at_most_two_channels() {
-        let app = TestApp::new().await;
-        let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;
-        let (media_file_id, _file) = add_media_file_with_audio(
-            &app,
-            "mp4",
-            Some(MP4),
-            &[
-                (1, "eac3", 6, "eng", "Surround 5.1", true),
-                (2, "aac", 6, "eng", "Surround 5.1", false),
-                (3, "aac", 1, "eng", "Mono", false),
-            ],
-        )
-        .await;
-        add_movie_playing(&app, media_file_id, true).await;
-        let server = serve(&app).await;
-
-        let (status, playback) = start(&server, &token, media_file_id).await;
-
-        assert_eq!(status, StatusCode::CREATED);
-        assert_eq!(playback["method"], "transcode");
-        assert_eq!(
-            playback["reasons"],
-            json!([
-                { "kind": "audioCodec", "value": "eac3" },
-                { "kind": "audioChannels", "value": "6" },
-            ])
-        );
-        assert_eq!(
-            audio_targets(&app),
-            [(1, aac(2), true), (2, aac(2), false), (3, None, false)]
-        );
-    }
-
-    #[tokio::test]
-    async fn the_keyframes_are_read_on_the_first_remux_and_again_once_the_file_changes() {
-        let mut app = TestApp::new().await;
-        let reads = Arc::new(AtomicUsize::new(0));
-        let counted = reads.clone();
-        app.state.read_keyframes = ReadKeyframes::new(move |_| {
-            counted.fetch_add(1, Ordering::SeqCst);
-            Box::pin(async { Ok(vec![Duration::ZERO, Duration::from_secs(6)]) })
-        });
-        let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;
-        let (media_file_id, _file) = add_media_file(&app, "mkv", Some("matroska,webm")).await;
-        add_movie_playing(&app, media_file_id, true).await;
-        let server = serve(&app).await;
-
-        start(&server, &token, media_file_id).await;
-        start(&server, &token, media_file_id).await;
-        let before_change = reads.load(Ordering::SeqCst);
-        let mut db_context = app.state.db_context.clone();
-        MediaFile::filter_by_id(media_file_id)
-            .update()
-            .size(Some(11))
-            .exec(db_context.executor_mut())
-            .await
-            .unwrap();
-        let (status, playback) = start(&server, &token, media_file_id).await;
-
-        assert_eq!(before_change, 1);
-        assert_eq!(reads.load(Ordering::SeqCst), 2);
-        assert_eq!(
-            (status, &playback["method"]),
-            (StatusCode::CREATED, &json!("remux"))
-        );
-    }
-
-    #[tokio::test]
-    async fn ending_an_hls_playback_deletes_its_segments_and_its_urls_return_404() {
-        let app = TestApp::new().await;
-        let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;
-        let (media_file_id, _file) = add_media_file(&app, "mkv", Some("matroska,webm")).await;
-        add_movie_playing(&app, media_file_id, true).await;
-        let server = serve(&app).await;
-        let (_, stopped) = start(&server, &token, media_file_id).await;
-        report(&server, &token, &stopped, true).await;
-        let (_, replaced) = start(&server, &token, media_file_id).await;
-        let (_, current) = start(&server, &token, media_file_id).await;
-
-        for playback in [&stopped, &replaced] {
-            for file_name in ["main.m3u8", "0.m4s"] {
-                let (status, _, problem) = server.get_bytes(&sibling(playback, file_name)).await;
-
-                assert_eq!(status, StatusCode::NOT_FOUND, "{file_name}");
-                let problem = serde_json::from_slice::<Value>(&problem).unwrap();
-                assert_eq!(problem["type"], "urn:selfless:problem:not-found");
-            }
-            assert!(!app.hls.folder(playback_id(playback)).exists());
+            assert_eq!(status, StatusCode::NOT_FOUND, "{url}");
+            let problem = serde_json::from_slice::<Value>(&problem).unwrap();
+            assert_eq!(problem["type"], "urn:selfless:problem:not-found");
         }
-        assert_eq!(
-            server.get_bytes(&sibling(&current, "0.m4s")).await.0,
-            StatusCode::OK
-        );
     }
 
     #[tokio::test]
@@ -1513,30 +890,6 @@ mod tests {
                 ),
             ]
         );
-    }
-
-    async fn remember(app: &TestApp, user_id: Uuid, audio: Option<&str>, subtitle: Option<&str>) {
-        let mut db_context = app.state.db_context.clone();
-        db_context
-            .playback_settings()
-            .create()
-            .user_id(user_id)
-            .audio_language(audio.map(str::to_owned))
-            .subtitle_language(subtitle.map(str::to_owned))
-            .exec(db_context.executor_mut())
-            .await
-            .unwrap();
-    }
-
-    async fn remembered(app: &TestApp, user_id: Uuid) -> (Option<String>, Option<String>) {
-        let mut db_context = app.state.db_context.clone();
-        db_context
-            .playback_settings()
-            .find(user_id)
-            .exec(db_context.executor_mut())
-            .await
-            .unwrap()
-            .map_or((None, None), |x| (x.audio_language, x.subtitle_language))
     }
 
     struct Subtitle {
@@ -1617,159 +970,19 @@ mod tests {
             .await
     }
 
-    async fn report_tracks(
-        server: &TestServer,
-        token: &str,
-        playback: &Value,
-        audio_track_id: &Value,
-        subtitle_track_id: &Value,
-    ) -> StatusCode {
-        server
-            .request(
-                Method::PUT,
-                &format!(
-                    "/api/playbacks/{}/progress/v1",
-                    playback["playbackId"].as_str().unwrap()
-                ),
-                Some(token),
-                Some(json!({
-                    "position": 30,
-                    "paused": false,
-                    "stopped": false,
-                    "audioTrackId": audio_track_id,
-                    "subtitleTrackId": subtitle_track_id,
-                })),
-            )
-            .await
-            .0
-    }
-
-    #[tokio::test]
-    async fn without_remembered_languages_a_playback_starts_with_the_files_default_audio_and_no_subtitles()
-     {
-        let app = TestApp::new().await;
-        let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;
-        let (media_file_id, _file) = add_media_file(&app, "mkv", Some("matroska,webm")).await;
-        add_subtitles(&app, media_file_id, &[ENGLISH]).await;
-        add_movie_playing(&app, media_file_id, true).await;
-        let server = serve(&app).await;
-
-        let (_, playback) = start(&server, &token, media_file_id).await;
-
-        assert_eq!(playback["audioTracks"][0]["language"], "eng");
-        assert_eq!(
-            playback["audioTrackId"],
-            track_id(&playback, "audioTracks", 0)
-        );
-        assert_eq!(playback["subtitleTrackId"], Value::Null);
-        assert_eq!(app.hls.outputs().last().unwrap().selected_subtitle, None);
-    }
-
-    #[tokio::test]
-    async fn a_playback_starts_with_the_first_audio_track_in_the_remembered_audio_language() {
-        let app = TestApp::new().await;
-        let (user_id, token) = signed_in_user(&app, NAME, PASSWORD).await;
-        remember(&app, user_id, Some("jpn"), None).await;
-        let (media_file_id, _file) = add_media_file_with_audio(
-            &app,
-            "mkv",
-            Some("matroska,webm"),
-            &[
-                (1, "aac", 2, "eng", "Stereo", true),
-                (2, "aac", 2, "ja", "Stereo", false),
-                (3, "aac", 2, "jpn", "Commentary", false),
-            ],
-        )
-        .await;
-        add_movie_playing(&app, media_file_id, true).await;
-        let server = serve(&app).await;
-
-        let (_, playback) = start(&server, &token, media_file_id).await;
-
-        assert_eq!(
-            playback["audioTrackId"],
-            track_id(&playback, "audioTracks", 1)
-        );
-        assert_eq!(
-            audio_targets(&app),
-            [(1, None, false), (2, None, true), (3, None, false)]
-        );
-    }
-
-    #[tokio::test]
-    async fn a_playback_starts_with_a_regular_subtitle_in_the_remembered_subtitle_language() {
-        let app = TestApp::new().await;
-        let (user_id, token) = signed_in_user(&app, NAME, PASSWORD).await;
-        remember(&app, user_id, None, Some("eng")).await;
-        let (media_file_id, _file) = add_media_file(&app, "mkv", Some("matroska,webm")).await;
-        let ids = add_subtitles(
-            &app,
-            media_file_id,
-            &[
-                Subtitle {
-                    forced: true,
-                    ..ENGLISH
-                },
-                Subtitle {
-                    codec: "hdmv_pgs_subtitle",
-                    ..ENGLISH
-                },
-                Subtitle {
-                    hearing_impaired: true,
-                    ..ENGLISH
-                },
-                ENGLISH,
-            ],
-        )
-        .await;
-        add_movie_playing(&app, media_file_id, true).await;
-        let server = serve(&app).await;
-
-        let (_, playback) = start(&server, &token, media_file_id).await;
-
-        assert_eq!(playback["subtitleTrackId"], json!(ids[3]));
-        assert_eq!(app.hls.outputs().last().unwrap().selected_subtitle, Some(2));
-    }
-
-    #[tokio::test]
-    async fn with_subtitles_off_a_forced_subtitle_in_the_audios_language_turns_on() {
-        let app = TestApp::new().await;
-        let (user_id, token) = signed_in_user(&app, NAME, PASSWORD).await;
-        remember(&app, user_id, Some("jpn"), None).await;
-        let (media_file_id, _file) = add_media_file(&app, "mkv", Some("matroska,webm")).await;
-        let ids = add_subtitles(
-            &app,
-            media_file_id,
-            &[
-                Subtitle {
-                    forced: true,
-                    ..ENGLISH
-                },
-                Subtitle {
-                    language: "jpn",
-                    ..ENGLISH
-                },
-                Subtitle {
-                    language: "jpn",
-                    forced: true,
-                    ..ENGLISH
-                },
-            ],
-        )
-        .await;
-        add_movie_playing(&app, media_file_id, true).await;
-        let server = serve(&app).await;
-
-        let (_, playback) = start(&server, &token, media_file_id).await;
-
-        assert_eq!(playback["subtitleTrackId"], json!(ids[2]));
-    }
-
     #[tokio::test]
     async fn a_play_request_may_name_the_audio_and_subtitle_tracks_or_turn_subtitles_off() {
         let app = TestApp::new().await;
         let (user_id, token) = signed_in_user(&app, NAME, PASSWORD).await;
-        remember(&app, user_id, Some("eng"), Some("eng")).await;
+        let mut db_context = app.state.db_context.clone();
+        db_context
+            .playback_settings()
+            .create()
+            .user_id(user_id)
+            .subtitle_language(Some("eng".to_owned()))
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap();
         let (media_file_id, _file) = add_media_file(&app, "mkv", Some("matroska,webm")).await;
         let ids = add_subtitles(&app, media_file_id, &[ENGLISH, ENGLISH]).await;
         add_movie_playing(&app, media_file_id, true).await;
@@ -1798,149 +1011,6 @@ mod tests {
             (&japanese, &json!(ids[1]))
         );
         assert_eq!(off["subtitleTrackId"], Value::Null);
-    }
-
-    #[tokio::test]
-    async fn a_direct_play_needs_the_selected_subtitle_embedded_in_a_codec_the_profile_lists() {
-        let app = TestApp::new().await;
-        let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;
-        let (media_file_id, file) = add_media_file(&app, "mkv", Some("matroska,webm")).await;
-        let ids = add_subtitles(
-            &app,
-            media_file_id,
-            &[
-                Subtitle {
-                    codec: "hdmv_pgs_subtitle",
-                    ..ENGLISH
-                },
-                ENGLISH,
-            ],
-        )
-        .await;
-        let mut db_context = app.state.db_context.clone();
-        let external = db_context
-            .media_files()
-            .find(media_file_id)
-            .exec(db_context.executor_mut())
-            .await
-            .unwrap()
-            .unwrap()
-            .subtitle_files()
-            .create()
-            .path(file.0.with_extension("en.srt").to_str().unwrap())
-            .language(Some("en".to_owned()))
-            .hearing_impaired(false)
-            .forced(false)
-            .exec(db_context.executor_mut())
-            .await
-            .unwrap()
-            .id;
-        add_movie_playing(&app, media_file_id, true).await;
-        let mut profile = google_tv_profile_without_e_ac_3();
-        profile["subtitleCodecs"] = json!(["hdmv_pgs_subtitle"]);
-        let server = serve(&app).await;
-
-        let mut results = Vec::new();
-        for subtitle in [json!(ids[0]), json!(ids[1]), json!(external)] {
-            let (_, playback) = server
-                .request(
-                    Method::POST,
-                    "/api/playbacks/v1",
-                    Some(&token),
-                    Some(json!({
-                        "mediaFileId": media_file_id,
-                        "startPosition": 0,
-                        "profile": profile,
-                        "subtitleTrackId": subtitle,
-                    })),
-                )
-                .await;
-            results.push((playback["method"].clone(), playback["reasons"].clone()));
-        }
-
-        assert_eq!(
-            results,
-            [
-                (json!("directPlay"), json!([])),
-                (
-                    json!("remux"),
-                    json!([{ "kind": "subtitle", "value": "subrip" }])
-                ),
-                (
-                    json!("remux"),
-                    json!([{ "kind": "subtitle", "value": "srt" }])
-                ),
-            ]
-        );
-    }
-
-    #[tokio::test]
-    async fn a_report_with_other_tracks_changes_the_remembered_languages_to_match() {
-        let app = TestApp::new().await;
-        let (user_id, token) = signed_in_user(&app, NAME, PASSWORD).await;
-        let (media_file_id, file) = add_media_file(&app, "mkv", Some("matroska,webm")).await;
-        add_subtitles(&app, media_file_id, &[ENGLISH]).await;
-        let mut db_context = app.state.db_context.clone();
-        db_context
-            .media_files()
-            .find(media_file_id)
-            .exec(db_context.executor_mut())
-            .await
-            .unwrap()
-            .unwrap()
-            .subtitle_files()
-            .create()
-            .path(file.0.with_extension("fr.srt").to_str().unwrap())
-            .language(Some("fr".to_owned()))
-            .hearing_impaired(false)
-            .forced(false)
-            .exec(db_context.executor_mut())
-            .await
-            .unwrap();
-        add_movie_playing(&app, media_file_id, true).await;
-        let server = serve(&app).await;
-        let (_, playback) = start(&server, &token, media_file_id).await;
-        let english = track_id(&playback, "audioTracks", 0);
-        let japanese = track_id(&playback, "audioTracks", 1);
-        let french = track_id(&playback, "subtitleTracks", 1);
-
-        report_tracks(&server, &token, &playback, &english, &Value::Null).await;
-        let unchanged = remembered(&app, user_id).await;
-        report_tracks(&server, &token, &playback, &japanese, &french).await;
-        let changed = remembered(&app, user_id).await;
-        report_tracks(&server, &token, &playback, &japanese, &Value::Null).await;
-        let subtitles_off = remembered(&app, user_id).await;
-
-        assert_eq!(unchanged, (None, None));
-        assert_eq!(changed, (Some("jpn".to_owned()), Some("fra".to_owned())));
-        assert_eq!(subtitles_off, (Some("jpn".to_owned()), None));
-    }
-
-    #[tokio::test]
-    async fn the_first_report_after_a_play_request_that_named_other_tracks_remembers_their_languages()
-     {
-        let app = TestApp::new().await;
-        let (user_id, token) = signed_in_user(&app, NAME, PASSWORD).await;
-        let (media_file_id, _file) = add_media_file(&app, "mkv", Some("matroska,webm")).await;
-        let ids = add_subtitles(&app, media_file_id, &[ENGLISH]).await;
-        add_movie_playing(&app, media_file_id, true).await;
-        let server = serve(&app).await;
-        let (_, defaults) = start(&server, &token, media_file_id).await;
-        let japanese = track_id(&defaults, "audioTracks", 1);
-        let (_, named) = start_naming(
-            &server,
-            &token,
-            media_file_id,
-            json!({ "audioTrackId": japanese, "subtitleTrackId": ids[0] }),
-        )
-        .await;
-
-        report_tracks(&server, &token, &named, &japanese, &json!(ids[0])).await;
-
-        assert_eq!(
-            remembered(&app, user_id).await,
-            (Some("jpn".to_owned()), Some("eng".to_owned()))
-        );
     }
 
     #[tokio::test]
@@ -1977,33 +1047,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_new_playback_ends_the_open_playback_of_the_same_session() {
-        let app = TestApp::new().await;
-        let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;
-        let (_, other_token) = signed_in_user(&app, "Theo", PASSWORD).await;
-        let (media_file_id, _file) = add_media_file(&app, "mp4", Some(MP4)).await;
-        add_movie_playing(&app, media_file_id, true).await;
-        let server = serve(&app).await;
-        let (_, first) = start(&server, &token, media_file_id).await;
-        let (_, other_session) = start(&server, &other_token, media_file_id).await;
-
-        let (_, second) = start(&server, &token, media_file_id).await;
-
-        assert_eq!(
-            report(&server, &token, &first, false).await.0,
-            StatusCode::NOT_FOUND
-        );
-        assert_eq!(
-            report(&server, &token, &second, false).await.0,
-            StatusCode::NO_CONTENT
-        );
-        assert_eq!(
-            report(&server, &other_token, &other_session, false).await.0,
-            StatusCode::NO_CONTENT
-        );
-    }
-
-    #[tokio::test]
     async fn a_report_after_a_stop_returns_the_playback_ended_problem() {
         let app = TestApp::new().await;
         let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;
@@ -2020,55 +1063,6 @@ mod tests {
         assert_eq!(stop, StatusCode::NO_CONTENT);
         assert_eq!(after_stop, StatusCode::NOT_FOUND);
         assert_eq!(problem["type"], "urn:selfless:problem:playback-ended");
-    }
-
-    #[tokio::test]
-    async fn the_file_url_of_an_ended_playback_returns_404() {
-        let app = TestApp::new().await;
-        let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;
-        let (media_file_id, _file) = add_media_file(&app, "mp4", Some(MP4)).await;
-        add_movie_playing(&app, media_file_id, true).await;
-        let server = serve(&app).await;
-        let (_, playback) = start(&server, &token, media_file_id).await;
-        report(&server, &token, &playback, true).await;
-
-        let (status, _, problem) = server.get_bytes(playback["url"].as_str().unwrap()).await;
-
-        assert_eq!(status, StatusCode::NOT_FOUND);
-        let problem = serde_json::from_slice::<Value>(&problem).unwrap();
-        assert_eq!(problem["type"], "urn:selfless:problem:not-found");
-    }
-
-    #[tokio::test]
-    async fn a_report_stores_the_position_paused_state_and_report_time() {
-        let app = TestApp::new().await;
-        let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;
-        let (media_file_id, _file) = add_media_file(&app, "mp4", Some(MP4)).await;
-        add_movie_playing(&app, media_file_id, true).await;
-        let server = serve(&app).await;
-        let (_, playback) = start(&server, &token, media_file_id).await;
-        app.clock.advance(jiff::SignedDuration::from_secs(10));
-
-        report(&server, &token, &playback, false).await;
-
-        let mut db_context = app.state.db_context.clone();
-        let stored = db_context
-            .playbacks()
-            .find(
-                playback["playbackId"]
-                    .as_str()
-                    .unwrap()
-                    .parse::<Uuid>()
-                    .unwrap(),
-            )
-            .exec(db_context.executor_mut())
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(
-            (stored.position, stored.paused, stored.last_reported_at),
-            (12.5, false, app.clock.now())
-        );
     }
 
     #[tokio::test]

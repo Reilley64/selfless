@@ -16,6 +16,7 @@ use crate::ports::FoundMediaFile;
 use crate::ports::FoundSubtitleFile;
 use crate::ports::GetRadarrMovie;
 use crate::ports::GetSonarrShow;
+use crate::ports::HlsOutput;
 use crate::ports::ImageFile;
 use crate::ports::ImageFormat;
 use crate::ports::ListCachedImages;
@@ -43,6 +44,7 @@ use crate::ports::SourceMediaFile;
 use crate::ports::SourceMovie;
 use crate::ports::SourceShow;
 use crate::ports::SourceShowListing;
+use crate::ports::StartHlsOutput;
 use crate::ports::UnreadableFile;
 use crate::ports::UnreadableNfo;
 use crate::ports::persistence;
@@ -141,6 +143,34 @@ impl EndedHlsOutputs {
 
     pub(crate) fn playback_ids(&self) -> Vec<Uuid> {
         self.playback_ids.lock().unwrap().clone()
+    }
+}
+
+#[derive(Clone, Default)]
+pub(crate) struct StartedHlsOutputs {
+    outputs: Arc<Mutex<Vec<HlsOutput>>>,
+}
+
+impl StartedHlsOutputs {
+    pub(crate) fn port(&self) -> StartHlsOutput {
+        let outputs = self.outputs.clone();
+        StartHlsOutput::new(move |output| {
+            outputs.lock().unwrap().push(output);
+            Box::pin(async { Ok(()) })
+        })
+    }
+
+    pub(crate) fn last(&self) -> HlsOutput {
+        self.outputs
+            .lock()
+            .unwrap()
+            .last()
+            .cloned()
+            .expect("an HLS output started")
+    }
+
+    pub(crate) fn count(&self) -> usize {
+        self.outputs.lock().unwrap().len()
     }
 }
 

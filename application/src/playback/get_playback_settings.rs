@@ -29,3 +29,26 @@ pub async fn call(dependencies: impl Into<Dependencies>, user_id: Uuid) -> Resul
         ask_if_still_watching: settings.ask_if_still_watching,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test::mock_db_context;
+
+    #[tokio::test]
+    async fn playback_settings_start_with_autoplay_on_and_the_still_watching_prompt_off() {
+        let db_context = mock_db_context().await;
+
+        let settings = call(Dependencies { db_context }, Uuid::new_v4())
+            .await
+            .unwrap();
+
+        assert_eq!(
+            (
+                settings.autoplay_next_episode,
+                settings.ask_if_still_watching
+            ),
+            (true, false)
+        );
+    }
+}
