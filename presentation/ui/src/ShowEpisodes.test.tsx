@@ -1,6 +1,7 @@
 import type { EpisodeList, ShowPage } from "@selfless/api-client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, renderRouter, screen } from "expo-router/testing-library";
+import { Platform } from "react-native";
 import { ShowEpisodes } from "./ShowEpisodes";
 
 beforeAll(() => {
@@ -32,15 +33,21 @@ const severance: ShowPage = {
     { id: specials, number: 0, name: "Specials", episodeCount: 1 },
   ],
   play: {
-    verb: "play",
-    resumePosition: null,
+    verb: "resume",
+    resumePosition: 1534.2,
     season: { id: seasonTwo, number: 2 },
     episode: { id: helloMsCobel, number: 1, title: "Hello, Ms. Cobel", mediaFileId: "0190f3c4-c2d3-7e4f-8a5b-6c7d8e9f0a1b" },
   },
   moreLikeThis: [],
 };
 
-const episode = (id: string, number: number, title: string, runtimeMinutes: number | null) => ({
+const episode = (
+  id: string,
+  number: number,
+  title: string,
+  runtimeMinutes: number | null,
+  { progress = null, watched = false }: { progress?: number | null; watched?: boolean } = {},
+) => ({
   id,
   number,
   title,
@@ -48,13 +55,15 @@ const episode = (id: string, number: number, title: string, runtimeMinutes: numb
   plot: `The plot of ${title}.`,
   thumb: null,
   mediaFileId: null,
-  progress: null,
-  watched: false,
+  progress,
+  watched,
 });
 
 const episodes: Record<string, EpisodeList> = {
-  [seasonOne]: { episodes: [episode("0190f3c4-bc2d-7e3f-8a4b-5c6d7e8f9a0b", 1, "Good News About Hell", 57)] },
-  [seasonTwo]: { episodes: [episode(helloMsCobel, 1, "Hello, Ms. Cobel", 50)] },
+  [seasonOne]: {
+    episodes: [episode("0190f3c4-bc2d-7e3f-8a4b-5c6d7e8f9a0b", 1, "Good News About Hell", 57, { watched: true })],
+  },
+  [seasonTwo]: { episodes: [episode(helloMsCobel, 1, "Hello, Ms. Cobel", 50, { progress: 0.51 })] },
   [specials]: { episodes: [episode("0190f3c4-cd3e-7f4a-8b5c-6d7e8f9a0b1c", 1, "Main Title Sequence", null)] },
 };
 
@@ -85,6 +94,19 @@ test("the show page opens on the season of the episode that Play would play", as
   expect(screen.getByLabelText("Season")).toHaveTextContent(/Season 2/);
   expect(screen.getByText("50m")).toBeOnTheScreen();
   expect(screen.getByText("The plot of Hello, Ms. Cobel.")).toBeOnTheScreen();
+});
+
+test("each episode shows the user's progress bar or watched mark", async () => {
+  await renderShowEpisodes(`/shows/${showId}`);
+
+  expect(await screen.findByRole("progressbar")).toHaveAccessibilityValue({ now: 51 });
+  expect(screen.queryByLabelText("Watched")).toBeNull();
+
+  await fireEvent.press(screen.getByLabelText("Season"));
+  await fireEvent.press(screen.getByText("Season 1"));
+
+  expect(await screen.findByLabelText("Watched")).toBeOnTheScreen();
+  expect(screen.queryByRole("progressbar")).toBeNull();
 });
 
 test("a season in the URL opens that season", async () => {
@@ -121,4 +143,52 @@ test("an episode's ⋯ button opens the episode page", async () => {
   await fireEvent.press(await screen.findByLabelText("More about Hello, Ms. Cobel"));
 
   expect(screen).toHavePathname(`/episodes/${helloMsCobel}`);
+});
+
+jest.mock("./FocusGuide", () => {
+  const { View } = jest.requireActual("react-native");
+  return {
+    FocusGuide: ({ ref, ...props }: { ref?: { current: unknown } }) => {
+      if (ref) {
+        ref.current = { requestTVFocus: () => {} };
+      }
+      return <View {...props} />;
+    },
+  };
+});
+
+describe("on TV", () => {
+  beforeEach(() => {
+    jest.spyOn(Platform, "isTV", "get").mockReturnValue(true);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  test("the season column lists the seasons with Specials last and opens on the Play target's season", async () => {
+    await renderShowEpisodes(`/shows/${showId}`);
+
+    expect(await screen.findByText("Hello, Ms. Cobel")).toBeOnTheScreen();
+    expect(screen.getAllByRole("tab").map((x) => x.props.accessibilityLabel)).toEqual(["Season 1", "Season 2", "Specials"]);
+    expect(screen.getByRole("tab", { selected: true })).toHaveAccessibleName("Season 2");
+  });
+
+  test("moving focus to a season shows its episodes", async () => {
+    await renderShowEpisodes(`/shows/${showId}`);
+    await screen.findByText("Hello, Ms. Cobel");
+
+    await fireEvent(screen.getByRole("tab", { name: "Season 1" }), "focus");
+
+    expect(await screen.findByText("Good News About Hell")).toBeOnTheScreen();
+    expect(screen.getByRole("tab", { selected: true })).toHaveAccessibleName("Season 1");
+  });
+
+  test("a long press on an episode opens the episode page", async () => {
+    await renderShowEpisodes(`/shows/${showId}`);
+
+    await fireEvent(await screen.findByLabelText("Play E1 Hello, Ms. Cobel"), "longPress");
+
+    expect(screen).toHavePathname(`/episodes/${helloMsCobel}`);
+  });
 });

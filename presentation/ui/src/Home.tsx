@@ -1,4 +1,14 @@
-import { type HomeRow, type HomeRowKind, type Tile, useGetHome } from "@selfless/api-client";
+import {
+  type getHomeResponse,
+  getGetHomeQueryKey,
+  type HomeRow,
+  type HomeRowKind,
+  type Tile,
+  useGetHome,
+  useRemoveMovieFromContinueWatching,
+  useRemoveShowFromContinueWatching,
+} from "@selfless/api-client";
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { Platform, type ScrollViewInstance } from "react-native";
@@ -7,6 +17,7 @@ import { FeaturedTitle } from "./FeaturedTitle";
 import { FocusedDetails } from "./FocusedDetails";
 import type { FocusGuideInstance } from "./FocusGuide";
 import { serverUnreachable } from "./messages";
+import { playHref } from "./playHref";
 import { TileRow } from "./TileRow";
 import { tilePath } from "./tilePath";
 
@@ -28,6 +39,9 @@ export function Home({ autoFocus = true }: { autoFocus?: boolean }) {
   const rowsScroll = useRef<ScrollViewInstance>(null);
   const rowTops = useRef<number[]>([]);
   const focusOnLoad = useRef(autoFocus);
+  const queryClient = useQueryClient();
+  const removeMovie = useRemoveMovieFromContinueWatching();
+  const removeShow = useRemoveShowFromContinueWatching();
   const loaded = data?.status === 200;
   useEffect(() => {
     if (loaded && focusOnLoad.current) {
@@ -41,6 +55,27 @@ export function Home({ autoFocus = true }: { autoFocus?: boolean }) {
     return null;
   }
   const { featured, rows } = data.data;
+  const removeFromContinueWatching = (tile: Tile) => {
+    queryClient.setQueryData<getHomeResponse>(getGetHomeQueryKey(), (home) =>
+      home?.status === 200
+        ? {
+            ...home,
+            data: {
+              ...home.data,
+              rows: home.data.rows.map((row) =>
+                row.kind === "continueWatching" ? { ...row, tiles: row.tiles.filter((x) => x.id !== tile.id) } : row,
+              ),
+            },
+          }
+        : home,
+    );
+    const refetchHome = { onSettled: () => queryClient.invalidateQueries({ queryKey: getGetHomeQueryKey() }) };
+    if (tile.episode) {
+      removeShow.mutate({ showId: tile.episode.show.id }, refetchHome);
+    } else {
+      removeMovie.mutate({ movieId: tile.id }, refetchHome);
+    }
+  };
   const tileRows = rows
     .filter((row) => row.tiles.length > 0)
     .map((row, index) => (
@@ -53,7 +88,12 @@ export function Home({ autoFocus = true }: { autoFocus?: boolean }) {
         <TileRow
           title={rowTitle(row)}
           tiles={row.tiles}
-          onPressTile={(tile) => router.push(tilePath(tile))}
+          onPressTile={(tile) => router.push(row.kind === "continueWatching" ? playHref(tile) : tilePath(tile))}
+          menu={
+            row.kind === "continueWatching"
+              ? (tile) => [{ label: "Remove from Continue watching", onPress: () => removeFromContinueWatching(tile) }]
+              : undefined
+          }
           onFocusTile={
             Platform.isTV
               ? (tile) => {

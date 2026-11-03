@@ -1,18 +1,24 @@
 import type { Tile as TileData } from "@selfless/api-client";
 import { useRouter } from "expo-router";
-import { useEffect, useRef, useState } from "react";
-import { Platform, type ScrollViewInstance } from "react-native";
+import { type Ref, useEffect, useRef, useState } from "react";
+import { type View as HostView, Platform, type ScrollViewInstance } from "react-native";
 import { Pressable, ScrollView, Text, View } from "react-native-css/components";
 import { ActionButton } from "./ActionButton";
+import { episodeLabel } from "./episodeLabel";
+import type { FocusGuideInstance } from "./FocusGuide";
+import { playHref } from "./playHref";
 import { ArtworkImage, Tile } from "./Tile";
+import { TileMenu, type TileMenuItem } from "./TileMenu";
+import { tilePath } from "./tilePath";
 import { TitleMeta } from "./TitleMeta";
 
 const HOVER_DELAY = 400;
 const INSET = 48;
 const EXPANDED_WIDTH = 520;
 
-function TileCard({ tile, onPress }: { tile: TileData; onPress?: () => void }) {
+function TileCard({ tile, onPress, onMenu }: { tile: TileData; onPress?: () => void; onMenu?: () => void }) {
   const router = useRouter();
+  const { episode } = tile;
   return (
     <Pressable
       className="aspect-video w-full justify-end overflow-hidden rounded-medium bg-surface px-6 py-5 shadow-2xl ring-3 ring-focus-ring"
@@ -24,35 +30,58 @@ function TileCard({ tile, onPress }: { tile: TileData; onPress?: () => void }) {
       )}
       <View className="absolute inset-0 bg-linear-to-r from-black/90 via-black/65 via-60% to-black/10" />
       <Text className="font-sans font-extrabold text-web-heading text-text-primary leading-title" numberOfLines={1}>
-        {tile.title}
+        {episode ? episode.show.title : tile.title}
       </Text>
       <View className="mt-2">
         <TitleMeta tile={tile} small />
       </View>
+      {episode && (
+        <Text className="mt-2 font-sans text-web-meta text-text-primary" numberOfLines={1}>
+          <Text className="font-bold">{episodeLabel(episode.seasonNumber, episode.episodeNumber)}</Text> {tile.title}
+        </Text>
+      )}
       {tile.plot && (
         <Text className="mt-2 font-sans text-web-meta text-text-secondary leading-body" numberOfLines={2}>
           {tile.plot}
         </Text>
       )}
       <View className="mt-3 flex-row gap-2">
-        {tile.kind === "movie" && (
-          <ActionButton label="Play" primary small onPress={() => router.push(`/play/movies/${tile.id}`)} />
+        {tile.kind !== "show" && (
+          <ActionButton
+            label="Play"
+            primary
+            small
+            onPress={() => router.push(playHref(tile))}
+          />
         )}
-        {onPress && <ActionButton label="More info" small onPress={onPress} />}
+        {onPress && <ActionButton label="More info" small onPress={() => router.push(tilePath(tile))} />}
+        {onMenu && (
+          <Pressable
+            className="ml-auto h-[34px] w-[34px] items-center justify-center rounded-full bg-button-background hover:bg-button-focus"
+            aria-label="More actions"
+            onPress={onMenu}
+          >
+            <Text className="font-bold font-sans text-text-primary text-web-meta">⋯</Text>
+          </Pressable>
+        )}
       </View>
     </Pressable>
   );
 }
 
 function RowTile({
+  tileRef,
   tile,
   onPress,
+  onMenu,
   onOpen,
   onFocus,
   onPlaced,
 }: {
+  tileRef: Ref<HostView>;
   tile: TileData;
   onPress?: () => void;
+  onMenu?: () => void;
   onOpen: (left: number) => void;
   onFocus: (left: number) => void;
   onPlaced?: (left: number) => void;
@@ -73,8 +102,15 @@ function RowTile({
     setOpen(false);
   };
   const width = Platform.isTV ? "w-tile-tv-width" : open ? "w-tile-web-expanded-width" : "w-tile-web-width";
+  const contextMenu = onMenu && {
+    onContextMenu: (event: { preventDefault: () => void }) => {
+      event.preventDefault();
+      onMenu();
+    },
+  };
   return (
     <View
+      {...contextMenu}
       className={`transition-[width] duration-300 ${width} ${open ? "z-10" : ""}`}
       onLayout={(event) => {
         left.current = event.nativeEvent.layout.x;
@@ -84,9 +120,15 @@ function RowTile({
       onPointerLeave={close}
     >
       {open ? (
-        <TileCard tile={tile} onPress={onPress} />
+        <TileCard tile={tile} onPress={onPress} onMenu={onMenu} />
       ) : (
-        <Tile tile={tile} onPress={onPress} onFocus={() => onFocus(left.current)} />
+        <Tile
+          ref={tileRef}
+          tile={tile}
+          onPress={onPress}
+          onLongPress={onMenu}
+          onFocus={() => onFocus(left.current)}
+        />
       )}
     </View>
   );
@@ -109,21 +151,34 @@ export function TileRow({
   tiles,
   onPressTile,
   onFocusTile,
+  menu,
 }: {
   title: string;
   tiles: TileData[];
   onPressTile?: (tile: TileData) => void;
   onFocusTile?: (tile: TileData) => void;
+  menu?: (tile: TileData) => TileMenuItem[];
 }) {
   const scroll = useRef<ScrollViewInstance>(null);
+  const [menuTile, setMenuTile] = useState<TileData | null>(null);
+  const tileViews = useRef(new Map<string, HostView>());
+  const chosen = useRef<{ id: string; index: number } | null>(null);
   const firstLeft = useRef(0);
   const [offset, setOffset] = useState(0);
   const [viewport, setViewport] = useState(0);
   const [content, setContent] = useState(0);
+  useEffect(() => {
+    const from = chosen.current;
+    chosen.current = null;
+    if (Platform.isTV && from && tiles.length > 0 && !tiles.some((tile) => tile.id === from.id)) {
+      const next = tiles[Math.min(from.index, tiles.length - 1)];
+      (tileViews.current.get(next.id) as unknown as FocusGuideInstance | undefined)?.requestTVFocus();
+    }
+  }, [tiles]);
   const scrollTo = (x: number) => scroll.current?.scrollTo({ x: Math.max(0, x), animated: true });
   const page = viewport - 2 * INSET;
   return (
-    <View className="group mb-6">
+    <View className={Platform.isTV ? "mb-6" : "group mb-6"}>
       <Text
         role="heading"
         className={`mb-2 font-sans font-bold text-text-secondary ${Platform.isTV ? "px-tv-inset text-tv-row" : "px-web-inset text-web-row"}`}
@@ -145,8 +200,17 @@ export function TileRow({
           {tiles.map((tile, index) => (
             <RowTile
               key={tile.id}
+              tileRef={(view) => {
+                if (view) {
+                  tileViews.current.set(tile.id, view);
+                }
+                return () => {
+                  tileViews.current.delete(tile.id);
+                };
+              }}
               tile={tile}
               onPress={onPressTile && (() => onPressTile(tile))}
+              onMenu={menu && (() => setMenuTile(tile))}
               onPlaced={
                 index === 0
                   ? (left) => {
@@ -174,6 +238,19 @@ export function TileRow({
           <Arrow side="right" onPress={() => scrollTo(offset + page)} />
         )}
       </View>
+      {menu && menuTile && (
+        <TileMenu
+          title={menuTile.episode ? menuTile.episode.show.title : menuTile.title}
+          items={menu(menuTile).map((item) => ({
+            ...item,
+            onPress: () => {
+              chosen.current = { id: menuTile.id, index: tiles.indexOf(menuTile) };
+              item.onPress();
+            },
+          }))}
+          onClose={() => setMenuTile(null)}
+        />
+      )}
     </View>
   );
 }

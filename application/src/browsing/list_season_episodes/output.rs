@@ -16,4 +16,6 @@ pub struct Episode {
     pub plot: Option<String>,
     pub thumb: Option<Image>,
     pub media_file_id: Option<Uuid>,
+    pub progress: Option<f64>,
+    pub watched: bool,
 }

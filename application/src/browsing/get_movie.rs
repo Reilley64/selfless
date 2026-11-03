@@ -9,6 +9,7 @@ pub use output::Movie;
 pub use output::Output;
 
 use crate::browsing::more_like_this;
+use crate::browsing::movie_watches;
 use crate::browsing::title_images;
 use crate::ports::persistence::DbScope;
 use domain::Actor;
@@ -17,7 +18,11 @@ use uuid::Uuid;
 
 const CAST_SIZE: usize = 10;
 
-pub async fn call(dependencies: impl Into<Dependencies>, movie_id: Uuid) -> Result<Output, Error> {
+pub async fn call(
+    dependencies: impl Into<Dependencies>,
+    user_id: Uuid,
+    movie_id: Uuid,
+) -> Result<Output, Error> {
     let Dependencies {
         mut db_context,
         clock,
@@ -29,7 +34,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, movie_id: Uuid) -> Resu
             domain::Movie::fields()
                 .id()
                 .eq(movie_id)
-                .and(domain::Movie::fields().in_library().eq(true)),
+                .and(domain::Movie::in_library_filter()),
         )
         .first()
         .exec(db_context.executor_mut())
@@ -44,7 +49,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, movie_id: Uuid) -> Resu
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?;
-    actors.sort_by_key(|x| (x.order.is_none(), x.order));
+    actors.sort_by_key(Actor::listing_order);
     let images = title_images(
         &mut db_context,
         |x| x.movie_id,
@@ -56,8 +61,14 @@ pub async fn call(dependencies: impl Into<Dependencies>, movie_id: Uuid) -> Resu
     .map_err(Error::caused_by)?
     .remove(&movie.id)
     .unwrap_or_default();
+    let watch = movie_watches(&mut db_context, user_id, [&movie])
+        .await
+        .map_err(Error::caused_by)?
+        .remove(&movie.id)
+        .unwrap_or_default();
     let more_like_this = more_like_this(
         &mut db_context,
+        user_id,
         &movie.genres,
         movie.id,
         &url_signer,
@@ -87,6 +98,10 @@ pub async fn call(dependencies: impl Into<Dependencies>, movie_id: Uuid) -> Resu
             })
             .collect(),
         images,
+        resume_position_seconds: watch.state.resume_position_seconds,
+        progress: watch.progress,
+        minutes_left: watch.minutes_left,
+        watched: watch.state.watched,
         more_like_this,
     })))
 }
@@ -99,13 +114,17 @@ mod tests {
     use crate::ports::Clock;
     use crate::ports::persistence::DbContext;
     use crate::ports::persistence::DbScope;
+    use crate::test::add_media_file;
     use crate::test::add_season;
     use crate::test::episode;
     use crate::test::mock_db_context;
     use crate::test::movie;
     use crate::test::show;
+    use crate::test::stop_at;
     use crate::test::url_signer;
+    use crate::test::watch_to_the_end;
     use domain::ArtworkKind;
+    use jiff::SignedDuration;
     use jiff::Timestamp;
     use test_fixtures::FakeClock;
 
@@ -118,7 +137,9 @@ mod tests {
     }
 
     async fn get(db_context: &DbContext, movie_id: Uuid) -> Output {
-        call(dependencies(db_context), movie_id).await.unwrap()
+        call(dependencies(db_context), Uuid::new_v4(), movie_id)
+            .await
+            .unwrap()
     }
 
     async fn add_artwork(db_context: &mut DbContext, movie_id: Uuid, kind: ArtworkKind) -> Uuid {
@@ -217,7 +238,7 @@ mod tests {
         names.iter().map(|x| (*x).to_owned()).collect()
     }
 
-    async fn add_show(db_context: &mut DbContext, title: &str, genres: &[&str], visible: bool) {
+    async fn add_show(db_context: &mut DbContext, title: &str, genres: &[&str], in_library: bool) {
         let show = show(db_context, title)
             .genres(names(genres))
             .exec(db_context.executor_mut())
@@ -225,7 +246,7 @@ mod tests {
             .unwrap();
         let season_id = add_season(db_context, show.id, 1).await;
         episode(db_context, season_id)
-            .in_library(visible)
+            .in_library(in_library)
             .exec(db_context.executor_mut())
             .await
             .unwrap();
@@ -242,103 +263,106 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn more_like_this_ranks_visible_titles_by_shared_genres_then_sort_title_without_the_movie()
-     {
+    async fn more_like_this_holds_the_movies_and_shows_in_the_library_that_share_a_genre() {
         let mut db_context = mock_db_context().await;
         let arrival = movie(&db_context, "Arrival")
-            .genres(names(&["Drama", "Science Fiction", "Mystery"]))
+            .genres(names(&["Drama", "Science Fiction"]))
             .exec(db_context.executor_mut())
             .await
             .unwrap();
-        for (title, sort_title, genres, visible) in [
-            ("Dune", None, &["Science Fiction", "Drama"][..], true),
-            ("Blade Runner 2049", None, &["Science Fiction"][..], true),
-            ("Sicario", None, &["Drama"][..], true),
-            ("The Prestige", Some("Prestige"), &["Mystery"][..], true),
-            ("Amélie", None, &["Comedy"][..], true),
-            (
-                "Hidden",
-                None,
-                &["Drama", "Science Fiction", "Mystery"][..],
-                false,
-            ),
-        ] {
+        for (title, in_library) in [("Dune", true), ("Gone", false)] {
             movie(&db_context, title)
-                .sort_title(sort_title.map(str::to_owned))
-                .genres(names(genres))
-                .in_library(visible)
+                .genres(names(&["Science Fiction"]))
+                .in_library(in_library)
                 .exec(db_context.executor_mut())
                 .await
                 .unwrap();
         }
-        add_show(
-            &mut db_context,
-            "Severance",
-            &["Drama", "Mystery", "Science Fiction"],
-            true,
-        )
-        .await;
-        add_show(
-            &mut db_context,
-            "Andor",
-            &["Drama", "Science Fiction"],
-            true,
-        )
-        .await;
-        add_show(&mut db_context, "Gone", &["Drama", "Mystery"], false).await;
+        add_show(&mut db_context, "Severance", &["Drama"], true).await;
+        add_show(&mut db_context, "Gone", &["Drama"], false).await;
 
         let output = get(&db_context, arrival.id).await;
 
-        assert_eq!(
-            more_like_this(&output),
-            [
-                "Severance",
-                "Andor",
-                "Dune",
-                "Blade Runner 2049",
-                "The Prestige",
-                "Sicario"
-            ]
-        );
+        assert_eq!(more_like_this(&output), ["Dune", "Severance"]);
         let Output::Movie(page) = output else {
             unreachable!()
         };
         assert!(
-            matches!(
-                page.more_like_this[0].kind,
-                TileKind::Show { season_count: 1 }
-            ),
+            matches!(page.more_like_this[0].kind, TileKind::Movie { .. }),
             "{:?}",
             page.more_like_this[0].kind
         );
         assert!(
-            matches!(page.more_like_this[2].kind, TileKind::Movie { .. }),
+            matches!(
+                page.more_like_this[1].kind,
+                TileKind::Show { season_count: 1 }
+            ),
             "{:?}",
-            page.more_like_this[2].kind
+            page.more_like_this[1].kind
         );
     }
 
     #[tokio::test]
-    async fn more_like_this_holds_up_to_20_titles() {
+    async fn each_user_sees_their_own_resume_position_progress_minutes_left_and_watched_state() {
         let mut db_context = mock_db_context().await;
+        let arrival_file = add_media_file(&db_context, Some(2_400_000)).await;
         let arrival = movie(&db_context, "Arrival")
             .genres(names(&["Drama"]))
+            .media_file_id(Some(arrival_file))
             .exec(db_context.executor_mut())
             .await
             .unwrap();
-        for number in (0..21).rev() {
-            movie(&db_context, &format!("Movie {number:02}"))
-                .genres(names(&["Drama"]))
-                .exec(db_context.executor_mut())
+        let sicario_file = add_media_file(&db_context, Some(6_000_000)).await;
+        movie(&db_context, "Sicario")
+            .genres(names(&["Drama"]))
+            .media_file_id(Some(sicario_file))
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap();
+        let (noor, ravi, mina) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+        stop_at(
+            &db_context,
+            noor,
+            arrival_file,
+            SignedDuration::from_mins(20),
+            "2026-11-02T20:00:00Z",
+        )
+        .await;
+        stop_at(
+            &db_context,
+            noor,
+            sicario_file,
+            SignedDuration::from_mins(25),
+            "2026-11-02T21:00:00Z",
+        )
+        .await;
+        watch_to_the_end(&db_context, ravi, arrival_file, "2026-11-02T20:00:00Z").await;
+
+        let mut views = Vec::new();
+        for user_id in [noor, ravi, mina] {
+            let Output::Movie(page) = call(dependencies(&db_context), user_id, arrival.id)
                 .await
-                .unwrap();
+                .unwrap()
+            else {
+                panic!("the movie is not found");
+            };
+            let sicario = &page.more_like_this[0];
+            views.push((
+                page.resume_position_seconds,
+                page.progress,
+                page.minutes_left,
+                page.watched,
+                sicario.progress,
+            ));
         }
 
-        let output = get(&db_context, arrival.id).await;
-
         assert_eq!(
-            more_like_this(&output),
-            (0..20).map(|x| format!("Movie {x:02}")).collect::<Vec<_>>()
+            views,
+            [
+                (Some(1200), Some(0.5), Some(20), false, Some(0.25)),
+                (None, None, None, true, None),
+                (None, None, None, false, None),
+            ]
         );
     }
 
@@ -360,18 +384,21 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_unknown_or_hidden_movie_is_not_found() {
+    async fn an_unknown_movie_or_one_not_in_the_library_is_not_found() {
         let mut db_context = mock_db_context().await;
-        let hidden = movie(&db_context, "Arrival")
+        let out_of_library = movie(&db_context, "Arrival")
             .in_library(false)
             .exec(db_context.executor_mut())
             .await
             .unwrap();
 
-        let hidden = get(&db_context, hidden.id).await;
+        let out_of_library = get(&db_context, out_of_library.id).await;
         let unknown = get(&db_context, Uuid::new_v4()).await;
 
-        assert!(matches!(hidden, Output::NotFound), "{hidden:?}");
+        assert!(
+            matches!(out_of_library, Output::NotFound),
+            "{out_of_library:?}"
+        );
         assert!(matches!(unknown, Output::NotFound), "{unknown:?}");
     }
 }

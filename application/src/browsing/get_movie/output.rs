@@ -24,6 +24,10 @@ pub struct Movie {
     pub media_file_id: Option<Uuid>,
     pub cast: Vec<CastMember>,
     pub images: TileImages,
+    pub resume_position_seconds: Option<i64>,
+    pub progress: Option<f64>,
+    pub minutes_left: Option<i64>,
+    pub watched: bool,
     pub more_like_this: Vec<Tile>,
 }
 

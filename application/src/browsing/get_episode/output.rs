@@ -1,4 +1,5 @@
 use crate::browsing::Image;
+use domain::SubtitleLanguage;
 use jiff::civil::Date;
 use uuid::Uuid;
 
@@ -23,6 +24,10 @@ pub struct Episode {
     pub audio_languages: Vec<String>,
     pub subtitle_languages: Vec<SubtitleLanguage>,
     pub media_file_id: Option<Uuid>,
+    pub resume_position_seconds: Option<i64>,
+    pub progress: Option<f64>,
+    pub minutes_left: Option<i64>,
+    pub watched: bool,
 }
 
 #[derive(Debug)]
@@ -30,11 +35,4 @@ pub struct Show {
     pub id: Uuid,
     pub title: String,
     pub logo: Option<Image>,
-}
-
-#[derive(Debug, PartialEq)]
-pub struct SubtitleLanguage {
-    pub language: String,
-    pub hearing_impaired: bool,
-    pub forced: bool,
 }

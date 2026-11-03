@@ -2,6 +2,7 @@ use crate::Availability;
 use application::ports::persistence::DbScope;
 use application::sessions::sign_in;
 use application::users::create_user;
+use application::watch_progress::record_progress;
 use domain::ArtworkKind;
 use domain::ClientKind;
 use domain::EmailAddress;
@@ -10,6 +11,7 @@ use domain::Movie;
 use domain::Password;
 use domain::Season;
 use domain::Show;
+use jiff::SignedDuration;
 use std::path::PathBuf;
 use test_app::TestApp;
 use test_fixtures::TestServer;
@@ -145,4 +147,34 @@ pub(crate) async fn add_artwork(
         .await
         .unwrap()
         .id
+}
+
+pub(crate) async fn add_media_file(app: &TestApp, duration_ms: Option<i64>) -> Uuid {
+    let mut db_context = app.state.db_context.clone();
+    db_context
+        .media_files()
+        .create()
+        .path(format!("/media/{}.mkv", Uuid::new_v4()))
+        .duration_ms(duration_ms)
+        .exec(db_context.executor_mut())
+        .await
+        .unwrap()
+        .id
+}
+
+pub(crate) async fn stop_at(
+    app: &TestApp,
+    user_id: Uuid,
+    media_file_id: Uuid,
+    position: SignedDuration,
+) {
+    record_progress::call(
+        &app.state,
+        user_id,
+        media_file_id,
+        position,
+        SignedDuration::from_mins(50),
+    )
+    .await
+    .unwrap();
 }

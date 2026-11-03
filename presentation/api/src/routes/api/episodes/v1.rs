@@ -1,10 +1,12 @@
 use crate::problem::NOT_FOUND;
 use crate::routes::api::image::ImageBody;
+use crate::user_auth::CurrentSession;
 use application::browsing::get_episode;
 use infrastructure::AppState;
 use serde::Serialize;
 use topcoat::context::Cx;
 use topcoat::context::app_context;
+use topcoat::context::request_context;
 use topcoat::router::content::Json;
 use topcoat::router::path_param;
 use topcoat::router::response::IntoResponse;
@@ -19,7 +21,8 @@ pub(crate) async fn episode(cx: &Cx) -> topcoat::Result<Response> {
     let Ok(episode_id) = path_param::<EpisodeId>(cx) else {
         return NOT_FOUND.into_response(cx);
     };
-    match get_episode::call(app_context::<AppState>(cx), *episode_id).await? {
+    let user_id = request_context::<CurrentSession>(cx).user.id;
+    match get_episode::call(app_context::<AppState>(cx), user_id, *episode_id).await? {
         get_episode::Output::Episode(page) => Json(&EpisodePageBody::from(*page)).into_response(cx),
         get_episode::Output::NotFound => NOT_FOUND.into_response(cx),
     }
@@ -42,6 +45,7 @@ struct EpisodePageBody {
     subtitle_languages: Vec<SubtitleLanguageBody>,
     media_file_id: Option<Uuid>,
     progress: Option<f64>,
+    minutes_left: Option<i64>,
     watched: bool,
     play: EpisodePlayBody,
 }
@@ -95,10 +99,11 @@ impl From<get_episode::Episode> for EpisodePageBody {
                 })
                 .collect(),
             media_file_id: page.media_file_id,
-            progress: None,
-            watched: false,
+            progress: page.progress,
+            minutes_left: page.minutes_left,
+            watched: page.watched,
             play: EpisodePlayBody {
-                resume_position: None,
+                resume_position: page.resume_position_seconds.map(|x| x as f64),
             },
         }
     }
@@ -109,12 +114,14 @@ mod tests {
     use crate::test::add_show;
     use crate::test::serve;
     use crate::test::signed_in_user;
+    use crate::test::stop_at;
     use application::ports::persistence::DbScope;
     use domain::ArtworkKind;
     use domain::Episode;
     use domain::Season;
     use http::Method;
     use http::StatusCode;
+    use jiff::SignedDuration;
     use jiff::civil::date;
     use serde_json::Value;
     use serde_json::json;
@@ -131,9 +138,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_episode_returns_its_details_show_and_languages() {
+    async fn an_episode_returns_its_details_show_languages_and_the_signed_in_users_watch_state() {
         let app = TestApp::new().await;
-        let (_, token) = signed_in_user(&app, "Noor", "a long passphrase about tea").await;
+        let (noor, token) = signed_in_user(&app, "Noor", "a long passphrase about tea").await;
         let mut db_context = app.state.db_context.clone();
         let severance = add_show(&app, "Severance", &[1]).await;
         let season_id = db_context
@@ -218,6 +225,7 @@ mod tests {
             .exec(db_context.executor_mut())
             .await
             .unwrap();
+        stop_at(&app, noor, media_file.id, SignedDuration::from_secs(1710)).await;
         let server = serve(&app).await;
 
         let (status, mut page) = server
@@ -251,15 +259,16 @@ mod tests {
                     { "language": "en", "hearingImpaired": true, "forced": false },
                 ],
                 "mediaFileId": media_file.id,
-                "progress": null,
+                "progress": 0.5,
+                "minutesLeft": 29,
                 "watched": false,
-                "play": { "resumePosition": null },
+                "play": { "resumePosition": 1710.0 },
             })
         );
     }
 
     #[tokio::test]
-    async fn an_unknown_hidden_or_malformed_episode_id_returns_the_not_found_problem() {
+    async fn an_unknown_out_of_library_or_malformed_episode_id_returns_the_not_found_problem() {
         let app = TestApp::new().await;
         let (_, token) = signed_in_user(&app, "Noor", "a long passphrase about tea").await;
         let mut db_context = app.state.db_context.clone();
@@ -273,7 +282,7 @@ mod tests {
             .unwrap()
             .unwrap()
             .id;
-        let hidden = Episode::create()
+        let out_of_library = Episode::create()
             .season_id(season_id)
             .tvdb_id(domain::TvdbId(Uuid::new_v4().as_u64_pair().0 as i64))
             .number(2)
@@ -285,7 +294,7 @@ mod tests {
         let server = serve(&app).await;
 
         for id in [
-            hidden.id.to_string(),
+            out_of_library.id.to_string(),
             Uuid::new_v4().to_string(),
             "episode-2".to_owned(),
         ] {

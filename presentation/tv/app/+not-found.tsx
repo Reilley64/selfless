@@ -1,17 +1,3 @@
-import { ActionButton, FocusGuide } from "@selfless/ui";
-import { useRouter } from "expo-router";
-import { Text } from "react-native-css/components";
-import { useFirstFieldFocus } from "../components/form";
+import { NotFound } from "../components/NotFound";
 
-export default function NotFound() {
-  const router = useRouter();
-  const guide = useFirstFieldFocus();
-  return (
-    <FocusGuide autoFocus ref={guide} className="flex-1 items-start justify-center gap-8 bg-background px-tv-inset">
-      <Text role="heading" className="font-sans font-extrabold text-tv-title text-text-primary">
-        Nothing here
-      </Text>
-      <ActionButton label="Back" onPress={() => router.back()} />
-    </FocusGuide>
-  );
-}
+export default NotFound;

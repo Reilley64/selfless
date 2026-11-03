@@ -1,0 +1,31 @@
+groups:
+  - id: registry.selfless.watch_progress
+    type: attribute_group
+    display_name: Watch progress attributes
+    brief: Attributes of recording a user's watch state from a playback's progress reports.
+    attributes:
+      - id: selfless.watch_progress.outcome
+        type:
+          members:
+            - id: none
+              value: none
+              brief: The position was under the first minute, or the media file holds no movie or episode, so nothing changed.
+              stability: development
+            - id: resume_position
+              value: resume_position
+              brief: The position became the resume position.
+              stability: development
+            - id: watched
+              value: watched
+              brief: The position reached 90% of the duration, so the movie or episodes became watched.
+              stability: development
+        stability: development
+        brief: What one progress report changed in the watch state.
+  - id: span.selfless.watch_progress.record
+    type: span
+    span_kind: internal
+    brief: Recording one progress report in the watch state of each movie or episode its media file holds.
+    stability: development
+    attributes:
+      - ref: selfless.watch_progress.outcome
+        requirement_level: required

@@ -2,6 +2,7 @@ mod image;
 mod more_like_this;
 mod resizer;
 mod tile;
+mod watch_states;
 
 pub mod clean_image_cache;
 pub mod get_episode;
@@ -13,6 +14,8 @@ pub mod list_genres;
 pub mod list_movies;
 pub mod list_season_episodes;
 pub mod list_shows;
+pub mod remove_movie_from_continue_watching;
+pub mod remove_show_from_continue_watching;
 
 pub use image::Image;
 pub use image::ImageUrl;
@@ -20,33 +23,25 @@ pub use image::TileImages;
 use image::title_images;
 pub use resizer::Resizer;
 
-use domain::Episode;
 use domain::Season;
-use domain::Show;
 use more_like_this::more_like_this;
 use std::collections::HashMap;
 use uuid::Uuid;
+use watch_states::MovieWatch;
+use watch_states::episode_watch_states;
+use watch_states::movie_watches;
 
 pub use tile::Cursor;
 pub use tile::SortKey;
 pub use tile::Tile;
 pub use tile::TileKind;
+pub use tile::TileShow;
 
 const PAGE_SIZE: usize = 60;
 
-fn visible_show() -> toasty::stmt::Expr<bool> {
-    Show::fields().seasons().any(visible_season())
-}
-
-fn visible_season() -> toasty::stmt::Expr<bool> {
-    Season::fields()
-        .episodes()
-        .any(Episode::fields().in_library().eq(true))
-}
-
-fn season_counts(seasons: &[Season]) -> HashMap<Uuid, i64> {
+fn season_counts<'a>(seasons: impl IntoIterator<Item = &'a Season>) -> HashMap<Uuid, i64> {
     let mut counts = HashMap::new();
-    for season in seasons.iter().filter(|x| x.number > 0) {
+    for season in seasons.into_iter().filter(|x| x.number > 0) {
         *counts.entry(season.show_id).or_default() += 1;
     }
     counts

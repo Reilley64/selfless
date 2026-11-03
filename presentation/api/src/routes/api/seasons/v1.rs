@@ -1,10 +1,12 @@
 use crate::problem::NOT_FOUND;
 use crate::routes::api::image::ImageBody;
+use crate::user_auth::CurrentSession;
 use application::browsing::list_season_episodes;
 use infrastructure::AppState;
 use serde::Serialize;
 use topcoat::context::Cx;
 use topcoat::context::app_context;
+use topcoat::context::request_context;
 use topcoat::router::content::Json;
 use topcoat::router::path_param;
 use topcoat::router::response::IntoResponse;
@@ -19,7 +21,8 @@ pub(crate) async fn episodes(cx: &Cx) -> topcoat::Result<Response> {
     let Ok(season_id) = path_param::<SeasonId>(cx) else {
         return NOT_FOUND.into_response(cx);
     };
-    match list_season_episodes::call(app_context::<AppState>(cx), *season_id).await? {
+    let user_id = request_context::<CurrentSession>(cx).user.id;
+    match list_season_episodes::call(app_context::<AppState>(cx), user_id, *season_id).await? {
         list_season_episodes::Output::Episodes(episodes) => Json(&EpisodeListBody {
             episodes: episodes.into_iter().map(EpisodeBody::from).collect(),
         })
@@ -57,8 +60,8 @@ impl From<list_season_episodes::Episode> for EpisodeBody {
             plot: episode.plot,
             thumb: episode.thumb.map(ImageBody::from),
             media_file_id: episode.media_file_id,
-            progress: None,
-            watched: false,
+            progress: episode.progress,
+            watched: episode.watched,
         }
     }
 }
@@ -68,19 +71,22 @@ mod tests {
     use crate::test::add_show;
     use crate::test::serve;
     use crate::test::signed_in_user;
+    use crate::test::stop_at;
     use application::ports::persistence::DbScope;
     use domain::ArtworkKind;
     use domain::Season;
     use http::Method;
     use http::StatusCode;
+    use jiff::SignedDuration;
     use serde_json::json;
     use test_app::TestApp;
     use uuid::Uuid;
 
     #[tokio::test]
-    async fn a_season_returns_its_visible_episodes_with_runtime_plot_and_thumb() {
+    async fn a_season_returns_its_episodes_in_the_library_with_runtime_plot_thumb_and_the_signed_in_users_watch_state()
+     {
         let app = TestApp::new().await;
-        let (_, token) = signed_in_user(&app, "Noor", "a long passphrase about tea").await;
+        let (noor, token) = signed_in_user(&app, "Noor", "a long passphrase about tea").await;
         let mut db_context = app.state.db_context.clone();
         let severance = add_show(&app, "Severance", &[1]).await;
         let season_id = db_context
@@ -135,6 +141,7 @@ mod tests {
             .exec(db_context.executor_mut())
             .await
             .unwrap();
+        stop_at(&app, noor, media_file.id, SignedDuration::from_secs(1710)).await;
         let server = serve(&app).await;
 
         let (status, mut list) = server
@@ -181,7 +188,7 @@ mod tests {
                         "plot": "Mark takes Helly to the break room.",
                         "thumb": null,
                         "mediaFileId": media_file.id,
-                        "progress": null,
+                        "progress": 0.5,
                         "watched": false,
                     },
                 ],
@@ -248,7 +255,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_unknown_hidden_or_malformed_season_id_returns_the_not_found_problem() {
+    async fn an_unknown_out_of_library_or_malformed_season_id_returns_the_not_found_problem() {
         let app = TestApp::new().await;
         let (_, token) = signed_in_user(&app, "Noor", "a long passphrase about tea").await;
         let mut db_context = app.state.db_context.clone();

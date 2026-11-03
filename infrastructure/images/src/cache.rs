@@ -1,8 +1,8 @@
+use crate::image_format;
 use application::ports::CachedImage;
 use application::ports::DeleteCachedImage;
 use application::ports::ImageCacheError;
 use application::ports::ImageFile;
-use application::ports::ImageFormat;
 use application::ports::ListCachedImages;
 use application::ports::ReadCachedImage;
 use application::ports::SaveCachedImage;
@@ -20,15 +20,12 @@ pub fn read_cached_image(cache_dir: PathBuf) -> ReadCachedImage {
                 Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
                 Err(error) => return Err(ImageCacheError::caused_by(error)),
             };
-            let format = match image::guess_format(&bytes).map_err(ImageCacheError::caused_by)? {
-                image::ImageFormat::Jpeg => ImageFormat::Jpeg,
-                image::ImageFormat::Png => ImageFormat::Png,
-                _ => {
-                    return Err(ImageCacheError::caused_by(
-                        "the cached image is not a JPEG or PNG",
-                    ));
-                }
-            };
+            let format = image::guess_format(&bytes)
+                .map_err(ImageCacheError::caused_by)
+                .map(image_format)?
+                .ok_or_else(|| {
+                    ImageCacheError::caused_by("the cached image is not a JPEG or PNG")
+                })?;
             Ok(Some(ImageFile {
                 format,
                 bytes: bytes.into(),
@@ -116,6 +113,7 @@ fn cached_image(file_name: &str) -> Option<CachedImage> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use application::ports::ImageFormat;
 
     #[tokio::test]
     async fn a_saved_image_reads_back_and_is_listed_until_it_is_deleted() {

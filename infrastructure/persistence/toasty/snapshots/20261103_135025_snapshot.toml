@@ -1764,3 +1764,233 @@ name = "index_invites_by_token_hash"
 on = 24
 columns = [{ column = { table = 24, index = 2 }, op = "Eq", scope = "Partition" }]
 unique = true
+
+[[schema.tables]]
+id = 25
+name = "movie_watch_states"
+primary_key = { columns = [{ table = 25, index = 0 }], index = { table = 25, index = 0 } }
+
+[[schema.tables.columns]]
+id = { table = 25, index = 0 }
+name = "id"
+ty = "Uuid"
+storage_ty = "Uuid"
+
+[[schema.tables.columns]]
+id = { table = 25, index = 1 }
+name = "user_id"
+ty = "Uuid"
+storage_ty = "Uuid"
+
+[[schema.tables.columns]]
+id = { table = 25, index = 2 }
+name = "movie_id"
+ty = "Uuid"
+storage_ty = "Uuid"
+
+[[schema.tables.columns]]
+id = { table = 25, index = 3 }
+name = "resume_position_seconds"
+ty = "I64"
+storage_ty = { Integer = 8 }
+nullable = true
+
+[[schema.tables.columns]]
+id = { table = 25, index = 4 }
+name = "watched"
+ty = "Bool"
+storage_ty = "Boolean"
+
+[[schema.tables.columns]]
+id = { table = 25, index = 5 }
+name = "watched_at"
+ty = "Timestamp"
+storage_ty = { Timestamp = 6 }
+nullable = true
+
+[[schema.tables.columns]]
+id = { table = 25, index = 6 }
+name = "last_played"
+ty = "Timestamp"
+storage_ty = { Timestamp = 6 }
+nullable = true
+
+[[schema.tables.indices]]
+id = { table = 25, index = 0 }
+name = "index_movie_watch_states_by_id"
+on = 25
+columns = [{ column = { table = 25, index = 0 }, op = "Eq", scope = "Partition" }]
+unique = true
+primary_key = true
+
+[[schema.tables.indices]]
+id = { table = 25, index = 1 }
+name = "index_movie_watch_states_by_user_id_and_movie_id"
+on = 25
+columns = [{ column = { table = 25, index = 1 }, op = "Eq", scope = "Partition" }, { column = { table = 25, index = 2 }, op = "Eq", scope = "Local" }]
+unique = true
+
+[[schema.tables.indices]]
+id = { table = 25, index = 2 }
+name = "index_movie_watch_states_by_movie_id"
+on = 25
+columns = [{ column = { table = 25, index = 2 }, op = "Eq", scope = "Partition" }]
+
+[[schema.tables]]
+id = 26
+name = "episode_watch_states"
+primary_key = { columns = [{ table = 26, index = 0 }], index = { table = 26, index = 0 } }
+
+[[schema.tables.columns]]
+id = { table = 26, index = 0 }
+name = "id"
+ty = "Uuid"
+storage_ty = "Uuid"
+
+[[schema.tables.columns]]
+id = { table = 26, index = 1 }
+name = "user_id"
+ty = "Uuid"
+storage_ty = "Uuid"
+
+[[schema.tables.columns]]
+id = { table = 26, index = 2 }
+name = "episode_id"
+ty = "Uuid"
+storage_ty = "Uuid"
+
+[[schema.tables.columns]]
+id = { table = 26, index = 3 }
+name = "resume_position_seconds"
+ty = "I64"
+storage_ty = { Integer = 8 }
+nullable = true
+
+[[schema.tables.columns]]
+id = { table = 26, index = 4 }
+name = "watched"
+ty = "Bool"
+storage_ty = "Boolean"
+
+[[schema.tables.columns]]
+id = { table = 26, index = 5 }
+name = "watched_at"
+ty = "Timestamp"
+storage_ty = { Timestamp = 6 }
+nullable = true
+
+[[schema.tables.columns]]
+id = { table = 26, index = 6 }
+name = "last_played"
+ty = "Timestamp"
+storage_ty = { Timestamp = 6 }
+nullable = true
+
+[[schema.tables.indices]]
+id = { table = 26, index = 0 }
+name = "index_episode_watch_states_by_id"
+on = 26
+columns = [{ column = { table = 26, index = 0 }, op = "Eq", scope = "Partition" }]
+unique = true
+primary_key = true
+
+[[schema.tables.indices]]
+id = { table = 26, index = 1 }
+name = "index_episode_watch_states_by_user_id_and_episode_id"
+on = 26
+columns = [{ column = { table = 26, index = 1 }, op = "Eq", scope = "Partition" }, { column = { table = 26, index = 2 }, op = "Eq", scope = "Local" }]
+unique = true
+
+[[schema.tables.indices]]
+id = { table = 26, index = 2 }
+name = "index_episode_watch_states_by_episode_id"
+on = 26
+columns = [{ column = { table = 26, index = 2 }, op = "Eq", scope = "Partition" }]
+
+[[schema.tables]]
+id = 27
+name = "movie_continue_watching_removals"
+primary_key = { columns = [{ table = 27, index = 0 }], index = { table = 27, index = 0 } }
+
+[[schema.tables.columns]]
+id = { table = 27, index = 0 }
+name = "id"
+ty = "Uuid"
+storage_ty = "Uuid"
+
+[[schema.tables.columns]]
+id = { table = 27, index = 1 }
+name = "user_id"
+ty = "Uuid"
+storage_ty = "Uuid"
+
+[[schema.tables.columns]]
+id = { table = 27, index = 2 }
+name = "movie_id"
+ty = "Uuid"
+storage_ty = "Uuid"
+
+[[schema.tables.columns]]
+id = { table = 27, index = 3 }
+name = "removed_at"
+ty = "Timestamp"
+storage_ty = { Timestamp = 6 }
+
+[[schema.tables.indices]]
+id = { table = 27, index = 0 }
+name = "index_movie_continue_watching_removals_by_id"
+on = 27
+columns = [{ column = { table = 27, index = 0 }, op = "Eq", scope = "Partition" }]
+unique = true
+primary_key = true
+
+[[schema.tables.indices]]
+id = { table = 27, index = 1 }
+name = "index_movie_continue_watching_removals_by_user_id_and_movie_id"
+on = 27
+columns = [{ column = { table = 27, index = 1 }, op = "Eq", scope = "Partition" }, { column = { table = 27, index = 2 }, op = "Eq", scope = "Local" }]
+unique = true
+
+[[schema.tables]]
+id = 28
+name = "show_continue_watching_removals"
+primary_key = { columns = [{ table = 28, index = 0 }], index = { table = 28, index = 0 } }
+
+[[schema.tables.columns]]
+id = { table = 28, index = 0 }
+name = "id"
+ty = "Uuid"
+storage_ty = "Uuid"
+
+[[schema.tables.columns]]
+id = { table = 28, index = 1 }
+name = "user_id"
+ty = "Uuid"
+storage_ty = "Uuid"
+
+[[schema.tables.columns]]
+id = { table = 28, index = 2 }
+name = "show_id"
+ty = "Uuid"
+storage_ty = "Uuid"
+
+[[schema.tables.columns]]
+id = { table = 28, index = 3 }
+name = "removed_at"
+ty = "Timestamp"
+storage_ty = { Timestamp = 6 }
+
+[[schema.tables.indices]]
+id = { table = 28, index = 0 }
+name = "index_show_continue_watching_removals_by_id"
+on = 28
+columns = [{ column = { table = 28, index = 0 }, op = "Eq", scope = "Partition" }]
+unique = true
+primary_key = true
+
+[[schema.tables.indices]]
+id = { table = 28, index = 1 }
+name = "index_show_continue_watching_removals_by_user_id_and_show_id"
+on = 28
+columns = [{ column = { table = 28, index = 1 }, op = "Eq", scope = "Partition" }, { column = { table = 28, index = 2 }, op = "Eq", scope = "Local" }]
+unique = true

@@ -28,6 +28,25 @@ const image = (id: string, widths: number[]) => ({
 });
 const fanart = image("0190f3c4-7d8e-7f90-a1b2-c3d4e5f6a7b8", [480, 960, 1280, 1920]);
 const logo = image("0190f3c4-8e9f-7a01-b2c3-d4e5f6a7b8c9", [300, 600]);
+const thumb = image("0190f3c4-9fa0-7b12-c3d4-e5f6a7b8c9d0", [480, 960]);
+
+const severance = { id: "0190f3c4-6c7d-7e8f-9a0b-1c2d3e4f5a6c", title: "Severance", logo };
+
+const woesHollow: TileData = {
+  ...arrival,
+  id: "0190f3c4-6c7d-7e8f-9a0b-1c2d3e4f5a6b",
+  kind: "episode",
+  title: "Woe's Hollow",
+  year: 2025,
+  runtimeMinutes: 57,
+  images: { fanart, logo: null, thumb },
+  episode: {
+    show: severance,
+    seasonNumber: 2,
+    episodeNumber: 4,
+    mediaFileId: null,
+  },
+};
 
 async function drawnAt(testId: string, width: number) {
   await fireEvent(screen.getByTestId(testId), "layout", { nativeEvent: { layout: { width, height: width / 2 } } });
@@ -63,4 +82,34 @@ test("on TV, a tile asks for the image width of its layout in design pixels", as
   await render(<Tile tile={{ ...arrival, images: { fanart, logo: null, thumb: null } }} />);
 
   expect(await drawnAt("tile-fanart", 480)).toContain("/480/v1");
+});
+
+test("a tile shows the user's progress bar and no watched mark while they are part way through", async () => {
+  await render(<Tile tile={{ ...arrival, progress: 0.42 }} />);
+
+  expect(screen.getByRole("progressbar")).toHaveAccessibilityValue({ now: 42 });
+  expect(screen.queryByLabelText("Watched")).toBeNull();
+});
+
+test("a watched tile shows the watched mark and no progress bar", async () => {
+  await render(<Tile tile={{ ...arrival, watched: true }} />);
+
+  expect(screen.getByLabelText("Watched")).toBeOnTheScreen();
+  expect(screen.queryByRole("progressbar")).toBeNull();
+});
+
+test("an episode tile shows the episode thumb, the show's logo and an S:E badge", async () => {
+  await render(<Tile tile={woesHollow} />);
+
+  expect(await drawnAt("tile-thumb", 480)).toContain("/0190f3c4-9fa0-7b12-c3d4-e5f6a7b8c9d0/");
+  expect(await drawnAt("tile-logo", 300)).toContain("/0190f3c4-8e9f-7a01-b2c3-d4e5f6a7b8c9/");
+  expect(screen.getByText("S2:E4")).toBeOnTheScreen();
+});
+
+test("an episode tile without the show's logo shows the show's title", async () => {
+  const episode = { show: { ...severance, logo: null }, seasonNumber: 2, episodeNumber: 4, mediaFileId: null };
+  await render(<Tile tile={{ ...woesHollow, episode }} />);
+
+  expect(screen.getByText("Severance")).toBeOnTheScreen();
+  expect(screen.queryByTestId("tile-logo")).toBeNull();
 });

@@ -9,17 +9,19 @@ pub use output::Output;
 use crate::browsing::Cursor;
 use crate::browsing::SortKey;
 use crate::browsing::Tile;
+use crate::browsing::movie_watches;
 use crate::browsing::page;
 use crate::browsing::title_images;
 use crate::ports::persistence::DbScope;
 use domain::Artwork;
 use domain::GridSort;
 use domain::Movie;
-use domain::sort_key;
-use std::cmp::Reverse;
+use domain::Title;
+use uuid::Uuid;
 
 pub async fn call(
     dependencies: impl Into<Dependencies>,
+    user_id: Uuid,
     genre: Option<String>,
     sort: GridSort,
     after: Option<Cursor>,
@@ -31,20 +33,14 @@ pub async fn call(
     } = dependencies.into();
     let movies = db_context
         .movies()
-        .filter(Movie::fields().in_library().eq(true))
+        .filter(Movie::in_library_filter())
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?
         .into_iter()
         .filter(|movie| genre.as_ref().is_none_or(|x| movie.genres.contains(x)))
         .map(|movie| {
-            let key = match sort {
-                GridSort::Title => {
-                    SortKey::Title(sort_key(movie.sort_title.as_deref(), &movie.title).0)
-                }
-                GridSort::Added => SortKey::Added(Reverse(movie.added_at)),
-                GridSort::Released => SortKey::Released(Reverse(movie.premiered)),
-            };
+            let key = SortKey::new(sort, &Title::movie(&movie));
             (Cursor { key, id: movie.id }, movie)
         })
         .collect();
@@ -60,12 +56,16 @@ pub async fn call(
     )
     .await
     .map_err(Error::caused_by)?;
+    let mut watches = movie_watches(&mut db_context, user_id, &movies)
+        .await
+        .map_err(Error::caused_by)?;
     Ok(Output {
         tiles: movies
             .into_iter()
             .map(|movie| {
                 let images = images.remove(&movie.id).unwrap_or_default();
-                Tile::movie(movie, images)
+                let watch = watches.remove(&movie.id).unwrap_or_default();
+                Tile::movie(movie, images, watch)
             })
             .collect(),
         next,
@@ -78,14 +78,17 @@ mod tests {
     use crate::browsing::Image;
     use crate::ports::Clock;
     use crate::ports::persistence::DbContext;
+    use crate::test::add_media_file;
     use crate::test::mock_db_context;
     use crate::test::movie;
+    use crate::test::stop_at;
     use crate::test::url_signer;
+    use crate::test::watch_to_the_end;
     use domain::ArtworkKind;
+    use jiff::SignedDuration;
     use jiff::Timestamp;
     use jiff::civil::date;
     use test_fixtures::FakeClock;
-    use uuid::Uuid;
 
     fn dependencies(db_context: &DbContext) -> Dependencies {
         Dependencies {
@@ -121,6 +124,7 @@ mod tests {
     ) -> (Vec<String>, Option<Cursor>) {
         let output = call(
             dependencies(db_context),
+            Uuid::new_v4(),
             genre.map(str::to_owned),
             sort,
             after,
@@ -134,18 +138,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_page_lists_every_visible_movie_by_sort_title() {
+    async fn the_page_lists_every_movie_in_the_library_by_sort_title() {
         let mut db_context = mock_db_context().await;
-        for (title, sort_title, visible) in [
+        for (title, sort_title, in_library) in [
             ("Sicario", None, true),
             ("The Arrival", Some("Arrival"), true),
             ("dune", None, true),
-            ("Hidden", None, false),
+            ("Gone", None, false),
             ("Blade Runner 2049", None, true),
         ] {
             movie(&db_context, title)
                 .sort_title(sort_title.map(str::to_owned))
-                .in_library(visible)
+                .in_library(in_library)
                 .exec(db_context.executor_mut())
                 .await
                 .unwrap();
@@ -255,9 +259,15 @@ mod tests {
             .await
             .unwrap();
 
-        let output = call(dependencies(&db_context), None, GridSort::Title, None)
-            .await
-            .unwrap();
+        let output = call(
+            dependencies(&db_context),
+            Uuid::new_v4(),
+            None,
+            GridSort::Title,
+            None,
+        )
+        .await
+        .unwrap();
 
         let [arrival, dune] = &output.tiles[..] else {
             panic!("two tiles: {:?}", output.tiles);
@@ -272,5 +282,78 @@ mod tests {
         );
         assert!(arrival.images.thumb.is_none());
         assert!(dune.images.fanart.is_none() && dune.images.logo.is_none());
+    }
+
+    #[tokio::test]
+    async fn a_movie_tile_carries_the_users_progress_and_watched_flag() {
+        let mut db_context = mock_db_context().await;
+        let mut files = Vec::new();
+        for (title, duration_ms) in [
+            ("Arrival", Some(2_400_000)),
+            ("Dune", None),
+            ("Sicario", Some(6_000_000)),
+        ] {
+            let media_file = add_media_file(&db_context, duration_ms).await;
+            movie(&db_context, title)
+                .media_file_id(Some(media_file))
+                .exec(db_context.executor_mut())
+                .await
+                .unwrap();
+            files.push(media_file);
+        }
+        let (noor, ravi) = (Uuid::new_v4(), Uuid::new_v4());
+        stop_at(
+            &db_context,
+            noor,
+            files[0],
+            SignedDuration::from_mins(10),
+            "2026-11-02T20:00:00Z",
+        )
+        .await;
+        stop_at(
+            &db_context,
+            noor,
+            files[1],
+            SignedDuration::from_mins(10),
+            "2026-11-02T20:00:00Z",
+        )
+        .await;
+        watch_to_the_end(&db_context, noor, files[2], "2026-11-02T20:00:00Z").await;
+        stop_at(
+            &db_context,
+            ravi,
+            files[2],
+            SignedDuration::from_mins(30),
+            "2026-11-02T20:00:00Z",
+        )
+        .await;
+
+        let mut views = Vec::new();
+        for user_id in [noor, ravi] {
+            let output = call(
+                dependencies(&db_context),
+                user_id,
+                None,
+                GridSort::Title,
+                None,
+            )
+            .await
+            .unwrap();
+            views.push(
+                output
+                    .tiles
+                    .iter()
+                    .map(|x| (x.progress, x.watched))
+                    .collect::<Vec<_>>(),
+            );
+        }
+
+        assert_eq!(
+            views,
+            [
+                [(Some(0.25), false), (None, false), (None, true)],
+                [(None, false), (None, false), (Some(0.3), false)],
+            ]
+        );
     }
 }

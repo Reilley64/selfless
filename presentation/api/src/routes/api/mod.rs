@@ -1,3 +1,4 @@
+pub(crate) mod continue_watching;
 pub(crate) mod episodes;
 pub(crate) mod genres;
 pub(crate) mod home;

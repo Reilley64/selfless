@@ -12,15 +12,14 @@ use crate::browsing::Tile;
 use crate::browsing::page;
 use crate::browsing::season_counts;
 use crate::browsing::title_images;
-use crate::browsing::visible_season;
-use crate::browsing::visible_show;
 use crate::ports::persistence::DbScope;
 use domain::Artwork;
+use domain::Episode;
 use domain::GridSort;
 use domain::Season;
-use domain::sort_key;
-use std::cmp::Reverse;
+use domain::Title;
 use std::collections::HashMap;
+use uuid::Uuid;
 
 pub async fn call(
     dependencies: impl Into<Dependencies>,
@@ -35,7 +34,7 @@ pub async fn call(
     } = dependencies.into();
     let shows: Vec<_> = db_context
         .shows()
-        .filter(visible_show())
+        .filter(domain::Show::in_library_filter())
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?
@@ -48,40 +47,32 @@ pub async fn call(
             Season::fields()
                 .show_id()
                 .in_list(shows.iter().map(|x| x.id).collect::<Vec<_>>())
-                .and(visible_season()),
+                .and(Season::in_library_filter()),
         )
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?;
     let season_counts = season_counts(&seasons);
-    let mut newest = HashMap::new();
+    let mut show_episodes = HashMap::<Uuid, Vec<Episode>>::new();
     if sort != GridSort::Title {
         let show_of_season: HashMap<_, _> = seasons.iter().map(|x| (x.id, x.show_id)).collect();
         for episode in db_context
             .episodes()
-            .filter(domain::Episode::fields().in_library().eq(true))
+            .filter(Episode::in_library_filter())
             .exec(db_context.executor_mut())
             .await
             .map_err(Error::caused_by)?
         {
             if let Some(show_id) = show_of_season.get(&episode.season_id) {
-                let (added_at, air_date) = newest.entry(*show_id).or_insert((None, None));
-                *added_at = episode.added_at.max(*added_at);
-                *air_date = episode.air_date.max(*air_date);
+                show_episodes.entry(*show_id).or_default().push(episode);
             }
         }
     }
     let shows = shows
         .into_iter()
         .map(|show| {
-            let (added_at, air_date) = newest.get(&show.id).copied().unwrap_or_default();
-            let key = match sort {
-                GridSort::Title => {
-                    SortKey::Title(sort_key(show.sort_title.as_deref(), &show.title).0)
-                }
-                GridSort::Added => SortKey::Added(Reverse(added_at)),
-                GridSort::Released => SortKey::Released(Reverse(air_date)),
-            };
+            let title = Title::show(&show, show_episodes.get(&show.id).into_iter().flatten());
+            let key = SortKey::new(sort, &title);
             (Cursor { key, id: show.id }, show)
         })
         .collect();
@@ -165,7 +156,7 @@ mod tests {
         air_date: Option<Date>,
     }
 
-    const VISIBLE: Episode = Episode {
+    const IN_LIBRARY: Episode = Episode {
         season: 1,
         in_library: true,
         added_at: None,
@@ -220,12 +211,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_page_lists_every_show_with_a_visible_episode_by_sort_title() {
+    async fn the_page_lists_every_show_with_an_episode_in_the_library_by_sort_title() {
         let mut db_context = mock_db_context().await;
-        for (title, sort_title, visible) in [
+        for (title, sort_title, in_library) in [
             ("Severance", None, true),
             ("The Expanse", Some("Expanse"), true),
-            ("Hidden", None, false),
+            ("Gone", None, false),
             ("andor", None, true),
         ] {
             let show = show(&db_context, title).sort_title(sort_title.map(str::to_owned));
@@ -233,8 +224,8 @@ mod tests {
                 &mut db_context,
                 show,
                 &[Episode {
-                    in_library: visible,
-                    ..VISIBLE
+                    in_library,
+                    ..IN_LIBRARY
                 }],
             )
             .await;
@@ -247,7 +238,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_show_counts_its_numbered_seasons_with_a_visible_episode() {
+    async fn a_show_counts_its_numbered_seasons_with_an_episode_in_the_library() {
         let mut db_context = mock_db_context().await;
         let show = show(&db_context, "Severance");
         add_show(
@@ -256,20 +247,20 @@ mod tests {
             &[
                 Episode {
                     season: 0,
-                    ..VISIBLE
+                    ..IN_LIBRARY
                 },
                 Episode {
                     season: 1,
-                    ..VISIBLE
+                    ..IN_LIBRARY
                 },
                 Episode {
                     season: 2,
-                    ..VISIBLE
+                    ..IN_LIBRARY
                 },
                 Episode {
                     season: 3,
                     in_library: false,
-                    ..VISIBLE
+                    ..IN_LIBRARY
                 },
             ],
         )
@@ -289,7 +280,7 @@ mod tests {
         let mut db_context = mock_db_context().await;
         for number in 0..61 {
             let show = show(&db_context, &format!("Show {number:02}"));
-            add_show(&mut db_context, show, &[VISIBLE]).await;
+            add_show(&mut db_context, show, &[IN_LIBRARY]).await;
         }
 
         let first = list(&db_context, None, GridSort::Title, None).await;
@@ -310,7 +301,7 @@ mod tests {
         ] {
             let show = show(&db_context, title)
                 .genres(genres.iter().map(|x| (*x).to_owned()).collect::<Vec<_>>());
-            add_show(&mut db_context, show, &[VISIBLE]).await;
+            add_show(&mut db_context, show, &[IN_LIBRARY]).await;
         }
 
         let output = list(&db_context, Some("Drama"), GridSort::Title, None).await;
@@ -319,7 +310,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_added_sort_lists_the_show_with_the_newest_visible_episode_first() {
+    async fn the_added_sort_lists_the_show_with_the_newest_episode_in_the_library_first() {
         let mut db_context = mock_db_context().await;
         for (title, episodes) in [
             (
@@ -338,12 +329,12 @@ mod tests {
                 .into_iter()
                 .map(|added_at| Episode {
                     added_at,
-                    ..VISIBLE
+                    ..IN_LIBRARY
                 })
                 .chain([Episode {
                     in_library: false,
                     added_at: Some("2026-10-30T08:00:00Z"),
-                    ..VISIBLE
+                    ..IN_LIBRARY
                 }])
                 .collect();
             add_show(&mut db_context, show, &episodes).await;
@@ -355,7 +346,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_released_sort_lists_the_show_with_the_newest_visible_air_date_first() {
+    async fn the_released_sort_lists_the_show_with_the_newest_air_date_in_the_library_first() {
         let mut db_context = mock_db_context().await;
         for (title, air_dates) in [
             ("Andor", [Some(date(2022, 9, 21)), Some(date(2025, 4, 22))]),
@@ -367,12 +358,12 @@ mod tests {
                 .into_iter()
                 .map(|air_date| Episode {
                     air_date,
-                    ..VISIBLE
+                    ..IN_LIBRARY
                 })
                 .chain([Episode {
                     in_library: false,
                     air_date: Some(date(2026, 1, 1)),
-                    ..VISIBLE
+                    ..IN_LIBRARY
                 }])
                 .collect();
             add_show(&mut db_context, show, &episodes).await;
@@ -387,7 +378,7 @@ mod tests {
     async fn a_show_tile_carries_the_show_fanart_and_logo_but_no_episode_thumb() {
         let mut db_context = mock_db_context().await;
         let show = show(&db_context, "Severance");
-        let show_id = add_show(&mut db_context, show, &[VISIBLE]).await;
+        let show_id = add_show(&mut db_context, show, &[IN_LIBRARY]).await;
         let episode_id = db_context
             .episodes()
             .all()
