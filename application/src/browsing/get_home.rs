@@ -18,6 +18,7 @@ use domain::Episode;
 use domain::Movie;
 use domain::Season;
 use domain::Show;
+use domain::first_episode;
 use domain::sort_key;
 use jiff::Timestamp;
 use jiff::civil::Date;
@@ -145,12 +146,13 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<Output, Error
         .chain(featured)
         .collect();
     let play_episode_id = featured.and_then(|id| {
-        episodes
-            .iter()
-            .filter_map(|x| Some((season_of.get(&x.season_id)?, x)))
-            .filter(|(season, _)| season.show_id == id)
-            .min_by_key(|(season, episode)| (season.listing_order(), episode.number))
-            .map(|(_, episode)| episode.id)
+        first_episode(
+            episodes
+                .iter()
+                .filter_map(|x| Some((*season_of.get(&x.season_id)?, x)))
+                .filter(|(season, _)| season.show_id == id),
+        )
+        .map(|(_, episode)| episode.id)
     });
     let now = clock.call();
     let mut movie_images = title_images(

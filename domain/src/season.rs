@@ -27,6 +27,14 @@ impl Season {
     pub fn listing_order(&self) -> (bool, i64) {
         (self.number == 0, self.number)
     }
+
+    pub fn name(&self) -> String {
+        if self.number == 0 {
+            "Specials".to_owned()
+        } else {
+            format!("Season {}", self.number)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -52,5 +60,11 @@ mod tests {
         seasons.sort_by_key(Season::listing_order);
 
         assert_eq!(seasons.map(|x| x.number), [1, 2, 0]);
+    }
+
+    #[test]
+    fn a_numbered_season_is_named_by_its_number_and_season_0_is_specials() {
+        assert_eq!(season(2).name(), "Season 2");
+        assert_eq!(season(0).name(), "Specials");
     }
 }

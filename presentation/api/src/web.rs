@@ -54,6 +54,11 @@ pub(crate) async fn movie() -> topcoat::Result<Response> {
     app()
 }
 
+#[route(GET "/(web)/shows/{show_id}")]
+pub(crate) async fn show() -> topcoat::Result<Response> {
+    app()
+}
+
 fn app() -> topcoat::Result<Response> {
     Err(rewrite("/index.html", Body::empty()).into())
 }
@@ -144,6 +149,21 @@ mod tests {
 
         let (status, headers, html) = server
             .get_text("/movies/0190f3c4-5b6a-7c8d-9e0f-1a2b3c4d5e6f")
+            .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert!(html.contains("<title>selfless</title>"), "{html}");
+        assert!(headers.contains_key(CONTENT_SECURITY_POLICY));
+        std::fs::remove_dir_all(web_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_show_page_loads_from_its_own_address_with_its_season() {
+        let app = TestApp::new().await;
+        let (server, web_dir) = serve_web_app(&app).await;
+
+        let (status, headers, html) = server
+            .get_text("/shows/0190f3c4-6c7d-7e8f-9a0b-1c2d3e4f5a6b?season=2")
             .await;
 
         assert_eq!(status, StatusCode::OK);

@@ -35,7 +35,13 @@ impl TileImages {
             ArtworkKind::Thumb => &mut self.thumb,
             ArtworkKind::Poster => return,
         };
-        *slot = Some(Image {
+        *slot = Some(Image::new(artwork, url_signer, now));
+    }
+}
+
+impl Image {
+    pub(crate) fn new(artwork: &Artwork, url_signer: &UrlSigner, now: Timestamp) -> Self {
+        Self {
             id: artwork.id,
             urls: artwork
                 .kind
@@ -51,7 +57,7 @@ impl TileImages {
                     }
                 })
                 .collect(),
-        });
+        }
     }
 }
 
