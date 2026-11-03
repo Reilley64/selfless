@@ -456,6 +456,7 @@ mod tests {
     use crate::test::unreadable_movie_nfo;
     use crate::test::unreadable_show_nfo;
     use domain::Movie;
+    use domain::Owner;
     use domain::RadarrId;
     use domain::SonarrId;
     use domain::TmdbId;
@@ -697,7 +698,8 @@ mod tests {
                 .items
                 .get()
                 .iter()
-                .filter_map(|x| x.movie_id)
+                .filter_map(HeldRemovalItem::owner)
+                .filter_map(Owner::movie_id)
                 .collect::<Vec<_>>();
             let mut titles = db_context
                 .movies()

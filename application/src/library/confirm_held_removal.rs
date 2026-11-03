@@ -10,6 +10,8 @@ use crate::library::sync;
 use crate::library::sync::Removal;
 use crate::ports::persistence::DbScope;
 use domain::HeldRemoval;
+use domain::HeldRemovalItem;
+use domain::Owner;
 use domain::Source;
 
 pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Result<Output, Error> {
@@ -35,7 +37,11 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
     let items = held_removal.items.get();
     let removal = match source {
         Source::Radarr => Removal::Movies {
-            movie_ids: items.iter().filter_map(|x| x.movie_id).collect(),
+            movie_ids: items
+                .iter()
+                .filter_map(HeldRemovalItem::owner)
+                .filter_map(Owner::movie_id)
+                .collect(),
             listed: source_health
                 .api_call(source, list_radarr_movies.call().await)
                 .map_err(Error::caused_by)?
@@ -44,7 +50,11 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
                 .collect(),
         },
         Source::Sonarr => Removal::Shows {
-            show_ids: items.iter().filter_map(|x| x.show_id).collect(),
+            show_ids: items
+                .iter()
+                .filter_map(HeldRemovalItem::owner)
+                .filter_map(Owner::show_id)
+                .collect(),
             listed: source_health
                 .api_call(source, list_sonarr_shows.call().await)
                 .map_err(Error::caused_by)?
@@ -76,7 +86,6 @@ mod tests {
     use crate::test::arrival;
     use crate::test::mock_db_context;
     use crate::test::movie_titles;
-    use domain::HeldRemovalItem;
     use domain::RadarrId;
     use domain::TmdbId;
     use std::sync::Arc;

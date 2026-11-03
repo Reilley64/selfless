@@ -41,6 +41,13 @@ impl Artwork {
         }
     }
 
+    pub fn show_level_filter() -> toasty::stmt::Expr<bool> {
+        Self::fields()
+            .season_id()
+            .is_none()
+            .and(Self::fields().episode_id().is_none())
+    }
+
     pub fn listing_order(&self) -> String {
         self.path.clone()
     }

@@ -18,12 +18,9 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<Output, Error
         .filter(domain::Show::in_library_filter())
         .include(domain::Show::fields().actors())
         .include(
-            domain::Show::fields().artwork().filter(
-                domain::Artwork::fields()
-                    .season_id()
-                    .is_none()
-                    .and(domain::Artwork::fields().episode_id().is_none()),
-            ),
+            domain::Show::fields()
+                .artwork()
+                .filter(domain::Artwork::show_level_filter()),
         )
         .exec(db_context.executor_mut())
         .await

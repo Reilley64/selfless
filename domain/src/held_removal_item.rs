@@ -1,4 +1,5 @@
 use crate::HeldRemoval;
+use crate::Owner;
 use crate::Source;
 use uuid::Uuid;
 
@@ -13,4 +14,12 @@ pub struct HeldRemovalItem {
     pub held_removal: toasty::Deferred<HeldRemoval>,
     pub movie_id: Option<Uuid>,
     pub show_id: Option<Uuid>,
+}
+
+impl HeldRemovalItem {
+    pub fn owner(&self) -> Option<Owner> {
+        self.movie_id
+            .map(Owner::Movie)
+            .or(self.show_id.map(Owner::Show))
+    }
 }
