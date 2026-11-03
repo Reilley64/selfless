@@ -22,9 +22,10 @@ import {
 import { useRouter } from "expo-router";
 import { useVideoPlayer, type VideoPlayer, VideoView } from "expo-video";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { StyleSheet } from "react-native";
+import { Platform, StyleSheet } from "react-native";
 import { Text, View } from "react-native-css/components";
 import { appleTvProfile } from "../appleTvProfile";
+import { androidTvProfile } from "../modules/capability-profile";
 import { useFirstFieldFocus } from "./form";
 import { NotFound } from "./NotFound";
 
@@ -48,18 +49,20 @@ function Playing({ mediaFileId, startPosition }: PlayerProps) {
     let current = true;
     let answered = false;
     const spans = startPlaybackSpans(userId, mediaFileId);
-    spans
-      .during(() =>
-        startPlayback({
-          mediaFileId,
-          startPosition: resume.position,
-          profile: appleTvProfile,
-          forceHls: resume.forceHls,
-          ...(resume.tracks && {
-            audioTrackId: resume.tracks.audioTrackId ?? undefined,
-            subtitleTrackId: resume.tracks.subtitleTrackId,
+    (Platform.OS === "android" ? androidTvProfile() : Promise.resolve(appleTvProfile))
+      .then((profile) =>
+        spans.during(() =>
+          startPlayback({
+            mediaFileId,
+            startPosition: resume.position,
+            profile,
+            forceHls: resume.forceHls,
+            ...(resume.tracks && {
+              audioTrackId: resume.tracks.audioTrackId ?? undefined,
+              subtitleTrackId: resume.tracks.subtitleTrackId,
+            }),
           }),
-        }),
+        ),
       )
       .then(
         (response) => {
