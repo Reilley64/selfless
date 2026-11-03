@@ -1,15 +1,9 @@
 mod invites;
 
+use crate::QUEUE_PAUSES;
 use domain::OutboxData;
 use infrastructure::AppState;
-use persistence::QueuePauses;
-use std::time::Duration;
 use tokio_util::sync::CancellationToken;
-
-const PAUSES: QueuePauses = QueuePauses {
-    idle: Duration::from_millis(100),
-    after_failure: Duration::from_secs(30),
-};
 
 pub(super) async fn serve(state: AppState, cancellation: CancellationToken) {
     persistence::consume_outbox(
@@ -24,7 +18,7 @@ pub(super) async fn serve(state: AppState, cancellation: CancellationToken) {
                 }
             }
         },
-        PAUSES,
+        QUEUE_PAUSES,
         cancellation,
     )
     .await;

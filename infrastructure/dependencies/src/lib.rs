@@ -1,5 +1,4 @@
 use application::BuildInfo;
-use application::InboxWakeup;
 use application::MediaFolder;
 use application::Reconciles;
 use application::SourceHealth;
@@ -14,6 +13,8 @@ use application::ports::GetSonarrEpisodes;
 use application::ports::GetSonarrShow;
 use application::ports::ListRadarrMovies;
 use application::ports::ListSonarrSeries;
+use application::ports::ReadRadarrWebhook;
+use application::ports::ReadSonarrWebhook;
 use application::ports::SendEmail;
 use application::ports::persistence::DbContext;
 use jiff::Timestamp;
@@ -31,10 +32,11 @@ pub struct AppState {
     pub get_radarr_movie: GetRadarrMovie,
     pub get_sonarr_episodes: GetSonarrEpisodes,
     pub get_sonarr_show: GetSonarrShow,
-    pub inbox_wakeup: InboxWakeup,
     pub list_radarr_movies: ListRadarrMovies,
     pub list_sonarr_series: ListSonarrSeries,
     pub media_folder: MediaFolder,
+    pub read_radarr_webhook: ReadRadarrWebhook,
+    pub read_sonarr_webhook: ReadSonarrWebhook,
     pub reconciles: Reconciles,
     pub send_email: SendEmail,
     pub source_health: SourceHealth,

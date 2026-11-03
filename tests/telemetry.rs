@@ -49,6 +49,7 @@ async fn the_inbox_worker_links_its_span_to_the_webhook_request() {
         .find(|x| x.span_kind == SpanKind::Server)
         .expect("an HTTP server span");
     assert_eq!(webhook.name, "POST /webhooks/radarr/v1");
+    assert_eq!(worker.name, "process inboxes");
     assert_ne!(
         worker.span_context.trace_id(),
         webhook.span_context.trace_id()

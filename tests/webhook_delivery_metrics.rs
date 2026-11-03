@@ -28,8 +28,8 @@ const IGNORED_EVENTS: [(&str, &str); 6] = [
 ];
 
 #[tokio::test]
-async fn deliveries_are_counted_as_stored_rejected_processed_and_ignored_by_source_and_event_type()
-{
+async fn deliveries_are_counted_as_stored_rejected_processed_ignored_skipped_and_failed_by_source_and_event_type()
+ {
     let exporter = InMemoryMetricExporter::default();
     let provider = SdkMeterProvider::builder()
         .with_periodic_exporter(exporter.clone())
@@ -123,6 +123,26 @@ async fn deliveries_are_counted_as_stored_rejected_processed_and_ignored_by_sour
     eventually(async || (count("sonarr", "processed", Some("Download")) == Some(1)).then_some(()))
         .await;
     assert_eq!(count("radarr", "rejected", None), Some(1));
+    let skipped = server
+        .send_radarr_webhook(
+            Method::POST,
+            Some(("radarr", RADARR_WEBHOOK_PASSWORD)),
+            r#"{"eventType":"Download"}"#,
+        )
+        .await;
+    assert_eq!(skipped, StatusCode::OK);
+    eventually(async || (count("radarr", "skipped", Some("Download")) == Some(1)).then_some(()))
+        .await;
+    let failing = server
+        .send_radarr_webhook(
+            Method::POST,
+            Some(("radarr", RADARR_WEBHOOK_PASSWORD)),
+            &fixture("radarr/webhooks/download.json"),
+        )
+        .await;
+    assert_eq!(failing, StatusCode::OK);
+    eventually(async || (count("radarr", "failed", Some("Download")) == Some(1)).then_some(()))
+        .await;
     drop(server);
     database.drop().await;
 }

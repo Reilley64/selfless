@@ -23,6 +23,7 @@ uuid = { workspace = true }
 
 [dev-dependencies]
 email = { workspace = true }
+jiff = { workspace = true }
 lettre = { workspace = true, features = ["builder", "hostname", "ring", "rustls-platform-verifier", "serde", "smtp-transport", "tokio1-rustls"] }
 locking = { workspace = true }
 opentelemetry_sdk = { workspace = true, features = ["testing"] }

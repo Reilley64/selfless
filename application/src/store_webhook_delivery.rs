@@ -1,4 +1,3 @@
-use crate::InboxWakeup;
 use crate::WebhookPasswords;
 use crate::ports::Clock;
 use crate::ports::persistence::DbContext;
@@ -7,12 +6,9 @@ use crate::source_states;
 use crate::webhook_deliveries;
 use crate::webhook_deliveries::Outcome;
 use bytes::Bytes;
-use domain::InboxRow;
-use domain::InboxRowStatus;
 use domain::Source;
 use opentelemetry::propagation::TextMapPropagator;
 use opentelemetry_sdk::propagation::TraceContextPropagator;
-use serde::Deserialize;
 use std::collections::HashMap;
 use tracing::Span;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
@@ -21,7 +17,6 @@ use tracing_opentelemetry::OpenTelemetrySpanExt;
 pub struct Dependencies {
     pub clock: Clock,
     pub db_context: DbContext,
-    pub inbox_wakeup: InboxWakeup,
     pub webhook_passwords: WebhookPasswords,
 }
 
@@ -34,12 +29,6 @@ pub enum Delivery {
     Rejected,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct EventType {
-    event_type: String,
-}
-
 pub async fn call(
     dependencies: impl Into<Dependencies>,
     source: Source,
@@ -49,7 +38,6 @@ pub async fn call(
     let Dependencies {
         clock,
         mut db_context,
-        inbox_wakeup,
         webhook_passwords,
     } = dependencies.into();
     if password.as_ref() != Some(webhook_passwords.get(source)) {
@@ -70,28 +58,20 @@ pub async fn call(
         );
         return Ok(Delivery::Rejected);
     }
-    let event_type = serde_json::from_slice::<EventType>(&body)
-        .ok()
-        .map(|x| x.event_type);
+    let event_type = webhook_deliveries::event_type(&body);
     let received_at = clock.call();
     let mut carrier = HashMap::new();
     TraceContextPropagator::new().inject_context(&Span::current().context(), &mut carrier);
-    toasty::create!(InboxRow {
-        source,
-        event_type: event_type.clone(),
-        body: body.to_vec(),
-        received_at,
-        traceparent: carrier.remove("traceparent"),
-        status: InboxRowStatus::Pending,
-        attempts: 0,
-        next_attempt_at: received_at,
-        error: None,
-        source_item_id: None,
-    })
-    .exec(db_context.executor_mut())
-    .await
-    .map_err(Error::caused_by)?;
-    inbox_wakeup.wake();
+    db_context
+        .inboxes()
+        .create()
+        .source(source)
+        .body(body.to_vec())
+        .received_at(received_at)
+        .traceparent(carrier.remove("traceparent"))
+        .exec(db_context.executor_mut())
+        .await
+        .map_err(Error::caused_by)?;
     source_states::upsert(db_context.executor_mut(), source)
         .await
         .map_err(Error::caused_by)?

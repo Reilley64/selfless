@@ -4,6 +4,7 @@ mod client_kind;
 mod colour;
 mod email_address;
 mod empty_password;
+mod inbox;
 mod invalid_email_address;
 mod invite;
 mod invite_email_status;
@@ -20,6 +21,7 @@ pub use client_kind::ClientKind;
 pub use colour::Colour;
 pub use email_address::EmailAddress;
 pub use empty_password::EmptyPassword;
+pub use inbox::Inbox;
 pub use invalid_email_address::InvalidEmailAddress;
 pub use invite::Invite;
 pub use invite_email_status::InviteEmailStatus;
@@ -48,35 +50,6 @@ impl Source {
             Source::Sonarr => "sonarr",
         }
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, toasty::Embed)]
-#[column(type = text)]
-pub enum InboxRowStatus {
-    Pending,
-    Processing,
-    Processed,
-    Ignored,
-    Failed,
-    Resolved,
-}
-
-#[derive(Debug, toasty::Model)]
-pub struct InboxRow {
-    #[key]
-    #[auto]
-    pub id: Uuid,
-    pub source: Source,
-    pub event_type: Option<String>,
-    pub body: Vec<u8>,
-    pub received_at: Timestamp,
-    pub traceparent: Option<String>,
-    #[index]
-    pub status: InboxRowStatus,
-    pub attempts: i64,
-    pub next_attempt_at: Timestamp,
-    pub error: Option<String>,
-    pub source_item_id: Option<i64>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, toasty::Embed)]

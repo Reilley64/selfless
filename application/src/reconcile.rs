@@ -14,15 +14,11 @@ use crate::ports::ListSonarrSeries;
 use crate::ports::SonarrShow;
 use crate::ports::persistence::DbContext;
 use crate::ports::persistence::DbScope;
-use crate::process_inbox_row::RadarrEvent;
-use crate::process_inbox_row::SonarrEvent;
 use crate::source_states;
 use crate::sync_movie;
 use crate::sync_show;
 use crate::sync_status::ReconcileProgress;
 use domain::HeldRemoval;
-use domain::InboxRow;
-use domain::InboxRowStatus;
 use domain::MediaFile;
 use domain::Movie;
 use domain::ReconcileResult;
@@ -126,7 +122,6 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
         if failed_calls == 0 {
             remove_or_hold(&mut db_context, source, &listing).await?;
         }
-        resolve_failed_rows(&mut db_context, source, &listing.synced).await?;
         if failed_calls > 0 {
             return Err(Error::caused_by(format!(
                 "{failed_calls} calls to {} failed, so nothing was removed",
@@ -206,7 +201,6 @@ struct Listing {
     listed: HashSet<i64>,
     total: usize,
     absent: Vec<Uuid>,
-    synced: HashSet<i64>,
     failed_calls: usize,
 }
 
@@ -225,7 +219,6 @@ async fn sync_movies(
         .map(|x| x.tmdb_id)
         .collect::<HashSet<_>>();
     set_total(progress, radarr_movies.len());
-    let synced = listed.clone();
     let stored_movies = Movie::all()
         .exec(db_context.executor_mut())
         .await
@@ -270,7 +263,6 @@ async fn sync_movies(
         listed,
         total,
         absent,
-        synced,
         failed_calls: 0,
     })
 }
@@ -299,7 +291,6 @@ async fn sync_shows(
         .map(|x| x.id)
         .collect();
     let mut failed_calls = 0;
-    let mut synced = HashSet::new();
     for series in series {
         let span = sync_show::span();
         let episodes = get_sonarr_episodes
@@ -308,7 +299,6 @@ async fn sync_shows(
             .await;
         match source_health.api_call(Source::Sonarr, episodes) {
             Ok(episodes) => {
-                synced.insert(series.tvdb_id);
                 sync_show::save(db_context, media_folder, SonarrShow { series, episodes })
                     .instrument(span)
                     .await
@@ -330,65 +320,8 @@ async fn sync_shows(
         listed,
         total,
         absent,
-        synced,
         failed_calls,
     })
-}
-
-async fn resolve_failed_rows(
-    db_context: &mut DbContext,
-    source: Source,
-    synced: &HashSet<i64>,
-) -> Result<(), Error> {
-    let failed_rows = InboxRow::filter(
-        InboxRow::fields()
-            .status()
-            .eq(InboxRowStatus::Failed)
-            .and(InboxRow::fields().source().eq(source)),
-    )
-    .exec(db_context.executor_mut())
-    .await
-    .map_err(Error::caused_by)?;
-    let stored = match source {
-        Source::Radarr => Movie::all()
-            .exec(db_context.executor_mut())
-            .await
-            .map_err(Error::caused_by)?
-            .into_iter()
-            .map(|x| x.tmdb_id)
-            .collect::<HashSet<_>>(),
-        Source::Sonarr => Show::all()
-            .exec(db_context.executor_mut())
-            .await
-            .map_err(Error::caused_by)?
-            .into_iter()
-            .map(|x| x.tvdb_id)
-            .collect(),
-    };
-    for mut row in failed_rows {
-        let Some(item_id) = row.source_item_id else {
-            continue;
-        };
-        let removal = match source {
-            Source::Radarr => matches!(
-                serde_json::from_slice(&row.body),
-                Ok(RadarrEvent::MovieDelete { .. })
-            ),
-            Source::Sonarr => matches!(
-                serde_json::from_slice(&row.body),
-                Ok(SonarrEvent::SeriesDelete { .. })
-            ),
-        };
-        let gone = removal && !stored.contains(&item_id);
-        if synced.contains(&item_id) || gone {
-            row.update()
-                .status(InboxRowStatus::Resolved)
-                .exec(db_context.executor_mut())
-                .await
-                .map_err(Error::caused_by)?;
-        }
-    }
-    Ok(())
 }
 
 fn set_total(progress: &Mutex<Option<ReconcileProgress>>, total: usize) {

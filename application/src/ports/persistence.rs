@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use domain::Admin;
 use domain::AdminSession;
+use domain::Inbox;
 use domain::Invite;
 use domain::Outbox;
 use domain::Session;
@@ -70,6 +71,10 @@ pub trait DbScope {
     }
 
     fn admin_sessions(&self) -> DbSet<AdminSession> {
+        DbSet::new()
+    }
+
+    fn inboxes(&self) -> DbSet<Inbox> {
         DbSet::new()
     }
 

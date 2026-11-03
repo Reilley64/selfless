@@ -3197,6 +3197,7 @@ dependencies = [
  "application",
  "domain",
  "email",
+ "jiff",
  "lettre",
  "locking",
  "ohno",
@@ -3589,6 +3590,7 @@ dependencies = [
  "jiff",
  "reqwest",
  "serde",
+ "serde_json",
  "servarr",
  "url",
 ]
@@ -4458,6 +4460,7 @@ dependencies = [
  "jiff",
  "reqwest",
  "serde",
+ "serde_json",
  "servarr",
  "url",
 ]

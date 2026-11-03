@@ -741,3 +741,64 @@ impl ListSubtitleFilesError {
         }
     }
 }
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum RadarrWebhook {
+    Movie { radarr_id: i64 },
+    Ignored,
+}
+
+type ReadRadarrWebhookFn = dyn Fn(&[u8]) -> Result<RadarrWebhook, UnreadableWebhook> + Send + Sync;
+
+#[derive(Clone)]
+pub struct ReadRadarrWebhook(Arc<ReadRadarrWebhookFn>);
+
+impl ReadRadarrWebhook {
+    pub fn new(
+        f: impl Fn(&[u8]) -> Result<RadarrWebhook, UnreadableWebhook> + Send + Sync + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self, body: &[u8]) -> Result<RadarrWebhook, UnreadableWebhook> {
+        (self.0)(body)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum SonarrWebhook {
+    Show { sonarr_id: i64 },
+    Ignored,
+}
+
+type ReadSonarrWebhookFn = dyn Fn(&[u8]) -> Result<SonarrWebhook, UnreadableWebhook> + Send + Sync;
+
+#[derive(Clone)]
+pub struct ReadSonarrWebhook(Arc<ReadSonarrWebhookFn>);
+
+impl ReadSonarrWebhook {
+    pub fn new(
+        f: impl Fn(&[u8]) -> Result<SonarrWebhook, UnreadableWebhook> + Send + Sync + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self, body: &[u8]) -> Result<SonarrWebhook, UnreadableWebhook> {
+        (self.0)(body)
+    }
+}
+
+#[derive(ohno::Error, Default)]
+#[no_constructors]
+#[display("failed to read a webhook delivery")]
+pub struct UnreadableWebhook {
+    core: ohno::OhnoCore,
+}
+
+impl UnreadableWebhook {
+    pub fn caused_by(source: impl Into<Box<dyn Error + Send + Sync>>) -> Self {
+        Self {
+            core: ohno::OhnoCore::from(source),
+        }
+    }
+}

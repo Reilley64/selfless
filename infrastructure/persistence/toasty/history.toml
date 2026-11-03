@@ -79,3 +79,8 @@ snapshot_name = "20261103_025008_snapshot.toml"
 id = 6625847279185020701
 name = "20261103_025009_streams.sql"
 snapshot_name = "20261103_025009_snapshot.toml"
+
+[[migrations]]
+id = 8836271285327210844
+name = "20261103_030157_inboxes.sql"
+snapshot_name = "20261103_030157_snapshot.toml"

@@ -1,3 +1,7 @@
+mod webhook;
+
+pub use webhook::read_webhook;
+
 use application::ports::CheckRadarrKodiMetadata;
 use application::ports::GetRadarrMovie;
 use application::ports::ListRadarrMovies;
