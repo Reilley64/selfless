@@ -1,5 +1,5 @@
 #[path = "../test/selfless.rs"]
-mod selfless_test;
+pub mod selfless_test;
 
 use application::ports::Clock;
 use application::ports::ProbeError;
