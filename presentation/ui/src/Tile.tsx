@@ -4,7 +4,7 @@ import { type ImageResizeMode, PixelRatio, Platform } from "react-native";
 import { Image, Pressable, Text, View } from "react-native-css/components";
 import { imageUrl } from "./imageUrl";
 
-function ArtworkImage({
+export function ArtworkImage({
   artwork,
   className,
   resizeMode,
