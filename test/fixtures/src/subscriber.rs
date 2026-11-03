@@ -12,6 +12,7 @@ where
     S: Subscriber + Send + Sync + 'static,
 {
     LazyLock::force(&SECOND_DISPATCHER_SO_TRACING_ASKS_EVERY_DISPATCHER);
+    #[expect(clippy::disallowed_methods)]
     tracing::subscriber::set_default(subscriber)
 }
 
