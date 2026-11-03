@@ -21,7 +21,9 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
         source_health,
     } = dependencies.into();
     let _running = reconciles.source(source).running.lock().await;
-    let Some(held_removal) = HeldRemoval::filter_by_source(source)
+    let Some(held_removal) = db_context
+        .held_removals()
+        .filter(HeldRemoval::fields().source().eq(source))
         .first()
         .exec(db_context.executor_mut())
         .await

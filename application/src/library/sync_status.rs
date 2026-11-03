@@ -34,23 +34,29 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<Output, Error
         reconciles,
         source_health,
     } = dependencies.into();
-    let movies = Movie::filter(Movie::fields().visible().eq(true))
+    let movies = db_context
+        .movies()
+        .filter(Movie::fields().visible().eq(true))
         .count()
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?;
-    let shows = Show::filter(
-        Show::fields().seasons().any(
-            Season::fields()
-                .episodes()
-                .any(Episode::fields().visible().eq(true)),
-        ),
-    )
-    .count()
-    .exec(db_context.executor_mut())
-    .await
-    .map_err(Error::caused_by)?;
-    let episodes = Episode::filter(Episode::fields().visible().eq(true))
+    let shows = db_context
+        .shows()
+        .filter(
+            Show::fields().seasons().any(
+                Season::fields()
+                    .episodes()
+                    .any(Episode::fields().visible().eq(true)),
+            ),
+        )
+        .count()
+        .exec(db_context.executor_mut())
+        .await
+        .map_err(Error::caused_by)?;
+    let episodes = db_context
+        .episodes()
+        .filter(Episode::fields().visible().eq(true))
         .count()
         .exec(db_context.executor_mut())
         .await
@@ -84,12 +90,16 @@ async fn source_status(
     source: Source,
     visible: VisibleCounts,
 ) -> Result<SourceStatus, Error> {
-    let state = SourceState::filter_by_source(source)
+    let state = db_context
+        .source_states()
+        .filter(SourceState::fields().source().eq(source))
         .first()
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?;
-    let held_removal = StoredHeldRemoval::filter_by_source(source)
+    let held_removal = db_context
+        .held_removals()
+        .filter(StoredHeldRemoval::fields().source().eq(source))
         .first()
         .exec(db_context.executor_mut())
         .await
@@ -116,7 +126,9 @@ async fn source_status(
 }
 
 async fn problems(db_context: &mut DbContext) -> Result<Vec<Problem>, Error> {
-    let stored = SyncProblem::all()
+    let stored = db_context
+        .sync_problems()
+        .all()
         .include(SyncProblem::fields().movie())
         .include(SyncProblem::fields().show())
         .include(SyncProblem::fields().media_file().movies())

@@ -24,7 +24,6 @@ use crate::ports::SonarrShow;
 use crate::ports::persistence::DbContext;
 use crate::ports::persistence::DbScope;
 use domain::HeldRemoval;
-use domain::MediaFile;
 use domain::Movie;
 use domain::ReconcileResult;
 use domain::Show;
@@ -228,7 +227,9 @@ async fn sync_movies(
         .map(|x| x.tmdb_id)
         .collect::<HashSet<_>>();
     set_total(progress, radarr_movies.len());
-    let stored_movies = Movie::all()
+    let stored_movies = db_context
+        .movies()
+        .all()
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?;
@@ -238,7 +239,9 @@ async fn sync_movies(
         .filter(|x| !listed.contains(&x.tmdb_id))
         .map(|x| x.id)
         .collect();
-    let stored = MediaFile::all()
+    let stored = db_context
+        .media_files()
+        .all()
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?
@@ -289,7 +292,9 @@ async fn sync_shows(
         .map_err(Error::caused_by)?;
     let listed = listings.iter().map(|x| x.tvdb_id).collect::<HashSet<_>>();
     set_total(progress, listings.len());
-    let stored_shows = Show::all()
+    let stored_shows = db_context
+        .shows()
+        .all()
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?;
@@ -351,7 +356,9 @@ async fn remove_or_hold(
     source: Source,
     listing: &Listing,
 ) -> Result<(), Error> {
-    HeldRemoval::filter_by_source(source)
+    db_context
+        .held_removals()
+        .filter(HeldRemoval::fields().source().eq(source))
         .delete()
         .exec(db_context.executor_mut())
         .await
@@ -361,13 +368,14 @@ async fn remove_or_hold(
             selfless.library.source = source.name(),
             "held a removal of more than half of a source's items"
         );
-        toasty::create!(HeldRemoval {
-            source,
-            item_ids: listing.absent.clone(),
-        })
-        .exec(db_context.executor_mut())
-        .await
-        .map_err(Error::caused_by)?;
+        db_context
+            .held_removals()
+            .create()
+            .source(source)
+            .item_ids(listing.absent.clone())
+            .exec(db_context.executor_mut())
+            .await
+            .map_err(Error::caused_by)?;
         return Ok(());
     }
     remove(db_context, source, listing.absent.clone(), &listing.listed).await
@@ -384,7 +392,9 @@ pub(crate) async fn remove(
     }
     match source {
         Source::Radarr => {
-            let movies = Movie::filter(Movie::fields().id().in_list(ids))
+            let movies = db_context
+                .movies()
+                .filter(Movie::fields().id().in_list(ids))
                 .exec(db_context.executor_mut())
                 .await
                 .map_err(Error::caused_by)?
@@ -396,7 +406,9 @@ pub(crate) async fn remove(
                 .map_err(Error::caused_by)
         }
         Source::Sonarr => {
-            let shows = Show::filter(Show::fields().id().in_list(ids))
+            let shows = db_context
+                .shows()
+                .filter(Show::fields().id().in_list(ids))
                 .exec(db_context.executor_mut())
                 .await
                 .map_err(Error::caused_by)?;
