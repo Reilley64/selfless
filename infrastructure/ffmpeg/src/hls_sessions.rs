@@ -1,18 +1,20 @@
-use crate::hls::INIT;
 use crate::hls::Segments;
-use crate::hls::remux;
+use crate::hls::VIDEO;
+use crate::hls::audio_rendition;
+use crate::hls::write_segments;
 use application::attributes::SELFLESS_FFMPEG_PURPOSE;
 use application::attributes::SELFLESS_FFMPEG_START_SEGMENT;
 use application::attributes::selfless_ffmpeg_purpose;
-use application::ports::AudioStream;
 use application::ports::EndHlsSession;
 use application::ports::GetHlsFile;
+use application::ports::HlsAudioTrack;
 use application::ports::HlsError;
 use application::ports::HlsSession;
 use application::ports::StartHlsSession;
 use application::ports::VideoStream;
 use application::spans::SELFLESS_FFMPEG;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::io;
 use std::io::ErrorKind;
 use std::path::PathBuf;
@@ -26,7 +28,6 @@ use tracing::field;
 use uuid::Uuid;
 
 const MAIN: &str = "main.m3u8";
-const VIDEO: &str = "video.m3u8";
 const JUST_AHEAD: usize = 4;
 
 #[derive(Clone)]
@@ -39,7 +40,7 @@ struct Session {
     folder: PathBuf,
     input: PathBuf,
     video: VideoStream,
-    audio: Option<AudioStream>,
+    audio: Vec<HlsAudioTrack>,
     segments: Arc<Segments>,
     run: Option<Run>,
 }
@@ -70,6 +71,21 @@ enum Requested {
     Playlist,
     Init,
     Segment(usize),
+}
+
+fn requested(name: &str) -> Option<(&str, Requested)> {
+    if name == MAIN {
+        return Some((VIDEO, Requested::Playlist));
+    }
+    let (stem, extension) = name.rsplit_once('.')?;
+    match (extension, stem.split_once('-')) {
+        ("m3u8", None) => Some((stem, Requested::Playlist)),
+        ("mp4", None) => Some((stem, Requested::Init)),
+        ("m4s", Some((rendition, index))) => {
+            Some((rendition, Requested::Segment(index.parse().ok()?)))
+        }
+        _ => None,
+    }
 }
 
 impl HlsSessions {
@@ -125,19 +141,57 @@ impl HlsSessions {
         let segments = Segments::new(&session.keyframes, session.duration);
         let size = fs::metadata(&session.path).await?.len();
         let bandwidth = (size as f64 * 8.0 / session.duration.as_secs_f64().max(1.0)).ceil();
+        let mut main = "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-INDEPENDENT-SEGMENTS\n".to_owned();
+        let mut names = HashSet::new();
+        for (position, track) in session.audio.iter().enumerate() {
+            let rendition = audio_rendition(position);
+            let mut name = [&track.stream.language, &track.stream.title]
+                .into_iter()
+                .flatten()
+                .map(|x| x.replace(['"', '\r', '\n'], ""))
+                .collect::<Vec<_>>()
+                .join(" - ");
+            if name.is_empty() {
+                name = format!("Audio {}", position + 1);
+            }
+            if !names.insert(name.clone()) {
+                name = format!("{name} ({})", position + 1);
+            }
+            let language = track
+                .stream
+                .language
+                .as_ref()
+                .map(|x| format!("LANGUAGE=\"{x}\","))
+                .unwrap_or_default();
+            main.push_str(&format!(
+                "#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"audio\",NAME=\"{name}\",{language}DEFAULT={},AUTOSELECT=YES,CHANNELS=\"{}\",URI=\"{rendition}.m3u8\"\n",
+                if track.selected { "YES" } else { "NO" },
+                track
+                    .transcode
+                    .map_or(track.stream.channels, |x| x.channels),
+            ));
+            fs::write(
+                folder.join(format!("{rendition}.m3u8")),
+                segments.media_playlist(&rendition),
+            )
+            .await?;
+        }
+        main.push_str(&format!(
+            "#EXT-X-STREAM-INF:BANDWIDTH={bandwidth},RESOLUTION={}x{}{}\n{VIDEO}.m3u8\n",
+            session.video.width,
+            session.video.height,
+            if session.audio.is_empty() {
+                ""
+            } else {
+                ",AUDIO=\"audio\""
+            },
+        ));
         fs::write(
-            folder.join(MAIN),
-            format!(
-                "#EXTM3U\n\
-                 #EXT-X-VERSION:7\n\
-                 #EXT-X-INDEPENDENT-SEGMENTS\n\
-                 #EXT-X-STREAM-INF:BANDWIDTH={bandwidth},RESOLUTION={}x{}\n\
-                 {VIDEO}\n",
-                session.video.width, session.video.height
-            ),
+            folder.join(format!("{VIDEO}.m3u8")),
+            segments.media_playlist(VIDEO),
         )
         .await?;
-        fs::write(folder.join(VIDEO), segments.media_playlist()).await?;
+        fs::write(folder.join(MAIN), main).await?;
         let start = segments.segment_at(session.start_position);
         let mut started = Session {
             folder,
@@ -156,13 +210,8 @@ impl HlsSessions {
     }
 
     async fn file(&self, playback_id: Uuid, name: &str) -> io::Result<Option<PathBuf>> {
-        let requested = match name {
-            MAIN | VIDEO => Requested::Playlist,
-            INIT => Requested::Init,
-            _ => match name.strip_suffix(".m4s").and_then(|x| x.parse().ok()) {
-                Some(segment) => Requested::Segment(segment),
-                None => return Ok(None),
-            },
+        let Some((rendition, requested)) = requested(name) else {
+            return Ok(None);
         };
         loop {
             let mut written = {
@@ -176,6 +225,11 @@ impl HlsSessions {
                 let mut written = session.run.as_ref().map(|x| x.written.clone());
                 if let Some(written) = &mut written {
                     written.borrow_and_update();
+                }
+                if rendition != VIDEO
+                    && !(0..session.audio.len()).any(|x| audio_rendition(x) == rendition)
+                {
+                    return Ok(None);
                 }
                 let path = session.folder.join(name);
                 if path.exists() {
@@ -238,7 +292,11 @@ impl Session {
             otel.name = SELFLESS_FFMPEG,
             otel.kind = "internal",
             otel.status_code = field::Empty,
-            { SELFLESS_FFMPEG_PURPOSE } = selfless_ffmpeg_purpose::REMUX,
+            { SELFLESS_FFMPEG_PURPOSE } = if self.audio.iter().any(|x| x.transcode.is_some()) {
+                selfless_ffmpeg_purpose::TRANSCODE
+            } else {
+                selfless_ffmpeg_purpose::REMUX
+            },
             { SELFLESS_FFMPEG_START_SEGMENT } = start as i64,
             process.executable.name = "ffmpeg",
             process.exit.code = field::Empty,
@@ -251,20 +309,12 @@ impl Session {
         let folder = self.folder.clone();
         let task = tokio::spawn(
             async move {
-                if let Err(error) = remux(
-                    &input,
-                    &video,
-                    audio.as_ref(),
-                    &segments,
-                    start,
-                    &folder,
-                    &sender,
-                )
-                .await
+                if let Err(error) =
+                    write_segments(&input, &video, &audio, &segments, start, &folder, &sender).await
                 {
                     tracing::error!(
                         error = &error as &dyn std::error::Error,
-                        "ffmpeg failed to remux a media file"
+                        "ffmpeg failed to write the HLS segments of a media file"
                     );
                 }
             }
@@ -282,6 +332,9 @@ impl Session {
 mod tests {
     use super::*;
     use crate::keyframes::read_keyframes;
+    use application::ports::AudioStream;
+    use domain::AudioTranscode;
+    use domain::AudioTranscodeCodec;
     use domain::HdrType;
     use opentelemetry::KeyValue;
     use opentelemetry::trace::TracerProvider;
@@ -312,27 +365,51 @@ mod tests {
                 frame_rate: Some(25.0),
                 hdr_type: HdrType::Sdr,
             },
-            audio: Some(AudioStream {
-                index: 1,
-                codec: "eac3".to_owned(),
-                language: None,
-                channels: 1,
-                title: None,
-                default: true,
-            }),
+            audio: vec![HlsAudioTrack {
+                stream: AudioStream {
+                    index: 1,
+                    codec: "eac3".to_owned(),
+                    language: None,
+                    channels: 1,
+                    title: None,
+                    default: true,
+                },
+                transcode: None,
+                selected: true,
+            }],
             start_position,
         }
     }
 
     async fn started(start_position: Duration) -> (TempDir, HlsSessions) {
+        start(session(start_position).await).await
+    }
+
+    async fn start(session: HlsSession) -> (TempDir, HlsSessions) {
         let dir = TempDir::new().unwrap();
         let sessions = HlsSessions::new(dir.path().join("segments")).await.unwrap();
-        sessions
-            .start_hls_session()
-            .call(session(start_position).await)
-            .await
-            .unwrap();
+        sessions.start_hls_session().call(session).await.unwrap();
         (dir, sessions)
+    }
+
+    fn audio_track(
+        language: Option<&str>,
+        title: Option<&str>,
+        transcode: Option<AudioTranscode>,
+        selected: bool,
+    ) -> HlsAudioTrack {
+        HlsAudioTrack {
+            stream: AudioStream {
+                index: 1,
+                codec: "eac3".to_owned(),
+                language: language.map(str::to_owned),
+                channels: 1,
+                title: title.map(str::to_owned),
+                default: false,
+            },
+            transcode,
+            selected,
+        }
     }
 
     async fn get(sessions: &HlsSessions, name: &str) -> Option<String> {
@@ -344,13 +421,35 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_session_serves_its_playlists_and_every_segment_of_its_media_playlist() {
-        let (_dir, sessions) = started(Duration::ZERO).await;
+    async fn a_session_serves_its_playlists_and_every_segment_of_its_media_playlists() {
+        let mut session = session(Duration::ZERO).await;
+        session.audio = vec![
+            audio_track(Some("eng"), Some("Surround"), None, false),
+            audio_track(
+                None,
+                Some("Commentary \"live\""),
+                Some(AudioTranscode {
+                    codec: AudioTranscodeCodec::Aac,
+                    channels: 1,
+                }),
+                true,
+            ),
+            audio_track(Some("eng"), Some("Surround"), None, false),
+            audio_track(None, None, None, false),
+        ];
+        let (_dir, sessions) = start(session).await;
 
         let main = std::fs::read_to_string(get(&sessions, "main.m3u8").await.unwrap()).unwrap();
-        let video = std::fs::read_to_string(get(&sessions, "video.m3u8").await.unwrap()).unwrap();
-        let mut files = vec!["init.mp4".to_owned()];
-        files.extend((0..6).map(|x| format!("{x}.m4s")));
+        let mut playlists = Vec::new();
+        for name in ["video", "audio0", "audio1", "audio2", "audio3"] {
+            let playlist = get(&sessions, &format!("{name}.m3u8")).await.unwrap();
+            playlists.push(std::fs::read_to_string(playlist).unwrap());
+        }
+        let mut files = Vec::new();
+        for rendition in ["video", "audio0", "audio1", "audio2", "audio3"] {
+            files.push(format!("{rendition}.mp4"));
+            files.extend((0..6).map(|x| format!("{rendition}-{x}.m4s")));
+        }
         let mut served = Vec::new();
         for name in &files {
             served.push(
@@ -360,12 +459,31 @@ mod tests {
             );
         }
 
-        assert!(main.contains("#EXT-X-STREAM-INF:BANDWIDTH="), "{main}");
-        assert!(main.ends_with(",RESOLUTION=160x90\nvideo.m3u8\n"), "{main}");
-        assert_eq!(video.matches("#EXTINF:").count(), 6);
-        assert_eq!(served, [true; 7]);
-        assert_eq!(get(&sessions, "6.m4s").await, None);
-        assert_eq!(get(&sessions, "../segments").await, None);
+        assert_eq!(
+            main,
+            "#EXTM3U\n\
+             #EXT-X-VERSION:7\n\
+             #EXT-X-INDEPENDENT-SEGMENTS\n\
+             #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"audio\",NAME=\"eng - Surround\",LANGUAGE=\"eng\",DEFAULT=NO,AUTOSELECT=YES,CHANNELS=\"1\",URI=\"audio0.m3u8\"\n\
+             #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"audio\",NAME=\"Commentary live\",DEFAULT=YES,AUTOSELECT=YES,CHANNELS=\"1\",URI=\"audio1.m3u8\"\n\
+             #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"audio\",NAME=\"eng - Surround (3)\",LANGUAGE=\"eng\",DEFAULT=NO,AUTOSELECT=YES,CHANNELS=\"1\",URI=\"audio2.m3u8\"\n\
+             #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"audio\",NAME=\"Audio 4\",DEFAULT=NO,AUTOSELECT=YES,CHANNELS=\"1\",URI=\"audio3.m3u8\"\n\
+             #EXT-X-STREAM-INF:BANDWIDTH=45542,RESOLUTION=160x90,AUDIO=\"audio\"\n\
+             video.m3u8\n"
+        );
+        assert_eq!(
+            playlists
+                .iter()
+                .map(|x| x.matches("#EXTINF:").count())
+                .collect::<Vec<_>>(),
+            [6; 5]
+        );
+        assert!(playlists[2].contains("#EXT-X-MAP:URI=\"audio1.mp4\"\n"));
+        assert!(playlists[2].contains("\naudio1-5.m4s\n"));
+        assert_eq!(served, [true; 35]);
+        for name in ["video-6.m4s", "audio4.m3u8", "audio4-0.m4s", "../segments"] {
+            assert_eq!(get(&sessions, name).await, None, "{name}");
+        }
     }
 
     #[tokio::test]
@@ -382,9 +500,9 @@ mod tests {
         let (dir, sessions) = started(Duration::from_secs(22)).await;
         let folder = dir.path().join("segments").join(PLAYBACK_ID.to_string());
 
-        let last = get(&sessions, "5.m4s").await;
-        let before_restart = folder.join("0.m4s").exists();
-        let first = get(&sessions, "0.m4s")
+        let last = get(&sessions, "video-5.m4s").await;
+        let before_restart = folder.join("video-0.m4s").exists();
+        let first = get(&sessions, "video-0.m4s")
             .await
             .is_some_and(|x| Path::new(&x).exists());
         sessions.end_hls_session().call(PLAYBACK_ID).await;
@@ -427,7 +545,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let segments_dir = dir.path().join("segments");
         std::fs::create_dir_all(segments_dir.join("an old playback")).unwrap();
-        std::fs::write(segments_dir.join("an old playback/0.m4s"), b"old").unwrap();
+        std::fs::write(segments_dir.join("an old playback/video-0.m4s"), b"old").unwrap();
         std::fs::write(segments_dir.join("stray file"), b"old").unwrap();
 
         HlsSessions::new(segments_dir.clone()).await.unwrap();

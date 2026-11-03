@@ -342,7 +342,13 @@ mod tests {
         let _tracing = trace_into(&exporter);
         let prefix = "/api/playbacks/0190f3c4-d3e4-7f5a-8b6c-7d8e9f0a1b2c/media";
 
-        for file_name in ["file", "main.m3u8", "video.m3u8", "init.mp4", "12.m4s"] {
+        for file_name in [
+            "file",
+            "main.m3u8",
+            "video.m3u8",
+            "video.mp4",
+            "video-12.m4s",
+        ] {
             server
                 .get_bytes(&format!("{prefix}/a-secret-signature/v1/{file_name}"))
                 .await;
@@ -357,8 +363,14 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(
             paths,
-            ["file", "main.m3u8", "video.m3u8", "init.mp4", "12.m4s"]
-                .map(|x| format!("{prefix}/REDACTED/v1/{x}"))
+            [
+                "file",
+                "main.m3u8",
+                "video.m3u8",
+                "video.mp4",
+                "video-12.m4s"
+            ]
+            .map(|x| format!("{prefix}/REDACTED/v1/{x}"))
         );
         assert!(!format!("{spans:?}").contains("a-secret-signature"));
     }

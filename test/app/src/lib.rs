@@ -17,6 +17,7 @@ use application::ports::GetRadarrMovie;
 use application::ports::GetSonarrEpisodes;
 use application::ports::GetSonarrShow;
 use application::ports::HlsError;
+use application::ports::HlsSession;
 use application::ports::ListCachedImages;
 use application::ports::ListRadarrMovies;
 use application::ports::ListSonarrShows;
@@ -53,6 +54,7 @@ use application::webhooks::WebhookPasswords;
 use infrastructure::AppState;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::Duration;
 use tempfile::TempDir;
 use test_fixtures::FakeClock;
@@ -73,6 +75,7 @@ pub struct TestApp {
 #[derive(Clone)]
 pub struct FakeHls {
     segments_dir: Arc<TempDir>,
+    sessions: Arc<Mutex<Vec<HlsSession>>>,
 }
 
 impl FakeHls {
@@ -80,15 +83,26 @@ impl FakeHls {
         self.segments_dir.path().join(playback_id.to_string())
     }
 
+    pub fn sessions(&self) -> Vec<HlsSession> {
+        self.sessions
+            .lock()
+            .expect("no test panics while holding the HLS sessions")
+            .clone()
+    }
+
     fn start_hls_session(&self) -> StartHlsSession {
         let hls = self.clone();
         StartHlsSession::new(move |session| {
             let folder = hls.folder(session.playback_id);
+            hls.sessions
+                .lock()
+                .expect("no test panics while holding the HLS sessions")
+                .push(session);
             Box::pin(async move {
                 std::fs::create_dir_all(&folder).map_err(HlsError::caused_by)?;
                 std::fs::write(folder.join("main.m3u8"), MAIN_PLAYLIST)
                     .map_err(HlsError::caused_by)?;
-                std::fs::write(folder.join("0.m4s"), SEGMENT).map_err(HlsError::caused_by)
+                std::fs::write(folder.join("video-0.m4s"), SEGMENT).map_err(HlsError::caused_by)
             })
         })
     }
@@ -116,6 +130,7 @@ impl TestApp {
         let mailer = FakeMailer::default();
         let hls = FakeHls {
             segments_dir: Arc::new(TempDir::new().unwrap()),
+            sessions: Arc::default(),
         };
         let state = AppState {
             acquire_lock: AcquireLock::new(|_| Box::pin(async { LockGuard::new(()) })),

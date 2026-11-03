@@ -17,6 +17,7 @@ use crate::attributes::SELFLESS_PLAYBACK_REASON_KINDS;
 use crate::metrics::SELFLESS_PLAYBACK_DECISIONS;
 use crate::playback::resource;
 use crate::ports;
+use crate::ports::HlsAudioTrack;
 use crate::ports::HlsSession;
 use crate::ports::ReadKeyframes;
 use crate::ports::persistence::DbScope;
@@ -124,9 +125,9 @@ pub async fn call(
     if force_hls && reasons.is_empty() {
         reasons.push(PlayReason::ForcedHls);
     }
-    let remux = match (video, duration) {
+    let hls = match (video, duration) {
         (Some(video), Some(duration))
-            if !reasons.is_empty() && reasons.iter().all(PlayReason::allows_remux) =>
+            if !reasons.is_empty() && reasons.iter().all(PlayReason::copies_video) =>
         {
             let keyframes = keyframes(&mut db_context, &read_keyframes, &media_file).await?;
             if usable_keyframe_index(&keyframes) {
@@ -138,16 +139,43 @@ pub async fn call(
         }
         _ => None,
     };
+    let mut audio_tracks = Vec::new();
+    if hls.is_some() {
+        let mut streams = media_file.audio_streams.get().iter().collect::<Vec<_>>();
+        streams.sort_by_key(|x| x.index);
+        for stream in streams {
+            let transcode = profile.audio_reason(stream).map(|reason| {
+                if !reasons.contains(&reason) {
+                    reasons.push(reason);
+                }
+                profile.audio_transcode(stream)
+            });
+            audio_tracks.push(HlsAudioTrack {
+                stream: ports::AudioStream {
+                    index: stream.index,
+                    codec: stream.codec.clone(),
+                    language: stream.language.clone(),
+                    channels: stream.channels,
+                    title: stream.title.clone(),
+                    default: stream.is_default,
+                },
+                transcode,
+                selected: audio.is_some_and(|x| x.id == stream.id),
+            });
+        }
+    }
     if !reasons.is_empty() {
         Span::current().set_attribute(SELFLESS_PLAYBACK_REASON_KINDS, reason_kinds(&reasons));
-        if remux.is_none() {
+        if hls.is_none() {
             return Ok(Output::NeedsTranscode);
         }
     }
-    let method = if remux.is_some() {
-        PlayMethod::Remux
-    } else {
+    let method = if hls.is_none() {
         PlayMethod::DirectPlay
+    } else if audio_tracks.iter().any(|x| x.transcode.is_some()) {
+        PlayMethod::Transcode
+    } else {
+        PlayMethod::Remux
     };
     let episodes = player_episodes(&mut db_context, episodes)
         .await
@@ -192,7 +220,7 @@ pub async fn call(
     for id in ended {
         end_hls_session.call(id).await;
     }
-    if let Some((video, duration, keyframes)) = remux {
+    if let Some((video, duration, keyframes)) = hls {
         start_hls_session
             .call(HlsSession {
                 playback_id: playback.id,
@@ -208,14 +236,7 @@ pub async fn call(
                     frame_rate: video.frame_rate,
                     hdr_type: video.hdr_type,
                 },
-                audio: audio.map(|x| ports::AudioStream {
-                    index: x.index,
-                    codec: x.codec.clone(),
-                    language: x.language.clone(),
-                    channels: x.channels,
-                    title: x.title.clone(),
-                    default: x.is_default,
-                }),
+                audio: audio_tracks,
                 start_position: Duration::try_from_secs_f64(start_position).unwrap_or_default(),
             })
             .await

@@ -1,8 +1,12 @@
 use crate::AudioCodecSupport;
 use crate::AudioStream;
+use crate::AudioTranscode;
+use crate::AudioTranscodeCodec;
 use crate::PlayReason;
 use crate::VideoCodecSupport;
 use crate::VideoStream;
+
+const MAX_TRANSCODE_CHANNELS: i64 = 6;
 
 #[derive(Clone, Debug, Default)]
 pub struct CapabilityProfile {
@@ -29,16 +33,36 @@ impl CapabilityProfile {
                 Some(support) => reasons.extend(support.reasons(video)),
             }
         }
-        if let Some(audio) = audio {
-            match self.audio_codecs.iter().find(|x| x.codec == audio.codec) {
-                None => reasons.push(PlayReason::AudioCodec(audio.codec.clone())),
-                Some(support) if audio.channels > support.max_channels => {
-                    reasons.push(PlayReason::AudioChannels(audio.channels));
-                }
-                Some(_) => {}
-            }
-        }
+        reasons.extend(audio.and_then(|x| self.audio_reason(x)));
         reasons
+    }
+
+    pub fn audio_reason(&self, audio: &AudioStream) -> Option<PlayReason> {
+        match self.audio_codec(&audio.codec) {
+            None => Some(PlayReason::AudioCodec(audio.codec.clone())),
+            Some(support) if audio.channels > support.max_channels => {
+                Some(PlayReason::AudioChannels(audio.channels))
+            }
+            Some(_) => None,
+        }
+    }
+
+    pub fn audio_transcode(&self, audio: &AudioStream) -> AudioTranscode {
+        let (codec, support) = match self.audio_codec("eac3") {
+            Some(support) => (AudioTranscodeCodec::Eac3, Some(support)),
+            None => (AudioTranscodeCodec::Aac, self.audio_codec("aac")),
+        };
+        AudioTranscode {
+            codec,
+            channels: audio
+                .channels
+                .min(support.map_or(MAX_TRANSCODE_CHANNELS, |x| x.max_channels))
+                .min(MAX_TRANSCODE_CHANNELS),
+        }
+    }
+
+    fn audio_codec(&self, codec: &str) -> Option<&AudioCodecSupport> {
+        self.audio_codecs.iter().find(|x| x.codec == codec)
     }
 }
 
@@ -165,5 +189,45 @@ mod tests {
         );
 
         assert_eq!(reasons, []);
+    }
+
+    #[test]
+    fn a_profile_with_e_ac_3_transcodes_audio_to_e_ac_3_with_the_sources_channels_up_to_5_1() {
+        let mut profile = browser();
+        profile.audio_codecs.push(AudioCodecSupport {
+            codec: "eac3".to_owned(),
+            max_channels: 8,
+        });
+
+        let targets = [8, 6, 2].map(|x| profile.audio_transcode(&audio("truehd", x)));
+
+        assert_eq!(
+            targets,
+            [6, 6, 2].map(|channels| AudioTranscode {
+                codec: AudioTranscodeCodec::Eac3,
+                channels,
+            })
+        );
+    }
+
+    #[test]
+    fn a_profile_without_e_ac_3_transcodes_audio_to_aac_with_the_sources_channels_up_to_its_maximum()
+     {
+        let mut surround = browser();
+        surround.audio_codecs[0].max_channels = 8;
+
+        let targets = [
+            browser().audio_transcode(&audio("eac3", 6)),
+            browser().audio_transcode(&audio("dts", 1)),
+            surround.audio_transcode(&audio("dts", 8)),
+        ];
+
+        assert_eq!(
+            targets,
+            [2, 1, 6].map(|channels| AudioTranscode {
+                codec: AudioTranscodeCodec::Aac,
+                channels,
+            })
+        );
     }
 }

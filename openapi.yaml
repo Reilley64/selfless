@@ -698,7 +698,7 @@ paths:
     post:
       operationId: startPlayback
       summary: Start a playback of a media file
-      description: The server compares the capability profile with the media file and picks the play method. It plays the file directly when the profile covers its container, its video stream and the selected audio track, which is the file's default audio track, else its first. When only the container is wrong and the server can read the file's keyframes, or when the request forces HLS, it remuxes the file to HLS and the URL is the HLS master playlist. A file that needs a transcode fails with the needs-transcode problem for now. Starting a playback ends any playback the same session has not ended. A media file is hidden when no visible movie or episode plays from it.
+      description: The server compares the capability profile with the media file and picks the play method. It plays the file directly when the profile covers its container, its video stream and the selected audio track, which is the file's default audio track, else its first. Otherwise, when the profile covers the video stream and the server can read the file's keyframes, it copies the video into HLS and the URL is the HLS master playlist, which lists every audio track. Audio tracks the profile covers are copied. Others become E-AC-3 when the profile lists it, otherwise AAC, with the source's channels up to the profile's maximum and up to 5.1. The method is transcode when any audio track is converted, otherwise remux. A file whose video needs a transcode fails with the needs-transcode problem for now. Starting a playback ends any playback the same session has not ended. A media file is hidden when no visible movie or episode plays from it.
       tags: [playback]
       requestBody:
         description: The media file, the start position and the device's capability profile.
@@ -848,7 +848,7 @@ paths:
         - name: fileName
           in: path
           required: true
-          description: main.m3u8, video.m3u8, init.mp4, or a segment named by its index, such as 12.m4s.
+          description: main.m3u8, or a rendition's media playlist, init segment or numbered segment, such as video.m3u8, audio1.mp4 or video-12.m4s.
           schema:
             type: string
           example: main.m3u8
@@ -1171,7 +1171,7 @@ components:
                     const: 422
           example: {"type":"urn:selfless:problem:unreadable-media-file","title":"selfless can't read this media file.","status":422}
     NeedsTranscode:
-      description: The profile doesn't cover a stream of the media file, or the server can't read its keyframes, so it needs a transcode, which the server can't do yet.
+      description: The profile doesn't cover the media file's video stream, or the server can't read its keyframes, so its video needs a transcode, which the server can't do yet.
       content:
         application/problem+json:
           schema:
@@ -1182,7 +1182,7 @@ components:
                     const: urn:selfless:problem:needs-transcode
                   status:
                     const: 501
-          example: {"type":"urn:selfless:problem:needs-transcode","title":"The media file needs a transcode, which the server can't do yet.","status":501}
+          example: {"type":"urn:selfless:problem:needs-transcode","title":"The media file's video needs a transcode, which the server can't do yet.","status":501}
     InternalError:
       description: The server failed. The body holds no error details, and the server logs the error.
       content:

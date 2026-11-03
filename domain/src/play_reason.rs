@@ -14,8 +14,11 @@ pub enum PlayReason {
 }
 
 impl PlayReason {
-    pub fn allows_remux(&self) -> bool {
-        matches!(self, Self::Container(_) | Self::ForcedHls)
+    pub fn copies_video(&self) -> bool {
+        matches!(
+            self,
+            Self::Container(_) | Self::AudioCodec(_) | Self::AudioChannels(_) | Self::ForcedHls
+        )
     }
 }
 
@@ -24,8 +27,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn only_a_wrong_container_or_forced_hls_leaves_the_streams_to_copy() {
-        let remuxable = [
+    fn a_wrong_container_audio_or_forced_hls_leaves_the_video_to_copy() {
+        let video_copied = [
             PlayReason::Container("mkv".to_owned()),
             PlayReason::VideoCodec("hevc".to_owned()),
             PlayReason::AudioCodec("dts".to_owned()),
@@ -33,8 +36,8 @@ mod tests {
             PlayReason::NoKeyframeIndex,
             PlayReason::ForcedHls,
         ]
-        .map(|x| x.allows_remux());
+        .map(|x| x.copies_video());
 
-        assert_eq!(remuxable, [true, false, false, false, false, true]);
+        assert_eq!(video_copied, [true, false, true, true, false, true]);
     }
 }
