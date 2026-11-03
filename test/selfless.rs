@@ -2,7 +2,12 @@ use application::ports::Clock;
 use application::ports::ProbeError;
 use application::ports::ProbeMediaFile;
 use application::ports::SendEmail;
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD;
+use reqwest::Method;
 use reqwest::StatusCode;
+use reqwest::header::AUTHORIZATION;
+use reqwest::header::HeaderMap;
 use settings::AdminSettings;
 use settings::AppSettings;
 use settings::DatabaseSettings;
@@ -75,6 +80,30 @@ pub async fn start(settings: AppSettings, clock: &FakeClock, mailer: &FakeMailer
     let shutdown = CancellationToken::new();
     tokio::spawn(server.serve(shutdown.clone().cancelled_owned()));
     TestServer::new(address, shutdown)
+}
+
+pub async fn send_webhook(
+    server: &TestServer,
+    path: &str,
+    password: &str,
+    mut headers: HeaderMap,
+    body: &str,
+) -> StatusCode {
+    let credentials = STANDARD.encode(format!("selfless:{password}"));
+    headers.insert(
+        AUTHORIZATION,
+        format!("Basic {credentials}").parse().unwrap(),
+    );
+    let (status, _) = server
+        .request_with_headers(
+            Method::POST,
+            path,
+            None,
+            headers,
+            Some(serde_json::from_str(body).unwrap()),
+        )
+        .await;
+    status
 }
 
 pub fn fixture(path: &str) -> String {
