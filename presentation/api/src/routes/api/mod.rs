@@ -1,3 +1,4 @@
+pub(crate) mod genres;
 pub(crate) mod invites;
 pub(crate) mod me;
 pub(crate) mod movies;

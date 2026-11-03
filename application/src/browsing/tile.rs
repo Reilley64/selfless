@@ -1,3 +1,6 @@
+use jiff::Timestamp;
+use jiff::civil::Date;
+use std::cmp::Reverse;
 use uuid::Uuid;
 
 #[derive(Debug)]
@@ -19,6 +22,13 @@ pub enum TileKind {
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Cursor {
-    pub sort_title: String,
+    pub key: SortKey,
     pub id: Uuid,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum SortKey {
+    Title(String),
+    Added(Reverse<Option<Timestamp>>),
+    Released(Reverse<Option<Date>>),
 }

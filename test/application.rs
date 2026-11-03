@@ -18,8 +18,14 @@ use crate::ports::UnreadableNfo;
 use crate::ports::persistence;
 use crate::ports::persistence::DbContext;
 use crate::ports::persistence::DbLocation;
+use crate::ports::persistence::DbScope;
+use domain::Episode;
+use domain::Movie;
+use domain::Show;
 use std::sync::Arc;
 use std::sync::Mutex;
+use toasty::schema::Model;
+use uuid::Uuid;
 
 pub(crate) async fn mock_db_context() -> DbContext {
     DbContext::new(
@@ -99,4 +105,52 @@ pub(crate) fn empty_show_folder() -> ReadShowFolder {
 
 pub(crate) fn unreadable_show_nfo() -> ReadShowNfo {
     ReadShowNfo::new(|_| Box::pin(async { Err(UnreadableNfo::default()) }))
+}
+
+pub(crate) fn movie(db_context: &DbContext, title: &str) -> <Movie as Model>::Create {
+    db_context
+        .movies()
+        .create()
+        .tmdb_id(Uuid::new_v4().as_u64_pair().0 as i64)
+        .radarr_id(1)
+        .title(title)
+        .year(2016)
+        .genres(Vec::<String>::new())
+        .directors(Vec::<String>::new())
+        .visible(true)
+}
+
+pub(crate) fn show(db_context: &DbContext, title: &str) -> <Show as Model>::Create {
+    let tvdb_id = Uuid::new_v4().as_u64_pair().0 as i64;
+    db_context
+        .shows()
+        .create()
+        .tvdb_id(tvdb_id)
+        .sonarr_id(tvdb_id)
+        .title(title)
+        .year(Some(2022))
+        .genres(Vec::<String>::new())
+}
+
+pub(crate) async fn add_season(db_context: &mut DbContext, show_id: Uuid, number: i64) -> Uuid {
+    db_context
+        .seasons()
+        .create()
+        .show_id(show_id)
+        .number(number)
+        .exec(db_context.executor_mut())
+        .await
+        .unwrap()
+        .id
+}
+
+pub(crate) fn episode(db_context: &DbContext, season_id: Uuid) -> <Episode as Model>::Create {
+    db_context
+        .episodes()
+        .create()
+        .season_id(season_id)
+        .tvdb_id(Uuid::new_v4().as_u64_pair().0 as i64)
+        .number(1)
+        .title("Good News About Hell")
+        .visible(true)
 }

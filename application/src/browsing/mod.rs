@@ -1,13 +1,29 @@
 mod tile;
 
+pub mod list_genres;
 pub mod list_movies;
 pub mod list_shows;
 
+use domain::Episode;
+use domain::Season;
+use domain::Show;
+
 pub use tile::Cursor;
+pub use tile::SortKey;
 pub use tile::Tile;
 pub use tile::TileKind;
 
 const PAGE_SIZE: usize = 60;
+
+fn visible_show() -> toasty::stmt::Expr<bool> {
+    Show::fields().seasons().any(visible_season())
+}
+
+fn visible_season() -> toasty::stmt::Expr<bool> {
+    Season::fields()
+        .episodes()
+        .any(Episode::fields().visible().eq(true))
+}
 
 fn page<T>(mut keyed: Vec<(Cursor, T)>, after: Option<&Cursor>) -> (Vec<T>, Option<Cursor>) {
     keyed.sort_by(|a, b| a.0.cmp(&b.0));
@@ -20,12 +36,16 @@ fn page<T>(mut keyed: Vec<(Cursor, T)>, after: Option<&Cursor>) -> (Vec<T>, Opti
 #[cfg(test)]
 mod tests {
     use super::*;
+    use jiff::Timestamp;
+    use jiff::ToSpan;
+    use jiff::civil::date;
+    use std::cmp::Reverse;
     use uuid::Uuid;
 
     fn title(sort_title: &str, id: u128) -> (Cursor, u128) {
         (
             Cursor {
-                sort_title: sort_title.to_owned(),
+                key: SortKey::Title(sort_title.to_owned()),
                 id: Uuid::from_u128(id),
             },
             id,
@@ -57,5 +77,42 @@ mod tests {
 
         assert_eq!(first[59], 100);
         assert_eq!(second, [200]);
+    }
+
+    #[test]
+    fn undated_titles_and_ties_split_across_pages_by_id_under_the_date_sorts() {
+        let keys: [fn(Option<i64>) -> SortKey; 2] = [
+            |days| {
+                SortKey::Added(Reverse(
+                    days.map(|x| Timestamp::from_second(x * 86_400).unwrap()),
+                ))
+            },
+            |days| SortKey::Released(Reverse(days.map(|x| date(2000, 1, 1) + x.days()))),
+        ];
+        for key in keys {
+            let titles = || {
+                let cursor = |days, id| {
+                    (
+                        Cursor {
+                            key: key(days),
+                            id: Uuid::from_u128(id),
+                        },
+                        id,
+                    )
+                };
+                (0..58)
+                    .map(|x| cursor(Some(100 - x as i64), x))
+                    .chain([cursor(None, 300), cursor(None, 100), cursor(None, 200)])
+                    .collect::<Vec<_>>()
+            };
+
+            let (first, next) = page(titles(), None);
+            let (second, last) = page(titles(), next.as_ref());
+
+            assert_eq!(first[..58], (0..58).collect::<Vec<_>>());
+            assert_eq!(first[58..], [100, 200]);
+            assert_eq!(second, [300]);
+            assert_eq!(last, None);
+        }
     }
 }
