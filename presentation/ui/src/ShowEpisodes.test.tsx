@@ -1,6 +1,7 @@
 import type { EpisodeList, ShowPage } from "@selfless/api-client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, renderRouter, screen } from "expo-router/testing-library";
+import { Platform } from "react-native";
 import { ShowEpisodes } from "./ShowEpisodes";
 
 beforeAll(() => {
@@ -141,4 +142,52 @@ test("an episode's ⋯ button opens the episode page", async () => {
   await fireEvent.press(await screen.findByLabelText("More about Hello, Ms. Cobel"));
 
   expect(screen).toHavePathname(`/episodes/${helloMsCobel}`);
+});
+
+jest.mock("./FocusGuide", () => {
+  const { View } = jest.requireActual("react-native");
+  return {
+    FocusGuide: ({ ref, ...props }: { ref?: { current: unknown } }) => {
+      if (ref) {
+        ref.current = { requestTVFocus: () => {} };
+      }
+      return <View {...props} />;
+    },
+  };
+});
+
+describe("on TV", () => {
+  beforeEach(() => {
+    jest.spyOn(Platform, "isTV", "get").mockReturnValue(true);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  test("the season column lists the seasons with Specials last and opens on the Play target's season", async () => {
+    await renderShowEpisodes(`/shows/${showId}`);
+
+    expect(await screen.findByText("Hello, Ms. Cobel")).toBeOnTheScreen();
+    expect(screen.getAllByRole("tab").map((x) => x.props.accessibilityLabel)).toEqual(["Season 1", "Season 2", "Specials"]);
+    expect(screen.getByRole("tab", { selected: true })).toHaveAccessibleName("Season 2");
+  });
+
+  test("moving focus to a season shows its episodes", async () => {
+    await renderShowEpisodes(`/shows/${showId}`);
+    await screen.findByText("Hello, Ms. Cobel");
+
+    await fireEvent(screen.getByRole("tab", { name: "Season 1" }), "focus");
+
+    expect(await screen.findByText("Good News About Hell")).toBeOnTheScreen();
+    expect(screen.getByRole("tab", { selected: true })).toHaveAccessibleName("Season 1");
+  });
+
+  test("a long press on an episode opens the episode page", async () => {
+    await renderShowEpisodes(`/shows/${showId}`);
+
+    await fireEvent(await screen.findByLabelText("Play E1 Hello, Ms. Cobel"), "longPress");
+
+    expect(screen).toHavePathname(`/episodes/${helloMsCobel}`);
+  });
 });
