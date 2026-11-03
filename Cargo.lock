@@ -4466,7 +4466,9 @@ dependencies = [
  "serde",
  "serde_json",
  "servarr",
+ "tokio",
  "url",
+ "wiremock",
 ]
 
 [[package]]
