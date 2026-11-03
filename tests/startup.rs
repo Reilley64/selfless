@@ -1,3 +1,5 @@
+#[path = "../test/persistence.rs"]
+mod persistence_test;
 #[path = "../test/selfless.rs"]
 pub mod selfless_test;
 
@@ -5,6 +7,9 @@ use application::ports::Clock;
 use application::ports::ProbeError;
 use application::ports::ProbeMediaFile;
 use application::ports::SendEmail;
+use application::ports::persistence::DbScope;
+use domain::PlayMethod;
+use jiff::Timestamp;
 use selfless_test::ADMIN_NAME;
 use selfless_test::ADMIN_PASSWORD;
 use selfless_test::RADARR_API_KEY;
@@ -18,6 +23,7 @@ use std::process::Command;
 use test_fixtures::FakeClock;
 use test_fixtures::FakeMailer;
 use test_fixtures::TestDatabase;
+use uuid::Uuid;
 
 #[tokio::test]
 async fn the_server_refuses_to_start_without_a_first_admin() {
@@ -159,4 +165,43 @@ async fn start_error(settings: AppSettings) -> String {
     .err()
     .expect("the server refuses to start")
     .to_string()
+}
+
+#[tokio::test]
+async fn the_server_ends_every_open_playback_when_it_starts() {
+    let database = TestDatabase::create().await;
+    let mut db_context = persistence_test::db_context(&database).await;
+    let playback_id = db_context
+        .playbacks()
+        .create()
+        .user_id(Uuid::new_v4())
+        .session_id(Uuid::new_v4())
+        .media_file_id(Uuid::new_v4())
+        .method(PlayMethod::Remux)
+        .position(0.0)
+        .duration(6981.0)
+        .paused(false)
+        .started_at(Timestamp::UNIX_EPOCH)
+        .last_reported_at(Timestamp::UNIX_EPOCH)
+        .exec(db_context.executor_mut())
+        .await
+        .unwrap()
+        .id;
+    let clock = FakeClock::new();
+
+    let server =
+        selfless_test::start(settings(database.url()), &clock, &FakeMailer::default()).await;
+
+    let ended_at = db_context
+        .playbacks()
+        .find(playback_id)
+        .exec(db_context.executor_mut())
+        .await
+        .unwrap()
+        .unwrap()
+        .ended_at;
+    assert_eq!(ended_at, Some(clock.now()));
+    drop(server);
+    drop(db_context);
+    database.drop().await;
 }

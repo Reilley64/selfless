@@ -1,3 +1,4 @@
+use application::playback::end_open_playbacks;
 use application::playback::end_silent_playbacks;
 use infrastructure::AppState;
 use std::error::Error;
@@ -6,6 +7,11 @@ use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
 const PERIOD: Duration = Duration::from_secs(10);
+
+pub(super) async fn start(state: &AppState) -> Result<(), end_open_playbacks::Error> {
+    end_open_playbacks::call(state).await?;
+    Ok(())
+}
 
 pub(super) async fn serve(state: AppState, cancellation: CancellationToken) {
     let mut ticks = tokio::time::interval_at(Instant::now() + PERIOD, PERIOD);

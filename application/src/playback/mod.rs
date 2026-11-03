@@ -1,5 +1,6 @@
 pub mod change_playback_settings;
 pub mod delete_old_playbacks;
+pub mod end_open_playbacks;
 pub mod end_silent_playbacks;
 pub mod get_hls_file;
 pub mod get_playback_file;

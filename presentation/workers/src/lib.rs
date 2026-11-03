@@ -8,13 +8,15 @@ mod playback_sweep;
 mod reconcile;
 mod session_cleanup;
 
-use application::sessions::delete_expired_sessions;
 use infrastructure::AppState;
+use std::error::Error;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
-pub async fn start(state: &AppState) -> Result<(), delete_expired_sessions::Error> {
-    session_cleanup::start(state).await
+pub async fn start(state: &AppState) -> Result<(), Box<dyn Error + Send + Sync>> {
+    session_cleanup::start(state).await?;
+    playback_sweep::start(state).await?;
+    Ok(())
 }
 
 pub async fn serve(state: AppState, reconcile_interval: Duration, cancellation: CancellationToken) {

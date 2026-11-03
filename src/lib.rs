@@ -117,7 +117,7 @@ pub async fn start(
             AppError::new(error)
         }
     })?;
-    workers::start(&state).await?;
+    workers::start(&state).await.map_err(AppError::new)?;
     let availability = Availability::default();
     let router = api::router(
         webhooks::register(admin::register(Router::builder())),
