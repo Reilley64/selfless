@@ -52,6 +52,8 @@ use domain::Episode;
 use domain::EpisodeNfo;
 use domain::Movie;
 use domain::MovieNfo;
+use domain::PlayMethod;
+use domain::Playback;
 use domain::RadarrId;
 use domain::Show;
 use domain::ShowNfo;
@@ -244,6 +246,23 @@ pub(crate) fn episode(db_context: &DbContext, season_id: Uuid) -> <Episode as Mo
         .number(1)
         .title("Good News About Hell")
         .in_library(true)
+}
+
+pub(crate) fn playback(
+    db_context: &DbContext,
+    last_reported_at: Timestamp,
+) -> <Playback as Model>::Create {
+    db_context
+        .playbacks()
+        .create()
+        .user_id(Uuid::new_v4())
+        .session_id(Uuid::new_v4())
+        .media_file_id(Uuid::new_v4())
+        .method(PlayMethod::DirectPlay)
+        .position(0.0)
+        .paused(false)
+        .started_at(last_reported_at)
+        .last_reported_at(last_reported_at)
 }
 
 pub(crate) const MOVIE_FILE: &str = "/media/Movies/Arrival (2016)/Arrival (2016) Bluray-1080p.mkv";

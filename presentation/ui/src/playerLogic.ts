@@ -1,5 +1,6 @@
 import { type Attributes, ROOT_CONTEXT, type Span, SpanStatusCode, context, trace } from "@opentelemetry/api";
 import { ATTR_ERROR_TYPE } from "@opentelemetry/semantic-conventions";
+import type { reportPlaybackProgress } from "@selfless/api-client";
 import { SELFLESS_MEDIA_FILE_ID } from "./telemetry/attributes";
 import {
   SELFLESS_PLAYBACK_FAILED,
@@ -19,6 +20,8 @@ export type PlayerEvent =
   | { type: "stopped"; position: number };
 
 export type ProgressReport = { position: number; paused: boolean; stopped: boolean };
+
+export type Resume = { position: number; paused: boolean };
 
 export type PlaybackSpans = ReturnType<typeof startPlaybackSpans>;
 
@@ -54,12 +57,40 @@ export function startPlaybackSpans(userId: string, mediaFileId: string) {
   };
 }
 
-export function createPlayerLogic(sendReport: (report: ProgressReport) => void, spans: PlaybackSpans) {
+export function createPlayerLogic({
+  sendReport,
+  restart,
+  spans,
+}: {
+  sendReport: (report: ProgressReport) => ReturnType<typeof reportPlaybackProgress>;
+  restart: (resume: Resume) => void;
+  spans: PlaybackSpans;
+}) {
   let position = 0;
   let paused = false;
   let stopped = false;
   let timer: ReturnType<typeof setInterval> | undefined;
-  const report = () => sendReport({ position, paused, stopped });
+  const end = () => {
+    stopped = true;
+    clearInterval(timer);
+  };
+  const report = () => {
+    const sent = { position, paused, stopped };
+    sendReport(sent).then(
+      (response) => {
+        if (
+          !sent.stopped &&
+          !stopped &&
+          response.status === 404 &&
+          response.data.type === "urn:selfless:problem:playback-ended"
+        ) {
+          end();
+          restart({ position, paused });
+        }
+      },
+      () => undefined,
+    );
+  };
   const restartTimer = () => {
     clearInterval(timer);
     timer = setInterval(report, reportInterval);
@@ -93,8 +124,7 @@ export function createPlayerLogic(sendReport: (report: ProgressReport) => void, 
           spans.failed(event.errorType);
           break;
         case "stopped":
-          stopped = true;
-          clearInterval(timer);
+          end();
           spans.stopped();
           report();
           break;

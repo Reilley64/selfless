@@ -1,5 +1,5 @@
 import { type Playback, reportPlaybackProgress, startPlayback, useGetMe } from "@selfless/api-client";
-import { createPlayerLogic, type PlaybackSpans, startPlaybackSpans } from "@selfless/ui";
+import { createPlayerLogic, type PlaybackSpans, type Resume, startPlaybackSpans } from "@selfless/ui";
 import { type Href, useRouter } from "expo-router";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native-css/components";
@@ -16,18 +16,17 @@ const mediaErrors: Record<number, string> = {
 
 type Start = { response: Awaited<ReturnType<typeof startPlayback>>; spans: PlaybackSpans } | "unreachable";
 
-export function Player({
-  mediaFileId,
-  startPosition,
-  backHref,
-}: {
-  mediaFileId: string;
-  startPosition: number;
-  backHref: Href;
-}) {
+type PlayerProps = { mediaFileId: string; startPosition: number; backHref: Href };
+
+export function Player(props: PlayerProps) {
+  return <Playing key={`${props.mediaFileId}@${props.startPosition}`} {...props} />;
+}
+
+function Playing({ mediaFileId, startPosition, backHref }: PlayerProps) {
   const { data: me, isError } = useGetMe();
   const userId = me?.status === 200 ? me.data.id : undefined;
   const [start, setStart] = useState<Start>();
+  const [resume, setResume] = useState<Resume>({ position: startPosition, paused: false });
   useEffect(() => {
     if (userId === undefined) {
       return;
@@ -36,7 +35,7 @@ export function Player({
     let answered = false;
     const spans = startPlaybackSpans(userId, mediaFileId);
     capabilityProfile()
-      .then((profile) => spans.during(() => startPlayback({ mediaFileId, startPosition, profile })))
+      .then((profile) => spans.during(() => startPlayback({ mediaFileId, startPosition: resume.position, profile })))
       .then(
         (response) => {
           answered = true;
@@ -61,7 +60,7 @@ export function Player({
         spans.stopped();
       }
     };
-  }, [userId, mediaFileId, startPosition]);
+  }, [userId, mediaFileId, resume]);
   if (isError || start === "unreachable") {
     return (
       <Screen backHref={backHref}>
@@ -76,7 +75,13 @@ export function Player({
     case 201:
       return (
         <Screen backHref={backHref}>
-          <Video playback={start.response.data} spans={start.spans} startPosition={startPosition} />
+          <Video
+            key={start.response.data.playbackId}
+            playback={start.response.data}
+            spans={start.spans}
+            resume={resume}
+            restart={setResume}
+          />
         </Screen>
       );
     case 404:
@@ -97,22 +102,38 @@ export function Player({
 function Video({
   playback,
   spans,
-  startPosition,
+  resume,
+  restart,
 }: {
   playback: Playback;
   spans: PlaybackSpans;
-  startPosition: number;
+  resume: Resume;
+  restart: (resume: Resume) => void;
 }) {
   const [failed, setFailed] = useState(false);
-  const position = useRef(startPosition);
+  const position = useRef(resume.position);
   const logic = useMemo(
     () =>
-      createPlayerLogic((report) => {
-        reportPlaybackProgress(playback.playbackId, report).catch(() => undefined);
-      }, spans),
-    [playback.playbackId, spans],
+      createPlayerLogic({
+        sendReport: (report) => reportPlaybackProgress(playback.playbackId, report, { keepalive: true }),
+        restart,
+        spans,
+      }),
+    [playback.playbackId, restart, spans],
   );
-  useEffect(() => () => logic.handle({ type: "stopped", position: position.current }), [logic]);
+  useEffect(() => {
+    const stop = () => logic.handle({ type: "stopped", position: position.current });
+    const closed = (event: PageTransitionEvent) => {
+      if (!event.persisted) {
+        stop();
+      }
+    };
+    window.addEventListener("pagehide", closed);
+    return () => {
+      window.removeEventListener("pagehide", closed);
+      stop();
+    };
+  }, [logic]);
   const at = (video: HTMLVideoElement) => {
     position.current = video.currentTime;
     return video.currentTime;
@@ -125,9 +146,9 @@ function Video({
       className="h-full w-full bg-black"
       src={playback.url}
       controls
-      autoPlay
+      autoPlay={!resume.paused}
       onLoadedMetadata={(event) => {
-        event.currentTarget.currentTime = startPosition;
+        event.currentTarget.currentTime = resume.position;
       }}
       onPlaying={(event) => logic.handle({ type: "playing", position: at(event.currentTarget) })}
       onPause={(event) => {

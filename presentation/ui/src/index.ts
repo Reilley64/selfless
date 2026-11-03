@@ -20,6 +20,7 @@ export {
   type PlaybackSpans,
   type PlayerEvent,
   type ProgressReport,
+  type Resume,
   startPlaybackSpans,
 } from "./playerLogic";
 export { randomUuid } from "./randomUuid";

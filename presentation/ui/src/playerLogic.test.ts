@@ -6,7 +6,8 @@ import {
   StackContextManager,
   TracerProvider,
 } from "@opentelemetry/sdk-trace";
-import { createPlayerLogic, type ProgressReport, startPlaybackSpans } from "./playerLogic";
+import type { reportPlaybackProgressResponse } from "@selfless/api-client";
+import { type ProgressReport, type Resume, createPlayerLogic, startPlaybackSpans } from "./playerLogic";
 
 const userId = "01890a5d-ac96-774b-bcce-b302099a8057";
 const mediaFileId = "01890a5d-ac96-774b-bcce-b302099a8060";
@@ -20,16 +21,39 @@ afterAll(() => {
   trace.disable();
   context.disable();
 });
+
 beforeEach(() => jest.useFakeTimers());
 afterEach(() => {
   jest.useRealTimers();
   exporter.reset();
 });
 
-function player() {
+const headers = new Headers();
+const reported: reportPlaybackProgressResponse = { status: 204, data: undefined, headers };
+const ended: reportPlaybackProgressResponse = {
+  status: 404,
+  data: { type: "urn:selfless:problem:playback-ended", title: "The playback has ended.", status: 404 },
+  headers,
+};
+const notFound: reportPlaybackProgressResponse = {
+  status: 404,
+  data: { type: "urn:selfless:problem:not-found", title: "Nothing exists at this URL.", status: 404 },
+  headers,
+};
+
+function player(response = reported) {
   const reports: ProgressReport[] = [];
+  const restarts: Resume[] = [];
   const spans = startPlaybackSpans(userId, mediaFileId);
-  return { reports, spans, logic: createPlayerLogic((report) => reports.push(report), spans) };
+  const logic = createPlayerLogic({
+    sendReport: async (report) => {
+      reports.push(report);
+      return response;
+    },
+    restart: (resume) => restarts.push(resume),
+    spans,
+  });
+  return { reports, restarts, spans, logic };
 }
 
 function playbackSpans() {
@@ -95,6 +119,52 @@ test("nothing is reported before playback starts", () => {
   expect(reports).toEqual([]);
 });
 
+test("a report on an ended playback starts a new playback at the position, paused or not", async () => {
+  const playing = player(ended);
+  const paused = player(ended);
+  playing.logic.handle({ type: "playing", position: 0 });
+  paused.logic.handle({ type: "playing", position: 0 });
+
+  playing.logic.handle({ type: "position", position: 9.9 });
+  paused.logic.handle({ type: "paused", position: 7 });
+  await jest.advanceTimersByTimeAsync(10_000);
+
+  expect(playing.restarts).toEqual([{ position: 9.9, paused: false }]);
+  expect(paused.restarts).toEqual([{ position: 7, paused: true }]);
+});
+
+test("after the playback ended, the old playback sends no more reports", async () => {
+  const { reports, restarts, logic } = player(ended);
+  logic.handle({ type: "playing", position: 0 });
+  await jest.advanceTimersByTimeAsync(10_000);
+
+  logic.handle({ type: "paused", position: 12 });
+  await jest.advanceTimersByTimeAsync(30_000);
+
+  expect(reports).toHaveLength(1);
+  expect(restarts).toHaveLength(1);
+});
+
+test("a stop report on an ended playback starts no new playback", async () => {
+  const { restarts, logic } = player(ended);
+  logic.handle({ type: "playing", position: 0 });
+
+  logic.handle({ type: "stopped", position: 3 });
+  await jest.advanceTimersByTimeAsync(0);
+
+  expect(restarts).toEqual([]);
+});
+
+test("a playback that is not found starts no new playback", async () => {
+  const { reports, restarts, logic } = player(notFound);
+  logic.handle({ type: "playing", position: 0 });
+
+  await jest.advanceTimersByTimeAsync(20_000);
+
+  expect(reports).toHaveLength(2);
+  expect(restarts).toEqual([]);
+});
+
 test("each player event goes on its own playback span in the trace of the play request", () => {
   const { logic } = player();
 
@@ -149,7 +219,7 @@ test("a failure records failed on an error span with its error type", () => {
 
   logic.handle({ type: "failed", position: 12, errorType: "MEDIA_ERR_DECODE" });
 
-  const failed = (playbackSpans())[1];
+  const failed = playbackSpans()[1];
   expect(failed?.events.map((event) => event.name)).toEqual(["selfless.playback.failed"]);
   expect(failed?.attributes["error.type"]).toBe("MEDIA_ERR_DECODE");
   expect(failed?.status.code).toBe(SpanStatusCode.ERROR);

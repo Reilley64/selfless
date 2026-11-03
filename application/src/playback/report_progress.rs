@@ -34,10 +34,12 @@ pub async fn call(
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?
-        .filter(|x| !x.ended())
     else {
         return Ok(Output::NotFound);
     };
+    if playback.ended() {
+        return Ok(Output::Ended);
+    }
     let now = clock.call();
     playback
         .update()

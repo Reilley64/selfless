@@ -3,6 +3,8 @@ mod image_cache_cleanup;
 mod inbox;
 mod inbox_cleanup;
 mod outbox;
+mod playback_cleanup;
+mod playback_sweep;
 mod reconcile;
 mod session_cleanup;
 
@@ -23,6 +25,8 @@ pub async fn serve(state: AppState, reconcile_interval: Duration, cancellation: 
         inbox::serve(state.clone(), cancellation.clone()),
         inbox_cleanup::serve(state.clone(), cancellation.clone()),
         image_cache_cleanup::serve(state.clone(), cancellation.clone()),
+        playback_sweep::serve(state.clone(), cancellation.clone()),
+        playback_cleanup::serve(state.clone(), cancellation.clone()),
         reconcile::serve(state, reconcile_interval, cancellation),
     );
 }
