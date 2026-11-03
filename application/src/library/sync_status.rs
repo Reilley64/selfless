@@ -21,7 +21,6 @@ use crate::ports::persistence::DbScope;
 use domain::Episode;
 use domain::HeldRemoval as StoredHeldRemoval;
 use domain::Movie;
-use domain::Season;
 use domain::Show;
 use domain::Source;
 use domain::SourceState;
@@ -36,27 +35,21 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<Output, Error
     } = dependencies.into();
     let movies = db_context
         .movies()
-        .filter(Movie::fields().visible().eq(true))
+        .filter(Movie::in_library_filter())
         .count()
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?;
     let shows = db_context
         .shows()
-        .filter(
-            Show::fields().seasons().any(
-                Season::fields()
-                    .episodes()
-                    .any(Episode::fields().visible().eq(true)),
-            ),
-        )
+        .filter(Show::in_library_filter())
         .count()
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?;
     let episodes = db_context
         .episodes()
-        .filter(Episode::fields().visible().eq(true))
+        .filter(Episode::in_library_filter())
         .count()
         .exec(db_context.executor_mut())
         .await
@@ -497,7 +490,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn only_visible_movies_and_episodes_and_shows_with_a_visible_episode_are_counted() {
+    async fn only_movies_shows_and_episodes_in_the_library_are_counted() {
         let mut seeded = Seeded::new().await;
         seeded.movie(1, "Arrival", None, true).await;
         seeded.movie(2, "Dune", None, false).await;
