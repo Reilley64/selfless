@@ -1,8 +1,10 @@
 use crate::Episode;
 use crate::EpisodeWatchState;
 use crate::Movie;
+use crate::MovieContinueWatchingRemoval;
 use crate::MovieWatchState;
 use crate::Season;
+use crate::ShowContinueWatchingRemoval;
 use jiff::Timestamp;
 use toasty::Deferred;
 use uuid::Uuid;
@@ -158,6 +160,28 @@ pub(crate) fn movie_watch_state(
         watched: resume_position_seconds.is_none(),
         watched_at: None,
         last_played: Some(last_played.parse().unwrap()),
+    }
+}
+
+pub(crate) fn movie_removal(movie: &Movie, removed_at: &str) -> MovieContinueWatchingRemoval {
+    MovieContinueWatchingRemoval {
+        id: Uuid::nil(),
+        user_id: Uuid::nil(),
+        user: Deferred::default(),
+        movie_id: movie.id,
+        movie: Deferred::default(),
+        removed_at: removed_at.parse().unwrap(),
+    }
+}
+
+pub(crate) fn show_removal(show_id: Uuid, removed_at: &str) -> ShowContinueWatchingRemoval {
+    ShowContinueWatchingRemoval {
+        id: Uuid::nil(),
+        user_id: Uuid::nil(),
+        user: Deferred::default(),
+        show_id,
+        show: Deferred::default(),
+        removed_at: removed_at.parse().unwrap(),
     }
 }
 

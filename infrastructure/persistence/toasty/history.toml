@@ -114,3 +114,8 @@ snapshot_name = "20261103_102715_snapshot.toml"
 id = 2855235943933101649
 name = "20261103_122237_watch_states.sql"
 snapshot_name = "20261103_122237_snapshot.toml"
+
+[[migrations]]
+id = 773550982414508430
+name = "20261103_131952_continue_watching_removals.sql"
+snapshot_name = "20261103_131952_snapshot.toml"

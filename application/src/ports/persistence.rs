@@ -10,11 +10,13 @@ use domain::Inbox;
 use domain::Invite;
 use domain::MediaFile;
 use domain::Movie;
+use domain::MovieContinueWatchingRemoval;
 use domain::MovieWatchState;
 use domain::Outbox;
 use domain::Season;
 use domain::Session;
 use domain::Show;
+use domain::ShowContinueWatchingRemoval;
 use domain::SourceState;
 use domain::SyncProblem;
 use domain::User;
@@ -122,6 +124,10 @@ pub trait DbScope {
         DbSet::new()
     }
 
+    fn movie_continue_watching_removals(&self) -> DbSet<MovieContinueWatchingRemoval> {
+        DbSet::new()
+    }
+
     fn movie_watch_states(&self) -> DbSet<MovieWatchState> {
         DbSet::new()
     }
@@ -139,6 +145,10 @@ pub trait DbScope {
     }
 
     fn shows(&self) -> DbSet<Show> {
+        DbSet::new()
+    }
+
+    fn show_continue_watching_removals(&self) -> DbSet<ShowContinueWatchingRemoval> {
         DbSet::new()
     }
 

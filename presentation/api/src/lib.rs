@@ -62,6 +62,8 @@ pub fn router(
         .route(routes::api::genres::v1::genres)
         .route(routes::api::images::v1::image)
         .route(routes::api::home::v1::home)
+        .route(routes::api::continue_watching::v1::remove_movie)
+        .route(routes::api::continue_watching::v1::remove_show)
         .route(routes::api::invites::v1::accept)
         .route(routes::api::telemetry::v1::traces)
         .route(routes::api::telemetry::v1::metrics)

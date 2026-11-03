@@ -507,7 +507,7 @@ paths:
     get:
       operationId: getHome
       summary: The featured title and the rows of Home
-      description: The rows come in this order, each with up to 20 tiles, and empty rows are left out. Continue watching holds the user's movies with a resume position and one episode tile per show, the episode with a resume position played most recently or else the next up episode. It sorts newest first by the user's last played time for the movie or show, or the next up episode's added time when that is later. Recently added holds one tile per movie and per show, newest added first; a show counts the newest added date among its visible episodes. Popular now holds the movies and shows with the most different users whose last played time is in the last 14 days, a show counted once per user, with ties going to the most recent play. The genre rows are the 6 genres with the most visible titles, movies and shows together, each sorted by sort title. The featured title is the first title in Popular now. With nobody having played anything in the last 14 days, it is the latest released title, a movie by its premiere date and a show by the air date of its newest visible episode. Undated titles are skipped and ties go by sort title.
+      description: The rows come in this order, each with up to 20 tiles, and empty rows are left out. Continue watching holds the user's movies with a resume position and one episode tile per show, the episode with a resume position played most recently or else the next up episode. It sorts newest first by the user's last played time for the movie or show, or the next up episode's added time when that is later. A movie or show the user removed from Continue watching is left out until their last played time for it is newer than the removal. Recently added holds one tile per movie and per show, newest added first; a show counts the newest added date among its visible episodes. Popular now holds the movies and shows with the most different users whose last played time is in the last 14 days, a show counted once per user, with ties going to the most recent play. The genre rows are the 6 genres with the most visible titles, movies and shows together, each sorted by sort title. The featured title is the first title in Popular now. With nobody having played anything in the last 14 days, it is the latest released title, a movie by its premiere date and a show by the air date of its newest visible episode. Undated titles are skipped and ties go by sort title.
       tags: [browsing]
       responses:
         "200":
@@ -519,6 +519,54 @@ paths:
               example: {"featured":{"tile":{"id":"0190f3c4-5b6a-7c8d-9e0f-1a2b3c4d5e6f","kind":"movie","title":"Arrival","year":2016,"certification":"PG-13","runtimeMinutes":116,"seasonCount":null,"genres":["Drama","Science Fiction"],"plot":"A linguist works with the military to talk to aliens.","images":{"fanart":null,"logo":null,"thumb":null},"progress":null,"watched":false,"episode":null},"playEpisodeId":null},"rows":[{"kind":"recentlyAdded","genre":null,"tiles":[{"id":"0190f3c4-5b6a-7c8d-9e0f-1a2b3c4d5e6f","kind":"movie","title":"Arrival","year":2016,"certification":"PG-13","runtimeMinutes":116,"seasonCount":null,"genres":["Drama","Science Fiction"],"plot":"A linguist works with the military to talk to aliens.","images":{"fanart":null,"logo":null,"thumb":null},"progress":null,"watched":false,"episode":null}]},{"kind":"genre","genre":"Drama","tiles":[{"id":"0190f3c4-5b6a-7c8d-9e0f-1a2b3c4d5e6f","kind":"movie","title":"Arrival","year":2016,"certification":"PG-13","runtimeMinutes":116,"seasonCount":null,"genres":["Drama","Science Fiction"],"plot":"A linguist works with the military to talk to aliens.","images":{"fanart":null,"logo":null,"thumb":null},"progress":null,"watched":false,"episode":null}]}]}
         "401":
           $ref: "#/components/responses/Unauthenticated"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/continue-watching/movies/{movieId}/v1:
+    delete:
+      operationId: removeMovieFromContinueWatching
+      summary: Remove a movie from the user's Continue watching
+      description: Stores a removal for the user and the movie with the current time. The movie stays out of Continue watching until the user plays it again. A second removal updates the time. The resume position and watched state stay. The response is 204 also when the movie isn't in the row.
+      tags: [browsing]
+      parameters:
+        - name: movieId
+          in: path
+          required: true
+          description: The ID of the movie to remove.
+          schema:
+            type: string
+            format: uuid
+          example: 0190f3c4-5b6a-7c8d-9e0f-1a2b3c4d5e6f
+      responses:
+        "204":
+          description: The movie is out of the user's Continue watching.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/continue-watching/shows/{showId}/v1:
+    delete:
+      operationId: removeShowFromContinueWatching
+      summary: Remove a show from the user's Continue watching
+      description: Stores a removal for the user and the show with the current time. The show stays out of Continue watching until the user plays one of its episodes again; a new episode arriving doesn't bring it back. A second removal updates the time. Resume positions and watched states stay. The response is 204 also when the show isn't in the row.
+      tags: [browsing]
+      parameters:
+        - name: showId
+          in: path
+          required: true
+          description: The ID of the show to remove.
+          schema:
+            type: string
+            format: uuid
+          example: 0190f3c4-6c7d-7e8f-9a0b-1c2d3e4f5a6b
+      responses:
+        "204":
+          description: The show is out of the user's Continue watching.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalError"
   /webhooks/radarr/v1:

@@ -8,8 +8,10 @@ pub use output::Output;
 
 use crate::ports::persistence::DbScope;
 use domain::EpisodeWatchState;
+use domain::MovieContinueWatchingRemoval;
 use domain::MovieWatchState;
 use domain::Session;
+use domain::ShowContinueWatchingRemoval;
 use domain::User;
 use uuid::Uuid;
 
@@ -40,6 +42,20 @@ pub async fn call(dependencies: impl Into<Dependencies>, id: Uuid) -> Result<Out
     transaction
         .episode_watch_states()
         .filter(EpisodeWatchState::fields().user_id().eq(id))
+        .delete()
+        .exec(transaction.executor_mut())
+        .await
+        .map_err(Error::caused_by)?;
+    transaction
+        .movie_continue_watching_removals()
+        .filter(MovieContinueWatchingRemoval::fields().user_id().eq(id))
+        .delete()
+        .exec(transaction.executor_mut())
+        .await
+        .map_err(Error::caused_by)?;
+    transaction
+        .show_continue_watching_removals()
+        .filter(ShowContinueWatchingRemoval::fields().user_id().eq(id))
         .delete()
         .exec(transaction.executor_mut())
         .await
@@ -198,5 +214,64 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(movie_watch_states, [ravi]);
         assert_eq!(episode_watch_states, [ravi]);
+    }
+
+    #[tokio::test]
+    async fn deleting_a_user_deletes_their_continue_watching_removals() {
+        let mut db_context = mock_db_context().await;
+        let noor = create_user(&db_context, "Noor").await;
+        let ravi = create_user(&db_context, "Ravi").await;
+        let movie_id = movie(&db_context, "Arrival")
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap()
+            .id;
+        let show_id = show(&db_context, "Severance")
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap()
+            .id;
+        for user_id in [noor, ravi] {
+            MovieContinueWatchingRemoval::upsert_by_user_id_and_movie_id(user_id, movie_id)
+                .removed_at(Timestamp::UNIX_EPOCH)
+                .exec(db_context.executor_mut())
+                .await
+                .unwrap();
+            ShowContinueWatchingRemoval::upsert_by_user_id_and_show_id(user_id, show_id)
+                .removed_at(Timestamp::UNIX_EPOCH)
+                .exec(db_context.executor_mut())
+                .await
+                .unwrap();
+        }
+
+        call(
+            Dependencies {
+                db_context: db_context.clone(),
+            },
+            noor,
+        )
+        .await
+        .unwrap();
+
+        let movie_removals = db_context
+            .movie_continue_watching_removals()
+            .all()
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|x| x.user_id)
+            .collect::<Vec<_>>();
+        let show_removals = db_context
+            .show_continue_watching_removals()
+            .all()
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|x| x.user_id)
+            .collect::<Vec<_>>();
+        assert_eq!(movie_removals, [ravi]);
+        assert_eq!(show_removals, [ravi]);
     }
 }

@@ -1,11 +1,16 @@
 use crate::Episode;
 use crate::EpisodeWatchState;
 use crate::Movie;
+use crate::MovieContinueWatchingRemoval;
 use crate::MovieWatchState;
 use crate::Season;
+use crate::ShowContinueWatchingRemoval;
 use crate::episode_to_resume;
 use crate::next_up;
+use jiff::Timestamp;
 use std::cmp::Reverse;
+use std::collections::HashMap;
+use uuid::Uuid;
 
 #[derive(Debug)]
 pub enum ContinueWatching<'a> {
@@ -17,12 +22,28 @@ pub enum ContinueWatching<'a> {
 pub fn continue_watching<'a>(
     movies: impl IntoIterator<Item = (&'a Movie, &'a MovieWatchState)>,
     shows: impl IntoIterator<Item = Vec<(&'a Season, &'a Episode, Option<&'a EpisodeWatchState>)>>,
+    movie_removals: &[MovieContinueWatchingRemoval],
+    show_removals: &[ShowContinueWatchingRemoval],
 ) -> Vec<ContinueWatching<'a>> {
+    let removed_at: HashMap<Uuid, Timestamp> = movie_removals
+        .iter()
+        .map(|x| (x.movie_id, x.removed_at))
+        .chain(show_removals.iter().map(|x| (x.show_id, x.removed_at)))
+        .collect();
+    let removed = |title_id: Uuid, last_played: Option<Timestamp>| {
+        removed_at
+            .get(&title_id)
+            .is_some_and(|removed_at| last_played.is_none_or(|x| *removed_at > x))
+    };
     let shows = shows.into_iter().filter_map(|episodes| {
+        let show_id = episodes.first()?.0.show_id;
         let last_played = episodes
             .iter()
             .filter_map(|(_, _, state)| state.and_then(|x| x.last_played))
             .max();
+        if removed(show_id, last_played) {
+            return None;
+        }
         if let Some((season, episode, state)) = episode_to_resume(episodes.iter().copied()) {
             return Some((
                 last_played,
@@ -37,7 +58,11 @@ pub fn continue_watching<'a>(
     });
     let mut tiles: Vec<_> = movies
         .into_iter()
-        .filter(|(movie, state)| movie.in_library && state.resume_position_seconds.is_some())
+        .filter(|(movie, state)| {
+            movie.in_library
+                && state.resume_position_seconds.is_some()
+                && !removed(movie.id, state.last_played)
+        })
         .map(|(movie, state)| (state.last_played, ContinueWatching::Movie(movie, state)))
         .chain(shows)
         .collect();
@@ -53,8 +78,10 @@ mod tests {
     use crate::test::LATEST;
     use crate::test::ShowEpisodes;
     use crate::test::movie;
+    use crate::test::movie_removal;
     use crate::test::movie_watch_state;
     use crate::test::resuming_at;
+    use crate::test::show_removal;
     use crate::test::watched_at;
     use uuid::Uuid;
 
@@ -101,6 +128,8 @@ mod tests {
                 caught_up_to_next.episodes(),
                 caught_up.episodes(),
             ],
+            &[],
+            &[],
         );
 
         assert_eq!(
@@ -139,6 +168,8 @@ mod tests {
                 resuming.episodes(),
                 new_episode.episodes(),
             ],
+            &[],
+            &[],
         );
 
         assert_eq!(
@@ -168,8 +199,60 @@ mod tests {
                 (&hidden, &states[2]),
             ],
             [],
+            &[],
+            &[],
         );
 
         assert_eq!(tiles(found), [Tile::Movie(arrival.id)]);
+    }
+
+    #[test]
+    fn a_removed_title_is_left_out_while_its_removal_is_newer_than_the_users_last_play_of_it() {
+        let (arrival, dune) = (movie(true), movie(true));
+        let states = [
+            movie_watch_state(&arrival, Some(600), LATER),
+            movie_watch_state(&dune, Some(600), LATER),
+        ];
+        let removed = ShowEpisodes::new(vec![(1, 1, true, Some(resuming_at(600, LATER)))]);
+        let played_again = ShowEpisodes::new(vec![(1, 1, true, Some(resuming_at(600, LATEST)))]);
+
+        let found = continue_watching(
+            [(&arrival, &states[0]), (&dune, &states[1])],
+            [removed.episodes(), played_again.episodes()],
+            &[
+                movie_removal(&arrival, LATEST),
+                movie_removal(&dune, EARLIER),
+            ],
+            &[
+                show_removal(removed.show_id, LATEST),
+                show_removal(played_again.show_id, LATER),
+            ],
+        );
+
+        assert_eq!(
+            tiles(found),
+            [
+                Tile::Resume(played_again.show_id, 1, 1),
+                Tile::Movie(dune.id)
+            ]
+        );
+    }
+
+    #[test]
+    fn a_new_episode_does_not_bring_a_removed_show_back() {
+        let andor = ShowEpisodes::new(vec![
+            (1, 1, true, Some(watched_at(EARLIER))),
+            (1, 2, true, None),
+        ])
+        .added_at(1, 2, LATEST);
+
+        let found = continue_watching(
+            [],
+            [andor.episodes()],
+            &[],
+            &[show_removal(andor.show_id, LATER)],
+        );
+
+        assert_eq!(tiles(found), []);
     }
 }

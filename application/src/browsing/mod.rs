@@ -14,6 +14,8 @@ pub mod list_genres;
 pub mod list_movies;
 pub mod list_season_episodes;
 pub mod list_shows;
+pub mod remove_movie_from_continue_watching;
+pub mod remove_show_from_continue_watching;
 
 pub use image::Image;
 pub use image::ImageUrl;
