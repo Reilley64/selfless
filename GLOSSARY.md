@@ -65,7 +65,7 @@ A sync problem: Radarr or Sonarr reports a media file whose path doesn't exist o
 _Avoid_: File not found
 
 **Unreadable file**:
-A sync problem: a media file, NFO or image exists on disk but selfless can't read it, for example because of its permissions. The movie or episode stays as it was until the read succeeds.
+A sync problem: a media file, NFO or image exists on disk but selfless can't read it, for example because of its permissions. The movie, or the whole show, stays as it was until the read succeeds.
 _Avoid_: Permission error, IO error
 
 **Unreadable NFO**:
