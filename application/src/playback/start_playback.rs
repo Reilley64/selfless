@@ -17,6 +17,8 @@ use crate::attributes::SELFLESS_PLAYBACK_METHOD;
 use crate::attributes::SELFLESS_PLAYBACK_REASON_KINDS;
 use crate::browsing::Image;
 use crate::metrics::SELFLESS_PLAYBACK_DECISIONS;
+use crate::playback::SubtitleChoice;
+use crate::playback::TrackIds;
 use crate::playback::resource;
 use crate::ports;
 use crate::ports::HlsAudioTrack;
@@ -65,7 +67,7 @@ pub async fn call(
     media_file_id: Uuid,
     start_position: f64,
     audio_track_id: Option<Uuid>,
-    subtitle_track_id: Option<Option<Uuid>>,
+    subtitle: SubtitleChoice,
     profile: &CapabilityProfile,
     force_hls: bool,
 ) -> Result<Output, Error> {
@@ -164,9 +166,10 @@ pub async fn call(
             audio,
         )
     };
-    let subtitle = match subtitle_track_id {
-        Some(id) => id.and_then(|id| subtitle_tracks.iter().copied().find(|x| x.id() == id)),
-        None => default_subtitle(audio),
+    let subtitle = match subtitle {
+        SubtitleChoice::Default => default_subtitle(audio),
+        SubtitleChoice::Off => None,
+        SubtitleChoice::Track(id) => subtitle_tracks.iter().copied().find(|x| x.id() == id),
     };
     let default_audio_track_id = default_audio.map(|x| x.id);
     let default_subtitle_track_id = default_subtitle(default_audio).map(|x| x.id());
@@ -364,8 +367,10 @@ pub async fn call(
             title: x.title,
         }),
         episodes,
-        audio_track_id,
-        subtitle_track_id,
+        tracks: TrackIds {
+            audio: audio_track_id,
+            subtitle: subtitle_track_id,
+        },
         audio_tracks: audio_streams
             .into_iter()
             .map(|x| AudioTrack {
@@ -645,7 +650,7 @@ mod tests {
         client_kind: ClientKind,
         profile: CapabilityProfile,
         audio_track_id: Option<Uuid>,
-        subtitle_track_id: Option<Option<Uuid>>,
+        subtitle: SubtitleChoice,
         force_hls: bool,
     }
 
@@ -680,7 +685,7 @@ mod tests {
                 client_kind: ClientKind::Web,
                 profile,
                 audio_track_id: None,
-                subtitle_track_id: None,
+                subtitle: SubtitleChoice::Default,
                 force_hls: false,
             }
         }
@@ -714,7 +719,7 @@ mod tests {
                 media_file_id,
                 0.0,
                 request.audio_track_id,
-                request.subtitle_track_id,
+                request.subtitle,
                 &request.profile,
                 request.force_hls,
             )
@@ -903,10 +908,6 @@ mod tests {
         }
     }
 
-    fn track_ids(playback: &Playback) -> (Option<Uuid>, Option<Uuid>) {
-        (playback.audio_track_id, playback.subtitle_track_id)
-    }
-
     #[tokio::test]
     async fn a_file_the_profile_covers_plays_directly_with_its_movie_tracks_and_settings() {
         let fixture = Fixture::new().await;
@@ -928,7 +929,13 @@ mod tests {
             Some((movie_id, "Arrival"))
         );
         assert!(playback.episodes.is_empty());
-        assert_eq!(track_ids(&playback), (Some(english), None));
+        assert_eq!(
+            playback.tracks,
+            TrackIds {
+                audio: Some(english),
+                subtitle: None
+            }
+        );
         assert_eq!(
             playback
                 .audio_tracks
@@ -1372,8 +1379,11 @@ mod tests {
         let playback = fixture.start(media_file.id).await;
 
         assert_eq!(
-            track_ids(&playback),
-            (Some(playback.audio_tracks[0].id), None)
+            playback.tracks,
+            TrackIds {
+                audio: Some(playback.audio_tracks[0].id),
+                subtitle: None
+            }
         );
         assert_eq!(playback.audio_tracks[0].language.as_deref(), Some("eng"));
         assert_eq!(fixture.started.last().selected_subtitle, None);
@@ -1404,7 +1414,7 @@ mod tests {
 
         let playback = fixture.start(media_file.id).await;
 
-        assert_eq!(playback.audio_track_id, Some(playback.audio_tracks[1].id));
+        assert_eq!(playback.tracks.audio, Some(playback.audio_tracks[1].id));
         assert_eq!(
             fixture
                 .started
@@ -1445,7 +1455,7 @@ mod tests {
 
         let playback = fixture.start(media_file.id).await;
 
-        assert_eq!(playback.subtitle_track_id, Some(ids[3]));
+        assert_eq!(playback.tracks.subtitle, Some(ids[3]));
         assert_eq!(fixture.started.last().selected_subtitle, Some(2));
     }
 
@@ -1466,7 +1476,7 @@ mod tests {
                     media_file.id,
                     Request {
                         audio_track_id: Some(japanese),
-                        subtitle_track_id: Some(Some(ids[1])),
+                        subtitle: SubtitleChoice::Track(ids[1]),
                         ..fixture.request(browser())
                     },
                 )
@@ -1477,16 +1487,22 @@ mod tests {
                 .start_with(
                     media_file.id,
                     Request {
-                        subtitle_track_id: Some(None),
+                        subtitle: SubtitleChoice::Off,
                         ..fixture.request(browser())
                     },
                 )
                 .await,
         );
 
-        assert_eq!(defaults.subtitle_track_id, Some(ids[0]));
-        assert_eq!(track_ids(&named), (Some(japanese), Some(ids[1])));
-        assert_eq!(off.subtitle_track_id, None);
+        assert_eq!(defaults.tracks.subtitle, Some(ids[0]));
+        assert_eq!(
+            named.tracks,
+            TrackIds {
+                audio: Some(japanese),
+                subtitle: Some(ids[1])
+            }
+        );
+        assert_eq!(off.tracks.subtitle, None);
     }
 
     #[tokio::test]
@@ -1502,7 +1518,7 @@ mod tests {
                     media_file.id,
                     Request {
                         audio_track_id: Some(defaults.audio_tracks[1].id),
-                        subtitle_track_id: Some(Some(ids[0])),
+                        subtitle: SubtitleChoice::Track(ids[0]),
                         ..fixture.request(browser())
                     },
                 )
@@ -1512,7 +1528,7 @@ mod tests {
         let stored = fixture.stored(named.id).await;
         assert_eq!(
             (stored.audio_track_id, stored.subtitle_track_id),
-            (defaults.audio_track_id, None)
+            (defaults.tracks.audio, None)
         );
     }
 

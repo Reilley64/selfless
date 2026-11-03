@@ -1,4 +1,5 @@
 use crate::browsing::Image;
+use crate::playback::TrackIds;
 use domain::PlayMethod;
 use domain::PlayReason;
 use std::time::Duration;
@@ -20,8 +21,7 @@ pub struct Playback {
     pub duration: Duration,
     pub movie: Option<Movie>,
     pub episodes: Vec<Episode>,
-    pub audio_track_id: Option<Uuid>,
-    pub subtitle_track_id: Option<Uuid>,
+    pub tracks: TrackIds,
     pub audio_tracks: Vec<AudioTrack>,
     pub subtitle_tracks: Vec<SubtitleTrack>,
     pub next_episode: Option<NextEpisode>,

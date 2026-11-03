@@ -18,6 +18,20 @@ fn resource(playback_id: Uuid) -> String {
     format!("playbacks/{playback_id}")
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TrackIds {
+    pub audio: Option<Uuid>,
+    pub subtitle: Option<Uuid>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SubtitleChoice {
+    #[default]
+    Default,
+    Off,
+    Track(Uuid),
+}
+
 enum SignedPlayback {
     Open(Playback),
     NotFound,

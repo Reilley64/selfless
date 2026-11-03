@@ -1,3 +1,4 @@
+use application::playback::SubtitleChoice;
 use application::playback::start_playback;
 use application::ports::Clock;
 use application::ports::EndHlsOutput;
@@ -136,7 +137,7 @@ async fn play_requests_are_counted_by_play_method_client_kind_and_reason_kinds()
             media_file_id,
             0.0,
             None,
-            None,
+            SubtitleChoice::Default,
             &profile,
             force_hls,
         )

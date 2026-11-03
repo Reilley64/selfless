@@ -6,6 +6,7 @@ pub use dependencies::Dependencies;
 pub use error::Error;
 pub use output::Output;
 
+use crate::playback::TrackIds;
 use crate::ports::persistence::DbScope;
 use domain::MediaFile;
 use domain::Playback;
@@ -14,7 +15,6 @@ use domain::SubtitleTrack;
 use domain::TrackLanguage;
 use uuid::Uuid;
 
-#[allow(clippy::too_many_arguments)]
 pub async fn call(
     dependencies: impl Into<Dependencies>,
     user_id: Uuid,
@@ -22,9 +22,12 @@ pub async fn call(
     position: f64,
     paused: bool,
     stopped: bool,
-    audio_track_id: Option<Uuid>,
-    subtitle_track_id: Option<Uuid>,
+    tracks: TrackIds,
 ) -> Result<Output, Error> {
+    let TrackIds {
+        audio: audio_track_id,
+        subtitle: subtitle_track_id,
+    } = tracks;
     let Dependencies {
         mut db_context,
         clock,
@@ -222,8 +225,10 @@ mod tests {
                 30.0,
                 report.paused,
                 report.stopped,
-                report.audio_track_id.or(Some(self.english_audio)),
-                report.subtitle_track_id,
+                TrackIds {
+                    audio: report.audio_track_id.or(Some(self.english_audio)),
+                    subtitle: report.subtitle_track_id,
+                },
             )
             .await
             .unwrap()

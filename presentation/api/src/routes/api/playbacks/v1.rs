@@ -4,6 +4,8 @@ use crate::problem::PLAYBACK_ENDED;
 use crate::problem::UNREADABLE_MEDIA_FILE;
 use crate::routes::api::image::ImageBody;
 use crate::user_auth::CurrentSession;
+use application::playback::SubtitleChoice;
+use application::playback::TrackIds;
 use application::playback::get_hls_file;
 use application::playback::get_playback_file;
 use application::playback::report_progress;
@@ -42,17 +44,15 @@ struct StartPlayback {
     media_file_id: Uuid,
     start_position: f64,
     audio_track_id: Option<Uuid>,
-    #[serde(default, deserialize_with = "named_track")]
-    subtitle_track_id: Option<Option<Uuid>>,
+    #[serde(default, deserialize_with = "subtitle_choice")]
+    subtitle_track_id: SubtitleChoice,
     profile: ProfileBody,
     #[serde(default)]
     force_hls: bool,
 }
 
-fn named_track<'de, D: Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<Option<Uuid>>, D::Error> {
-    Option::deserialize(deserializer).map(Some)
+fn subtitle_choice<'de, D: Deserializer<'de>>(deserializer: D) -> Result<SubtitleChoice, D::Error> {
+    Option::deserialize(deserializer).map(|x| x.map_or(SubtitleChoice::Off, SubtitleChoice::Track))
 }
 
 #[derive(Deserialize)]
@@ -297,8 +297,8 @@ impl From<start_playback::Playback> for PlaybackBody {
                     title: x.title,
                 })
                 .collect(),
-            audio_track_id: playback.audio_track_id,
-            subtitle_track_id: playback.subtitle_track_id,
+            audio_track_id: playback.tracks.audio,
+            subtitle_track_id: playback.tracks.subtitle,
             audio_tracks: playback
                 .audio_tracks
                 .into_iter()
@@ -399,8 +399,10 @@ pub(crate) async fn progress(
         request.position,
         request.paused,
         request.stopped,
-        request.audio_track_id,
-        request.subtitle_track_id,
+        TrackIds {
+            audio: request.audio_track_id,
+            subtitle: request.subtitle_track_id,
+        },
     )
     .await?
     {
