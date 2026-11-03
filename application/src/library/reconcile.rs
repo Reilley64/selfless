@@ -30,12 +30,15 @@ use domain::Movie;
 use domain::ReconcileResult;
 use domain::Show;
 use domain::Source;
+use futures_util::FutureExt;
 use futures_util::StreamExt;
 use futures_util::stream;
 use opentelemetry::KeyValue;
 use opentelemetry::global;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::panic;
+use std::panic::AssertUnwindSafe;
 use std::sync::Mutex;
 use std::time::Instant;
 use tracing::Instrument;
@@ -144,16 +147,17 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
         }
         Ok(())
     }
-    .instrument(span.clone())
-    .await;
+    .instrument(span.clone());
+    let reconciled = AssertUnwindSafe(reconciled).catch_unwind().await;
     *progress.lock().unwrap() = None;
     let duration = start.elapsed();
-    let result = match reconciled {
-        Ok(()) => ReconcileResult::Succeeded,
-        Err(error) => {
+    let result = match &reconciled {
+        Ok(Ok(())) => ReconcileResult::Succeeded,
+        Err(_) => ReconcileResult::Failed,
+        Ok(Err(error)) => {
             span.in_scope(|| {
                 tracing::warn!(
-                    error = &error as &dyn std::error::Error,
+                    error = error as &dyn std::error::Error,
                     selfless.library.source = source.name(),
                     "failed to reconcile the library"
                 );
@@ -173,21 +177,26 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
                 KeyValue::new(SELFLESS_RECONCILE_RESULT, result.name()),
             ],
         );
-    source_states::upsert(&mut db_context, source)
-        .instrument(span.clone())
-        .await
-        .map_err(Error::caused_by)?
-        .update()
-        .last_reconcile_started_at(Some(started_at))
-        .last_reconcile_duration_ms(Some(
-            i64::try_from(duration.as_millis()).unwrap_or(i64::MAX),
-        ))
-        .last_reconcile_result(Some(result))
-        .exec(db_context.executor_mut())
-        .instrument(span)
-        .await
-        .map_err(Error::caused_by)?;
-    Ok(Output)
+    let recorded = async {
+        source_states::upsert(&mut db_context, source)
+            .await
+            .map_err(Error::caused_by)?
+            .update()
+            .last_reconcile_started_at(Some(started_at))
+            .last_reconcile_duration_ms(Some(
+                i64::try_from(duration.as_millis()).unwrap_or(i64::MAX),
+            ))
+            .last_reconcile_result(Some(result))
+            .exec(db_context.executor_mut())
+            .await
+            .map_err(Error::caused_by)
+    }
+    .instrument(span)
+    .await;
+    if let Err(panic) = reconciled {
+        panic::resume_unwind(panic);
+    }
+    recorded.map(|()| Output)
 }
 
 fn record_kodi_metadata(
@@ -772,6 +781,30 @@ mod tests {
 
         assert!(movie_titles(&library.db_context).await.is_empty());
         assert!(library.status().await.radarr.last_reconcile.is_none());
+    }
+
+    #[tokio::test]
+    async fn a_panicking_reconcile_is_recorded_as_failed_and_shows_no_progress() {
+        let library = Library::new().await;
+        let reconciling = tokio::spawn(call(
+            Dependencies {
+                list_radarr_movies: ListRadarrMovies::new(|| {
+                    panic!("an unloaded relation was read")
+                }),
+                ..library.dependencies()
+            },
+            Source::Radarr,
+        ));
+
+        let reconciled = reconciling.await;
+
+        assert!(reconciled.unwrap_err().is_panic());
+        let status = library.status().await.radarr;
+        assert_eq!(
+            status.last_reconcile.map(|x| x.result),
+            Some(ReconcileResult::Failed)
+        );
+        assert_eq!(status.reconcile_progress, None);
     }
 
     #[tokio::test]

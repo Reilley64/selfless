@@ -6547,9 +6547,11 @@ dependencies = [
  "jiff",
  "persistence",
  "test-app",
+ "test-fixtures",
  "tokio",
  "tokio-util",
  "tracing",
+ "tracing-subscriber",
  "uuid",
 ]
 

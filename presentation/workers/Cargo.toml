@@ -18,4 +18,6 @@ uuid = { workspace = true }
 [dev-dependencies]
 jiff = { workspace = true }
 test-app = { workspace = true }
+test-fixtures = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
+tracing-subscriber = { workspace = true }
