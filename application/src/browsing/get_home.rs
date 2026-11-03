@@ -70,13 +70,21 @@ pub async fn call(dependencies: impl Into<Dependencies>, user_id: Uuid) -> Resul
         .map_err(Error::caused_by)?;
     let seasons = db_context
         .seasons()
-        .filter(Season::in_library_filter())
+        .filter(
+            Season::fields()
+                .show_id()
+                .in_list(shows.iter().map(|x| x.id).collect::<Vec<_>>()),
+        )
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?;
     let episodes = db_context
         .episodes()
-        .filter(Episode::in_library_filter())
+        .filter(
+            Episode::fields()
+                .season_id()
+                .in_list(seasons.iter().map(|x| x.id).collect::<Vec<_>>()),
+        )
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?;
@@ -189,7 +197,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, user_id: Uuid) -> Resul
     .collect();
 
     let mut newest = HashMap::<Uuid, (Option<Timestamp>, Option<Date>)>::new();
-    for episode in &episodes {
+    for episode in episodes.iter().filter(|x| x.in_library) {
         if let Some(season) = season_of.get(&episode.season_id) {
             let (added_at, air_date) = newest.entry(season.show_id).or_default();
             *added_at = episode.added_at.max(*added_at);
@@ -364,7 +372,16 @@ pub async fn call(dependencies: impl Into<Dependencies>, user_id: Uuid) -> Resul
             Some((x.episode.id, tile))
         })
         .collect();
-    let season_counts = season_counts(&seasons);
+    let seasons_in_library: HashSet<Uuid> = episodes
+        .iter()
+        .filter(|x| x.in_library)
+        .map(|x| x.season_id)
+        .collect();
+    let season_counts = season_counts(
+        seasons
+            .iter()
+            .filter(|x| seasons_in_library.contains(&x.id)),
+    );
     tiles.extend(
         movies
             .into_iter()
@@ -1387,5 +1404,84 @@ mod tests {
         let output = home_for(&db_context, noor).await;
 
         assert_eq!(continue_watching(&output), [("Arrival", None, Some(0.25))]);
+    }
+
+    async fn leave_library(db_context: &mut DbContext, episode_id: Uuid) {
+        db_context
+            .episodes()
+            .filter(domain::Episode::fields().id().eq(episode_id))
+            .update()
+            .in_library(false)
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap();
+    }
+
+    async fn add_show_with_files(
+        db_context: &mut DbContext,
+        title: &str,
+        episodes: i64,
+    ) -> (HashMap<(i64, i64), Uuid>, HashMap<i64, Uuid>) {
+        let show = show(db_context, title);
+        let episodes: Vec<_> = (1..=episodes)
+            .map(|number| Episode { number, ..EPISODE })
+            .collect();
+        let ids = add_show(db_context, show, &episodes).await;
+        let mut files = HashMap::new();
+        for (&(_, number), &id) in &ids {
+            files.insert(number, add_file(db_context, id, 3_000_000).await);
+        }
+        (ids, files)
+    }
+
+    #[tokio::test]
+    async fn next_up_follows_the_latest_watched_episode_even_when_it_has_left_the_library() {
+        let mut db_context = mock_db_context().await;
+        let noor = Uuid::new_v4();
+        let (episodes, files) = add_show_with_files(&mut db_context, "Severance", 4).await;
+        watch_to_the_end(&db_context, noor, files[&1], "2026-10-20T20:00:00Z").await;
+        watch_to_the_end(&db_context, noor, files[&3], "2026-10-25T20:00:00Z").await;
+        leave_library(&mut db_context, episodes[&(1, 3)]).await;
+
+        let output = home_for(&db_context, noor).await;
+
+        assert_eq!(
+            continue_watching(&output),
+            [("Severance", Some((1, 4)), None)]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_play_of_an_episode_that_has_left_the_library_brings_a_removed_show_back() {
+        let mut db_context = mock_db_context().await;
+        let noor = Uuid::new_v4();
+        let (episodes, files) = add_show_with_files(&mut db_context, "Andor", 3).await;
+        watch_to_the_end(&db_context, noor, files[&1], "2026-10-20T20:00:00Z").await;
+        let andor_id = show_id_of(&db_context, episodes[&(1, 1)]).await;
+        remove_show(&db_context, noor, andor_id, "2026-10-21T20:00:00Z").await;
+        watch_to_the_end(&db_context, noor, files[&2], "2026-10-22T20:00:00Z").await;
+        leave_library(&mut db_context, episodes[&(1, 2)]).await;
+
+        let output = home_for(&db_context, noor).await;
+
+        assert_eq!(continue_watching(&output), [("Andor", Some((1, 3)), None)]);
+    }
+
+    #[tokio::test]
+    async fn popular_now_counts_plays_of_episodes_that_have_left_the_library() {
+        let mut db_context = mock_db_context().await;
+        let (episodes, files) = add_show_with_files(&mut db_context, "Severance", 2).await;
+        watch_to_the_end(
+            &db_context,
+            Uuid::new_v4(),
+            files[&1],
+            "2026-11-01T20:00:00Z",
+        )
+        .await;
+        leave_library(&mut db_context, episodes[&(1, 1)]).await;
+
+        let output = home(&db_context).await;
+
+        assert_eq!(titles(row(&output, &RowKind::PopularNow)), ["Severance"]);
     }
 }

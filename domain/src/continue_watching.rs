@@ -250,4 +250,22 @@ mod tests {
 
         assert_eq!(tiles(found), []);
     }
+
+    #[test]
+    fn a_shows_last_played_counts_its_episodes_that_are_not_in_the_library() {
+        let andor = ShowEpisodes::new(vec![
+            (1, 1, true, Some(watched_at(EARLIER))),
+            (1, 2, false, Some(watched_at(LATEST))),
+            (1, 3, true, None),
+        ]);
+
+        let found = continue_watching(
+            [],
+            [andor.episodes()],
+            &[],
+            &[show_removal(andor.show_id, LATER)],
+        );
+
+        assert_eq!(tiles(found), [Tile::NextUp(andor.show_id, 1, 3)]);
+    }
 }

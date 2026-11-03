@@ -105,4 +105,16 @@ mod tests {
 
         assert_eq!(numbers(next_up(show.episodes())), None);
     }
+
+    #[test]
+    fn next_up_follows_the_last_watched_episode_even_when_it_is_not_in_the_library() {
+        let show = ShowEpisodes::new(vec![
+            (1, 1, true, Some(watched_at(EARLIER))),
+            (1, 2, true, None),
+            (1, 3, false, Some(watched_at(LATER))),
+            (1, 4, true, None),
+        ]);
+
+        assert_eq!(numbers(next_up(show.episodes())), Some((1, 4)));
+    }
 }

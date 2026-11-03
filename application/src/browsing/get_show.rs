@@ -52,12 +52,7 @@ pub async fn call(
     };
     let mut seasons = db_context
         .seasons()
-        .filter(
-            domain::Season::fields()
-                .show_id()
-                .eq(show.id)
-                .and(domain::Season::in_library_filter()),
-        )
+        .filter(domain::Season::fields().show_id().eq(show.id))
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?;
@@ -67,8 +62,7 @@ pub async fn call(
         .filter(
             Episode::fields()
                 .season_id()
-                .in_list(seasons.iter().map(|x| x.id).collect::<Vec<_>>())
-                .and(Episode::in_library_filter()),
+                .in_list(seasons.iter().map(|x| x.id).collect::<Vec<_>>()),
         )
         .exec(db_context.executor_mut())
         .await
@@ -99,9 +93,10 @@ pub async fn call(
         verb: target.verb,
     };
     let mut episode_counts = HashMap::<Uuid, i64>::new();
-    for episode in &episodes {
+    for episode in episodes.iter().filter(|x| x.in_library) {
         *episode_counts.entry(episode.season_id).or_default() += 1;
     }
+    seasons.retain(|x| episode_counts.contains_key(&x.id));
     let mut actors = db_context
         .actors()
         .filter(Actor::fields().show_id().eq(show.id))
@@ -453,6 +448,39 @@ mod tests {
                 (1, 1, PlayVerb::Play),
             ]
         );
+    }
+
+    #[tokio::test]
+    async fn play_follows_the_latest_watched_episode_even_when_it_has_left_the_library() {
+        let mut db_context = mock_db_context().await;
+        let (severance, episodes) = add_show(
+            &mut db_context,
+            "Severance",
+            &[(1, 1, true), (1, 2, true), (1, 3, true), (1, 4, true)],
+        )
+        .await;
+        let noor = Uuid::new_v4();
+        for (number, reported_at) in [(1, "2026-10-20T20:00:00Z"), (3, "2026-10-25T20:00:00Z")] {
+            watch_to_the_end(
+                &db_context,
+                noor,
+                episodes[&(1, number)].media_file_id,
+                reported_at,
+            )
+            .await;
+        }
+        db_context
+            .episodes()
+            .filter(Episode::fields().id().eq(episodes[&(1, 3)].id))
+            .update()
+            .in_library(false)
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap();
+
+        let play = show_for(&db_context, noor, severance).await.play;
+
+        assert_eq!((play.episode_number, play.verb), (4, PlayVerb::Play));
     }
 
     #[tokio::test]

@@ -39,9 +39,9 @@ pub use tile::TileShow;
 
 const PAGE_SIZE: usize = 60;
 
-fn season_counts(seasons: &[Season]) -> HashMap<Uuid, i64> {
+fn season_counts<'a>(seasons: impl IntoIterator<Item = &'a Season>) -> HashMap<Uuid, i64> {
     let mut counts = HashMap::new();
-    for season in seasons.iter().filter(|x| x.number > 0) {
+    for season in seasons.into_iter().filter(|x| x.number > 0) {
         *counts.entry(season.show_id).or_default() += 1;
     }
     counts
