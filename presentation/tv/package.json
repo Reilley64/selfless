@@ -2,7 +2,7 @@
   "name": "@selfless/tv",
   "private": true,
   "license": "MIT OR Apache-2.0",
-  "main": "expo-router/entry",
+  "main": "index.ts",
   "scripts": {
     "start": "expo start --dev-client",
     "prebuild": "EXPO_TV=1 expo prebuild --clean",
@@ -13,6 +13,8 @@
   "dependencies": {
     "@expo/metro-runtime": "~58.0.15",
     "@expo/vector-icons": "^15.0.2",
+    "@formatjs/intl-displaynames": "^8.0.1",
+    "@formatjs/intl-getcanonicallocales": "^3.3.0",
     "@selfless/api-client": "workspace:*",
     "@selfless/ui": "workspace:*",
     "@tanstack/react-query": "^5.105.0",

@@ -158,7 +158,7 @@ export function TileRow({
   const scrollTo = (x: number) => scroll.current?.scrollTo({ x: Math.max(0, x), animated: true });
   const page = viewport - 2 * INSET;
   return (
-    <View className="group mb-6">
+    <View className={Platform.isTV ? "mb-6" : "group mb-6"}>
       <Text
         role="heading"
         className={`mb-2 font-sans font-bold text-text-secondary ${Platform.isTV ? "px-tv-inset text-tv-row" : "px-web-inset text-web-row"}`}

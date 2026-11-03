@@ -15,3 +15,13 @@ export function useFirstFieldFocus() {
   useEffect(() => guide.current?.requestTVFocus(), []);
   return guide;
 }
+
+export function useFocusWhenLoaded(loaded: boolean) {
+  const guide = useRef<FocusGuideInstance>(null);
+  useEffect(() => {
+    if (loaded) {
+      guide.current?.requestTVFocus();
+    }
+  }, [loaded]);
+  return guide;
+}
