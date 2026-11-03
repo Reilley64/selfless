@@ -324,11 +324,23 @@ pub(crate) async fn remove(db_context: &mut DbContext, show: Show) -> Result<(),
     Ok(())
 }
 
+#[derive(PartialEq)]
 struct SyncedShow {
     sonarr_id: SonarrId,
     year: Option<i64>,
     metadata: ShowMetadata,
     nfo_modified_at: Option<Timestamp>,
+}
+
+impl From<&Show> for SyncedShow {
+    fn from(show: &Show) -> Self {
+        Self {
+            sonarr_id: show.sonarr_id,
+            year: show.year,
+            metadata: show.metadata(),
+            nfo_modified_at: show.nfo_modified_at,
+        }
+    }
 }
 
 macro_rules! set_show {
@@ -356,6 +368,7 @@ macro_rules! set_show {
     }};
 }
 
+#[derive(PartialEq)]
 struct SyncedEpisode {
     season_id: Uuid,
     number: i64,
@@ -364,6 +377,20 @@ struct SyncedEpisode {
     added_at: Option<Timestamp>,
     media_file_id: Option<Uuid>,
     in_library: bool,
+}
+
+impl From<&Episode> for SyncedEpisode {
+    fn from(episode: &Episode) -> Self {
+        Self {
+            season_id: episode.season_id,
+            number: episode.number,
+            metadata: episode.metadata(),
+            nfo_modified_at: episode.nfo_modified_at,
+            added_at: episode.added_at,
+            media_file_id: episode.media_file_id,
+            in_library: episode.in_library,
+        }
+    }
 }
 
 macro_rules! set_episode {
@@ -428,10 +455,7 @@ async fn write(
     };
     let (show, show_change) = match stored {
         Some(mut show) => {
-            let changed = show.sonarr_id != synced.sonarr_id
-                || show.year != synced.year
-                || show.nfo_modified_at != synced.nfo_modified_at
-                || show.metadata() != synced.metadata;
+            let changed = SyncedShow::from(&show) != synced;
             if changed {
                 set_show!(show.update(), synced)
                     .exec(scope.executor_mut())
@@ -552,14 +576,7 @@ async fn write(
         };
         let episode_id = match stored {
             Some(mut episode) => {
-                if episode.season_id != synced.season_id
-                    || episode.number != synced.number
-                    || episode.nfo_modified_at != synced.nfo_modified_at
-                    || episode.metadata() != synced.metadata
-                    || episode.added_at != synced.added_at
-                    || episode.media_file_id != synced.media_file_id
-                    || episode.in_library != synced.in_library
-                {
+                if SyncedEpisode::from(&episode) != synced {
                     changed = true;
                     set_episode!(episode.update(), synced)
                         .exec(scope.executor_mut())

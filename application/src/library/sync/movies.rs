@@ -101,6 +101,7 @@ pub(crate) async fn inspect(
     })))
 }
 
+#[derive(PartialEq)]
 struct SyncedMovie {
     radarr_id: RadarrId,
     metadata: MovieMetadata,
@@ -108,6 +109,19 @@ struct SyncedMovie {
     added_at: Option<Timestamp>,
     media_file_id: Option<Uuid>,
     in_library: bool,
+}
+
+impl From<&Movie> for SyncedMovie {
+    fn from(movie: &Movie) -> Self {
+        Self {
+            radarr_id: movie.radarr_id,
+            metadata: movie.metadata(),
+            nfo_modified_at: movie.nfo_modified_at,
+            added_at: movie.added_at,
+            media_file_id: movie.media_file_id,
+            in_library: movie.in_library,
+        }
+    }
 }
 
 macro_rules! set_movie {
@@ -212,13 +226,7 @@ pub(crate) async fn save(
     let (movie_id, change) = match stored {
         Some(mut movie) => {
             let old_media_file_id = movie.media_file_id;
-            let changed = media_file_changed
-                || movie.radarr_id != synced.radarr_id
-                || movie.added_at != synced.added_at
-                || movie.media_file_id != synced.media_file_id
-                || movie.in_library != synced.in_library
-                || movie.nfo_modified_at != synced.nfo_modified_at
-                || movie.metadata() != synced.metadata;
+            let changed = media_file_changed || SyncedMovie::from(&movie) != synced;
             if changed {
                 set_movie!(movie.update(), synced)
                     .exec(transaction.executor_mut())
