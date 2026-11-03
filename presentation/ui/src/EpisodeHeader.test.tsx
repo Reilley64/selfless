@@ -28,6 +28,7 @@ const halfLoop: EpisodePage = {
     { language: "en", hearingImpaired: false, forced: false },
     { language: "fr", hearingImpaired: true, forced: false },
   ],
+  mediaFileId: "0190f3c4-c2d3-7e4f-8a5b-6c7d8e9f0a1b",
   progress: null,
   watched: false,
   play: { resumePosition: null },

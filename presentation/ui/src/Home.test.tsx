@@ -124,7 +124,7 @@ describe("on TV", () => {
       ...tile("0190f3c4-7d8e-7f9a-8b0c-1d2e3f4a5b6c", "episode", "Half Loop"),
       runtimeMinutes: 50,
       progress: 0.4,
-      episode: { show: { id: severance.id, title: "Severance", logo: null }, seasonNumber: 1, episodeNumber: 2 },
+      episode: { show: { id: severance.id, title: "Severance", logo: null }, seasonNumber: 1, episodeNumber: 2, mediaFileId: null },
     };
     await renderHome({
       featured: { tile: arrival, playEpisodeId: null },

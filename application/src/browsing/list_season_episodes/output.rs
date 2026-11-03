@@ -15,4 +15,5 @@ pub struct Episode {
     pub runtime_minutes: Option<i64>,
     pub plot: Option<String>,
     pub thumb: Option<Image>,
+    pub media_file_id: Option<Uuid>,
 }

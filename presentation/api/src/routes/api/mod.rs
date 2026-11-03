@@ -6,6 +6,7 @@ pub(crate) mod images;
 pub(crate) mod invites;
 pub(crate) mod me;
 pub(crate) mod movies;
+pub(crate) mod playbacks;
 pub(crate) mod seasons;
 pub(crate) mod sessions;
 pub(crate) mod shows;

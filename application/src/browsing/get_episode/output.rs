@@ -22,6 +22,7 @@ pub struct Episode {
     pub show: Show,
     pub audio_languages: Vec<String>,
     pub subtitle_languages: Vec<SubtitleLanguage>,
+    pub media_file_id: Option<Uuid>,
 }
 
 #[derive(Debug)]

@@ -23,7 +23,7 @@ const severance: ShowPage = {
     verb: "play",
     resumePosition: null,
     season: { id: "0190f3c4-7d8e-7f90-a1b2-c3d4e5f6a7b8", number: 1 },
-    episode: { id: "0190f3c4-ab1c-7d2e-8f3a-4b5c6d7e8f9a", number: 1, title: "Good News About Hell" },
+    episode: { id: "0190f3c4-ab1c-7d2e-8f3a-4b5c6d7e8f9a", number: 1, title: "Good News About Hell", mediaFileId: "0190f3c4-c2d3-7e4f-8a5b-6c7d8e9f0a1b" },
   },
   moreLikeThis: [],
 };

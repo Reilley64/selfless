@@ -113,10 +113,12 @@ struct PlaySeasonBody {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct PlayEpisodeBody {
     id: Uuid,
     number: i64,
     title: String,
+    media_file_id: Option<Uuid>,
 }
 
 impl From<get_show::Show> for ShowPageBody {
@@ -162,6 +164,7 @@ impl From<get_show::Show> for ShowPageBody {
                     id: page.play.episode_id,
                     number: page.play.episode_number,
                     title: page.play.episode_title,
+                    media_file_id: page.play.media_file_id,
                 },
             },
             more_like_this: page
@@ -389,7 +392,12 @@ mod tests {
                     "verb": "play",
                     "resumePosition": null,
                     "season": { "id": season_id(1), "number": 1 },
-                    "episode": { "id": first_episode, "number": 1, "title": "Good News About Hell" },
+                    "episode": {
+                        "id": first_episode,
+                        "number": 1,
+                        "title": "Good News About Hell",
+                        "mediaFileId": null,
+                    },
                 },
                 "moreLikeThis": null,
             })

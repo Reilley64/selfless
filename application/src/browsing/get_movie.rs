@@ -77,6 +77,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, movie_id: Uuid) -> Resu
         studio: movie.studio,
         original_title: movie.original_title,
         directors: movie.directors,
+        media_file_id: movie.media_file_id,
         cast: actors
             .into_iter()
             .take(CAST_SIZE)

@@ -74,6 +74,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, season_id: Uuid) -> Res
                     .media_file_id
                     .and_then(|id| runtimes.get(&id).copied().flatten()),
                 thumb: thumbs.get(&x.id).cloned(),
+                media_file_id: x.media_file_id,
                 id: x.id,
                 number: x.number,
                 title: x.title,

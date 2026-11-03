@@ -14,8 +14,10 @@ use topcoat::router::request::headers;
 use topcoat::router::response::IntoResponse;
 use tracing::Span;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
+use uuid::Uuid;
 
 pub(crate) struct CurrentSession {
+    pub(crate) id: Uuid,
     pub(crate) token: String,
     pub(crate) user: UserBody,
 }
@@ -36,13 +38,18 @@ impl Layer for UserAuthLayer {
             else {
                 return UNAUTHENTICATED.into_response(cx);
             };
-            let get_current_user::Output::SignedIn { id, name, colour } =
-                get_current_user::call(app_context::<AppState>(cx), token).await?
+            let get_current_user::Output::SignedIn {
+                id,
+                session_id,
+                name,
+                colour,
+            } = get_current_user::call(app_context::<AppState>(cx), token).await?
             else {
                 return UNAUTHENTICATED.into_response(cx);
             };
             Span::current().set_attribute("user.id", id.to_string());
             let session = CurrentSession {
+                id: session_id,
                 token: token.to_owned(),
                 user: UserBody {
                     id,

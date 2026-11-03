@@ -147,6 +147,7 @@ pub async fn call(
         },
         audio_languages,
         subtitle_languages,
+        media_file_id: episode.media_file_id,
     })))
 }
 

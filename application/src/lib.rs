@@ -7,6 +7,7 @@ pub mod admins;
 pub mod browsing;
 pub mod invites;
 pub mod library;
+pub mod playback;
 pub mod ports;
 pub mod sessions;
 pub mod telemetry;

@@ -44,6 +44,21 @@ impl MediaFile {
     pub fn runtime_minutes(&self) -> Option<i64> {
         self.duration_ms.map(|x| (x + 30_000) / 60_000)
     }
+
+    pub fn container_name(&self) -> Option<&str> {
+        let extension = self
+            .path
+            .rsplit_once('.')
+            .map(|(_, x)| x.to_lowercase())
+            .unwrap_or_default();
+        Some(match self.container.as_deref()? {
+            "matroska,webm" if extension == "webm" => "webm",
+            "matroska,webm" => "mkv",
+            "mov,mp4,m4a,3gp,3g2,mj2" if extension == "mov" => "mov",
+            "mov,mp4,m4a,3gp,3g2,mj2" => "mp4",
+            container => container.split(',').next().unwrap_or(container),
+        })
+    }
 }
 
 #[cfg(test)]
@@ -88,6 +103,29 @@ mod tests {
         assert_eq!(runtime(Some(2_829_999)), Some(47));
         assert_eq!(runtime(Some(2_850_000)), Some(48));
         assert_eq!(runtime(None), None);
+    }
+
+    #[test]
+    fn the_container_name_tells_matroska_from_webm_and_mp4_from_mov_by_extension() {
+        let name = |path: &str, container: Option<&str>| {
+            MediaFile {
+                path: path.to_owned(),
+                container: container.map(str::to_owned),
+                ..media_file(None, None)
+            }
+            .container_name()
+            .map(str::to_owned)
+        };
+        let matroska = Some("matroska,webm");
+        let mp4 = Some("mov,mp4,m4a,3gp,3g2,mj2");
+
+        assert_eq!(name("/m/a.mkv", matroska).as_deref(), Some("mkv"));
+        assert_eq!(name("/m/a.WebM", matroska).as_deref(), Some("webm"));
+        assert_eq!(name("/m/a.mp4", mp4).as_deref(), Some("mp4"));
+        assert_eq!(name("/m/a.m4v", mp4).as_deref(), Some("mp4"));
+        assert_eq!(name("/m/a.mov", mp4).as_deref(), Some("mov"));
+        assert_eq!(name("/m/a.ts", Some("mpegts")).as_deref(), Some("mpegts"));
+        assert_eq!(name("/m/a.mkv", None), None);
     }
 
     #[test]
