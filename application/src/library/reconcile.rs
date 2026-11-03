@@ -456,6 +456,7 @@ mod tests {
     use crate::test::empty_show_folder;
     use crate::test::failing_prober;
     use crate::test::mock_db_context;
+    use crate::test::movie_titles;
     use crate::test::no_subtitle_files;
     use crate::test::unreadable_episode_nfo;
     use crate::test::unreadable_movie_nfo;
@@ -667,21 +668,6 @@ mod tests {
             .unwrap()
         }
 
-        async fn movie_titles(&self) -> Vec<String> {
-            let mut db_context = self.db_context.clone();
-            let mut titles = db_context
-                .movies()
-                .all()
-                .exec(db_context.executor_mut())
-                .await
-                .unwrap()
-                .into_iter()
-                .map(|x| x.title)
-                .collect::<Vec<_>>();
-            titles.sort();
-            titles
-        }
-
         async fn held_movie_titles(&self) -> Option<Vec<String>> {
             let mut db_context = self.db_context.clone();
             let held_removal = db_context
@@ -738,7 +724,7 @@ mod tests {
 
         assert_eq!(result, Some(ReconcileResult::Succeeded));
         assert_eq!(
-            library.movie_titles().await,
+            movie_titles(&library.db_context).await,
             ["Arrival", "Blade Runner 2049", "Dune"]
         );
     }
@@ -766,7 +752,10 @@ mod tests {
         library.radarr_lists_movies(vec![arrival]);
         library.reconcile(Source::Radarr).await;
 
-        assert_eq!(library.movie_titles().await, ["Arrival (Extended)"]);
+        assert_eq!(
+            movie_titles(&library.db_context).await,
+            ["Arrival (Extended)"]
+        );
     }
 
     #[tokio::test]
@@ -779,7 +768,7 @@ mod tests {
         let result = library.reconcile(Source::Radarr).await;
 
         assert_eq!(result, Some(ReconcileResult::Failed));
-        assert_eq!(library.movie_titles().await, ["Arrival", "Dune"]);
+        assert_eq!(movie_titles(&library.db_context).await, ["Arrival", "Dune"]);
     }
 
     #[tokio::test]
@@ -793,7 +782,10 @@ mod tests {
         let result = library.reconcile(Source::Radarr).await;
 
         assert_eq!(result, Some(ReconcileResult::Failed));
-        assert_eq!(library.movie_titles().await, ["Arrival", "Dune", "Sicario"]);
+        assert_eq!(
+            movie_titles(&library.db_context).await,
+            ["Arrival", "Dune", "Sicario"]
+        );
     }
 
     #[tokio::test]
@@ -829,7 +821,7 @@ mod tests {
             ["Blade Runner 2049", "Dune", "Sicario"]
         );
         assert_eq!(
-            library.movie_titles().await,
+            movie_titles(&library.db_context).await,
             ["Arrival", "Blade Runner 2049", "Dune", "Sicario"]
         );
     }
@@ -848,7 +840,7 @@ mod tests {
             ["Arrival", "Dune"]
         );
         assert_eq!(
-            library.movie_titles().await,
+            movie_titles(&library.db_context).await,
             ["Arrival", "Blade Runner 2049", "Dune", "Sicario"]
         );
     }

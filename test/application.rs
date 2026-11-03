@@ -39,6 +39,7 @@ use crate::ports::UnreadableNfo;
 use crate::ports::persistence;
 use crate::ports::persistence::DbContext;
 use crate::ports::persistence::DbLocation;
+use crate::ports::persistence::DbScope;
 use jiff::Timestamp;
 use jiff::civil::date;
 use std::collections::HashMap;
@@ -56,6 +57,21 @@ pub(crate) async fn mock_db_context() -> DbContext {
             port: 0,
         },
     )
+}
+
+pub(crate) async fn movie_titles(db_context: &DbContext) -> Vec<String> {
+    let mut db_context = db_context.clone();
+    let mut titles = db_context
+        .movies()
+        .all()
+        .exec(db_context.executor_mut())
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|x| x.title)
+        .collect::<Vec<_>>();
+    titles.sort();
+    titles
 }
 
 #[derive(Clone, Default)]

@@ -69,6 +69,7 @@ mod tests {
     use crate::ports::persistence::DbContext;
     use crate::test::arrival;
     use crate::test::mock_db_context;
+    use crate::test::movie_titles;
     use domain::Movie;
     use std::sync::Arc;
     use std::sync::Mutex;
@@ -164,21 +165,6 @@ mod tests {
             .unwrap();
         }
 
-        async fn movie_titles(&self) -> Vec<String> {
-            let mut db_context = self.db_context.clone();
-            let mut titles = db_context
-                .movies()
-                .all()
-                .exec(db_context.executor_mut())
-                .await
-                .unwrap()
-                .into_iter()
-                .map(|x| x.title)
-                .collect::<Vec<_>>();
-            titles.sort();
-            titles
-        }
-
         async fn is_held(&self) -> bool {
             let mut db_context = self.db_context.clone();
             db_context
@@ -201,7 +187,7 @@ mod tests {
 
         library.confirm().await;
 
-        assert_eq!(library.movie_titles().await, ["Arrival"]);
+        assert_eq!(movie_titles(&library.db_context).await, ["Arrival"]);
         assert!(!library.is_held().await);
     }
 
@@ -214,7 +200,7 @@ mod tests {
 
         library.confirm().await;
 
-        assert_eq!(library.movie_titles().await, ["Arrival", "Dune"]);
+        assert_eq!(movie_titles(&library.db_context).await, ["Arrival", "Dune"]);
         assert!(!library.is_held().await);
     }
 }
