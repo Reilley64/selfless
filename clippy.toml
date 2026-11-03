@@ -1,3 +1,4 @@
 disallowed-methods = [
     { path = "toasty::Executor::transaction", reason = "use DbContext::transaction, whose DbTransaction instruments each statement" },
+    { path = "tracing::subscriber::set_default", reason = "use test_fixtures::set_default_subscriber (SELFLESS-153)" },
 ]
