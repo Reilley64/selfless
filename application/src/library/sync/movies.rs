@@ -25,6 +25,7 @@ use domain::Owner;
 use domain::RadarrId;
 use domain::Source;
 use domain::SyncProblemKind;
+use domain::TmdbId;
 use jiff::Timestamp;
 use std::collections::HashSet;
 use tracing::Span;
@@ -112,6 +113,7 @@ pub(crate) async fn inspect(
 
 #[derive(PartialEq)]
 struct SyncedMovie {
+    tmdb_id: TmdbId,
     radarr_id: RadarrId,
     metadata: MovieMetadata,
     nfo_modified_at: Option<Timestamp>,
@@ -123,6 +125,7 @@ struct SyncedMovie {
 impl From<&Movie> for SyncedMovie {
     fn from(movie: &Movie) -> Self {
         Self {
+            tmdb_id: movie.tmdb_id,
             radarr_id: movie.radarr_id,
             metadata: movie.metadata(),
             nfo_modified_at: movie.nfo_modified_at,
@@ -136,6 +139,7 @@ impl From<&Movie> for SyncedMovie {
 macro_rules! set_movie {
     ($builder:expr, $synced:expr) => {{
         let SyncedMovie {
+            tmdb_id,
             radarr_id,
             metadata,
             nfo_modified_at,
@@ -144,6 +148,7 @@ macro_rules! set_movie {
             in_library,
         } = $synced;
         $builder
+            .tmdb_id(tmdb_id)
             .radarr_id(radarr_id)
             .title(metadata.title)
             .sort_title(metadata.sort_title)
@@ -170,13 +175,23 @@ pub(crate) async fn save(
     inspected: InspectedMovie,
 ) -> Result<(), Error> {
     let mut transaction = db_context.transaction().await.map_err(Error::caused_by)?;
-    let stored = transaction
+    let stored = match transaction
         .movies()
         .filter(Movie::fields().tmdb_id().eq(source_movie.tmdb_id))
         .first()
         .exec(transaction.executor_mut())
         .await
-        .map_err(Error::caused_by)?;
+        .map_err(Error::caused_by)?
+    {
+        Some(movie) => Some(movie),
+        None => transaction
+            .movies()
+            .filter(Movie::fields().radarr_id().eq(source_movie.radarr_id))
+            .first()
+            .exec(transaction.executor_mut())
+            .await
+            .map_err(Error::caused_by)?,
+    };
     let change = match (inspected, stored) {
         (InspectedMovie::Unreadable(error), Some(movie)) => {
             sync_problems::replace(
@@ -253,6 +268,7 @@ async fn write(
     );
     let had_nfo = stored.as_ref().is_some_and(|x| x.nfo_modified_at.is_some());
     let synced = SyncedMovie {
+        tmdb_id: source_movie.tmdb_id,
         radarr_id: source_movie.radarr_id,
         metadata,
         nfo_modified_at,
@@ -280,13 +296,10 @@ async fn write(
             (movie.id, changed.then_some(Change::Changed))
         }
         None => {
-            let movie = set_movie!(
-                scope.movies().create().tmdb_id(source_movie.tmdb_id),
-                synced
-            )
-            .exec(scope.executor_mut())
-            .await
-            .map_err(Error::caused_by)?;
+            let movie = set_movie!(scope.movies().create(), synced)
+                .exec(scope.executor_mut())
+                .await
+                .map_err(Error::caused_by)?;
             (movie.id, Some(Change::Added))
         }
     };

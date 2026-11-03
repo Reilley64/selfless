@@ -268,6 +268,23 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_movie_whose_tmdb_id_changed_in_radarr_keeps_its_row_and_takes_the_new_tmdb_id() {
+        let library = MovieLibrary::new().await;
+        library.sync_movie().await.unwrap();
+        let before = movie(&library).await;
+
+        library.sources().movie = Some(SourceMovie {
+            tmdb_id: TmdbId(1_000_001),
+            ..arrival(Some(MOVIE_FILE))
+        });
+        library.sync_movie().await.unwrap();
+
+        let after = movie(&library).await;
+        assert_eq!(after.id, before.id);
+        assert_eq!(after.tmdb_id, TmdbId(1_000_001));
+    }
+
+    #[tokio::test]
     async fn a_movie_whose_file_is_missing_on_disk_is_not_in_the_library() {
         let library = MovieLibrary::new().await;
         library.sources().files_on_disk.clear();

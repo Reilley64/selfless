@@ -677,6 +677,33 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_show_whose_tvdb_id_changed_in_sonarr_keeps_its_rows_and_takes_the_new_tvdb_id() {
+        let library = ShowLibrary::new().await;
+        library.sync_show().await.unwrap();
+        let show_before = show(&library).await;
+        let episodes_before = episodes(&library)
+            .await
+            .into_iter()
+            .map(|(_, x)| x.id)
+            .collect::<Vec<_>>();
+
+        library.sources().show.as_mut().unwrap().listing.tvdb_id = TvdbId(1_000_001);
+        library.sync_show().await.unwrap();
+
+        let show_after = show(&library).await;
+        assert_eq!(show_after.id, show_before.id);
+        assert_eq!(show_after.tvdb_id, TvdbId(1_000_001));
+        assert_eq!(
+            episodes(&library)
+                .await
+                .into_iter()
+                .map(|(_, x)| x.id)
+                .collect::<Vec<_>>(),
+            episodes_before
+        );
+    }
+
+    #[tokio::test]
     async fn an_upgraded_file_keeps_the_episode_and_its_added_date() {
         let library = ShowLibrary::new().await;
         library.sync_show().await.unwrap();

@@ -35,6 +35,7 @@ use domain::ShowNfo;
 use domain::SonarrId;
 use domain::Source;
 use domain::SyncProblemKind;
+use domain::TvdbId;
 use futures_util::future::try_join_all;
 use jiff::Timestamp;
 use std::collections::BTreeMap;
@@ -260,13 +261,23 @@ pub(crate) async fn save(
     inspected: InspectedShow,
 ) -> Result<(), Error> {
     let mut transaction = db_context.transaction().await.map_err(Error::caused_by)?;
-    let stored = transaction
+    let stored = match transaction
         .shows()
         .filter(Show::fields().tvdb_id().eq(source_show.listing.tvdb_id))
         .first()
         .exec(transaction.executor_mut())
         .await
-        .map_err(Error::caused_by)?;
+        .map_err(Error::caused_by)?
+    {
+        Some(show) => Some(show),
+        None => transaction
+            .shows()
+            .filter(Show::fields().sonarr_id().eq(source_show.listing.sonarr_id))
+            .first()
+            .exec(transaction.executor_mut())
+            .await
+            .map_err(Error::caused_by)?,
+    };
     let change = match (inspected, stored) {
         (InspectedShow::Unreadable(error), Some(show)) => {
             sync_problems::replace(
@@ -341,6 +352,7 @@ pub(crate) async fn remove(db_context: &mut DbContext, show: Show) -> Result<(),
 
 #[derive(PartialEq)]
 struct SyncedShow {
+    tvdb_id: TvdbId,
     sonarr_id: SonarrId,
     year: Option<i64>,
     metadata: ShowMetadata,
@@ -350,6 +362,7 @@ struct SyncedShow {
 impl From<&Show> for SyncedShow {
     fn from(show: &Show) -> Self {
         Self {
+            tvdb_id: show.tvdb_id,
             sonarr_id: show.sonarr_id,
             year: show.year,
             metadata: show.metadata(),
@@ -361,12 +374,14 @@ impl From<&Show> for SyncedShow {
 macro_rules! set_show {
     ($builder:expr, $synced:expr) => {{
         let SyncedShow {
+            tvdb_id,
             sonarr_id,
             year,
             metadata,
             nfo_modified_at,
         } = $synced;
         $builder
+            .tvdb_id(tvdb_id)
             .sonarr_id(sonarr_id)
             .year(year)
             .title(metadata.title)
@@ -457,6 +472,7 @@ async fn write(
         ShowMetadata::with_nfo,
     );
     let synced = SyncedShow {
+        tvdb_id: listing.tvdb_id,
         sonarr_id: listing.sonarr_id,
         year: listing.year,
         metadata,
@@ -474,7 +490,7 @@ async fn write(
             (show, changed.then_some(Change::Changed))
         }
         None => (
-            set_show!(scope.shows().create().tvdb_id(listing.tvdb_id), synced)
+            set_show!(scope.shows().create(), synced)
                 .exec(scope.executor_mut())
                 .await
                 .map_err(Error::caused_by)?,
