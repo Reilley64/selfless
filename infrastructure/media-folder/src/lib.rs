@@ -20,6 +20,7 @@ use application::ports::UnreadableNfo;
 use domain::EpisodeNfo;
 use domain::MovieNfo;
 use domain::NfoActor;
+use domain::Season;
 use domain::ShowNfo;
 use domain::SonarrId;
 use jiff::Timestamp;
@@ -91,9 +92,10 @@ pub fn read_show_folder() -> ReadShowFolder {
             let folder = Path::new(&show_path);
             let mut season_posters = Vec::new();
             for number in season_numbers {
-                let name = match number {
-                    0 => "season-specials-poster.jpg".to_owned(),
-                    number => format!("season{number:02}-poster.jpg"),
+                let name = if Season::is_specials(number) {
+                    "season-specials-poster.jpg".to_owned()
+                } else {
+                    format!("season{number:02}-poster.jpg")
                 };
                 if let Some(file) = found(&folder.join(name)).await? {
                     season_posters.push((number, file));
