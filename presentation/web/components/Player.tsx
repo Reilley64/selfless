@@ -1,5 +1,5 @@
 import { type Playback, reportPlaybackProgress, startPlayback } from "@selfless/api-client";
-import { createPlayerLogic } from "@selfless/ui";
+import { createPlayerLogic, type Resume } from "@selfless/ui";
 import { type Href, useRouter } from "expo-router";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native-css/components";
@@ -9,20 +9,19 @@ import { NotFound } from "./NotFound";
 
 type Start = Awaited<ReturnType<typeof startPlayback>> | "unreachable";
 
-export function Player({
-  mediaFileId,
-  startPosition,
-  backHref,
-}: {
-  mediaFileId: string;
-  startPosition: number;
-  backHref: Href;
-}) {
+type PlayerProps = { mediaFileId: string; startPosition: number; backHref: Href };
+
+export function Player(props: PlayerProps) {
+  return <Playing key={`${props.mediaFileId}@${props.startPosition}`} {...props} />;
+}
+
+function Playing({ mediaFileId, startPosition, backHref }: PlayerProps) {
   const [start, setStart] = useState<Start>();
+  const [resume, setResume] = useState<Resume>({ position: startPosition, paused: false });
   useEffect(() => {
     let current = true;
     capabilityProfile()
-      .then((profile) => startPlayback({ mediaFileId, startPosition, profile }))
+      .then((profile) => startPlayback({ mediaFileId, startPosition: resume.position, profile }))
       .then(
         (response) => current && setStart(response),
         () => current && setStart("unreachable"),
@@ -30,7 +29,7 @@ export function Player({
     return () => {
       current = false;
     };
-  }, [mediaFileId, startPosition]);
+  }, [mediaFileId, resume]);
   if (start === undefined) {
     return <Screen backHref={backHref} />;
   }
@@ -45,7 +44,7 @@ export function Player({
     case 201:
       return (
         <Screen backHref={backHref}>
-          <Video playback={start.data} startPosition={startPosition} />
+          <Video key={start.data.playbackId} playback={start.data} resume={resume} restart={setResume} />
         </Screen>
       );
     case 404:
@@ -63,17 +62,38 @@ export function Player({
   }
 }
 
-function Video({ playback, startPosition }: { playback: Playback; startPosition: number }) {
+function Video({
+  playback,
+  resume,
+  restart,
+}: {
+  playback: Playback;
+  resume: Resume;
+  restart: (resume: Resume) => void;
+}) {
   const [failed, setFailed] = useState(false);
-  const position = useRef(startPosition);
+  const position = useRef(resume.position);
   const logic = useMemo(
     () =>
-      createPlayerLogic((report) => {
-        reportPlaybackProgress(playback.playbackId, report).catch(() => undefined);
+      createPlayerLogic({
+        sendReport: (report) => reportPlaybackProgress(playback.playbackId, report, { keepalive: true }),
+        restart,
       }),
-    [playback.playbackId],
+    [playback.playbackId, restart],
   );
-  useEffect(() => () => logic.handle({ type: "stopped", position: position.current }), [logic]);
+  useEffect(() => {
+    const stop = () => logic.handle({ type: "stopped", position: position.current });
+    const closed = (event: PageTransitionEvent) => {
+      if (!event.persisted) {
+        stop();
+      }
+    };
+    window.addEventListener("pagehide", closed);
+    return () => {
+      window.removeEventListener("pagehide", closed);
+      stop();
+    };
+  }, [logic]);
   const at = (video: HTMLVideoElement) => {
     position.current = video.currentTime;
     return video.currentTime;
@@ -86,9 +106,9 @@ function Video({ playback, startPosition }: { playback: Playback; startPosition:
       className="h-full w-full bg-black"
       src={playback.url}
       controls
-      autoPlay
+      autoPlay={!resume.paused}
       onLoadedMetadata={(event) => {
-        event.currentTarget.currentTime = startPosition;
+        event.currentTarget.currentTime = resume.position;
       }}
       onPlaying={(event) => logic.handle({ type: "playing", position: at(event.currentTarget) })}
       onPause={(event) => {

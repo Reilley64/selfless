@@ -15,7 +15,7 @@ export { serverUnreachable } from "./messages";
 export { MovieHeader } from "./MovieHeader";
 export { PlaybackSettingsToggles } from "./PlaybackSettingsToggles";
 export { playHref } from "./playHref";
-export { createPlayerLogic, type PlayerEvent, type ProgressReport } from "./playerLogic";
+export { createPlayerLogic, type PlayerEvent, type ProgressReport, type Resume } from "./playerLogic";
 export { randomUuid } from "./randomUuid";
 export { runtimeLabel } from "./runtimeLabel";
 export { ServerInfo } from "./ServerInfo";
