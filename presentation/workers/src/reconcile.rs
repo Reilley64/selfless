@@ -1,3 +1,4 @@
+use application::library::wait_for_reconcile_request;
 use domain::Source;
 use infrastructure::AppState;
 use std::error::Error;
@@ -19,7 +20,7 @@ async fn reconcile(state: AppState, interval: Duration) {
     loop {
         tokio::select! {
             _ = ticks.tick() => {}
-            () = state.reconciles.requested() => {}
+            Ok(_) = wait_for_reconcile_request::call(&state) => {}
         }
         while running.try_join_next().is_some() {}
         for source in [Source::Radarr, Source::Sonarr] {

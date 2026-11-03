@@ -22,7 +22,7 @@ pub(crate) struct Progress {
 }
 
 impl Reconciles {
-    pub async fn requested(&self) {
+    pub(crate) async fn requested(&self) {
         self.requested.notified().await;
     }
 
