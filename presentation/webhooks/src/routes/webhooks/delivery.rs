@@ -41,7 +41,7 @@ pub(crate) async fn store(cx: &Cx, source: Source, body: Bytes) -> topcoat::Resu
 
 #[cfg(test)]
 mod tests {
-    use crate::test::PASSWORD;
+    use crate::test::RADARR_PASSWORD;
     use crate::test::send;
     use crate::test::serve;
     use http::Method;
@@ -66,7 +66,13 @@ mod tests {
         let server = serve(&TestApp::new().await).await;
 
         for username in ["", "anyone"] {
-            let (status, _) = send(&server, Method::POST, PATH, Some((username, PASSWORD))).await;
+            let (status, _) = send(
+                &server,
+                Method::POST,
+                PATH,
+                Some((username, RADARR_PASSWORD)),
+            )
+            .await;
 
             assert_eq!(status, StatusCode::OK, "{username:?}");
         }

@@ -12,7 +12,8 @@ pub(crate) async fn sonarr(cx: &Cx, body: Bytes) -> topcoat::Result<Response> {
 
 #[cfg(test)]
 mod tests {
-    use crate::test::PASSWORD;
+    use crate::test::RADARR_PASSWORD;
+    use crate::test::SONARR_PASSWORD;
     use crate::test::send;
     use crate::test::serve;
     use http::Method;
@@ -26,21 +27,27 @@ mod tests {
         let server = serve(&TestApp::new().await).await;
 
         for method in [Method::POST, Method::PUT] {
-            let (status, _) = send(&server, method.clone(), PATH, Some(("sonarr", PASSWORD))).await;
+            let (status, _) = send(
+                &server,
+                method.clone(),
+                PATH,
+                Some(("sonarr", SONARR_PASSWORD)),
+            )
+            .await;
 
             assert_eq!(status, StatusCode::OK, "{method}");
         }
     }
 
     #[tokio::test]
-    async fn a_wrong_password_is_rejected() {
+    async fn the_radarr_password_is_rejected() {
         let server = serve(&TestApp::new().await).await;
 
         let (status, _) = send(
             &server,
             Method::POST,
             PATH,
-            Some(("sonarr", "wrong password")),
+            Some(("sonarr", RADARR_PASSWORD)),
         )
         .await;
 
