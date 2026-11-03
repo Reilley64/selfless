@@ -1,4 +1,5 @@
 import { useChangePassword, useGetMe } from "@selfless/api-client";
+import { PlaybackSettingsToggles } from "@selfless/ui";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native-css/components";
@@ -65,6 +66,10 @@ export default function Settings() {
         <Pressable className={primaryButton(canChangePassword)} disabled={!canChangePassword} onPress={submitPassword}>
           <Text className="font-sans font-semibold text-web-body text-text-inverse">Change password</Text>
         </Pressable>
+      </View>
+      <View className="w-full max-w-[360px] gap-4">
+        <Text className="font-sans font-semibold text-web-body text-text-primary">Playback</Text>
+        <PlaybackSettingsToggles />
       </View>
       <Pressable
         className="h-button-web-height justify-center rounded-small bg-button-background px-4"

@@ -173,6 +173,50 @@ paths:
           $ref: "#/components/responses/EmptyPassword"
         "500":
           $ref: "#/components/responses/InternalError"
+  /api/me/playback-settings/v1:
+    get:
+      operationId: getPlaybackSettings
+      summary: The signed-in user's playback settings
+      tags: [users]
+      responses:
+        "200":
+          description: The user's playback settings, the same on every device.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlaybackSettings"
+              example: {"autoplayNextEpisode":true,"askIfStillWatching":false}
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    put:
+      operationId: changePlaybackSettings
+      summary: Change the signed-in user's playback settings
+      description: The audio and subtitle languages playback remembers are not changed here. They follow the tracks the user picks during playback.
+      tags: [users]
+      requestBody:
+        description: Both playback settings.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangePlaybackSettingsRequest"
+            example: {"autoplayNextEpisode":false,"askIfStillWatching":true}
+      responses:
+        "200":
+          description: The playback settings have changed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlaybackSettings"
+              example: {"autoplayNextEpisode":false,"askIfStillWatching":true}
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /api/invites/accept/v1:
     post:
       operationId: acceptInvite
@@ -1008,6 +1052,33 @@ components:
           type: string
           minLength: 1
           examples: [a longer passphrase about coffee]
+    PlaybackSettings:
+      description: How playback behaves for a user, on every device.
+      type: object
+      required: [autoplayNextEpisode, askIfStillWatching]
+      properties:
+        autoplayNextEpisode:
+          description: Whether the Next episode button counts down and plays the next episode by itself. On for a new user.
+          type: boolean
+          examples: [true]
+        askIfStillWatching:
+          description: Whether playback pauses and asks "Are you still watching?" after three episodes autoplayed with no interaction. Off for a new user.
+          type: boolean
+          examples: [false]
+      additionalProperties: false
+    ChangePlaybackSettingsRequest:
+      description: Both playback settings of the signed-in user.
+      type: object
+      required: [autoplayNextEpisode, askIfStillWatching]
+      properties:
+        autoplayNextEpisode:
+          description: Whether the Next episode button counts down and plays the next episode by itself.
+          type: boolean
+          examples: [false]
+        askIfStillWatching:
+          description: Whether playback pauses and asks "Are you still watching?" after three episodes autoplayed with no interaction.
+          type: boolean
+          examples: [true]
     AcceptInviteRequest:
       description: The token from an invite link, and the name and password the invited person chose.
       type: object

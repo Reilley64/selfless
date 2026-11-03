@@ -53,6 +53,8 @@ pub fn router(
         .route(routes::api::sessions::v1::sign_out)
         .route(routes::api::me::v1::me)
         .route(routes::api::me::v1::change_password)
+        .route(routes::api::me::v1::playback_settings)
+        .route(routes::api::me::v1::change_playback_settings)
         .route(routes::api::movies::v1::movies)
         .route(routes::api::movies::v1::movie)
         .route(routes::api::shows::v1::shows)
