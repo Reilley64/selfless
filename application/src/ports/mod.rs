@@ -743,6 +743,21 @@ impl ReadSonarrWebhook {
     }
 }
 
+type ReadWebhookEventTypeFn = dyn Fn(&[u8]) -> Option<String> + Send + Sync;
+
+#[derive(Clone)]
+pub struct ReadWebhookEventType(Arc<ReadWebhookEventTypeFn>);
+
+impl ReadWebhookEventType {
+    pub fn new(f: impl Fn(&[u8]) -> Option<String> + Send + Sync + 'static) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self, body: &[u8]) -> Option<String> {
+        (self.0)(body)
+    }
+}
+
 type SendEmailFn =
     dyn Fn(EmailAddress, String, String) -> PortFuture<Result<(), SendEmailError>> + Send + Sync;
 

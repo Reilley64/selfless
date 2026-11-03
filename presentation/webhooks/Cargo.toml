@@ -12,3 +12,10 @@ domain = { workspace = true }
 infrastructure = { workspace = true }
 topcoat = { workspace = true }
 tracing = { workspace = true }
+
+[dev-dependencies]
+http = { workspace = true }
+serde_json = { workspace = true }
+test-app = { workspace = true }
+test-fixtures = { workspace = true }
+tokio = { workspace = true }

@@ -8,6 +8,7 @@ use crate::ports::ReadEpisodeNfo;
 use crate::ports::ReadShowFolder;
 use crate::ports::ReadShowNfo;
 use crate::ports::ReadSonarrWebhook;
+use crate::ports::ReadWebhookEventType;
 use crate::ports::persistence::DbContext;
 
 #[fundle::deps]
@@ -22,5 +23,6 @@ pub struct Dependencies {
     pub read_show_folder: ReadShowFolder,
     pub read_show_nfo: ReadShowNfo,
     pub read_sonarr_webhook: ReadSonarrWebhook,
+    pub read_webhook_event_type: ReadWebhookEventType,
     pub source_health: SourceHealth,
 }

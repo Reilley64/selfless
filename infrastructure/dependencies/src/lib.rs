@@ -22,6 +22,7 @@ use application::ports::ReadRadarrWebhook;
 use application::ports::ReadShowFolder;
 use application::ports::ReadShowNfo;
 use application::ports::ReadSonarrWebhook;
+use application::ports::ReadWebhookEventType;
 use application::ports::SendEmail;
 use application::ports::persistence::DbContext;
 use application::webhooks::WebhookPasswords;
@@ -53,6 +54,7 @@ pub struct AppState {
     pub read_show_folder: ReadShowFolder,
     pub read_show_nfo: ReadShowNfo,
     pub read_sonarr_webhook: ReadSonarrWebhook,
+    pub read_webhook_event_type: ReadWebhookEventType,
     pub reconciles: Reconciles,
     pub send_email: SendEmail,
     pub source_health: SourceHealth,

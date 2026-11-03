@@ -82,6 +82,7 @@ pub async fn start(
         .read_show_folder(|_| media_folder::read_show_folder())
         .read_show_nfo(|_| media_folder::read_show_nfo())
         .read_sonarr_webhook(|_| sonarr::read_webhook())
+        .read_webhook_event_type(|_| servarr::read_webhook_event_type())
         .reconciles(|_| Reconciles::default())
         .send_email(|_| send_email.clone())
         .source_health(|_| SourceHealth::default())
