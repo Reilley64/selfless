@@ -4,11 +4,12 @@ import { type DetailFact, DetailHeader, type DetailItem } from "./DetailHeader";
 import { episodeLabel } from "./episodeLabel";
 import { runtimeLabel } from "./runtimeLabel";
 
-const languageNames = new Intl.DisplayNames(["en"], { type: "language" });
+const languageNames =
+  typeof Intl.DisplayNames === "function" ? new Intl.DisplayNames(["en"], { type: "language" }) : undefined;
 const airDates = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeZone: "UTC" });
 
 function subtitleLabel({ language, hearingImpaired, forced }: SubtitleLanguage) {
-  const name = languageNames.of(language) ?? language;
+  const name = languageNames?.of(language) ?? language;
   return forced ? `${name} (Forced)` : hearingImpaired ? `${name} (SDH)` : name;
 }
 
@@ -25,7 +26,7 @@ export function EpisodeHeader({ episode, children }: { episode: EpisodePage; chi
   const facts = [
     ...languageFact(
       "Audio",
-      episode.audioLanguages.map((x) => languageNames.of(x) ?? x),
+      episode.audioLanguages.map((x) => languageNames?.of(x) ?? x),
     ),
     ...languageFact("Subtitles", episode.subtitleLanguages.map(subtitleLabel)),
   ];
