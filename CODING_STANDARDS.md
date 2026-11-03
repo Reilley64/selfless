@@ -21,6 +21,7 @@ The `code-review` step applies these rules to each diff. Each rule is a judgemen
 - Dependencies point inward: domain, application, infrastructure, presentation, then the binary. `deny.toml` lists each crate's allowed dependents. A new edge needs a reason the diff makes clear.
 - A port is a newtype over `Arc<dyn Fn>` with a `call` method that takes named parameters. Application owns the port, and an infrastructure crate builds it.
 - Use case Outputs carry plain data, never Toasty models. Each use case defines its own Output. Outputs are never shared between use cases.
+- One exception: the browsing `Tile`, with its images and `Cursor`, is shared by the Outputs that show tiles, because a tile changes together on every screen.
 - Settings come only from environment variables, with no prefix and `__` for nesting. Each adapter crate owns its settings type, and `AppSettings::load()` in `infrastructure/settings` composes them.
 - Every database call goes through the `DbContext`, including hand-written SQL through `toasty::sql`. Hand-written SQL runs on PostgreSQL 14, the homelab's version.
 - An insert that must not fail on a unique clash uses Toasty's upsert, `Model::upsert_by_*()`, with `.or_ignore()` when the existing row must stay, because Toasty's `DbSet` has no upsert. `.or_ignore()` returns `None` only for a clash on the upsert's own key. A clash on another unique column is still an error. Every other insert starts from a `DbSet` root, such as `db_context.users().create()`. Bulk upserts stay in `toasty::sql`, as ADR 0001 says.
@@ -44,7 +45,7 @@ The `code-review` step applies these rules to each diff. Each rule is a judgemen
 
 - A use case loads models, calls domain methods and saves them. It owns the transaction, the order of steps and the ownership or authorization check.
 - A use case takes domain value types for input it stores or acts on. Presentation builds them and maps their marker errors. Input the use case only checks, such as a sign-in password, stays a plain type.
-- A use case's `Dependencies` holds only the ports it calls. In-process shared state may sit beside them: `SourceHealth`, `Reconciles`, `WebhookPasswords`, and `Prober`, which holds the probe semaphore. A worker loop may await `Reconciles::requested()` directly to learn that a reconcile was asked for.
+- A use case's `Dependencies` holds only the ports it calls. In-process shared state may sit beside them: `SourceHealth`, `Reconciles`, `WebhookPasswords`, `Prober`, which holds the probe semaphore, `Resizer`, which holds the resize semaphore, and `UrlSigner`, which holds the signing key. A worker loop may await `Reconciles::requested()` directly to learn that a reconcile was asked for.
 - A port is named for what the use case needs. Its parameters, results and errors are application or domain types, never a vendor's request or response shapes.
 - Radarr, Sonarr, NFO and SMTP shapes stay in the crate that talks to that system. That crate translates them into domain types before they cross a port, and keeps only the IDs and fields selfless uses.
 - A use case that must reach Radarr, Sonarr or the SMTP server after a change writes an outbox row in the same transaction, and a worker makes the call. The row holds IDs and the values the handler cannot look up, such as the request origin. No call to those systems runs inside a transaction or a request.

@@ -1,8 +1,7 @@
 use crate::browsing::Tile;
+use crate::browsing::movie_watches;
 use crate::browsing::season_counts;
 use crate::browsing::title_images;
-use crate::browsing::visible_season;
-use crate::browsing::visible_show;
 use crate::ports::persistence::DbContext;
 use crate::ports::persistence::DbScope;
 use crate::url_signer::UrlSigner;
@@ -10,20 +9,14 @@ use domain::Artwork;
 use domain::Movie;
 use domain::Season;
 use domain::Show;
-use domain::sort_key;
+use domain::Title;
 use jiff::Timestamp;
-use std::cmp::Reverse;
+use std::collections::HashMap;
 use uuid::Uuid;
-
-const SIZE: usize = 20;
-
-enum Title {
-    Movie(Movie),
-    Show(Show),
-}
 
 pub(crate) async fn more_like_this(
     db_context: &mut DbContext,
+    user_id: Uuid,
     genres: &[String],
     title_id: Uuid,
     url_signer: &UrlSigner,
@@ -42,83 +35,64 @@ pub(crate) async fn more_like_this(
     };
     let movies = db_context
         .movies()
-        .filter(Movie::fields().in_library().eq(true).and(movie_genre))
+        .filter(Movie::in_library_filter().and(movie_genre))
         .exec(db_context.executor_mut())
         .await?;
     let shows = db_context
         .shows()
-        .filter(visible_show().and(show_genre))
+        .filter(Show::in_library_filter().and(show_genre))
         .exec(db_context.executor_mut())
         .await?;
-    let mut titles: Vec<_> = movies
-        .into_iter()
-        .map(Title::Movie)
-        .chain(shows.into_iter().map(Title::Show))
-        .filter(|x| x.id() != title_id)
-        .map(|x| {
-            let shared = x.genres().iter().filter(|x| genres.contains(x)).count();
-            ((Reverse(shared), x.sort_key(), x.id()), x)
-        })
+    let titles: Vec<Title> = movies
+        .iter()
+        .map(Title::movie)
+        .chain(shows.iter().map(|x| Title::show(x, [])))
         .collect();
-    titles.sort_by(|a, b| a.0.cmp(&b.0));
-    titles.truncate(SIZE);
-    let ids: Vec<_> = titles.iter().map(|(_, x)| x.id()).collect();
+    let ids = domain::more_like_this(title_id, genres, &titles);
     let seasons = db_context
         .seasons()
         .filter(
             Season::fields()
                 .show_id()
                 .in_list(ids.clone())
-                .and(visible_season()),
+                .and(Season::in_library_filter()),
         )
         .exec(db_context.executor_mut())
         .await?;
     let season_counts = season_counts(&seasons);
+    let mut movies: HashMap<Uuid, Movie> = movies
+        .into_iter()
+        .filter(|x| ids.contains(&x.id))
+        .map(|x| (x.id, x))
+        .collect();
+    let mut shows: HashMap<Uuid, Show> = shows
+        .into_iter()
+        .filter(|x| ids.contains(&x.id))
+        .map(|x| (x.id, x))
+        .collect();
+    let mut watches = movie_watches(db_context, user_id, movies.values()).await?;
     let mut images = title_images(
         db_context,
         |x| x.movie_id.or(x.show_id),
         Artwork::fields()
             .movie_id()
             .in_list(ids.clone())
-            .or(Artwork::fields().show_id().in_list(ids)),
+            .or(Artwork::fields().show_id().in_list(ids.clone())),
         url_signer,
         now,
     )
     .await?;
-    Ok(titles
+    Ok(ids
         .into_iter()
-        .map(|(_, title)| {
-            let images = images.remove(&title.id()).unwrap_or_default();
-            match title {
-                Title::Movie(movie) => Tile::movie(movie, images),
-                Title::Show(show) => {
-                    let season_count = season_counts.get(&show.id).copied().unwrap_or_default();
-                    Tile::show(show, season_count, images)
-                }
+        .filter_map(|id| {
+            let images = images.remove(&id).unwrap_or_default();
+            if let Some(movie) = movies.remove(&id) {
+                let watch = watches.remove(&id).unwrap_or_default();
+                return Some(Tile::movie(movie, images, watch));
             }
+            let show = shows.remove(&id)?;
+            let season_count = season_counts.get(&id).copied().unwrap_or_default();
+            Some(Tile::show(show, season_count, images))
         })
         .collect())
-}
-
-impl Title {
-    fn id(&self) -> Uuid {
-        match self {
-            Self::Movie(x) => x.id,
-            Self::Show(x) => x.id,
-        }
-    }
-
-    fn genres(&self) -> &[String] {
-        match self {
-            Self::Movie(x) => &x.genres,
-            Self::Show(x) => &x.genres,
-        }
-    }
-
-    fn sort_key(&self) -> (String, String) {
-        match self {
-            Self::Movie(x) => sort_key(x.sort_title.as_deref(), &x.title),
-            Self::Show(x) => sort_key(x.sort_title.as_deref(), &x.title),
-        }
-    }
 }

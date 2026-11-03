@@ -7,17 +7,16 @@ pub use error::Error;
 pub use output::Genre;
 pub use output::Output;
 
-use crate::browsing::visible_show;
 use crate::ports::persistence::DbScope;
 use domain::TitleKind;
-use std::collections::BTreeMap;
+use domain::genre_counts;
 
 pub async fn call(dependencies: impl Into<Dependencies>, kind: TitleKind) -> Result<Output, Error> {
     let mut db_context = dependencies.into().db_context;
     let titles: Vec<Vec<String>> = match kind {
         TitleKind::Movie => db_context
             .movies()
-            .filter(domain::Movie::fields().in_library().eq(true))
+            .filter(domain::Movie::in_library_filter())
             .exec(db_context.executor_mut())
             .await
             .map_err(Error::caused_by)?
@@ -26,7 +25,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, kind: TitleKind) -> Res
             .collect(),
         TitleKind::Show => db_context
             .shows()
-            .filter(visible_show())
+            .filter(domain::Show::in_library_filter())
             .exec(db_context.executor_mut())
             .await
             .map_err(Error::caused_by)?
@@ -34,14 +33,13 @@ pub async fn call(dependencies: impl Into<Dependencies>, kind: TitleKind) -> Res
             .map(|x| x.genres)
             .collect(),
     };
-    let mut counts = BTreeMap::<String, i64>::new();
-    for name in titles.into_iter().flatten() {
-        *counts.entry(name).or_default() += 1;
-    }
     Ok(Output {
-        genres: counts
+        genres: genre_counts(titles.iter().map(Vec::as_slice))
             .into_iter()
-            .map(|(name, count)| Genre { name, count })
+            .map(|(name, count)| Genre {
+                name: name.to_owned(),
+                count: count as i64,
+            })
             .collect(),
     })
 }
@@ -60,7 +58,7 @@ mod tests {
         names.iter().map(|x| (*x).to_owned()).collect()
     }
 
-    async fn add_show(db_context: &mut DbContext, title: &str, names: &[&str], visible: bool) {
+    async fn add_show(db_context: &mut DbContext, title: &str, names: &[&str], in_library: bool) {
         let show = show(db_context, title)
             .genres(genres(names))
             .exec(db_context.executor_mut())
@@ -68,7 +66,7 @@ mod tests {
             .unwrap();
         let season_id = add_season(db_context, show.id, 1).await;
         episode(db_context, season_id)
-            .in_library(visible)
+            .in_library(in_library)
             .exec(db_context.executor_mut())
             .await
             .unwrap();
@@ -97,16 +95,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn movie_genres_count_the_visible_movies_of_each_genre_by_name() {
+    async fn movie_genres_count_the_movies_in_the_library_of_each_genre_by_name() {
         let mut db_context = mock_db_context().await;
-        for (title, names, visible) in [
+        for (title, names, in_library) in [
             ("Sicario", &["Crime", "Drama"][..], true),
             ("Arrival", &["Science Fiction", "Drama"][..], true),
-            ("Hidden", &["Comedy", "Drama"][..], false),
+            ("Gone", &["Comedy", "Drama"][..], false),
         ] {
             movie(&db_context, title)
                 .genres(genres(names))
-                .in_library(visible)
+                .in_library(in_library)
                 .exec(db_context.executor_mut())
                 .await
                 .unwrap();
@@ -120,7 +118,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn show_genres_count_the_shows_with_a_visible_episode() {
+    async fn show_genres_count_the_shows_with_an_episode_in_the_library() {
         let mut db_context = mock_db_context().await;
         add_show(&mut db_context, "Severance", &["Mystery", "Drama"], true).await;
         add_show(
@@ -130,7 +128,7 @@ mod tests {
             true,
         )
         .await;
-        add_show(&mut db_context, "Hidden", &["Comedy"], false).await;
+        add_show(&mut db_context, "Gone", &["Comedy"], false).await;
         movie(&db_context, "Sicario")
             .genres(genres(&["Crime"]))
             .exec(db_context.executor_mut())

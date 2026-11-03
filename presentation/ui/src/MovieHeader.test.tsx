@@ -28,6 +28,7 @@ const amelie: MoviePage = {
   ],
   images: { fanart, logo },
   progress: null,
+  minutesLeft: null,
   watched: false,
   play: { resumePosition: null },
   moreLikeThis: [],
@@ -72,4 +73,18 @@ test("the studio and original title are left out when they are the same as the t
   expect(screen.queryByText("Studio")).toBeNull();
   expect(screen.queryByText("Original title")).toBeNull();
   expect(screen.queryByText("Arrival")).toBeNull();
+});
+
+test("a movie with a resume position shows how far the user got and the minutes left", async () => {
+  await render(<MovieHeader movie={{ ...amelie, progress: 0.25, minutesLeft: 92, play: { resumePosition: 1830 } }} />);
+
+  expect(screen.getByRole("progressbar")).toHaveAccessibilityValue({ now: 25 });
+  expect(screen.getByText("92 min left")).toBeOnTheScreen();
+});
+
+test("a movie without a resume position shows no minutes left", async () => {
+  await render(<MovieHeader movie={amelie} />);
+
+  expect(screen.queryByRole("progressbar")).toBeNull();
+  expect(screen.queryByText(/min left/)).toBeNull();
 });

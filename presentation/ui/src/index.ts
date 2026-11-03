@@ -14,6 +14,7 @@ export { forgetInviteIdempotencyKey, inviteIdempotencyKey } from "./inviteIdempo
 export { serverUnreachable } from "./messages";
 export { MovieHeader } from "./MovieHeader";
 export { PlaybackSettingsToggles } from "./PlaybackSettingsToggles";
+export { PlayActions } from "./PlayActions";
 export { playHref } from "./playHref";
 export {
   createPlayerLogic,
@@ -24,6 +25,7 @@ export {
   startPlaybackSpans,
   type Tracks,
 } from "./playerLogic";
+export { ProgressBar } from "./ProgressBar";
 export { randomUuid } from "./randomUuid";
 export { runtimeLabel } from "./runtimeLabel";
 export { ServerInfo } from "./ServerInfo";
@@ -36,3 +38,4 @@ export { TileGrid } from "./TileGrid";
 export { tilePath } from "./tilePath";
 export { TileRow } from "./TileRow";
 export { TitleMeta } from "./TitleMeta";
+export { WatchedMark } from "./WatchedMark";

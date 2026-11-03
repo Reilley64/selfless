@@ -2,11 +2,13 @@ use crate::attributes::selfless_auth_client_kind;
 use crate::attributes::selfless_library_source;
 use crate::attributes::selfless_playback_method;
 use crate::attributes::selfless_reconcile_result;
+use crate::attributes::selfless_watch_progress_outcome;
 use crate::attributes::selfless_webhook_source;
 use domain::ClientKind;
 use domain::PlayMethod;
 use domain::PlayReason;
 use domain::ReconcileResult;
+use domain::ReportOutcome;
 use domain::Source;
 use opentelemetry::Array;
 use opentelemetry::Value;
@@ -69,4 +71,12 @@ pub(crate) fn reason_kinds(reasons: &[PlayReason]) -> Value {
             })
             .collect(),
     ))
+}
+
+pub(crate) fn watch_progress_outcome(outcome: ReportOutcome) -> &'static str {
+    match outcome {
+        ReportOutcome::Nothing => selfless_watch_progress_outcome::NONE,
+        ReportOutcome::ResumePosition => selfless_watch_progress_outcome::RESUME_POSITION,
+        ReportOutcome::Watched => selfless_watch_progress_outcome::WATCHED,
+    }
 }

@@ -1,7 +1,8 @@
 import type { Home as HomeData, Tile } from "@selfless/api-client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, renderRouter, screen } from "expo-router/testing-library";
-import { Platform } from "react-native";
+import { router } from "expo-router";
+import { act, fireEvent, renderRouter, screen, waitFor } from "expo-router/testing-library";
+import { Platform, View } from "react-native";
 import { Home } from "./Home";
 
 beforeAll(() => {
@@ -46,7 +47,7 @@ async function renderHome(response: HomeData = home) {
     .mockImplementation(async (input) =>
       input === "/api/home/v1" ? Response.json(response) : new Response(null, { status: 404 }),
     );
-  const client = new QueryClient({ defaultOptions: { queries: { gcTime: Infinity } } });
+  const client = new QueryClient({ defaultOptions: { queries: { gcTime: Infinity }, mutations: { gcTime: Infinity } } });
   await renderRouter(
     {
       index: () => (
@@ -56,6 +57,9 @@ async function renderHome(response: HomeData = home) {
       ),
       "movies/[movieId]": () => null,
       "shows/[showId]": () => null,
+      "episodes/[episodeId]": () => null,
+      "play/movies/[movieId]": () => null,
+      "play/episodes/[episodeId]": () => null,
     },
     { initialUrl: "/" },
   );
@@ -134,9 +138,29 @@ describe("on TV", () => {
     await fireEvent(screen.getByLabelText("Half Loop"), "focus");
 
     expect(screen.getByRole("heading", { name: "Severance" })).toBeOnTheScreen();
-    expect(screen.getByText("S1:E2")).toBeOnTheScreen();
+    expect(screen.getByText("S1:E2 Half Loop")).toBeOnTheScreen();
     expect(screen.getByText("30 min left")).toBeOnTheScreen();
   });
+});
+
+test("hovering an episode tile opens a card with its show, episode number and title, and Play plays the episode", async () => {
+  const episode: Tile = {
+    ...tile("0190f3c4-7d8e-7f9a-8b0c-1d2e3f4a5b6c", "episode", "Half Loop"),
+    episode: { show: { id: severance.id, title: "Severance", logo: null }, seasonNumber: 1, episodeNumber: 2, mediaFileId: null },
+  };
+  await renderHome({
+    featured: null,
+    rows: [{ kind: "continueWatching", genre: null, tiles: [episode] }],
+  });
+  jest.useFakeTimers();
+
+  await fireEvent(screen.getByLabelText("Half Loop"), "pointerEnter");
+  await act(() => jest.advanceTimersByTime(400));
+  jest.useRealTimers();
+
+  expect(screen.getByText("S1:E2 Half Loop")).toBeOnTheScreen();
+  await fireEvent.press(screen.getByText("Play"));
+  expect(screen).toHavePathname(`/play/episodes/${episode.id}`);
 });
 
 test("a movie tile opens the movie page", async () => {
@@ -145,4 +169,142 @@ test("a movie tile opens the movie page", async () => {
   await fireEvent.press(screen.getAllByLabelText("Arrival")[0]);
 
   expect(screen).toHavePathname(`/movies/${arrival.id}`);
+});
+
+describe("the Continue watching tile menu", () => {
+  const halfLoop: Tile = {
+    ...tile("0190f3c4-7d8e-7f9a-8b0c-1d2e3f4a5b6c", "episode", "Half Loop"),
+    episode: { show: { id: severance.id, title: "Severance", logo: null }, seasonNumber: 1, episodeNumber: 2, mediaFileId: null },
+  };
+  const dune = tile("0190f3c4-8e9f-7a0b-9c1d-2e3f4a5b6c7d", "movie", "Dune");
+  const withContinueWatching: HomeData = {
+    featured: null,
+    rows: [
+      { kind: "continueWatching", genre: null, tiles: [arrival, halfLoop] },
+      { kind: "recentlyAdded", genre: null, tiles: [dune] },
+    ],
+  };
+
+  async function renderWithPendingRemovals() {
+    await renderHome(withContinueWatching);
+    jest
+      .mocked(globalThis.fetch)
+      .mockImplementation(async (_, init) =>
+        init?.method === "DELETE" ? new Promise<Response>(() => {}) : Response.json(withContinueWatching),
+      );
+  }
+
+  const deletes = () =>
+    jest
+      .mocked(globalThis.fetch)
+      .mock.calls.filter(([, init]) => init?.method === "DELETE")
+      .map(([input]) => input);
+
+  test("a right click opens the menu, and Remove from Continue watching drops the tile at once", async () => {
+    await renderWithPendingRemovals();
+    const preventDefault = jest.fn();
+
+    await fireEvent(screen.getByLabelText("Arrival"), "contextMenu", { preventDefault });
+    await fireEvent.press(screen.getByText("Remove from Continue watching"));
+
+    expect(preventDefault).toHaveBeenCalled();
+    await waitFor(() => expect(screen.queryByLabelText("Arrival")).not.toBeOnTheScreen());
+    expect(screen.queryByText("Remove from Continue watching")).not.toBeOnTheScreen();
+    expect(deletes()).toEqual([`/api/continue-watching/movies/${arrival.id}/v1`]);
+  });
+
+  test("the ⋯ button on a hovered episode tile opens the same menu, which removes the episode's show", async () => {
+    await renderWithPendingRemovals();
+    jest.useFakeTimers();
+    await fireEvent(screen.getByLabelText("Half Loop"), "pointerEnter");
+    await act(() => jest.advanceTimersByTime(400));
+    jest.useRealTimers();
+
+    await fireEvent.press(screen.getByLabelText("More actions"));
+    await fireEvent.press(screen.getByText("Remove from Continue watching"));
+
+    await waitFor(() => expect(screen.queryByLabelText("Half Loop")).not.toBeOnTheScreen());
+    expect(screen.getByLabelText("Arrival")).toBeOnTheScreen();
+    expect(deletes()).toEqual([`/api/continue-watching/shows/${severance.id}/v1`]);
+  });
+
+  test.each([
+    ["on the web", false],
+    ["on TV", true],
+  ])("%s pressing a Continue watching tile plays its movie or episode", async (_, tv) => {
+    jest.spyOn(Platform, "isTV", "get").mockReturnValue(tv);
+    await renderHome(withContinueWatching);
+
+    await fireEvent.press(screen.getByLabelText("Arrival"));
+    expect(screen).toHavePathname(`/play/movies/${arrival.id}`);
+
+    await act(() => router.back());
+    await fireEvent.press(screen.getByLabelText("Half Loop"));
+    expect(screen).toHavePathname(`/play/episodes/${halfLoop.id}`);
+  });
+
+  test("More info on a hovered Continue watching tile opens its page", async () => {
+    await renderHome(withContinueWatching);
+    jest.useFakeTimers();
+    await fireEvent(screen.getByLabelText("Half Loop"), "pointerEnter");
+    await act(() => jest.advanceTimersByTime(400));
+    jest.useRealTimers();
+
+    await fireEvent.press(screen.getByText("More info"));
+
+    expect(screen).toHavePathname(`/episodes/${halfLoop.id}`);
+  });
+
+  test("tiles in other rows have no menu", async () => {
+    await renderWithPendingRemovals();
+
+    await fireEvent(screen.getByLabelText("Dune"), "contextMenu", { preventDefault: () => {} });
+
+    expect(screen.queryByText("Remove from Continue watching")).not.toBeOnTheScreen();
+  });
+
+  describe("on TV", () => {
+    const view = (View as unknown as { prototype: { requestTVFocus?: () => void } }).prototype;
+    let focused: string[];
+
+    beforeEach(() => {
+      jest.spyOn(Platform, "isTV", "get").mockReturnValue(true);
+      focused = [];
+      view.requestTVFocus = function (this: { props: { accessibilityLabel?: string } }) {
+        focused.push(this.props.accessibilityLabel ?? "");
+      };
+    });
+
+    afterEach(() => {
+      delete view.requestTVFocus;
+    });
+
+    test("a long press opens the menu", async () => {
+      await renderWithPendingRemovals();
+
+      await fireEvent(screen.getByLabelText("Arrival"), "longPress");
+      await fireEvent.press(screen.getByText("Remove from Continue watching"));
+
+      await waitFor(() => expect(screen.queryByLabelText("Arrival")).not.toBeOnTheScreen());
+      expect(deletes()).toEqual([`/api/continue-watching/movies/${arrival.id}/v1`]);
+    });
+
+    test("removing a tile focuses the tile that takes its place", async () => {
+      await renderWithPendingRemovals();
+
+      await fireEvent(screen.getByLabelText("Arrival"), "longPress");
+      await fireEvent.press(screen.getByText("Remove from Continue watching"));
+
+      await waitFor(() => expect(focused).toEqual(["Half Loop"]));
+    });
+
+    test("removing the last tile focuses the tile before it", async () => {
+      await renderWithPendingRemovals();
+
+      await fireEvent(screen.getByLabelText("Half Loop"), "longPress");
+      await fireEvent.press(screen.getByText("Remove from Continue watching"));
+
+      await waitFor(() => expect(focused).toEqual(["Arrival"]));
+    });
+  });
 });

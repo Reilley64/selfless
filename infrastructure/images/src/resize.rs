@@ -1,3 +1,4 @@
+use crate::image_format;
 use application::attributes::SELFLESS_IMAGES_WIDTH;
 use application::ports::ImageFile;
 use application::ports::ImageFormat;
@@ -34,15 +35,10 @@ fn resize(path: &str, width: i64) -> Result<ImageFile, ResizeImageError> {
     let reader = ImageReader::new(Cursor::new(&source))
         .with_guessed_format()
         .map_err(ResizeImageError::caused_by)?;
-    let format = match reader.format() {
-        Some(image::ImageFormat::Jpeg) => ImageFormat::Jpeg,
-        Some(image::ImageFormat::Png) => ImageFormat::Png,
-        _ => {
-            return Err(ResizeImageError::caused_by(
-                "the image is not a JPEG or PNG",
-            ));
-        }
-    };
+    let format = reader
+        .format()
+        .and_then(image_format)
+        .ok_or_else(|| ResizeImageError::caused_by("the image is not a JPEG or PNG"))?;
     let image = reader.decode().map_err(ResizeImageError::caused_by)?;
     let width = u32::try_from(width).map_err(ResizeImageError::caused_by)?;
     if image.width() <= width {

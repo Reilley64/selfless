@@ -5,6 +5,7 @@ use crate::library::sync_movie;
 use crate::library::sync_show;
 use crate::ports::AcquireLock;
 use crate::ports::CachedImage;
+use crate::ports::Clock;
 use crate::ports::DeleteCachedImage;
 use crate::ports::EmailRefused;
 use crate::ports::EndHlsSession;
@@ -49,6 +50,7 @@ use crate::ports::persistence::DbContext;
 use crate::ports::persistence::DbLocation;
 use crate::ports::persistence::DbScope;
 use crate::url_signer::UrlSigner;
+use crate::watch_progress::record_progress;
 use domain::Episode;
 use domain::EpisodeNfo;
 use domain::Movie;
@@ -61,6 +63,7 @@ use domain::ShowNfo;
 use domain::SonarrId;
 use domain::TmdbId;
 use domain::TvdbId;
+use jiff::SignedDuration;
 use jiff::Timestamp;
 use jiff::civil::date;
 use std::collections::HashMap;
@@ -68,6 +71,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
+use test_fixtures::FakeClock;
 use toasty::schema::Model;
 use tokio::sync::watch;
 use uuid::Uuid;
@@ -283,6 +287,60 @@ pub(crate) fn playback(
         .paused(false)
         .started_at(last_reported_at)
         .last_reported_at(last_reported_at)
+}
+
+pub(crate) async fn add_media_file(db_context: &DbContext, duration_ms: Option<i64>) -> Uuid {
+    let mut db_context = db_context.clone();
+    db_context
+        .media_files()
+        .create()
+        .path(format!("/media/{}.mkv", Uuid::new_v4()))
+        .duration_ms(duration_ms)
+        .exec(db_context.executor_mut())
+        .await
+        .unwrap()
+        .id
+}
+
+const REPORTED_DURATION: SignedDuration = SignedDuration::from_mins(50);
+
+pub(crate) async fn stop_at(
+    db_context: &DbContext,
+    user_id: Uuid,
+    media_file_id: Uuid,
+    position: SignedDuration,
+    reported_at: &str,
+) {
+    let clock = FakeClock::new();
+    clock.set(at(reported_at));
+    record_progress::call(
+        record_progress::Dependencies {
+            db_context: db_context.clone(),
+            clock: Clock::new(clock.reader()),
+        },
+        user_id,
+        media_file_id,
+        position,
+        REPORTED_DURATION,
+    )
+    .await
+    .unwrap();
+}
+
+pub(crate) async fn watch_to_the_end(
+    db_context: &DbContext,
+    user_id: Uuid,
+    media_file_id: Uuid,
+    reported_at: &str,
+) {
+    stop_at(
+        db_context,
+        user_id,
+        media_file_id,
+        REPORTED_DURATION,
+        reported_at,
+    )
+    .await;
 }
 
 pub(crate) const MOVIE_FILE: &str = "/media/Movies/Arrival (2016)/Arrival (2016) Bluray-1080p.mkv";

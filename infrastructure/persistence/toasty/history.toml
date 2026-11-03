@@ -111,6 +111,11 @@ name = "20261103_102715_movies_radarr_id_unique.sql"
 snapshot_name = "20261103_102715_snapshot.toml"
 
 [[migrations]]
+id = 2855235943933101649
+name = "20261103_122237_watch_states.sql"
+snapshot_name = "20261103_122237_snapshot.toml"
+
+[[migrations]]
 id = 9102658952865880298
 name = "20261103_122936_playback_settings.sql"
 snapshot_name = "20261103_122936_snapshot.toml"
@@ -119,6 +124,11 @@ snapshot_name = "20261103_122936_snapshot.toml"
 id = 1151223592592182149
 name = "20261103_125050_playbacks.sql"
 snapshot_name = "20261103_125050_snapshot.toml"
+
+[[migrations]]
+id = 773550982414508430
+name = "20261103_131952_continue_watching_removals.sql"
+snapshot_name = "20261103_131952_snapshot.toml"
 
 [[migrations]]
 id = 5056176825632414047
@@ -131,6 +141,6 @@ name = "20261103_143310_video_stream_interlaced_and_bit_rate.sql"
 snapshot_name = "20261103_143310_snapshot.toml"
 
 [[migrations]]
-id = 7771172548250943811
-name = "20261103_150728_playback_tracks.sql"
-snapshot_name = "20261103_150728_snapshot.toml"
+id = 436715362852030014
+name = "20261103_153743_playback_tracks.sql"
+snapshot_name = "20261103_153743_snapshot.toml"

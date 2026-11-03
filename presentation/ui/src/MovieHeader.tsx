@@ -32,6 +32,7 @@ export function MovieHeader({ movie, children }: { movie: MoviePage; children?: 
       details={details}
       plot={movie.plot}
       facts={facts}
+      resume={movie}
     >
       {children}
     </DetailHeader>

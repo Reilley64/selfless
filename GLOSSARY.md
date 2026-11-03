@@ -142,8 +142,20 @@ _Avoid_: Progress, bookmark, offset
 The state of a movie or episode a user has finished or marked as finished.
 _Avoid_: Played, seen, completed
 
+**Watch state**:
+What selfless keeps for one user and one movie or episode: its resume position, whether it is watched, its watched at and its last played.
+_Avoid_: Progress, play state, user data
+
+**Watched at**:
+When a movie or episode last changed from unwatched to watched for a user. Watching it to the end again while it is watched doesn't change it.
+_Avoid_: Completed at, finished at
+
 **Continue watching**:
 The movies and episodes a user has a resume position in, plus the next up episode of each show they are part way through. A show appears once.
+
+**Continue watching removal**:
+A user's choice to leave a movie or show out of their Continue watching until they play it again. A new episode arriving doesn't bring a show back.
+_Avoid_: Dismissal, hidden title
 
 **Next up**:
 For each show a user is part way through, the first episode after the one that most recently changed from unwatched to watched. Rewatching an episode that is already watched doesn't move it.

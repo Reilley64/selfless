@@ -10,6 +10,7 @@ pub use output::Play;
 pub use output::Season;
 pub use output::Show;
 
+use crate::browsing::episode_watch_states;
 use crate::browsing::more_like_this;
 use crate::browsing::season_counts;
 use crate::browsing::title_images;
@@ -17,13 +18,18 @@ use crate::ports::persistence::DbScope;
 use domain::Actor;
 use domain::Artwork;
 use domain::Episode;
-use domain::first_episode;
+use domain::ShowEpisode;
+use domain::show_play_target;
 use std::collections::HashMap;
 use uuid::Uuid;
 
 const CAST_SIZE: usize = 10;
 
-pub async fn call(dependencies: impl Into<Dependencies>, show_id: Uuid) -> Result<Output, Error> {
+pub async fn call(
+    dependencies: impl Into<Dependencies>,
+    user_id: Uuid,
+    show_id: Uuid,
+) -> Result<Output, Error> {
     let Dependencies {
         mut db_context,
         clock,
@@ -46,12 +52,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, show_id: Uuid) -> Resul
     };
     let mut seasons = db_context
         .seasons()
-        .filter(
-            domain::Season::fields()
-                .show_id()
-                .eq(show.id)
-                .and(domain::Season::in_library_filter()),
-        )
+        .filter(domain::Season::fields().show_id().eq(show.id))
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?;
@@ -61,39 +62,49 @@ pub async fn call(dependencies: impl Into<Dependencies>, show_id: Uuid) -> Resul
         .filter(
             Episode::fields()
                 .season_id()
-                .in_list(seasons.iter().map(|x| x.id).collect::<Vec<_>>())
-                .and(Episode::in_library_filter()),
+                .in_list(seasons.iter().map(|x| x.id).collect::<Vec<_>>()),
         )
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?;
+    let states = episode_watch_states(
+        &mut db_context,
+        user_id,
+        episodes.iter().map(|x| x.id).collect(),
+    )
+    .await
+    .map_err(Error::caused_by)?;
     let season_of: HashMap<_, _> = seasons.iter().map(|x| (x.id, x)).collect();
-    let Some((play_season, play_episode)) = first_episode(
-        episodes
-            .iter()
-            .filter_map(|x| Some((*season_of.get(&x.season_id)?, x))),
-    ) else {
+    let Some(target) = show_play_target(episodes.iter().filter_map(|x| {
+        Some(ShowEpisode {
+            season: season_of.get(&x.season_id)?,
+            episode: x,
+            watch_state: states.get(&x.id),
+        })
+    })) else {
         return Ok(Output::NotFound);
     };
     let play = Play {
-        episode_id: play_episode.id,
-        episode_number: play_episode.number,
-        episode_title: play_episode.title.clone(),
-        media_file_id: play_episode.media_file_id,
-        season_id: play_season.id,
-        season_number: play_season.number,
+        episode_id: target.episode.id,
+        episode_number: target.episode.number,
+        episode_title: target.episode.title.clone(),
+        media_file_id: target.episode.media_file_id,
+        season_id: target.season.id,
+        season_number: target.season.number,
+        verb: target.verb,
     };
     let mut episode_counts = HashMap::<Uuid, i64>::new();
-    for episode in &episodes {
+    for episode in episodes.iter().filter(|x| x.in_library) {
         *episode_counts.entry(episode.season_id).or_default() += 1;
     }
+    seasons.retain(|x| episode_counts.contains_key(&x.id));
     let mut actors = db_context
         .actors()
         .filter(Actor::fields().show_id().eq(show.id))
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?;
-    actors.sort_by_key(|x| (x.order.is_none(), x.order));
+    actors.sort_by_key(Actor::listing_order);
     let images = title_images(
         &mut db_context,
         |x| x.show_id,
@@ -107,6 +118,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, show_id: Uuid) -> Resul
     .unwrap_or_default();
     let more_like_this = more_like_this(
         &mut db_context,
+        user_id,
         &show.genres,
         show.id,
         &url_signer,
@@ -142,7 +154,6 @@ pub async fn call(dependencies: impl Into<Dependencies>, show_id: Uuid) -> Resul
             .map(|x| Season {
                 id: x.id,
                 number: x.number,
-                name: x.name(),
                 episode_count: episode_counts.get(&x.id).copied().unwrap_or_default(),
             })
             .collect(),
@@ -158,12 +169,17 @@ mod tests {
     use crate::ports::Clock;
     use crate::ports::persistence::DbContext;
     use crate::ports::persistence::DbScope;
+    use crate::test::add_media_file;
     use crate::test::add_season;
     use crate::test::episode;
     use crate::test::mock_db_context;
     use crate::test::show;
+    use crate::test::stop_at;
     use crate::test::url_signer;
+    use crate::test::watch_to_the_end;
     use domain::ArtworkKind;
+    use domain::PlayVerb;
+    use jiff::SignedDuration;
     use jiff::Timestamp;
     use std::collections::HashMap;
     use test_fixtures::FakeClock;
@@ -177,28 +193,42 @@ mod tests {
     }
 
     async fn get(db_context: &DbContext, show_id: Uuid) -> Output {
-        call(dependencies(db_context), show_id).await.unwrap()
+        call(dependencies(db_context), Uuid::new_v4(), show_id)
+            .await
+            .unwrap()
     }
 
     async fn get_show(db_context: &DbContext, show_id: Uuid) -> Show {
-        match get(db_context, show_id).await {
+        show_for(db_context, Uuid::new_v4(), show_id).await
+    }
+
+    async fn show_for(db_context: &DbContext, user_id: Uuid, show_id: Uuid) -> Show {
+        match call(dependencies(db_context), user_id, show_id)
+            .await
+            .unwrap()
+        {
             Output::Show(show) => *show,
             Output::NotFound => panic!("the show is not found"),
         }
+    }
+
+    struct AddedEpisode {
+        id: Uuid,
+        media_file_id: Uuid,
     }
 
     async fn add_show(
         db_context: &mut DbContext,
         title: &str,
         episodes: &[(i64, i64, bool)],
-    ) -> (Uuid, HashMap<(i64, i64), Uuid>) {
+    ) -> (Uuid, HashMap<(i64, i64), AddedEpisode>) {
         let show = show(db_context, title)
             .exec(db_context.executor_mut())
             .await
             .unwrap();
         let mut seasons = HashMap::new();
         let mut ids = HashMap::new();
-        for &(season, number, visible) in episodes {
+        for &(season, number, in_library) in episodes {
             let season_id = match seasons.get(&season) {
                 Some(id) => *id,
                 None => {
@@ -207,13 +237,21 @@ mod tests {
                     id
                 }
             };
+            let media_file_id = add_media_file(db_context, None).await;
             let episode = episode(db_context, season_id)
                 .number(number)
-                .in_library(visible)
+                .in_library(in_library)
+                .media_file_id(Some(media_file_id))
                 .exec(db_context.executor_mut())
                 .await
                 .unwrap();
-            ids.insert((season, number), episode.id);
+            ids.insert(
+                (season, number),
+                AddedEpisode {
+                    id: episode.id,
+                    media_file_id,
+                },
+            );
         }
         (show.id, ids)
     }
@@ -309,7 +347,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_seasons_with_visible_episodes_are_listed_with_their_episode_counts_and_specials_last()
+    async fn the_seasons_with_episodes_in_the_library_are_listed_with_their_episode_counts_and_specials_last()
      {
         let mut db_context = mock_db_context().await;
         let (severance, _) = add_show(
@@ -332,15 +370,15 @@ mod tests {
         assert_eq!(
             page.seasons
                 .iter()
-                .map(|x| (x.number, x.name.as_str(), x.episode_count))
+                .map(|x| (x.number, x.episode_count))
                 .collect::<Vec<_>>(),
-            [(1, "Season 1", 3), (2, "Season 2", 1), (0, "Specials", 1)]
+            [(1, 3), (2, 1), (0, 1)]
         );
         assert_eq!(page.season_count, 2);
     }
 
     #[tokio::test]
-    async fn with_no_watch_state_play_starts_the_first_visible_episode_of_the_first_numbered_season()
+    async fn with_no_watch_state_play_starts_the_first_episode_in_the_library_of_the_first_numbered_season()
      {
         let mut db_context = mock_db_context().await;
         let (severance, episodes) = add_show(
@@ -360,9 +398,90 @@ mod tests {
                 page.play.season_number,
                 page.play.episode_number
             ),
-            (episodes[&(1, 2)], season_one, 1, 2)
+            (episodes[&(1, 2)].id, season_one, 1, 2)
         );
         assert_eq!(page.play.episode_title, "Good News About Hell");
+    }
+
+    #[tokio::test]
+    async fn each_user_plays_the_show_from_their_own_watch_state() {
+        let mut db_context = mock_db_context().await;
+        let (severance, episodes) = add_show(
+            &mut db_context,
+            "Severance",
+            &[(1, 1, true), (1, 2, true), (2, 1, true)],
+        )
+        .await;
+        let (noor, ravi, mina) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+        watch_to_the_end(
+            &db_context,
+            noor,
+            episodes[&(1, 1)].media_file_id,
+            "2026-11-01T20:00:00Z",
+        )
+        .await;
+        stop_at(
+            &db_context,
+            ravi,
+            episodes[&(2, 1)].media_file_id,
+            SignedDuration::from_secs(1534),
+            "2026-11-02T20:00:00Z",
+        )
+        .await;
+
+        let mut plays = Vec::new();
+        for user_id in [noor, ravi, mina] {
+            let play = show_for(&db_context, user_id, severance).await.play;
+            plays.push((play.season_number, play.episode_number, play.verb));
+        }
+
+        assert_eq!(
+            plays,
+            [
+                (1, 2, PlayVerb::Play),
+                (
+                    2,
+                    1,
+                    PlayVerb::Resume {
+                        position_seconds: 1534
+                    }
+                ),
+                (1, 1, PlayVerb::Play),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn play_follows_the_latest_watched_episode_even_when_it_has_left_the_library() {
+        let mut db_context = mock_db_context().await;
+        let (severance, episodes) = add_show(
+            &mut db_context,
+            "Severance",
+            &[(1, 1, true), (1, 2, true), (1, 3, true), (1, 4, true)],
+        )
+        .await;
+        let noor = Uuid::new_v4();
+        for (number, reported_at) in [(1, "2026-10-20T20:00:00Z"), (3, "2026-10-25T20:00:00Z")] {
+            watch_to_the_end(
+                &db_context,
+                noor,
+                episodes[&(1, number)].media_file_id,
+                reported_at,
+            )
+            .await;
+        }
+        db_context
+            .episodes()
+            .filter(Episode::fields().id().eq(episodes[&(1, 3)].id))
+            .update()
+            .in_library(false)
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap();
+
+        let play = show_for(&db_context, noor, severance).await.play;
+
+        assert_eq!((play.episode_number, play.verb), (4, PlayVerb::Play));
     }
 
     #[tokio::test]
@@ -379,7 +498,7 @@ mod tests {
 
         assert_eq!(
             (page.play.episode_id, page.play.season_number),
-            (episodes[&(0, 1)], 0)
+            (episodes[&(0, 1)].id, 0)
         );
         assert_eq!(page.season_count, 0);
     }
@@ -420,15 +539,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_unknown_show_or_one_without_visible_episodes_is_not_found() {
+    async fn an_unknown_show_or_one_without_episodes_in_the_library_is_not_found() {
         let mut db_context = mock_db_context().await;
-        let (hidden, _) = add_show(&mut db_context, "Gone", &[(1, 1, false)]).await;
+        let (out_of_library, _) = add_show(&mut db_context, "Gone", &[(1, 1, false)]).await;
         let empty = show(&db_context, "Empty")
             .exec(db_context.executor_mut())
             .await
             .unwrap();
 
-        for show_id in [hidden, empty.id, Uuid::new_v4()] {
+        for show_id in [out_of_library, empty.id, Uuid::new_v4()] {
             let output = get(&db_context, show_id).await;
 
             assert!(matches!(output, Output::NotFound), "{output:?}");

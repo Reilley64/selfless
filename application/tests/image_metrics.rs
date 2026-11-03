@@ -23,6 +23,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
 use test_fixtures::FakeClock;
+use uuid::Uuid;
 
 #[tokio::test]
 async fn image_requests_are_counted_by_whether_the_cache_held_the_image() {
@@ -71,6 +72,7 @@ async fn image_requests_are_counted_by_whether_the_cache_held_the_image() {
             clock: clock.clone(),
             url_signer: url_signer.clone(),
         },
+        Uuid::new_v4(),
         None,
         GridSort::Title,
         None,
@@ -115,8 +117,8 @@ async fn image_requests_are_counted_by_whether_the_cache_held_the_image() {
             dependencies(),
             fanart.id,
             url.width,
-            url.expires,
-            &url.signature,
+            url.signed_url.expires,
+            &url.signed_url.signature,
         )
         .await
         .unwrap();
@@ -125,7 +127,7 @@ async fn image_requests_are_counted_by_whether_the_cache_held_the_image() {
         dependencies(),
         fanart.id,
         480,
-        fanart.urls[0].expires,
+        fanart.urls[0].signed_url.expires,
         "tampered",
     )
     .await

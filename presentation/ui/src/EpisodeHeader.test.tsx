@@ -30,6 +30,7 @@ const halfLoop: EpisodePage = {
   ],
   mediaFileId: "0190f3c4-c2d3-7e4f-8a5b-6c7d8e9f0a1b",
   progress: null,
+  minutesLeft: null,
   watched: false,
   play: { resumePosition: null },
 };
@@ -59,4 +60,11 @@ test("an episode without languages lists none", async () => {
 
   expect(screen.queryByText("Audio")).toBeNull();
   expect(screen.queryByText("Subtitles")).toBeNull();
+});
+
+test("an episode with a resume position shows how far the user got and the minutes left", async () => {
+  await render(<EpisodeHeader episode={{ ...halfLoop, progress: 0.5, minutesLeft: 29, play: { resumePosition: 1710 } }} />);
+
+  expect(screen.getByRole("progressbar")).toHaveAccessibilityValue({ now: 50 });
+  expect(screen.getByText("29 min left")).toBeOnTheScreen();
 });

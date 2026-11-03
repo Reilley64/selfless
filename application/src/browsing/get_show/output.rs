@@ -1,5 +1,6 @@
 use crate::browsing::Tile;
 use crate::browsing::TileImages;
+use domain::PlayVerb;
 use uuid::Uuid;
 
 #[derive(Debug)]
@@ -37,7 +38,6 @@ pub struct CastMember {
 pub struct Season {
     pub id: Uuid,
     pub number: i64,
-    pub name: String,
     pub episode_count: i64,
 }
 
@@ -49,4 +49,5 @@ pub struct Play {
     pub media_file_id: Option<Uuid>,
     pub season_id: Uuid,
     pub season_number: i64,
+    pub verb: PlayVerb,
 }

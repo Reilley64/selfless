@@ -1,10 +1,9 @@
 import { useGetEpisode } from "@selfless/api-client";
-import { EpisodeHeader, playHref } from "@selfless/ui";
+import { EpisodeHeader, PlayActions, playHref } from "@selfless/ui";
 import { useLocalSearchParams } from "expo-router";
 import { ScrollView, View } from "react-native-css/components";
 import { ServerUnreachable } from "../../components/form";
 import { NotFound } from "../../components/NotFound";
-import { PlayButtons } from "../../components/PlayButtons";
 
 export default function Episode() {
   const { episodeId } = useLocalSearchParams<{ episodeId: string }>();
@@ -26,7 +25,7 @@ export default function Episode() {
   return (
     <ScrollView className="flex-1 bg-background" contentContainerClassName="pb-16">
       <EpisodeHeader episode={episode}>
-        <PlayButtons href={playHref({ episodeId: episode.id })} resumePosition={episode.play.resumePosition} />
+        <PlayActions href={playHref({ episodeId: episode.id })} resumePosition={episode.play.resumePosition} />
       </EpisodeHeader>
     </ScrollView>
   );

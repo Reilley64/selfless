@@ -40,6 +40,7 @@ export function EpisodeHeader({ episode, children }: { episode: EpisodePage; chi
       details={details}
       plot={episode.plot}
       facts={facts}
+      resume={episode}
     >
       {children}
     </DetailHeader>

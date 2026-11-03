@@ -25,8 +25,8 @@ impl From<Image> for ImageBody {
                         "/api/images/{}/{}/v1?expires={}&signature={}",
                         image.id,
                         x.width,
-                        x.expires.as_second(),
-                        x.signature
+                        x.signed_url.expires.as_second(),
+                        x.signed_url.signature
                     ),
                 })
                 .collect(),
