@@ -1,6 +1,11 @@
 import { type Attributes, ROOT_CONTEXT, type Span, SpanStatusCode, context, trace } from "@opentelemetry/api";
 import { ATTR_ERROR_TYPE } from "@opentelemetry/semantic-conventions";
-import type { PlayMethod, reportPlaybackProgress } from "@selfless/api-client";
+import type {
+  Playback,
+  PlaybackAudioTrack,
+  PlaybackSubtitleTrack,
+  reportPlaybackProgress,
+} from "@selfless/api-client";
 import { SELFLESS_MEDIA_FILE_ID } from "./telemetry/attributes";
 import {
   SELFLESS_PLAYBACK_FAILED,
@@ -20,9 +25,11 @@ export type PlayerEvent =
   | { type: "failed"; position: number; errorType: string }
   | { type: "stopped"; position: number };
 
-export type ProgressReport = { position: number; paused: boolean; stopped: boolean };
+export type Tracks = { audioTrackId: string | null; subtitleTrackId: string | null };
 
-export type Resume = { position: number; paused: boolean; forceHls: boolean };
+export type ProgressReport = { position: number; paused: boolean; stopped: boolean } & Tracks;
+
+export type Resume = { position: number; paused: boolean; forceHls: boolean; tracks?: Tracks };
 
 export type PlaybackSpans = ReturnType<typeof startPlaybackSpans>;
 
@@ -55,39 +62,48 @@ export function startPlaybackSpans(userId: string, mediaFileId: string) {
       span.setStatus({ code: SpanStatusCode.ERROR });
       span.end();
     },
-    switched(errorType: string) {
+    switched(errorType?: string) {
       const span = spanFor(SELFLESS_PLAYBACK_SWITCHED);
-      span.setAttribute(ATTR_ERROR_TYPE, errorType);
+      if (errorType !== undefined) {
+        span.setAttribute(ATTR_ERROR_TYPE, errorType);
+      }
       span.end();
     },
   };
 }
 
 export function createPlayerLogic({
-  method,
+  playback: { method, audioTracks, audioTrackId, subtitleTrackId },
+  audioSwitchesInPlace,
   forceHls,
   sendReport,
   restart,
   showError,
+  switchAudio,
+  switchSubtitle,
   spans,
 }: {
-  method: PlayMethod;
+  playback: Pick<Playback, "method" | "audioTracks" | "audioTrackId" | "subtitleTrackId">;
+  audioSwitchesInPlace: boolean;
   forceHls: boolean;
   sendReport: (report: ProgressReport) => ReturnType<typeof reportPlaybackProgress>;
   restart: (resume: Resume) => void;
   showError: () => void;
+  switchAudio: (track: PlaybackAudioTrack) => void;
+  switchSubtitle: (track: PlaybackSubtitleTrack | null) => void;
   spans: PlaybackSpans;
 }) {
   let position = 0;
   let paused = false;
   let stopped = false;
+  let tracks: Tracks = { audioTrackId, subtitleTrackId };
   let timer: ReturnType<typeof setInterval> | undefined;
   const end = () => {
     stopped = true;
     clearInterval(timer);
   };
   const report = () => {
-    const sent = { position, paused, stopped };
+    const sent = { position, paused, stopped, ...tracks };
     sendReport(sent).then(
       (response) => {
         if (
@@ -97,11 +113,16 @@ export function createPlayerLogic({
           response.data.type === "urn:selfless:problem:playback-ended"
         ) {
           end();
-          restart({ position, paused, forceHls });
+          restart({ position, paused, forceHls, tracks });
         }
       },
       () => undefined,
     );
+  };
+  const switchStream = (switched: Tracks, throughHls: boolean) => {
+    end();
+    spans.switched();
+    restart({ position, paused, forceHls: forceHls || throughHls, tracks: switched });
   };
   const restartTimer = () => {
     clearInterval(timer);
@@ -136,7 +157,7 @@ export function createPlayerLogic({
           if (method === "directPlay") {
             end();
             spans.switched(event.errorType);
-            restart({ position, paused, forceHls: true });
+            restart({ position, paused, forceHls: true, tracks });
           } else {
             spans.failed(event.errorType);
             showError();
@@ -147,6 +168,40 @@ export function createPlayerLogic({
           spans.stopped();
           report();
           break;
+      }
+    },
+    applySelectedAudio() {
+      const playing = audioTracks.find((track) => track.default) ?? audioTracks[0];
+      const selected = audioTracks.find((track) => track.id === audioTrackId);
+      if (stopped || method !== "directPlay" || !selected || selected === playing) {
+        return;
+      }
+      if (audioSwitchesInPlace) {
+        switchAudio(selected);
+      } else {
+        switchStream(tracks, true);
+      }
+    },
+    selectAudio(track: PlaybackAudioTrack) {
+      if (stopped || track.id === tracks.audioTrackId) {
+        return;
+      }
+      if (track.inStream && audioSwitchesInPlace) {
+        tracks = { ...tracks, audioTrackId: track.id };
+        switchAudio(track);
+      } else {
+        switchStream({ ...tracks, audioTrackId: track.id }, track.inStream);
+      }
+    },
+    selectSubtitle(track: PlaybackSubtitleTrack | null) {
+      if (stopped || (track?.id ?? null) === tracks.subtitleTrackId) {
+        return;
+      }
+      if (track === null || track.inStream) {
+        tracks = { ...tracks, subtitleTrackId: track?.id ?? null };
+        switchSubtitle(track);
+      } else {
+        switchStream({ ...tracks, subtitleTrackId: track.id }, false);
       }
     },
   };

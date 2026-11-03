@@ -22,6 +22,7 @@ export {
   type ProgressReport,
   type Resume,
   startPlaybackSpans,
+  type Tracks,
 } from "./playerLogic";
 export { randomUuid } from "./randomUuid";
 export { runtimeLabel } from "./runtimeLabel";
