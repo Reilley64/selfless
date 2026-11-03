@@ -118,6 +118,33 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn movies_are_listed_by_their_sort_title() {
+        let mut db_context = mock_db_context().await;
+        seed_movie(&mut db_context, 1, "Dune", true).await;
+        let arrival = seed_movie(&mut db_context, 2, "The Arrival", true).await;
+        let mut arrival = db_context
+            .movies()
+            .find(arrival)
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap()
+            .unwrap();
+        arrival
+            .update()
+            .sort_title(Some("Arrival".to_owned()))
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap();
+
+        let movies = call(Dependencies { db_context }).await.unwrap().movies;
+
+        assert_eq!(
+            movies.iter().map(|x| x.title.as_str()).collect::<Vec<_>>(),
+            ["The Arrival", "Dune"]
+        );
+    }
+
+    #[tokio::test]
     async fn a_movies_artwork_is_listed_by_path() {
         let mut db_context = mock_db_context().await;
         let id = seed_movie(&mut db_context, 1, "Arrival", true).await;

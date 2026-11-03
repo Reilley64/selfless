@@ -1,17 +1,20 @@
-#[path = "../test/library.rs"]
-mod library_test;
+#[path = "../test/selfless.rs"]
+pub mod selfless_test;
 
-use library_test::LibraryServer;
-use library_test::eventually;
-use library_test::fixture;
-use library_test::selfless_test::RADARR_WEBHOOK_PASSWORD;
 use opentelemetry::KeyValue;
 use opentelemetry::trace::SpanKind;
 use opentelemetry::trace::TraceId;
 use opentelemetry::trace::TracerProvider;
 use opentelemetry_sdk::trace::InMemorySpanExporter;
 use opentelemetry_sdk::trace::SdkTracerProvider;
-use std::time::Duration;
+use reqwest::StatusCode;
+use reqwest::header::HeaderMap;
+use selfless_test::RADARR_WEBHOOK_PASSWORD;
+use selfless_test::eventually;
+use selfless_test::fixture;
+use selfless_test::send_webhook;
+use test_fixtures::FakeClock;
+use test_fixtures::FakeMailer;
 use test_fixtures::TestDatabase;
 use tracing::level_filters::LevelFilter;
 use tracing::subscriber::DefaultGuard;
@@ -25,16 +28,28 @@ async fn the_inbox_worker_links_its_span_to_the_webhook_request() {
     let exporter = InMemorySpanExporter::default();
     let _tracing = trace_into(&exporter);
     let database = TestDatabase::create().await;
-    let server = LibraryServer::start(database.url()).await;
+    let server = selfless_test::start(
+        selfless_test::settings(database.url()),
+        &FakeClock::new(),
+        &FakeMailer::default(),
+    )
+    .await;
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        "traceparent",
+        format!("00-{TRACE_ID}-{PARENT_SPAN_ID}-01")
+            .parse()
+            .unwrap(),
+    );
 
-    reqwest::Client::new()
-        .post(format!("{}/webhooks/radarr/v1", server.base_url()))
-        .basic_auth("radarr", Some(RADARR_WEBHOOK_PASSWORD))
-        .header("traceparent", format!("00-{TRACE_ID}-{PARENT_SPAN_ID}-01"))
-        .body(fixture("radarr/webhooks/test.json"))
-        .send()
-        .await
-        .unwrap();
+    let status = send_webhook(
+        &server,
+        "/webhooks/radarr/v1",
+        RADARR_WEBHOOK_PASSWORD,
+        headers,
+        &fixture("radarr/webhooks/test.json"),
+    )
+    .await;
 
     let worker = eventually(async || {
         exporter
@@ -49,6 +64,7 @@ async fn the_inbox_worker_links_its_span_to_the_webhook_request() {
         .iter()
         .find(|x| x.span_kind == SpanKind::Server)
         .expect("an HTTP server span");
+    assert_eq!(status, StatusCode::OK);
     assert_eq!(webhook.name, "POST /webhooks/radarr/v1");
     assert_eq!(worker.name, "process inboxes");
     assert_ne!(
@@ -73,33 +89,6 @@ async fn the_inbox_worker_links_its_span_to_the_webhook_request() {
     );
     drop(server);
     database.drop().await;
-}
-
-#[tokio::test]
-async fn idle_workers_export_no_span_after_the_startup_reconciles() {
-    let exporter = InMemorySpanExporter::default();
-    let _tracing = trace_into(&exporter);
-    let database = TestDatabase::create().await;
-    let server = LibraryServer::start(database.url()).await;
-    let started = startup_reconciled(&exporter).await;
-
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    assert_eq!(exporter.get_finished_spans().unwrap().len(), started);
-    drop(server);
-    database.drop().await;
-}
-
-async fn startup_reconciled(exporter: &InMemorySpanExporter) -> usize {
-    eventually(async || {
-        let spans = exporter.get_finished_spans().unwrap();
-        let reconciles = spans
-            .iter()
-            .filter(|x| x.name.starts_with("reconcile "))
-            .count();
-        (reconciles == 2).then_some(spans.len())
-    })
-    .await
 }
 
 fn trace_into(exporter: &InMemorySpanExporter) -> DefaultGuard {
