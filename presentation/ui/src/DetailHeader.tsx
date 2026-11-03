@@ -13,12 +13,14 @@ export function DetailHeader({
   backdrop,
   logo,
   details,
+  subtitle,
   plot,
   facts,
   children,
 }: {
   kicker: string;
   title: string;
+  subtitle?: string;
   backdrop: Artwork | null;
   logo: Artwork | null;
   details: DetailItem[];
@@ -56,6 +58,11 @@ export function DetailHeader({
             className={`font-sans font-extrabold text-text-primary leading-display ${tv ? "text-tv-display" : "text-web-display"}`}
           >
             {title}
+          </Text>
+        )}
+        {subtitle && (
+          <Text className={`font-sans font-bold text-text-primary ${tv ? "text-tv-row" : "text-web-heading"}`}>
+            {subtitle}
           </Text>
         )}
         <View className="flex-row flex-wrap items-center gap-3">

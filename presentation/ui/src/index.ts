@@ -1,6 +1,7 @@
 export { ActionButton } from "./ActionButton";
 export { clientId } from "./clientId";
 export { type DetailFact, DetailHeader, type DetailItem } from "./DetailHeader";
+export { EpisodeHeader } from "./EpisodeHeader";
 export { EpisodeList } from "./EpisodeList";
 export { episodeLabel } from "./episodeLabel";
 export { FeaturedTitle } from "./FeaturedTitle";
