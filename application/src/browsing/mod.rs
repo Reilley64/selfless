@@ -3,6 +3,7 @@ mod resizer;
 mod tile;
 
 pub mod clean_image_cache;
+pub mod get_home;
 pub mod get_image;
 pub mod list_genres;
 pub mod list_movies;

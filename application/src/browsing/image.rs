@@ -20,7 +20,7 @@ pub struct ImageUrl {
     pub signature: String,
 }
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct TileImages {
     pub fanart: Option<Image>,
     pub logo: Option<Image>,

@@ -114,7 +114,7 @@ fn parse_optional<T: FromStr>(text: &str) -> Result<Option<T>, InvalidCursor> {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct TileBody {
+pub(crate) struct TileBody {
     id: Uuid,
     kind: Kind,
     title: String,

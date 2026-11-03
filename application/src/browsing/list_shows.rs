@@ -9,7 +9,6 @@ pub use output::Output;
 use crate::browsing::Cursor;
 use crate::browsing::SortKey;
 use crate::browsing::Tile;
-use crate::browsing::TileKind;
 use crate::browsing::page;
 use crate::browsing::title_images;
 use crate::browsing::visible_season;
@@ -104,17 +103,12 @@ pub async fn call(
     Ok(Output {
         tiles: shows
             .into_iter()
-            .map(|show| Tile {
-                images: images.remove(&show.id).unwrap_or_default(),
-                id: show.id,
-                title: show.title,
-                year: show.year,
-                certification: show.certification,
-                genres: show.genres,
-                plot: show.overview,
-                kind: TileKind::Show {
-                    season_count: season_counts.get(&show.id).copied().unwrap_or_default(),
-                },
+            .map(|show| {
+                Tile::show(
+                    &show,
+                    season_counts.get(&show.id).copied().unwrap_or_default(),
+                    images.remove(&show.id).unwrap_or_default(),
+                )
             })
             .collect(),
         next,
@@ -124,6 +118,7 @@ pub async fn call(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::browsing::TileKind;
     use crate::ports::Clock;
     use crate::ports::persistence::DbContext;
     use crate::test::add_season;

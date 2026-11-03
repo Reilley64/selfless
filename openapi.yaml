@@ -387,6 +387,24 @@ paths:
           $ref: "#/components/responses/Unauthenticated"
         "500":
           $ref: "#/components/responses/InternalError"
+  /api/home/v1:
+    get:
+      operationId: getHome
+      summary: The featured title and the rows of Home
+      description: The rows come in this order, each with up to 20 tiles, and empty rows are left out. Recently added holds one tile per movie and per show, newest added first; a show counts the newest added date among its visible episodes. The genre rows are the 6 genres with the most visible titles, movies and shows together, each sorted by sort title. With nobody having played anything, the featured title is the latest released title, a movie by its premiere date and a show by the air date of its newest visible episode. Undated titles are skipped and ties go by sort title.
+      tags: [browsing]
+      responses:
+        "200":
+          description: The featured title, or null when no title has a release date, and the rows.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Home"
+              example: {"featured":{"tile":{"id":"0190f3c4-5b6a-7c8d-9e0f-1a2b3c4d5e6f","kind":"movie","title":"Arrival","year":2016,"certification":"PG-13","runtimeMinutes":116,"seasonCount":null,"genres":["Drama","Science Fiction"],"plot":"A linguist works with the military to talk to aliens.","images":{"fanart":null,"logo":null,"thumb":null},"progress":null,"watched":false,"episode":null},"playEpisodeId":null},"rows":[{"kind":"recentlyAdded","genre":null,"tiles":[{"id":"0190f3c4-5b6a-7c8d-9e0f-1a2b3c4d5e6f","kind":"movie","title":"Arrival","year":2016,"certification":"PG-13","runtimeMinutes":116,"seasonCount":null,"genres":["Drama","Science Fiction"],"plot":"A linguist works with the military to talk to aliens.","images":{"fanart":null,"logo":null,"thumb":null},"progress":null,"watched":false,"episode":null}]},{"kind":"genre","genre":"Drama","tiles":[{"id":"0190f3c4-5b6a-7c8d-9e0f-1a2b3c4d5e6f","kind":"movie","title":"Arrival","year":2016,"certification":"PG-13","runtimeMinutes":116,"seasonCount":null,"genres":["Drama","Science Fiction"],"plot":"A linguist works with the military to talk to aliens.","images":{"fanart":null,"logo":null,"thumb":null},"progress":null,"watched":false,"episode":null}]}]}
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /webhooks/radarr/v1:
     post:
       operationId: postRadarrWebhook
@@ -1187,4 +1205,57 @@ components:
           type: integer
           minimum: 1
           examples: [2]
+      additionalProperties: false
+    Home:
+      description: What Home shows.
+      type: object
+      required: [featured, rows]
+      properties:
+        featured:
+          description: The featured title, or null when no title has a release date.
+          anyOf:
+            - $ref: "#/components/schemas/FeaturedTitle"
+            - type: "null"
+          examples: [null]
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/HomeRow"
+          examples:
+            - [{"kind":"genre","genre":"Drama","tiles":[]}]
+      additionalProperties: false
+    FeaturedTitle:
+      description: The one movie or show shown large at the top of Home. Its fanart comes at the backdrop widths too.
+      type: object
+      required: [tile, playEpisodeId]
+      properties:
+        tile:
+          $ref: "#/components/schemas/Tile"
+        playEpisodeId:
+          description: The episode Play starts for a show. It is null for a movie, whose Play starts the movie.
+          type: [string, "null"]
+          format: uuid
+          examples: ["0190f3c4-9a0b-7c1d-8e2f-3a4b5c6d7e8f"]
+      additionalProperties: false
+    HomeRowKind:
+      description: Which row of Home this is.
+      type: string
+      enum: [continueWatching, recentlyAdded, popularNow, genre]
+      examples: [recentlyAdded]
+    HomeRow:
+      description: One row of Home.
+      type: object
+      required: [kind, genre, tiles]
+      properties:
+        kind:
+          $ref: "#/components/schemas/HomeRowKind"
+        genre:
+          description: The genre of a genre row. It is null for the other rows.
+          type: [string, "null"]
+          examples: [Drama]
+        tiles:
+          type: array
+          maxItems: 20
+          items:
+            $ref: "#/components/schemas/Tile"
       additionalProperties: false

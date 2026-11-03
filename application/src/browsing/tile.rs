@@ -1,10 +1,12 @@
 use crate::browsing::TileImages;
+use domain::Movie;
+use domain::Show;
 use jiff::Timestamp;
 use jiff::civil::Date;
 use std::cmp::Reverse;
 use uuid::Uuid;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Tile {
     pub id: Uuid,
     pub title: String,
@@ -16,10 +18,40 @@ pub struct Tile {
     pub images: TileImages,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum TileKind {
     Movie { runtime_minutes: Option<i64> },
     Show { season_count: i64 },
+}
+
+impl Tile {
+    pub(crate) fn movie(movie: &Movie, images: TileImages) -> Self {
+        Self {
+            id: movie.id,
+            title: movie.title.clone(),
+            year: Some(movie.year),
+            certification: movie.certification.clone(),
+            genres: movie.genres.clone(),
+            plot: movie.overview.clone(),
+            kind: TileKind::Movie {
+                runtime_minutes: movie.runtime_minutes,
+            },
+            images,
+        }
+    }
+
+    pub(crate) fn show(show: &Show, season_count: i64, images: TileImages) -> Self {
+        Self {
+            id: show.id,
+            title: show.title.clone(),
+            year: show.year,
+            certification: show.certification.clone(),
+            genres: show.genres.clone(),
+            plot: show.overview.clone(),
+            kind: TileKind::Show { season_count },
+            images,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
