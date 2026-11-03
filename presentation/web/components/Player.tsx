@@ -25,6 +25,12 @@ const mediaErrors: Record<number, string> = {
 
 const hlsJs = HlsJs.isSupported() && getParser(navigator.userAgent).getBrowserName(true) !== "safari";
 
+type AudioTrackList = ArrayLike<{ enabled: boolean }> & Partial<Pick<EventTarget, "addEventListener" | "removeEventListener">>;
+
+function audioTracksOf(element: HTMLVideoElement | undefined): AudioTrackList {
+  return (element as (HTMLVideoElement & { audioTracks?: AudioTrackList }) | undefined)?.audioTracks ?? [];
+}
+
 const languageNames = new Intl.DisplayNames([navigator.language], { type: "language" });
 
 type Start = { response: Awaited<ReturnType<typeof startPlayback>>; spans: PlaybackSpans } | "unreachable";
@@ -157,10 +163,21 @@ function Video({
         x.mode = i === index ? "showing" : "disabled";
       });
     };
+    const showAudio = (track: PlaybackAudioTrack) => {
+      const index = playback.audioTracks.indexOf(track);
+      if (media.hls) {
+        media.hls.audioTrack = index;
+        return;
+      }
+      Array.from(audioTracksOf(media.video)).forEach((x, i) => {
+        x.enabled = i === index;
+      });
+    };
     return {
       attach: (attached: typeof media) => Object.assign(media, attached),
       video: () => media.video,
       showSubtitle,
+      showAudio,
       ...createPlayerLogic({
         playback,
         audioSwitchesInPlace: playback.method !== "directPlay" || "audioTracks" in HTMLMediaElement.prototype,
@@ -169,16 +186,7 @@ function Video({
         restart,
         showError: () => setFailed(true),
         switchAudio: (track) => {
-          const index = playback.audioTracks.indexOf(track);
-          if (media.hls) {
-            media.hls.audioTrack = index;
-          } else {
-            const audioTracks = (media.video as HTMLVideoElement & { audioTracks?: { enabled: boolean }[] })
-              ?.audioTracks;
-            Array.from(audioTracks ?? []).forEach((x, i) => {
-              x.enabled = i === index;
-            });
-          }
+          showAudio(track);
           setSelected((current) => ({ ...current, audioTrackId: track.id }));
         },
         switchSubtitle: (track) => {
@@ -204,6 +212,27 @@ function Video({
   }, [logic]);
   useEffect(() => {
     const element = logic.video();
+    if (!element || !native) {
+      return;
+    }
+    const showSelected = () => {
+      const { audioTrackId, subtitleTrackId } = logic.selected();
+      const audio = playback.audioTracks.find((track) => track.id === audioTrackId);
+      if (audio) {
+        logic.showAudio(audio);
+      }
+      logic.showSubtitle(playback.subtitleTracks.find((track) => track.id === subtitleTrackId) ?? null);
+    };
+    const audioTracks = audioTracksOf(element);
+    element.textTracks.addEventListener("addtrack", showSelected);
+    audioTracks.addEventListener?.("addtrack", showSelected);
+    return () => {
+      element.textTracks.removeEventListener("addtrack", showSelected);
+      audioTracks.removeEventListener?.("addtrack", showSelected);
+    };
+  }, [logic, native, playback]);
+  useEffect(() => {
+    const element = logic.video();
     if (!element || native) {
       return;
     }
@@ -213,10 +242,6 @@ function Video({
       if (data.fatal) {
         logic.handle({ type: "failed", position: element.currentTime, errorType: data.details });
       }
-    });
-    player.on(Events.MANIFEST_PARSED, () => {
-      player.subtitleDisplay = true;
-      logic.showSubtitle(playback.subtitleTracks.find((track) => track.id === playback.subtitleTrackId) ?? null);
     });
     player.loadSource(playback.url);
     player.attachMedia(element);
@@ -245,9 +270,6 @@ function Video({
         onLoadedMetadata={(event) => {
           if (native) {
             event.currentTarget.currentTime = resume.position;
-            logic.showSubtitle(
-              playback.subtitleTracks.find((track) => track.id === playback.subtitleTrackId) ?? null,
-            );
             logic.applySelectedAudio();
           }
         }}
@@ -342,7 +364,7 @@ function TrackMenus({
           <Pressable
             role="button"
             aria-expanded={open === menu.label}
-            className="h-11 justify-center rounded-pill bg-background/60 px-4 hover:bg-button-focus"
+            className="h-11 justify-center rounded-pill bg-background/60 px-4 hover:bg-surface-raised"
             onPress={() => setOpen(open === menu.label ? undefined : menu.label)}
           >
             <Text className="font-sans font-semibold text-web-meta text-text-primary">{menu.label}</Text>

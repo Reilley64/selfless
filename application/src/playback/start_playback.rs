@@ -131,22 +131,28 @@ pub async fn call(
     let (audio_language, subtitle_language) =
         settings.map_or((None, None), |x| (x.audio_language, x.subtitle_language));
     let audio_streams = media_file.audio_streams.get();
+    let default_audio = AudioStream::selected_by_default(audio_streams, audio_language.as_deref());
     let audio = audio_track_id
         .and_then(|id| audio_streams.iter().find(|x| x.id == id))
-        .or_else(|| AudioStream::selected_by_default(audio_streams, audio_language.as_deref()));
+        .or(default_audio);
     let subtitle_tracks = domain::SubtitleTrack::all(
         media_file.subtitle_streams.get(),
         media_file.subtitle_files.get(),
     );
-    let subtitle = match subtitle_track_id {
-        Some(id) => id.and_then(|id| subtitle_tracks.iter().copied().find(|x| x.id() == id)),
-        None => domain::SubtitleTrack::selected_by_default(
+    let default_subtitle = |audio| {
+        domain::SubtitleTrack::selected_by_default(
             &subtitle_tracks,
             profile,
             subtitle_language.as_deref(),
             audio,
-        ),
+        )
     };
+    let subtitle = match subtitle_track_id {
+        Some(id) => id.and_then(|id| subtitle_tracks.iter().copied().find(|x| x.id() == id)),
+        None => default_subtitle(audio),
+    };
+    let default_audio_track_id = default_audio.map(|x| x.id);
+    let default_subtitle_track_id = default_subtitle(default_audio).map(|x| x.id());
     let audio_track_id = audio.map(|x| x.id);
     let subtitle_track_id = subtitle.map(|x| x.id());
     let mut reasons = profile.direct_play_reasons(&container, video, audio, subtitle);
@@ -250,8 +256,8 @@ pub async fn call(
         .method(method)
         .position(start_position)
         .paused(false)
-        .audio_track_id(audio_track_id)
-        .subtitle_track_id(subtitle_track_id)
+        .audio_track_id(default_audio_track_id)
+        .subtitle_track_id(default_subtitle_track_id)
         .started_at(now)
         .last_reported_at(now)
         .exec(transaction.executor_mut())

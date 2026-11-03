@@ -732,7 +732,7 @@ paths:
     put:
       operationId: reportPlaybackProgress
       summary: Report how far a playback has got
-      description: The player sends a report every 10 seconds while playing or paused, at once on pause, and on stop. The server stores the position, the paused state and the selected tracks with the time of the report. When the audio or subtitle track differs from the previous report, the user's remembered audio or subtitle language changes to the track's language, and turning subtitles off forgets the subtitle language. A stop report ends the playback, and so do 60 seconds with no report. An unknown playback, or one of another user, is not found. A report for an ended playback fails with the playback-ended problem, and the player then starts a new playback at its position, unless the report was a stop.
+      description: The player sends a report every 10 seconds while playing or paused, at once on pause, and on stop. The server stores the position, the paused state and the selected tracks with the time of the report. When the audio or subtitle track differs from the previous report, or in the first report from the default the server picked, the user's remembered audio or subtitle language changes to the track's language, and turning subtitles off forgets the subtitle language. A stop report ends the playback, and so do 60 seconds with no report. An unknown playback, or one of another user, is not found. A report for an ended playback fails with the playback-ended problem, and the player then starts a new playback at its position, unless the report was a stop.
       tags: [playback]
       parameters:
         - $ref: "#/components/parameters/PlaybackId"

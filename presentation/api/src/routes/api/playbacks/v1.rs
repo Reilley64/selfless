@@ -1762,6 +1762,33 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn the_first_report_after_a_play_request_that_named_other_tracks_remembers_their_languages()
+     {
+        let app = TestApp::new().await;
+        let (user_id, token) = signed_in_user(&app, NAME, PASSWORD).await;
+        let (media_file_id, _file) = add_media_file(&app, "mkv", Some("matroska,webm")).await;
+        let ids = add_subtitles(&app, media_file_id, &[ENGLISH]).await;
+        add_movie_playing(&app, media_file_id, true).await;
+        let server = serve(&app).await;
+        let (_, defaults) = start(&server, &token, media_file_id).await;
+        let japanese = track_id(&defaults, "audioTracks", 1);
+        let (_, named) = start_naming(
+            &server,
+            &token,
+            media_file_id,
+            json!({ "audioTrackId": japanese, "subtitleTrackId": ids[0] }),
+        )
+        .await;
+
+        report_tracks(&server, &token, &named, &japanese, &json!(ids[0])).await;
+
+        assert_eq!(
+            remembered(&app, user_id).await,
+            (Some("jpn".to_owned()), Some("eng".to_owned()))
+        );
+    }
+
+    #[tokio::test]
     async fn an_unknown_or_hidden_media_file_returns_404() {
         let app = TestApp::new().await;
         let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;

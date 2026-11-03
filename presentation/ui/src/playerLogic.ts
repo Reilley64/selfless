@@ -170,6 +170,9 @@ export function createPlayerLogic({
           break;
       }
     },
+    selected() {
+      return tracks;
+    },
     applySelectedAudio() {
       const playing = audioTracks.find((track) => track.default) ?? audioTracks[0];
       const selected = audioTracks.find((track) => track.id === audioTrackId);
