@@ -14,6 +14,7 @@ use application::ports::ReadEpisodeFolder;
 use application::ports::ReadEpisodeNfo;
 use application::ports::ReadMovieFolder;
 use application::ports::ReadMovieNfo;
+use application::ports::ReadNfoError;
 use application::ports::ReadShowFolder;
 use application::ports::ReadShowNfo;
 use application::ports::ShowFolder;
@@ -152,12 +153,12 @@ pub fn read_episode_nfo() -> ReadEpisodeNfo {
     })
 }
 
-async fn read_nfo<T: DeserializeOwned>(path: &str) -> Result<T, UnreadableNfo> {
+async fn read_nfo<T: DeserializeOwned>(path: &str) -> Result<T, ReadNfoError> {
     let bytes = tokio::fs::read(path)
         .await
-        .map_err(UnreadableNfo::caused_by)?;
+        .map_err(|x| UnreadableFile::caused_by(path.to_owned(), x))?;
     let text = String::from_utf8(bytes).map_err(UnreadableNfo::caused_by)?;
-    quick_xml::de::from_str(&clean_up(&text)).map_err(UnreadableNfo::caused_by)
+    Ok(quick_xml::de::from_str(&clean_up(&text)).map_err(UnreadableNfo::caused_by)?)
 }
 
 fn clean_up(text: &str) -> String {
@@ -364,6 +365,7 @@ mod tests {
     use application::ports::FoundFile;
     use application::ports::FoundMediaFile;
     use application::ports::NfoActor;
+    use application::ports::ReadNfoError;
     use jiff::Timestamp;
     use jiff::civil::date;
     use std::time::SystemTime;
@@ -486,12 +488,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_unreadable_movie_nfo_is_an_error() {
+    async fn a_movie_nfo_that_cannot_be_parsed_is_an_unreadable_nfo() {
         let nfo = read_movie_nfo()
             .call(&fixture("radarr/nfo/movie-unreadable.nfo"))
             .await;
 
-        assert!(nfo.is_err());
+        assert!(matches!(nfo, Err(ReadNfoError::UnreadableNfo(_))));
+    }
+
+    #[tokio::test]
+    async fn a_movie_nfo_that_cannot_be_read_is_an_unreadable_file() {
+        let folder = Folder::new();
+        let not_a_folder = folder.write("Arrival (2016)", "");
+        let path = format!("{not_a_folder}/Arrival (2016) Bluray-1080p.nfo");
+
+        let nfo = read_movie_nfo().call(&path).await;
+
+        assert!(matches!(nfo, Err(ReadNfoError::UnreadableFile(error)) if error.path == path));
     }
 
     #[tokio::test]
@@ -600,12 +613,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_unreadable_episode_nfo_is_an_error() {
+    async fn an_episode_nfo_that_cannot_be_parsed_is_an_unreadable_nfo() {
         let nfos = read_episode_nfo()
             .call(&fixture("sonarr/nfo/unreadable.nfo"))
             .await;
 
-        assert!(nfos.is_err());
+        assert!(matches!(nfos, Err(ReadNfoError::UnreadableNfo(_))));
     }
 
     #[tokio::test]

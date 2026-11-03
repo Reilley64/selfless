@@ -100,7 +100,7 @@ async fn movie_syncs_count_movies_added_changed_and_removed_by_source() {
                     Box::pin(async { Ok(Default::default()) })
                 }),
                 read_movie_nfo: ReadMovieNfo::new(|_| {
-                    Box::pin(async { Err(UnreadableNfo::default()) })
+                    Box::pin(async { Err(UnreadableNfo::default().into()) })
                 }),
                 source_health: SourceHealth::default(),
             },

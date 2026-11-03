@@ -526,19 +526,19 @@ impl ReadEpisodeFolder {
 }
 
 type ReadEpisodeNfoFn =
-    dyn Fn(String) -> PortFuture<Result<Vec<EpisodeNfo>, UnreadableNfo>> + Send + Sync;
+    dyn Fn(String) -> PortFuture<Result<Vec<EpisodeNfo>, ReadNfoError>> + Send + Sync;
 
 #[derive(Clone)]
 pub struct ReadEpisodeNfo(Arc<ReadEpisodeNfoFn>);
 
 impl ReadEpisodeNfo {
     pub fn new(
-        f: impl Fn(String) -> PortFuture<Result<Vec<EpisodeNfo>, UnreadableNfo>> + Send + Sync + 'static,
+        f: impl Fn(String) -> PortFuture<Result<Vec<EpisodeNfo>, ReadNfoError>> + Send + Sync + 'static,
     ) -> Self {
         Self(Arc::new(f))
     }
 
-    pub fn call(&self, path: &str) -> PortFuture<Result<Vec<EpisodeNfo>, UnreadableNfo>> {
+    pub fn call(&self, path: &str) -> PortFuture<Result<Vec<EpisodeNfo>, ReadNfoError>> {
         (self.0)(path.to_owned())
     }
 }
@@ -575,20 +575,38 @@ impl ReadMovieFolder {
     }
 }
 
-type ReadMovieNfoFn = dyn Fn(String) -> PortFuture<Result<MovieNfo, UnreadableNfo>> + Send + Sync;
+type ReadMovieNfoFn = dyn Fn(String) -> PortFuture<Result<MovieNfo, ReadNfoError>> + Send + Sync;
 
 #[derive(Clone)]
 pub struct ReadMovieNfo(Arc<ReadMovieNfoFn>);
 
 impl ReadMovieNfo {
     pub fn new(
-        f: impl Fn(String) -> PortFuture<Result<MovieNfo, UnreadableNfo>> + Send + Sync + 'static,
+        f: impl Fn(String) -> PortFuture<Result<MovieNfo, ReadNfoError>> + Send + Sync + 'static,
     ) -> Self {
         Self(Arc::new(f))
     }
 
-    pub fn call(&self, path: &str) -> PortFuture<Result<MovieNfo, UnreadableNfo>> {
+    pub fn call(&self, path: &str) -> PortFuture<Result<MovieNfo, ReadNfoError>> {
         (self.0)(path.to_owned())
+    }
+}
+
+#[derive(Debug)]
+pub enum ReadNfoError {
+    UnreadableFile(UnreadableFile),
+    UnreadableNfo(UnreadableNfo),
+}
+
+impl From<UnreadableFile> for ReadNfoError {
+    fn from(error: UnreadableFile) -> Self {
+        Self::UnreadableFile(error)
+    }
+}
+
+impl From<UnreadableNfo> for ReadNfoError {
+    fn from(error: UnreadableNfo) -> Self {
+        Self::UnreadableNfo(error)
     }
 }
 
@@ -703,19 +721,19 @@ impl ReadShowFolder {
     }
 }
 
-type ReadShowNfoFn = dyn Fn(String) -> PortFuture<Result<ShowNfo, UnreadableNfo>> + Send + Sync;
+type ReadShowNfoFn = dyn Fn(String) -> PortFuture<Result<ShowNfo, ReadNfoError>> + Send + Sync;
 
 #[derive(Clone)]
 pub struct ReadShowNfo(Arc<ReadShowNfoFn>);
 
 impl ReadShowNfo {
     pub fn new(
-        f: impl Fn(String) -> PortFuture<Result<ShowNfo, UnreadableNfo>> + Send + Sync + 'static,
+        f: impl Fn(String) -> PortFuture<Result<ShowNfo, ReadNfoError>> + Send + Sync + 'static,
     ) -> Self {
         Self(Arc::new(f))
     }
 
-    pub fn call(&self, path: &str) -> PortFuture<Result<ShowNfo, UnreadableNfo>> {
+    pub fn call(&self, path: &str) -> PortFuture<Result<ShowNfo, ReadNfoError>> {
         (self.0)(path.to_owned())
     }
 }
