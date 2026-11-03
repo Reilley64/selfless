@@ -732,7 +732,7 @@ paths:
     put:
       operationId: reportPlaybackProgress
       summary: Report how far a playback has got
-      description: The player sends a report every 10 seconds while playing or paused, at once on pause, and on stop. The server stores the position and paused state with the time of the report. A stop report ends the playback. An unknown or ended playback, or one of another user, is not found.
+      description: The player sends a report every 10 seconds while playing or paused, at once on pause, and on stop. The server stores the position and paused state with the time of the report. A stop report ends the playback, and so do 60 seconds with no report. An unknown playback, or one of another user, is not found. A report for an ended playback fails with the playback-ended problem, and the player then starts a new playback at its position, unless the report was a stop.
       tags: [playback]
       parameters:
         - $ref: "#/components/parameters/PlaybackId"
@@ -752,14 +752,14 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "404":
-          $ref: "#/components/responses/NotFound"
+          $ref: "#/components/responses/NotFoundOrPlaybackEnded"
         "500":
           $ref: "#/components/responses/InternalError"
   /api/playbacks/{playbackId}/media/{signature}/v1/file:
     get:
       operationId: getPlaybackFile
       summary: The media file of a direct play
-      description: The signature in the path authorizes the call, so it needs no session token. Take the URL from the playback. The file is served as it is on disk, and the player fetches parts of it with HTTP range requests.
+      description: The signature in the path authorizes the call, so it needs no session token. Take the URL from the playback. It works until the playback ends, and is not found after that. The file is served as it is on disk, and the player fetches parts of it with HTTP range requests.
       tags: [media]
       security: []
       parameters:
@@ -1089,6 +1089,23 @@ components:
                   status:
                     const: 404
           example: {"type":"urn:selfless:problem:not-found","title":"Nothing exists at this URL.","status":404}
+    NotFoundOrPlaybackEnded:
+      description: The playback is unknown or belongs to another user, or it has ended. Each has its own problem type.
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Problem"
+              - properties:
+                  type:
+                    enum: [urn:selfless:problem:not-found, urn:selfless:problem:playback-ended]
+                  status:
+                    const: 404
+          examples:
+            notFound:
+              value: {"type":"urn:selfless:problem:not-found","title":"Nothing exists at this URL.","status":404}
+            playbackEnded:
+              value: {"type":"urn:selfless:problem:playback-ended","title":"The playback has ended.","status":404}
     InvalidSignature:
       description: The signed URL has no signature, a wrong one, or it has expired. Get a new URL from the response that gave this one.
       content:

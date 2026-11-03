@@ -7,6 +7,7 @@ pub use error::Error;
 pub use output::Output;
 
 use crate::ports::persistence::DbScope;
+use domain::Playback;
 use domain::PlaybackSettings;
 use domain::Session;
 use domain::User;
@@ -30,6 +31,13 @@ pub async fn call(dependencies: impl Into<Dependencies>, id: Uuid) -> Result<Out
         .await
         .map_err(Error::caused_by)?;
     transaction
+        .playbacks()
+        .filter(Playback::fields().user_id().eq(id))
+        .delete()
+        .exec(transaction.executor_mut())
+        .await
+        .map_err(Error::caused_by)?;
+    transaction
         .playback_settings()
         .filter(PlaybackSettings::fields().user_id().eq(id))
         .delete()
@@ -45,6 +53,7 @@ mod tests {
     use super::*;
     use crate::ports::persistence::DbContext;
     use crate::test::mock_db_context;
+    use crate::test::playback;
     use crate::users::create_user;
     use domain::ClientKind;
     use domain::EmailAddress;
@@ -157,5 +166,39 @@ mod tests {
             .map(|x| x.user_id)
             .collect::<Vec<_>>();
         assert_eq!(settings, [ravi]);
+    }
+
+    #[tokio::test]
+    async fn deleting_a_user_deletes_their_playbacks() {
+        let mut db_context = mock_db_context().await;
+        let noor = create_user(&db_context, "Noor").await;
+        let ravi = create_user(&db_context, "Ravi").await;
+        for user_id in [noor, ravi] {
+            playback(&db_context, Timestamp::UNIX_EPOCH)
+                .user_id(user_id)
+                .exec(db_context.executor_mut())
+                .await
+                .unwrap();
+        }
+
+        call(
+            Dependencies {
+                db_context: db_context.clone(),
+            },
+            noor,
+        )
+        .await
+        .unwrap();
+
+        let playbacks = db_context
+            .playbacks()
+            .all()
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|x| x.user_id)
+            .collect::<Vec<_>>();
+        assert_eq!(playbacks, [ravi]);
     }
 }

@@ -1,6 +1,7 @@
 use crate::problem::INVALID_SIGNATURE;
 use crate::problem::NEEDS_HLS;
 use crate::problem::NOT_FOUND;
+use crate::problem::PLAYBACK_ENDED;
 use crate::problem::UNREADABLE_MEDIA_FILE;
 use crate::user_auth::CurrentSession;
 use application::playback::get_playback_file;
@@ -325,6 +326,7 @@ pub(crate) async fn progress(
     {
         report_progress::Output::Reported => StatusCode::NO_CONTENT.into_response(cx),
         report_progress::Output::NotFound => NOT_FOUND.into_response(cx),
+        report_progress::Output::Ended => PLAYBACK_ENDED.into_response(cx),
     }
 }
 
@@ -481,7 +483,7 @@ mod tests {
         token: &str,
         playback: &Value,
         stopped: bool,
-    ) -> StatusCode {
+    ) -> (StatusCode, Value) {
         server
             .request(
                 Method::PUT,
@@ -493,7 +495,6 @@ mod tests {
                 Some(json!({ "position": 12.5, "paused": false, "stopped": stopped })),
             )
             .await
-            .0
     }
 
     #[tokio::test]
@@ -701,21 +702,21 @@ mod tests {
         let (_, second) = start(&server, &token, media_file_id).await;
 
         assert_eq!(
-            report(&server, &token, &first, false).await,
+            report(&server, &token, &first, false).await.0,
             StatusCode::NOT_FOUND
         );
         assert_eq!(
-            report(&server, &token, &second, false).await,
+            report(&server, &token, &second, false).await.0,
             StatusCode::NO_CONTENT
         );
         assert_eq!(
-            report(&server, &other_token, &other_session, false).await,
+            report(&server, &other_token, &other_session, false).await.0,
             StatusCode::NO_CONTENT
         );
     }
 
     #[tokio::test]
-    async fn a_stop_report_ends_the_playback() {
+    async fn a_report_after_a_stop_returns_the_playback_ended_problem() {
         let app = TestApp::new().await;
         let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;
         let (media_file_id, _file) = add_media_file(&app, "mp4", Some(MP4)).await;
@@ -723,13 +724,31 @@ mod tests {
         let server = serve(&app).await;
         let (_, playback) = start(&server, &token, media_file_id).await;
 
-        let progress = report(&server, &token, &playback, false).await;
-        let stop = report(&server, &token, &playback, true).await;
-        let after_stop = report(&server, &token, &playback, false).await;
+        let (progress, _) = report(&server, &token, &playback, false).await;
+        let (stop, _) = report(&server, &token, &playback, true).await;
+        let (after_stop, problem) = report(&server, &token, &playback, false).await;
 
         assert_eq!(progress, StatusCode::NO_CONTENT);
         assert_eq!(stop, StatusCode::NO_CONTENT);
         assert_eq!(after_stop, StatusCode::NOT_FOUND);
+        assert_eq!(problem["type"], "urn:selfless:problem:playback-ended");
+    }
+
+    #[tokio::test]
+    async fn the_file_url_of_an_ended_playback_returns_404() {
+        let app = TestApp::new().await;
+        let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;
+        let (media_file_id, _file) = add_media_file(&app, "mp4", Some(MP4)).await;
+        add_movie_playing(&app, media_file_id, true).await;
+        let server = serve(&app).await;
+        let (_, playback) = start(&server, &token, media_file_id).await;
+        report(&server, &token, &playback, true).await;
+
+        let (status, _, problem) = server.get_bytes(playback["url"].as_str().unwrap()).await;
+
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        let problem = serde_json::from_slice::<Value>(&problem).unwrap();
+        assert_eq!(problem["type"], "urn:selfless:problem:not-found");
     }
 
     #[tokio::test]
@@ -774,9 +793,10 @@ mod tests {
         let server = serve(&app).await;
         let (_, playback) = start(&server, &token, media_file_id).await;
 
-        let status = report(&server, &other_token, &playback, false).await;
+        let (status, problem) = report(&server, &other_token, &playback, false).await;
 
         assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(problem["type"], "urn:selfless:problem:not-found");
     }
 
     #[tokio::test]
