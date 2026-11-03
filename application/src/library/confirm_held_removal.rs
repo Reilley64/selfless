@@ -176,6 +176,17 @@ mod tests {
                 .unwrap()
                 .is_some()
         }
+
+        async fn held_item_count(&self) -> usize {
+            let mut db_context = self.db_context.clone();
+            db_context
+                .held_removal_items()
+                .all()
+                .exec(db_context.executor_mut())
+                .await
+                .unwrap()
+                .len()
+        }
     }
 
     #[tokio::test]
@@ -189,6 +200,7 @@ mod tests {
 
         assert_eq!(movie_titles(&library.db_context).await, ["Arrival"]);
         assert!(!library.is_held().await);
+        assert_eq!(library.held_item_count().await, 0);
     }
 
     #[tokio::test]
@@ -202,5 +214,6 @@ mod tests {
 
         assert_eq!(movie_titles(&library.db_context).await, ["Arrival", "Dune"]);
         assert!(!library.is_held().await);
+        assert_eq!(library.held_item_count().await, 0);
     }
 }
