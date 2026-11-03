@@ -20,7 +20,7 @@ import {
   startPlaybackSpans,
 } from "@selfless/ui";
 import { useRouter } from "expo-router";
-import { useVideoPlayer, type VideoPlayer, VideoView } from "expo-video";
+import { type AudioTrack, type SubtitleTrack, useVideoPlayer, type VideoPlayer, VideoView } from "expo-video";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Platform, StyleSheet } from "react-native";
 import { Text, View } from "react-native-css/components";
@@ -141,6 +141,7 @@ function Video({
 }) {
   const [failed, setFailed] = useState(false);
   const position = useRef(resume.position);
+  const available = useRef<{ audio: AudioTrack[]; subtitle: SubtitleTrack[] }>({ audio: [], subtitle: [] });
   const player = useVideoPlayer({ uri: serverUrl(playback.url), metadata: { title: title(playback) } }, (player) => {
     player.timeUpdateEventInterval = 1;
     player.currentTime = resume.position;
@@ -150,14 +151,14 @@ function Video({
   });
   const logic = useMemo(() => {
     const showAudio = (track: PlaybackAudioTrack) => {
-      const playerTrack = playerTrackFor(track, player.availableAudioTracks, playback.audioTracks);
+      const playerTrack = playerTrackFor(track, available.current.audio, playback.audioTracks);
       if (playerTrack) {
         play(player, { audioTrack: playerTrack });
       }
     };
     const showSubtitle = (track: PlaybackSubtitleTrack | null) => {
       play(player, {
-        subtitleTrack: track && (playerTrackFor(track, player.availableSubtitleTracks, playback.subtitleTracks) ?? null),
+        subtitleTrack: track && (playerTrackFor(track, available.current.subtitle, playback.subtitleTracks) ?? null),
       });
     };
     return {
@@ -170,8 +171,8 @@ function Video({
         sendReport: (report) => reportPlaybackProgress(playback.playbackId, report),
         restart,
         showError: () => setFailed(true),
-        switchAudio: showAudio,
-        switchSubtitle: showSubtitle,
+        switchAudio: () => undefined,
+        switchSubtitle: () => undefined,
         spans,
       }),
     };
@@ -191,7 +192,8 @@ function Video({
         logic.handle({ type: "position", position: currentTime });
       }),
       player.addListener("playToEnd", () => logic.handle({ type: "stopped", position: position.current })),
-      player.addListener("sourceLoad", () => {
+      player.addListener("sourceLoad", ({ availableAudioTracks, availableSubtitleTracks }) => {
+        available.current = { audio: availableAudioTracks, subtitle: availableSubtitleTracks };
         const { audioTrackId, subtitleTrackId } = logic.selected();
         const audio = playback.audioTracks.find((track) => track.id === audioTrackId);
         if (audio) {
@@ -200,8 +202,14 @@ function Video({
         logic.showSubtitle(playback.subtitleTracks.find((track) => track.id === subtitleTrackId) ?? null);
         selectionShown = true;
       }),
+      player.addListener("availableAudioTracksChange", ({ availableAudioTracks }) => {
+        available.current = { ...available.current, audio: availableAudioTracks };
+      }),
+      player.addListener("availableSubtitleTracksChange", ({ availableSubtitleTracks }) => {
+        available.current = { ...available.current, subtitle: availableSubtitleTracks };
+      }),
       player.addListener("audioTrackChange", ({ audioTrack }) => {
-        const track = audioTrack && matchTrack(audioTrack, player.availableAudioTracks, playback.audioTracks);
+        const track = audioTrack && matchTrack(audioTrack, available.current.audio, playback.audioTracks);
         if (selectionShown && track) {
           logic.selectAudio(track);
         }
@@ -214,7 +222,7 @@ function Video({
           logic.selectSubtitle(null);
           return;
         }
-        const track = matchTrack(subtitleTrack, player.availableSubtitleTracks, playback.subtitleTracks);
+        const track = matchTrack(subtitleTrack, available.current.subtitle, playback.subtitleTracks);
         if (track) {
           logic.selectSubtitle(track);
         }

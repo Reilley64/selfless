@@ -83,6 +83,8 @@ export function Menu({
   return (
     <FocusGuide
       destinations={currentItem ? [currentItem] : []}
+      trapFocusUp
+      trapFocusDown
       className={`absolute inset-y-0 left-0 z-20 ${open ? "right-0" : "w-nav-tv-width"}`}
     >
       <View
