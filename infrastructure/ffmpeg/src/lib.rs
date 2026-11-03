@@ -11,6 +11,15 @@ use tokio::process::Command;
 use tracing::Instrument;
 use tracing::field;
 
+mod hls;
+mod keyframes;
+mod matroska;
+mod mp4;
+
+pub use hls::Segments;
+pub use hls::remux;
+pub use keyframes::read_keyframes;
+
 const PROBE_TIMEOUT: Duration = Duration::from_secs(120);
 
 const IMAGE_SUBTITLE_CODECS: [&str; 4] =

@@ -55,6 +55,12 @@ jobs:
       - name: "Setup: Install the Rust toolchain from rust-toolchain.toml"
         run: rustup toolchain install
 
+      - name: "Setup: Install jellyfin-ffmpeg from the version in the Dockerfile"
+        run: |
+          version=$(sed -n 's/^ARG JELLYFIN_FFMPEG_VERSION=//p' Dockerfile)
+          curl --fail --location --silent --show-error "https://github.com/jellyfin/jellyfin-ffmpeg/releases/download/v${version}/jellyfin-ffmpeg_${version}_portable_linux64-gpl.tar.xz" \
+            | sudo tar --extract --xz --directory /usr/local/bin ffmpeg ffprobe
+
       - name: "Setup: Restore the Rust cache"
         uses: Swatinem/rust-cache@v2
         with:
