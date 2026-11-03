@@ -5,3 +5,9 @@ templates:
   - template: attributes.ts.j2
     filter: '{attributes: [.groups[] | select(.type == "attribute_group") | .attributes[]] | sort_by(.name)}'
     application_mode: single
+  - template: events.ts.j2
+    filter: '{events: [.groups[] | select(.type == "event")] | sort_by(.name)}'
+    application_mode: single
+  - template: spans.ts.j2
+    filter: '{spans: [.groups[] | select(.type == "span")] | sort_by(.id)}'
+    application_mode: single

@@ -1,5 +1,5 @@
-import { type Playback, reportPlaybackProgress, startPlayback } from "@selfless/api-client";
-import { createPlayerLogic } from "@selfless/ui";
+import { type Playback, reportPlaybackProgress, startPlayback, useGetMe } from "@selfless/api-client";
+import { createPlayerLogic, type PlaybackSpans, startPlaybackSpans } from "@selfless/ui";
 import { type Href, useRouter } from "expo-router";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native-css/components";
@@ -7,7 +7,14 @@ import { capabilityProfile } from "../capabilityProfile";
 import { ServerUnreachable } from "./form";
 import { NotFound } from "./NotFound";
 
-type Start = Awaited<ReturnType<typeof startPlayback>> | "unreachable";
+const mediaErrors: Record<number, string> = {
+  1: "MEDIA_ERR_ABORTED",
+  2: "MEDIA_ERR_NETWORK",
+  3: "MEDIA_ERR_DECODE",
+  4: "MEDIA_ERR_SRC_NOT_SUPPORTED",
+};
+
+type Start = { response: Awaited<ReturnType<typeof startPlayback>>; spans: PlaybackSpans } | "unreachable";
 
 export function Player({
   mediaFileId,
@@ -18,34 +25,58 @@ export function Player({
   startPosition: number;
   backHref: Href;
 }) {
+  const { data: me, isError } = useGetMe();
+  const userId = me?.status === 200 ? me.data.id : undefined;
   const [start, setStart] = useState<Start>();
   useEffect(() => {
+    if (userId === undefined) {
+      return;
+    }
     let current = true;
+    let answered = false;
+    const spans = startPlaybackSpans(userId, mediaFileId);
     capabilityProfile()
-      .then((profile) => startPlayback({ mediaFileId, startPosition, profile }))
+      .then((profile) => spans.during(() => startPlayback({ mediaFileId, startPosition, profile })))
       .then(
-        (response) => current && setStart(response),
-        () => current && setStart("unreachable"),
+        (response) => {
+          answered = true;
+          if (response.status !== 201) {
+            spans.failed(String(response.status));
+          }
+          if (current) {
+            setStart({ response, spans });
+          }
+        },
+        (error: unknown) => {
+          answered = true;
+          spans.failed(error instanceof Error ? error.name : "_OTHER");
+          if (current) {
+            setStart("unreachable");
+          }
+        },
       );
     return () => {
       current = false;
+      if (!answered) {
+        spans.stopped();
+      }
     };
-  }, [mediaFileId, startPosition]);
-  if (start === undefined) {
-    return <Screen backHref={backHref} />;
-  }
-  if (start === "unreachable") {
+  }, [userId, mediaFileId, startPosition]);
+  if (isError || start === "unreachable") {
     return (
       <Screen backHref={backHref}>
         <ServerUnreachable />
       </Screen>
     );
   }
-  switch (start.status) {
+  if (start === undefined) {
+    return <Screen backHref={backHref} />;
+  }
+  switch (start.response.status) {
     case 201:
       return (
         <Screen backHref={backHref}>
-          <Video playback={start.data} startPosition={startPosition} />
+          <Video playback={start.response.data} spans={start.spans} startPosition={startPosition} />
         </Screen>
       );
     case 404:
@@ -63,15 +94,23 @@ export function Player({
   }
 }
 
-function Video({ playback, startPosition }: { playback: Playback; startPosition: number }) {
+function Video({
+  playback,
+  spans,
+  startPosition,
+}: {
+  playback: Playback;
+  spans: PlaybackSpans;
+  startPosition: number;
+}) {
   const [failed, setFailed] = useState(false);
   const position = useRef(startPosition);
   const logic = useMemo(
     () =>
       createPlayerLogic((report) => {
         reportPlaybackProgress(playback.playbackId, report).catch(() => undefined);
-      }),
-    [playback.playbackId],
+      }, spans),
+    [playback.playbackId, spans],
   );
   useEffect(() => () => logic.handle({ type: "stopped", position: position.current }), [logic]);
   const at = (video: HTMLVideoElement) => {
@@ -96,9 +135,17 @@ function Video({ playback, startPosition }: { playback: Playback; startPosition:
           logic.handle({ type: "paused", position: at(event.currentTarget) });
         }
       }}
+      onSeeked={(event) => logic.handle({ type: "seeked", position: at(event.currentTarget) })}
       onTimeUpdate={(event) => logic.handle({ type: "position", position: at(event.currentTarget) })}
       onEnded={(event) => logic.handle({ type: "stopped", position: at(event.currentTarget) })}
-      onError={() => setFailed(true)}
+      onError={(event) => {
+        logic.handle({
+          type: "failed",
+          position: at(event.currentTarget),
+          errorType: mediaErrors[event.currentTarget.error?.code ?? 0] ?? "_OTHER",
+        });
+        setFailed(true);
+      }}
     />
   );
 }

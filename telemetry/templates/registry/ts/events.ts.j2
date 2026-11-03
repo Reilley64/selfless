@@ -1,0 +1,3 @@
+{% for event in ctx.events %}
+export const {{ event.name | screaming_snake_case }} = "{{ event.name }}";
+{% endfor %}
