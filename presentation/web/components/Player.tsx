@@ -5,12 +5,14 @@ import {
   reportPlaybackProgress,
 } from "@selfless/api-client";
 import {
+  ActionButton,
   createPlayerLogic,
   NextEpisodeButton,
   type NextEpisodeButtonState,
   nextEpisodeHref,
   type PlaybackSpans,
   type Resume,
+  serverUnreachable,
   StillWatchingPrompt,
   type Tracks,
   usePlaybackStart,
@@ -21,7 +23,6 @@ import HlsJs, { Events } from "hls.js";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native-css/components";
 import { capabilityProfile } from "../capabilityProfile";
-import { ServerUnreachable } from "./form";
 import { NotFound } from "./NotFound";
 
 const mediaErrors: Record<number, string> = {
@@ -62,12 +63,9 @@ function Playing({ mediaFileId, startPosition, autoplayed, stillWatching, backHr
     stillWatching,
     profile: capabilityProfile,
   });
+  const retry = () => restart({ ...resume });
   if (start === "unreachable") {
-    return (
-      <Screen backHref={backHref}>
-        <ServerUnreachable />
-      </Screen>
-    );
+    return <Failure backHref={backHref} message={serverUnreachable} onRetry={retry} />;
   }
   if (start === undefined) {
     return <Screen backHref={backHref} />;
@@ -75,28 +73,22 @@ function Playing({ mediaFileId, startPosition, autoplayed, stillWatching, backHr
   switch (start.response.status) {
     case 201:
       return (
-        <Screen backHref={backHref}>
-          <Video
-            key={start.response.data.playbackId}
-            playback={start.response.data}
-            spans={start.spans}
-            resume={resume}
-            restart={restart}
-            backHref={backHref}
-            titleHref={titleHref}
-          />
-        </Screen>
+        <Video
+          key={start.response.data.playbackId}
+          playback={start.response.data}
+          spans={start.spans}
+          resume={resume}
+          restart={restart}
+          backHref={backHref}
+          titleHref={titleHref}
+        />
       );
     case 404:
       return <NotFound />;
     case 422:
-      return <Message backHref={backHref}>selfless can&apos;t read this file.</Message>;
+      return <Failure backHref={backHref} message="selfless can't read this file." />;
     default:
-      return (
-        <Screen backHref={backHref}>
-          <ServerUnreachable />
-        </Screen>
-      );
+      return <Failure backHref={backHref} message={serverUnreachable} onRetry={retry} />;
   }
 }
 
@@ -239,10 +231,25 @@ function Video({
     return element.currentTime;
   };
   if (failed) {
-    return <Text className="font-sans text-web-body text-accent">This browser can&apos;t play this file.</Text>;
+    return (
+      <Failure
+        backHref={backHref}
+        message="This file stopped playing."
+        onRetry={() =>
+          restart({
+            position: position.current,
+            paused: false,
+            forceHls: resume.forceHls,
+            tracks: logic.selected(),
+            autoplayed: 0,
+            stillWatching: false,
+          })
+        }
+      />
+    );
   }
   return (
-    <>
+    <Screen backHref={backHref}>
       <video
         ref={(element) => {
           logic.attach({ video: element ?? undefined });
@@ -296,7 +303,7 @@ function Video({
           onPress={logic.playNextEpisode}
         />
       )}
-    </>
+    </Screen>
   );
 }
 
@@ -399,13 +406,16 @@ function TrackMenus({
   );
 }
 
-function Message({ backHref, children }: { backHref: Href; children: ReactNode }) {
+function Failure({ backHref, message, onRetry }: { backHref: Href; message: string; onRetry?: () => void }) {
+  const back = useBack(backHref);
   return (
-    <Screen backHref={backHref}>
-      <View className="flex-1 items-center justify-center">
-        <Text className="font-sans text-web-body text-text-primary">{children}</Text>
+    <View className="flex-1 items-start justify-center gap-6 bg-background px-web-inset">
+      <Text className="font-sans text-web-body text-text-primary">{message}</Text>
+      <View className="flex-row gap-3">
+        {onRetry && <ActionButton label="Retry" primary onPress={onRetry} />}
+        <ActionButton label="Back" onPress={back} />
       </View>
-    </Screen>
+    </View>
   );
 }
 
