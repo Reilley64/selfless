@@ -96,21 +96,19 @@ function GridPage({
   const numColumns = Math.max(1, Math.floor((width - 2 * WEB_INSET + WEB_GAP) / (MIN_WEB_TILE_WIDTH + WEB_GAP)));
   return (
     <View className="flex-1 bg-background px-10">
+      <View className="z-10 gap-4 px-2 pt-8 pb-5">
+        <View className="flex-row items-center gap-6">
+          <Text className="font-sans font-extrabold text-web-heading text-text-primary">{title}</Text>
+          <GridSelectors kind={kind} />
+        </View>
+        {error}
+      </View>
       <TileGrid
         key={`${numColumns} ${genre} ${sort}`}
         tiles={tiles}
         numColumns={numColumns}
         onEndReached={loadMore}
         onPressTile={(tile) => router.push(tilePath(tile))}
-        header={
-          <View className="gap-4 px-2 pt-8 pb-5">
-            <View className="z-50 flex-row items-center gap-6">
-              <Text className="font-sans font-extrabold text-web-heading text-text-primary">{title}</Text>
-              <GridSelectors kind={kind} />
-            </View>
-            {error}
-          </View>
-        }
       />
     </View>
   );
