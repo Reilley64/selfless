@@ -139,5 +139,8 @@ groups:
   - id: event.selfless.playback.switched
     type: event
     name: selfless.playback.switched
-    brief: The player could not play the media file directly and started it again through HLS at the same position.
+    brief: >
+      The player started the media file again at the same position, through HLS after a direct play failed, or
+      for an audio or subtitle track the stream it played could not switch to.
+    note: After a failed direct play, error.type holds the player's error.
     stability: development

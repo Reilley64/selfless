@@ -132,6 +132,8 @@ async fn play_requests_are_counted_by_play_method_client_kind_and_reason_kinds()
             client_kind,
             media_file_id,
             0.0,
+            None,
+            None,
             &profile,
             force_hls,
         )

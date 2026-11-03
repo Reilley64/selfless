@@ -20,6 +20,8 @@ pub struct Playback {
     pub duration: Option<Duration>,
     pub movie: Option<Movie>,
     pub episodes: Vec<Episode>,
+    pub audio_track_id: Option<Uuid>,
+    pub subtitle_track_id: Option<Uuid>,
     pub audio_tracks: Vec<AudioTrack>,
     pub subtitle_tracks: Vec<SubtitleTrack>,
 }

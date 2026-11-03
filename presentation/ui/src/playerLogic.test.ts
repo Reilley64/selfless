@@ -12,7 +12,7 @@ import type {
   PlaybackSubtitleTrack,
   reportPlaybackProgressResponse,
 } from "@selfless/api-client";
-import { type ProgressReport, type Resume, createPlayerLogic, matchTrack, startPlaybackSpans } from "./playerLogic";
+import { type ProgressReport, type Resume, createPlayerLogic, matchTrack, playerTrackFor, startPlaybackSpans } from "./playerLogic";
 
 const userId = "01890a5d-ac96-774b-bcce-b302099a8057";
 const mediaFileId = "01890a5d-ac96-774b-bcce-b302099a8060";
@@ -46,16 +46,47 @@ const notFound: reportPlaybackProgressResponse = {
   headers,
 };
 
+function audioTrack(id: string, overrides: Partial<PlaybackAudioTrack> = {}): PlaybackAudioTrack {
+  return { id, language: "eng", label: null, codec: "aac", channels: 2, default: false, inStream: true, ...overrides };
+}
+
+function subtitleTrack(id: string, overrides: Partial<PlaybackSubtitleTrack> = {}): PlaybackSubtitleTrack {
+  return {
+    id,
+    language: "eng",
+    label: null,
+    codec: "subrip",
+    default: false,
+    forced: false,
+    hearingImpaired: false,
+    external: false,
+    text: true,
+    inStream: true,
+    ...overrides,
+  };
+}
+
+const english = audioTrack("english", { default: true });
+const japanese = audioTrack("japanese", { language: "jpn" });
+const tracks = { audioTrackId: "english", subtitleTrackId: null };
+
 function player(
   response = reported,
-  { method = "directPlay", forceHls = false }: { method?: PlayMethod; forceHls?: boolean } = {},
+  {
+    method = "directPlay",
+    forceHls = false,
+    audioTrackId = "english",
+    audioSwitchesInPlace = true,
+  }: { method?: PlayMethod; forceHls?: boolean; audioTrackId?: string; audioSwitchesInPlace?: boolean } = {},
 ) {
   const reports: ProgressReport[] = [];
   const restarts: Resume[] = [];
   const errors: number[] = [];
+  const switches: (string | null)[] = [];
   const spans = startPlaybackSpans(userId, mediaFileId);
   const logic = createPlayerLogic({
-    method,
+    playback: { method, audioTracks: [english, japanese], audioTrackId, subtitleTrackId: null },
+    audioSwitchesInPlace,
     forceHls,
     sendReport: async (report) => {
       reports.push(report);
@@ -63,9 +94,11 @@ function player(
     },
     restart: (resume) => restarts.push(resume),
     showError: () => errors.push(errors.length),
+    switchAudio: (track) => switches.push(track.id),
+    switchSubtitle: (track) => switches.push(track?.id ?? null),
     spans,
   });
-  return { reports, restarts, errors, spans, logic };
+  return { reports, restarts, errors, switches, spans, logic };
 }
 
 function playbackSpans() {
@@ -89,8 +122,8 @@ test("while playing, a report goes every 10 seconds with the latest position", (
 
   expect(beforeTenSeconds).toBe(0);
   expect(reports).toEqual([
-    { position: 9.9, paused: false, stopped: false },
-    { position: 19.9, paused: false, stopped: false },
+    { position: 9.9, paused: false, stopped: false, ...tracks },
+    { position: 19.9, paused: false, stopped: false, ...tracks },
   ]);
 });
 
@@ -103,10 +136,10 @@ test("a pause reports at once, then every 10 seconds while paused", () => {
   const atPause = [...reports];
   jest.advanceTimersByTime(10_000);
 
-  expect(atPause).toEqual([{ position: 4, paused: true, stopped: false }]);
+  expect(atPause).toEqual([{ position: 4, paused: true, stopped: false, ...tracks }]);
   expect(reports).toEqual([
-    { position: 4, paused: true, stopped: false },
-    { position: 4, paused: true, stopped: false },
+    { position: 4, paused: true, stopped: false, ...tracks },
+    { position: 4, paused: true, stopped: false, ...tracks },
   ]);
 });
 
@@ -119,7 +152,7 @@ test("a stop reports at once and ends the reports", () => {
   logic.handle({ type: "paused", position: 3 });
   jest.advanceTimersByTime(30_000);
 
-  expect(reports).toEqual([{ position: 3, paused: false, stopped: true }]);
+  expect(reports).toEqual([{ position: 3, paused: false, stopped: true, ...tracks }]);
 });
 
 test("nothing is reported before playback starts", () => {
@@ -141,8 +174,8 @@ test("a report on an ended playback starts a new playback at the position, pause
   paused.logic.handle({ type: "paused", position: 7 });
   await jest.advanceTimersByTimeAsync(10_000);
 
-  expect(playing.restarts).toEqual([{ position: 9.9, paused: false, forceHls: false }]);
-  expect(paused.restarts).toEqual([{ position: 7, paused: true, forceHls: false }]);
+  expect(playing.restarts).toEqual([{ position: 9.9, paused: false, forceHls: false, tracks }]);
+  expect(paused.restarts).toEqual([{ position: 7, paused: true, forceHls: false, tracks }]);
 });
 
 test("a playback that ended after a switch to HLS starts again through HLS", async () => {
@@ -152,7 +185,7 @@ test("a playback that ended after a switch to HLS starts again through HLS", asy
   logic.handle({ type: "position", position: 9.9 });
   await jest.advanceTimersByTimeAsync(10_000);
 
-  expect(restarts).toEqual([{ position: 9.9, paused: false, forceHls: true }]);
+  expect(restarts).toEqual([{ position: 9.9, paused: false, forceHls: true, tracks }]);
 });
 
 test("a direct play error starts the playback again through HLS at the same position", async () => {
@@ -163,7 +196,7 @@ test("a direct play error starts the playback again through HLS at the same posi
   await jest.advanceTimersByTimeAsync(30_000);
 
   const switched = playbackSpans()[1];
-  expect(restarts).toEqual([{ position: 42, paused: false, forceHls: true }]);
+  expect(restarts).toEqual([{ position: 42, paused: false, forceHls: true, tracks }]);
   expect(errors).toEqual([]);
   expect(reports).toEqual([]);
   expect(switched?.events.map((event) => event.name)).toEqual(["selfless.playback.switched"]);
@@ -285,30 +318,93 @@ test("a play request that fails ends the first playback span with failed", () =>
   expect(first?.status.code).toBe(SpanStatusCode.ERROR);
 });
 
-function audioTrack(id: string, language: string | null, label: string | null): PlaybackAudioTrack {
-  return { id, language, label, codec: "aac", channels: 2, default: false, inStream: true };
-}
+test("an audio track in the stream switches in place, and the next report carries it", async () => {
+  const { reports, restarts, switches, logic } = player(reported, { method: "remux" });
+  logic.handle({ type: "playing", position: 0 });
 
-function subtitleTrack(id: string, language: string, codec: string, inStream: boolean): PlaybackSubtitleTrack {
-  return {
-    id,
-    language,
-    label: null,
-    codec,
-    default: false,
-    forced: false,
-    hearingImpaired: false,
-    external: codec === "srt",
-    text: inStream,
-    inStream,
-  };
-}
+  logic.selectAudio(japanese);
+  logic.handle({ type: "position", position: 9.9 });
+  await jest.advanceTimersByTimeAsync(10_000);
+
+  expect(switches).toEqual(["japanese"]);
+  expect(restarts).toEqual([]);
+  expect(reports).toEqual([
+    { position: 9.9, paused: false, stopped: false, audioTrackId: "japanese", subtitleTrackId: null },
+  ]);
+});
+
+test("a subtitle in the stream turns on in place, and turning subtitles off switches in place too", () => {
+  const { restarts, switches, logic } = player(reported, { method: "remux" });
+  logic.handle({ type: "playing", position: 0 });
+
+  logic.selectSubtitle(subtitleTrack("english"));
+  logic.selectSubtitle(null);
+
+  expect(switches).toEqual(["english", null]);
+  expect(restarts).toEqual([]);
+});
+
+test("a subtitle outside the stream starts a new playback at the current position and records a switch", () => {
+  const { restarts, switches, logic } = player();
+  logic.handle({ type: "playing", position: 0 });
+  logic.handle({ type: "position", position: 61 });
+
+  logic.selectSubtitle(subtitleTrack("external", { external: true, inStream: false }));
+  logic.handle({ type: "paused", position: 61 });
+
+  const switched = playbackSpans()[1];
+  expect(switches).toEqual([]);
+  expect(restarts).toEqual([
+    { position: 61, paused: false, forceHls: false, tracks: { audioTrackId: "english", subtitleTrackId: "external" } },
+  ]);
+  expect(switched?.events.map((event) => event.name)).toEqual(["selfless.playback.switched"]);
+  expect(switched?.attributes["error.type"]).toBeUndefined();
+});
+
+test("an audio track the player can't switch to in place starts a new playback through HLS", () => {
+  const { restarts, switches, logic } = player(reported, { audioSwitchesInPlace: false });
+  logic.handle({ type: "playing", position: 30 });
+
+  logic.selectAudio(japanese);
+
+  expect(switches).toEqual([]);
+  expect(restarts).toEqual([
+    { position: 30, paused: false, forceHls: true, tracks: { audioTrackId: "japanese", subtitleTrackId: null } },
+  ]);
+});
+
+test("picking the track that already plays changes nothing", () => {
+  const { restarts, switches, logic } = player();
+
+  logic.selectAudio(english);
+  logic.selectSubtitle(null);
+
+  expect(switches).toEqual([]);
+  expect(restarts).toEqual([]);
+});
+
+test("a direct play of a selected audio track that is not the file's default switches to it", () => {
+  const inPlace = player(reported, { audioTrackId: "japanese" });
+  const notInPlace = player(reported, { audioTrackId: "japanese", audioSwitchesInPlace: false });
+  const theDefault = player(reported, { audioSwitchesInPlace: false });
+
+  for (const { logic } of [inPlace, notInPlace, theDefault]) {
+    logic.applySelectedAudio();
+  }
+
+  expect(inPlace.switches).toEqual(["japanese"]);
+  expect(inPlace.restarts).toEqual([]);
+  expect(notInPlace.restarts).toEqual([
+    { position: 0, paused: false, forceHls: true, tracks: { audioTrackId: "japanese", subtitleTrackId: null } },
+  ]);
+  expect(theDefault.restarts).toEqual([]);
+});
 
 test("a player track matches the API track in its language, whether the language has two or three letters", () => {
   const french = { language: "fr", label: "French" };
   const brazilian = { language: "pt_BR", label: "Portuguese (BR)" };
   const players = [french, brazilian];
-  const tracks = [audioTrack("eng", "eng", "Stereo"), audioTrack("fre", "fre", "Stereo"), audioTrack("pt", "pt-BR", null)];
+  const tracks = [audioTrack("eng", { label: "Stereo" }), audioTrack("fre", { language: "fre", label: "Stereo" }), audioTrack("pt", { language: "pt-BR" })];
 
   expect([matchTrack(french, players, tracks)?.id, matchTrack(brazilian, players, tracks)?.id]).toEqual(["fre", "pt"]);
 });
@@ -319,14 +415,35 @@ test("player tracks in one language match the API tracks in that language in ord
     { language: "ja", label: "Japanese" },
     { language: "en", label: "English (Commentary)" },
   ];
-  const tracks = [audioTrack("stereo", "eng", "Stereo"), audioTrack("japanese", "jpn", null), audioTrack("commentary", "eng", "Commentary")];
+  const tracks = [audioTrack("stereo", { label: "Stereo" }), audioTrack("japanese", { language: "jpn" }), audioTrack("commentary", { label: "Commentary" })];
 
   expect(matchTrack({ language: "en", label: "English (Commentary)" }, players, tracks)?.id).toBe("commentary");
 });
 
 test("a player track matches no API track the stream doesn't carry", () => {
   const english = { language: "en", label: "English" };
-  const tracks = [subtitleTrack("pgs", "eng", "hdmv_pgs_subtitle", false), subtitleTrack("srt", "en", "srt", true)];
+  const tracks = [subtitleTrack("pgs", { codec: "hdmv_pgs_subtitle", text: false, inStream: false }), subtitleTrack("srt", { language: "en", codec: "srt", external: true })];
 
   expect([matchTrack(english, [english], tracks)?.id, matchTrack({ language: "de", label: "German" }, [english], tracks)]).toEqual(["srt", undefined]);
+});
+
+test("an API track finds the player track in its place among the player tracks of its language", () => {
+  const players = [
+    { language: "en", label: "English (Stereo)" },
+    { language: "ja", label: "Japanese" },
+    { language: "en", label: "English (Commentary)" },
+  ];
+  const tracks = [
+    audioTrack("stereo", { label: "Stereo" }),
+    audioTrack("japanese", { language: "jpn" }),
+    audioTrack("commentary", { label: "Commentary" }),
+    audioTrack("german", { language: "ger" }),
+  ];
+
+  expect(tracks.map((track) => playerTrackFor(track, players, tracks)?.label)).toEqual([
+    "English (Stereo)",
+    "Japanese",
+    "English (Commentary)",
+    undefined,
+  ]);
 });

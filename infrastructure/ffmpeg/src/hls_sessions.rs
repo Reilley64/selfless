@@ -257,7 +257,7 @@ impl HlsSessions {
                  {}\
                  #EXT-X-STREAM-INF:BANDWIDTH={bandwidth},RESOLUTION={width}x{height}{groups}\n\
                  {VIDEO}\n",
-                subtitles::media_tags(renditions),
+                subtitles::media_tags(renditions, session.selected_subtitle),
             ),
         )
         .await?;
@@ -529,6 +529,7 @@ mod tests {
             audio: vec![audio_track(None, None, None, true)],
             subtitle_streams: Vec::new(),
             subtitle_files: Vec::new(),
+            selected_subtitle: None,
             start_position,
         }
     }
@@ -747,6 +748,24 @@ mod tests {
             video.contains("#EXTINF:3.964000,\n6.m4s\n#EXT-X-ENDLIST"),
             "{video}"
         );
+    }
+
+    #[tokio::test]
+    async fn the_selected_subtitle_is_the_default_of_the_subtitle_group() {
+        let session = HlsSession {
+            selected_subtitle: Some(2),
+            ..subtitle_session(Duration::ZERO).await
+        };
+        let (_dir, sessions) = started_with(session).await;
+
+        let main = read(&sessions, "main.m3u8").await;
+
+        let defaults = main
+            .lines()
+            .filter(|x| x.starts_with("#EXT-X-MEDIA:TYPE=SUBTITLES"))
+            .map(|x| x.contains(",DEFAULT=YES,"))
+            .collect::<Vec<_>>();
+        assert_eq!(defaults, [false, false, true, false]);
     }
 
     #[tokio::test]

@@ -1,16 +1,26 @@
-import { type Playback, reportPlaybackProgress, serverUrl, startPlayback, useGetMe } from "@selfless/api-client";
+import {
+  type Playback,
+  type PlaybackAudioTrack,
+  type PlaybackSubtitleTrack,
+  reportPlaybackProgress,
+  serverUrl,
+  startPlayback,
+  useGetMe,
+} from "@selfless/api-client";
 import {
   ActionButton,
   createPlayerLogic,
   episodeLabel,
   FocusGuide,
+  matchTrack,
   type PlaybackSpans,
+  playerTrackFor,
   type Resume,
   serverUnreachable,
   startPlaybackSpans,
 } from "@selfless/ui";
 import { useRouter } from "expo-router";
-import { useVideoPlayer, VideoView } from "expo-video";
+import { useVideoPlayer, type VideoPlayer, VideoView } from "expo-video";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet } from "react-native";
 import { Text, View } from "react-native-css/components";
@@ -40,7 +50,16 @@ function Playing({ mediaFileId, startPosition }: PlayerProps) {
     const spans = startPlaybackSpans(userId, mediaFileId);
     spans
       .during(() =>
-        startPlayback({ mediaFileId, startPosition: resume.position, profile: appleTvProfile, forceHls: resume.forceHls }),
+        startPlayback({
+          mediaFileId,
+          startPosition: resume.position,
+          profile: appleTvProfile,
+          forceHls: resume.forceHls,
+          ...(resume.tracks && {
+            audioTrackId: resume.tracks.audioTrackId ?? undefined,
+            subtitleTrackId: resume.tracks.subtitleTrackId,
+          }),
+        }),
       )
       .then(
         (response) => {
@@ -119,18 +138,6 @@ function Video({
 }) {
   const [failed, setFailed] = useState(false);
   const position = useRef(resume.position);
-  const logic = useMemo(
-    () =>
-      createPlayerLogic({
-        method: playback.method,
-        forceHls: resume.forceHls,
-        sendReport: (report) => reportPlaybackProgress(playback.playbackId, report),
-        restart,
-        showError: () => setFailed(true),
-        spans,
-      }),
-    [playback.playbackId, playback.method, resume.forceHls, restart, spans],
-  );
   const player = useVideoPlayer({ uri: serverUrl(playback.url), metadata: { title: title(playback) } }, (player) => {
     player.timeUpdateEventInterval = 1;
     player.currentTime = resume.position;
@@ -138,7 +145,36 @@ function Video({
       player.play();
     }
   });
+  const logic = useMemo(() => {
+    const showAudio = (track: PlaybackAudioTrack) => {
+      const playerTrack = playerTrackFor(track, player.availableAudioTracks, playback.audioTracks);
+      if (playerTrack) {
+        play(player, { audioTrack: playerTrack });
+      }
+    };
+    const showSubtitle = (track: PlaybackSubtitleTrack | null) => {
+      play(player, {
+        subtitleTrack: track && (playerTrackFor(track, player.availableSubtitleTracks, playback.subtitleTracks) ?? null),
+      });
+    };
+    return {
+      showAudio,
+      showSubtitle,
+      ...createPlayerLogic({
+        playback,
+        audioSwitchesInPlace: true,
+        forceHls: resume.forceHls,
+        sendReport: (report) => reportPlaybackProgress(playback.playbackId, report),
+        restart,
+        showError: () => setFailed(true),
+        switchAudio: showAudio,
+        switchSubtitle: showSubtitle,
+        spans,
+      }),
+    };
+  }, [player, playback, resume.forceHls, restart, spans]);
   useEffect(() => {
+    let selectionShown = false;
     const subscriptions = [
       player.addListener("playingChange", ({ isPlaying }) => {
         if (isPlaying) {
@@ -152,6 +188,34 @@ function Video({
         logic.handle({ type: "position", position: currentTime });
       }),
       player.addListener("playToEnd", () => logic.handle({ type: "stopped", position: position.current })),
+      player.addListener("sourceLoad", () => {
+        const { audioTrackId, subtitleTrackId } = logic.selected();
+        const audio = playback.audioTracks.find((track) => track.id === audioTrackId);
+        if (audio) {
+          logic.showAudio(audio);
+        }
+        logic.showSubtitle(playback.subtitleTracks.find((track) => track.id === subtitleTrackId) ?? null);
+        selectionShown = true;
+      }),
+      player.addListener("audioTrackChange", ({ audioTrack }) => {
+        const track = audioTrack && matchTrack(audioTrack, player.availableAudioTracks, playback.audioTracks);
+        if (selectionShown && track) {
+          logic.selectAudio(track);
+        }
+      }),
+      player.addListener("subtitleTrackChange", ({ subtitleTrack }) => {
+        if (!selectionShown) {
+          return;
+        }
+        if (subtitleTrack === null) {
+          logic.selectSubtitle(null);
+          return;
+        }
+        const track = matchTrack(subtitleTrack, player.availableSubtitleTracks, playback.subtitleTracks);
+        if (track) {
+          logic.selectSubtitle(track);
+        }
+      }),
       player.addListener("statusChange", ({ status }) => {
         if (status === "error") {
           logic.handle({ type: "failed", position: position.current, errorType: "_OTHER" });
@@ -164,16 +228,22 @@ function Video({
       }
       logic.handle({ type: "stopped", position: position.current });
     };
-  }, [logic, player]);
+  }, [logic, player, playback]);
   if (failed) {
     return (
       <Failure
         message="This file stopped playing."
-        onRetry={() => restart({ position: position.current, paused: false, forceHls: resume.forceHls })}
+        onRetry={() =>
+          restart({ position: position.current, paused: false, forceHls: resume.forceHls, tracks: logic.selected() })
+        }
       />
     );
   }
   return <VideoView player={player} nativeControls contentFit="contain" style={StyleSheet.absoluteFill} />;
+}
+
+function play(player: VideoPlayer, tracks: Partial<Pick<VideoPlayer, "audioTrack" | "subtitleTrack">>) {
+  Object.assign(player, tracks);
 }
 
 function Failure({ message, onRetry }: { message: string; onRetry?: () => void }) {

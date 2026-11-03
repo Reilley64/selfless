@@ -22,9 +22,11 @@ export {
   type PlaybackSpans,
   type PlayerEvent,
   type PlayerTrack,
+  playerTrackFor,
   type ProgressReport,
   type Resume,
   startPlaybackSpans,
+  type Tracks,
 } from "./playerLogic";
 export { ProgressBar } from "./ProgressBar";
 export { randomUuid } from "./randomUuid";
