@@ -58,3 +58,54 @@ pub fn read_webhook() -> ReadRadarrWebhook {
         )
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn read(name: &str) -> Result<RadarrWebhook, UnreadableWebhook> {
+        let body = std::fs::read(format!(
+            "{}/../../test/fixtures/radarr/webhooks/{name}.json",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap();
+        read_webhook().call(&body)
+    }
+
+    #[test]
+    fn library_events_name_the_movie() {
+        for name in [
+            "download",
+            "download-upgrade",
+            "rename",
+            "movie-added",
+            "movie-delete",
+            "movie-file-delete",
+        ] {
+            assert_eq!(
+                read(name).unwrap(),
+                RadarrWebhook::Movie { radarr_id: 42 },
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn other_events_are_ignored() {
+        for name in [
+            "test",
+            "grab",
+            "health",
+            "health-restored",
+            "application-update",
+            "manual-interaction-required",
+        ] {
+            assert_eq!(read(name).unwrap(), RadarrWebhook::Ignored, "{name}");
+        }
+    }
+
+    #[test]
+    fn a_library_event_without_its_movie_is_unreadable() {
+        assert!(read_webhook().call(br#"{"eventType":"Download"}"#).is_err());
+    }
+}
