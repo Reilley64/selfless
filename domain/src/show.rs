@@ -1,6 +1,8 @@
 use crate::Actor;
 use crate::Artwork;
+use crate::Episode;
 use crate::Season;
+use crate::ShowMetadata;
 use crate::SyncProblem;
 use jiff::Timestamp;
 use jiff::civil::Date;
@@ -35,4 +37,29 @@ pub struct Show {
     pub artwork: toasty::Deferred<Vec<Artwork>>,
     #[has_many]
     pub sync_problems: toasty::Deferred<Vec<SyncProblem>>,
+}
+
+impl Show {
+    pub fn in_library_filter() -> toasty::stmt::Expr<bool> {
+        Self::fields().seasons().any(
+            Season::fields()
+                .episodes()
+                .any(Episode::in_library_filter()),
+        )
+    }
+
+    pub fn metadata(&self) -> ShowMetadata {
+        ShowMetadata {
+            title: self.title.clone(),
+            sort_title: self.sort_title.clone(),
+            overview: self.overview.clone(),
+            certification: self.certification.clone(),
+            premiered: self.premiered,
+            end_date: self.end_date,
+            status: self.status.clone(),
+            network: self.network.clone(),
+            genres: self.genres.clone(),
+            rating: self.rating,
+        }
+    }
 }
