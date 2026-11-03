@@ -29,14 +29,12 @@ pub async fn call(
     if password.as_ref() != Some(webhook_passwords.get(source)) {
         source_states::upsert(&mut db_context, source)
             .await
+            .map_err(Error::caused_by)?
+            .update()
+            .rejected_webhooks(toasty::stmt::increment())
+            .exec(db_context.executor_mut())
+            .await
             .map_err(Error::caused_by)?;
-        toasty::sql::statement(
-            "UPDATE source_states SET rejected_webhooks = rejected_webhooks + 1 WHERE source = $1",
-        )
-        .bind(source.name())
-        .exec(db_context.executor_mut())
-        .await
-        .map_err(Error::caused_by)?;
         webhook_deliveries::count(source, None, Outcome::Rejected);
         tracing::warn!(
             selfless.webhook.source = source.name(),
@@ -119,6 +117,17 @@ mod tests {
             .and_then(|x| x.last_webhook_at)
     }
 
+    async fn rejected_webhooks(db_context: &mut DbContext, source: Source) -> i64 {
+        db_context
+            .source_states()
+            .filter(SourceState::fields().source().eq(source))
+            .one()
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap()
+            .rejected_webhooks
+    }
+
     async fn inbox(db_context: &mut DbContext) -> Vec<(Source, Vec<u8>)> {
         db_context
             .inboxes()
@@ -164,6 +173,19 @@ mod tests {
             assert_eq!(inbox(&mut db_context).await, []);
             assert_eq!(last_webhook_at(&mut db_context, Source::Radarr).await, None);
         }
+    }
+
+    #[tokio::test]
+    async fn each_rejected_delivery_adds_one_to_its_sources_rejected_count() {
+        let mut db_context = mock_db_context().await;
+        let clock = FakeClock::new();
+
+        store(&db_context, &clock, Source::Radarr, None).await;
+        store(&db_context, &clock, Source::Radarr, Some("wrong password")).await;
+        store(&db_context, &clock, Source::Sonarr, None).await;
+
+        assert_eq!(rejected_webhooks(&mut db_context, Source::Radarr).await, 2);
+        assert_eq!(rejected_webhooks(&mut db_context, Source::Sonarr).await, 1);
     }
 
     #[tokio::test]

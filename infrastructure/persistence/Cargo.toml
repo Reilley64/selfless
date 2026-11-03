@@ -22,7 +22,6 @@ url = { workspace = true, features = ["serde"] }
 uuid = { workspace = true }
 
 [dev-dependencies]
-bytes = { workspace = true }
 email = { workspace = true }
 jiff = { workspace = true }
 lettre = { workspace = true, features = ["builder", "hostname", "ring", "rustls-platform-verifier", "serde", "smtp-transport", "tokio1-rustls"] }
