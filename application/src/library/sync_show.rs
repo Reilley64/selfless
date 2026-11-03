@@ -290,7 +290,7 @@ pub(crate) async fn save(
     .collect::<HashMap<_, _>>();
     let mut transaction = db_context.transaction().await.map_err(Error::caused_by)?;
     let change = write(
-        transaction.executor_mut(),
+        &mut transaction,
         sonarr_show,
         &episode_folders,
         inspected,
@@ -307,22 +307,24 @@ pub(crate) async fn save(
 
 pub(crate) async fn remove(db_context: &mut DbContext, show: Show) -> Result<(), Error> {
     let mut transaction = db_context.transaction().await.map_err(Error::caused_by)?;
-    let db = transaction.executor_mut();
     let media_file_ids = show
         .seasons()
         .include(Season::fields().episodes())
-        .exec(db)
+        .exec(transaction.executor_mut())
         .await
         .map_err(Error::caused_by)?
         .into_iter()
         .flat_map(|x| x.episodes.into_inner())
         .filter_map(|x| x.media_file_id)
         .collect::<HashSet<_>>();
-    metadata::delete(db, Owner::Show(show.id))
+    metadata::delete(&mut transaction, Owner::Show(show.id))
         .await
         .map_err(Error::caused_by)?;
-    show.delete().exec(db).await.map_err(Error::caused_by)?;
-    media_files::delete(db, media_file_ids.into_iter().collect())
+    show.delete()
+        .exec(transaction.executor_mut())
+        .await
+        .map_err(Error::caused_by)?;
+    media_files::delete(&mut transaction, media_file_ids.into_iter().collect())
         .await
         .map_err(Error::caused_by)?;
     transaction.commit().await.map_err(Error::caused_by)?;
@@ -331,7 +333,7 @@ pub(crate) async fn remove(db_context: &mut DbContext, show: Show) -> Result<(),
 }
 
 async fn write(
-    db: &mut dyn toasty::Executor,
+    scope: &mut impl DbScope,
     sonarr_show: SonarrShow,
     episode_folders: &HashMap<String, EpisodeFolder>,
     mut inspected: HashMap<String, Inspected>,
@@ -341,7 +343,7 @@ async fn write(
     let listing = sonarr_show.listing;
     let stored = Show::filter_by_tvdb_id(listing.tvdb_id)
         .first()
-        .exec(db)
+        .exec(scope.executor_mut())
         .await
         .map_err(Error::caused_by)?;
     let nfo = Nfo::read(
@@ -372,7 +374,7 @@ async fn write(
                     .genres(metadata.genres)
                     .rating(metadata.rating)
                     .nfo_modified_at(metadata.nfo_modified_at)
-                    .exec(db)
+                    .exec(scope.executor_mut())
                     .await
                     .map_err(Error::caused_by)?;
             }
@@ -395,14 +397,14 @@ async fn write(
                 rating: metadata.rating,
                 nfo_modified_at: metadata.nfo_modified_at,
             })
-            .exec(db)
+            .exec(scope.executor_mut())
             .await
             .map_err(Error::caused_by)?,
             Some(Change::Added),
         ),
     };
     let owner = Owner::Show(show.id);
-    metadata::save_actors(db, owner, had_nfo, &nfo, |x| &x.actors)
+    metadata::save_actors(scope, owner, had_nfo, &nfo, |x| &x.actors)
         .await
         .map_err(Error::caused_by)?;
     let mut changed = show_change.is_some();
@@ -412,7 +414,7 @@ async fn write(
     for season in show
         .seasons()
         .include(Season::fields().episodes())
-        .exec(db)
+        .exec(scope.executor_mut())
         .await
         .map_err(Error::caused_by)?
     {
@@ -492,7 +494,7 @@ async fn write(
                     show_id: show.id,
                     number: season_number,
                 })
-                .exec(db)
+                .exec(scope.executor_mut())
                 .await
                 .map_err(Error::caused_by)?;
                 changed = true;
@@ -507,7 +509,7 @@ async fn write(
                     Some(inspected) => {
                         let visible = inspected.on_disk();
                         let (id, file_changed) =
-                            media_files::save(db, &sonarr_file.path, inspected)
+                            media_files::save(scope, &sonarr_file.path, inspected)
                                 .await
                                 .map_err(Error::caused_by)?;
                         changed |= file_changed;
@@ -527,7 +529,7 @@ async fn write(
         let date_added = sonarr_episode.episode_file.map(|x| x.date_added);
         let episode_id = match stored {
             Some((mut episode, stored_metadata)) => {
-                let added_at = episode.added_at.or(date_added);
+                let added_at = domain::first_added_at(episode.added_at, date_added);
                 if episode.season_id != season_id
                     || stored_metadata != metadata
                     || episode.added_at != added_at
@@ -547,7 +549,7 @@ async fn write(
                         .added_at(added_at)
                         .media_file_id(media_file_id)
                         .visible(visible)
-                        .exec(db)
+                        .exec(scope.executor_mut())
                         .await
                         .map_err(Error::caused_by)?;
                 }
@@ -568,7 +570,7 @@ async fn write(
                     media_file_id,
                     visible,
                 })
-                .exec(db)
+                .exec(scope.executor_mut())
                 .await
                 .map_err(Error::caused_by)?
                 .id
@@ -609,21 +611,21 @@ async fn write(
     if !episodes.is_empty() {
         Episode::filter(Episode::fields().id().in_list(episodes))
             .delete()
-            .exec(db)
+            .exec(scope.executor_mut())
             .await
             .map_err(Error::caused_by)?;
     }
     if !seasons.is_empty() {
         Season::filter(Season::fields().id().in_list(seasons))
             .delete()
-            .exec(db)
+            .exec(scope.executor_mut())
             .await
             .map_err(Error::caused_by)?;
     }
-    media_files::delete(db, removed_media_files)
+    media_files::delete(scope, removed_media_files)
         .await
         .map_err(Error::caused_by)?;
-    changed |= metadata::save_artwork(db, owner, artwork)
+    changed |= metadata::save_artwork(scope, owner, artwork)
         .await
         .map_err(Error::caused_by)?;
     let unreadable_nfos = nfo
@@ -637,7 +639,7 @@ async fn write(
         )
         .collect();
     metadata::save_unreadable_nfos(
-        db,
+        scope,
         owner,
         media_file_ids.into_iter().collect(),
         unreadable_nfos,

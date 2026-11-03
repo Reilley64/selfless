@@ -13,6 +13,7 @@ use domain::Show;
 use std::path::PathBuf;
 use test_app::TestApp;
 use test_fixtures::TestServer;
+use toasty::schema::Model;
 use topcoat::router::Router;
 use uuid::Uuid;
 
@@ -66,7 +67,18 @@ pub(crate) async fn signed_in_user(app: &TestApp, name: &str, password: &str) ->
 
 pub(crate) async fn add_movie(app: &TestApp, title: &str) -> Uuid {
     let mut db_context = app.state.db_context.clone();
-    Movie::create()
+    movie(app, title)
+        .exec(db_context.executor_mut())
+        .await
+        .unwrap()
+        .id
+}
+
+pub(crate) fn movie(app: &TestApp, title: &str) -> <Movie as Model>::Create {
+    app.state
+        .db_context
+        .movies()
+        .create()
         .tmdb_id(Uuid::new_v4().as_u64_pair().0 as i64)
         .radarr_id(42)
         .title(title)
@@ -79,10 +91,6 @@ pub(crate) async fn add_movie(app: &TestApp, title: &str) -> Uuid {
         ))
         .directors(Vec::<String>::new())
         .visible(true)
-        .exec(db_context.executor_mut())
-        .await
-        .unwrap()
-        .id
 }
 
 pub(crate) async fn add_show(app: &TestApp, title: &str, season_numbers: &[i64]) -> Uuid {

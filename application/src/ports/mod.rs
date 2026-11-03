@@ -1,6 +1,8 @@
 use bytes::Bytes;
 use domain::EmailAddress;
 pub use domain::HdrType;
+pub use domain::MovieNfo;
+pub use domain::NfoActor;
 use jiff::Timestamp;
 use jiff::civil::Date;
 use std::error::Error;
@@ -663,30 +665,6 @@ impl ReadMovieFolder {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct MovieNfo {
-    pub title: Option<String>,
-    pub sort_title: Option<String>,
-    pub original_title: Option<String>,
-    pub year: Option<i64>,
-    pub plot: Option<String>,
-    pub runtime_minutes: Option<i64>,
-    pub certification: Option<String>,
-    pub premiered: Option<Date>,
-    pub studio: Option<String>,
-    pub genres: Vec<String>,
-    pub rating: Option<f64>,
-    pub directors: Vec<String>,
-    pub actors: Vec<NfoActor>,
-}
-
-#[derive(Clone, Debug)]
-pub struct NfoActor {
-    pub name: String,
-    pub role: Option<String>,
-    pub order: Option<i64>,
-}
-
 type ReadMovieNfoFn = dyn Fn(String) -> PortFuture<Result<MovieNfo, UnreadableNfo>> + Send + Sync;
 
 #[derive(Clone)]
@@ -834,6 +812,21 @@ impl ReadSonarrWebhook {
     }
 
     pub fn call(&self, body: &[u8]) -> Result<SonarrWebhook, UnreadableWebhook> {
+        (self.0)(body)
+    }
+}
+
+type ReadWebhookEventTypeFn = dyn Fn(&[u8]) -> Option<String> + Send + Sync;
+
+#[derive(Clone)]
+pub struct ReadWebhookEventType(Arc<ReadWebhookEventTypeFn>);
+
+impl ReadWebhookEventType {
+    pub fn new(f: impl Fn(&[u8]) -> Option<String> + Send + Sync + 'static) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self, body: &[u8]) -> Option<String> {
         (self.0)(body)
     }
 }

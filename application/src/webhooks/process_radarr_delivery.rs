@@ -32,10 +32,11 @@ pub async fn call(
         read_movie_folder,
         read_movie_nfo,
         read_radarr_webhook,
+        read_webhook_event_type,
         source_health,
     } = dependencies.into();
     let span = Span::current();
-    let event_type = webhook_deliveries::event_type(&body);
+    let event_type = read_webhook_event_type.call(&body);
     span.set_attribute(SELFLESS_WEBHOOK_SOURCE, Source::Radarr.name());
     if let Some(event_type) = &event_type {
         span.set_attribute(SELFLESS_WEBHOOK_EVENT_TYPE, event_type.clone());
@@ -80,6 +81,7 @@ mod tests {
     use crate::ports::GetRadarrMovie;
     use crate::ports::RadarrError;
     use crate::ports::ReadRadarrWebhook;
+    use crate::ports::ReadWebhookEventType;
     use crate::ports::UnreadableWebhook;
     use crate::test::empty_movie_folder;
     use crate::test::failing_prober;
@@ -107,6 +109,7 @@ mod tests {
             read_movie_folder: empty_movie_folder(),
             read_movie_nfo: unreadable_movie_nfo(),
             read_radarr_webhook,
+            read_webhook_event_type: ReadWebhookEventType::new(|_| Some("Download".to_owned())),
             source_health: SourceHealth::default(),
         }
     }

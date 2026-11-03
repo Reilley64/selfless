@@ -89,6 +89,7 @@ pub async fn start(
         .read_show_folder(|_| media_folder::read_show_folder())
         .read_show_nfo(|_| media_folder::read_show_nfo())
         .read_sonarr_webhook(|_| sonarr::read_webhook())
+        .read_webhook_event_type(|_| servarr::read_webhook_event_type())
         .reconciles(|_| Reconciles::default())
         .resizer(|_| Resizer::new(images::resize_image()))
         .save_cached_image(|_| images::save_cached_image(image_cache_dir.clone()))

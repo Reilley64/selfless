@@ -26,6 +26,7 @@ use application::ports::ReadRadarrWebhook;
 use application::ports::ReadShowFolder;
 use application::ports::ReadShowNfo;
 use application::ports::ReadSonarrWebhook;
+use application::ports::ReadWebhookEventType;
 use application::ports::SaveCachedImage;
 use application::ports::SendEmail;
 use application::ports::persistence::DbContext;
@@ -62,6 +63,7 @@ pub struct AppState {
     pub read_show_folder: ReadShowFolder,
     pub read_show_nfo: ReadShowNfo,
     pub read_sonarr_webhook: ReadSonarrWebhook,
+    pub read_webhook_event_type: ReadWebhookEventType,
     pub reconciles: Reconciles,
     pub resizer: Resizer,
     pub save_cached_image: SaveCachedImage,

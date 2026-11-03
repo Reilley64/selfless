@@ -13,6 +13,7 @@ use application::ports::persistence::DbLocation;
 use application::ports::persistence::DbScope;
 use application::url_signer::UrlSigner;
 use domain::ArtworkKind;
+use domain::GridSort;
 use opentelemetry::global;
 use opentelemetry_sdk::metrics::InMemoryMetricExporter;
 use opentelemetry_sdk::metrics::SdkMeterProvider;
@@ -70,6 +71,8 @@ async fn image_requests_are_counted_by_whether_the_cache_held_the_image() {
             clock: clock.clone(),
             url_signer: url_signer.clone(),
         },
+        None,
+        GridSort::Title,
         None,
     )
     .await

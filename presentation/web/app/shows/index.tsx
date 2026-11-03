@@ -1,9 +1,14 @@
 import { useListShowsInfinite } from "@selfless/api-client";
+import { useGridQuery } from "@selfless/ui";
 import { GridPage, nextCursor } from "../../components/GridPage";
 
 export default function Shows() {
-  const query = useListShowsInfinite(undefined, {
-    query: { initialPageParam: undefined, getNextPageParam: nextCursor },
-  });
-  return <GridPage title="Shows" query={query} />;
+  const { genre, sort } = useGridQuery();
+  const query = useListShowsInfinite(
+    { genre, sort },
+    {
+      query: { initialPageParam: undefined, getNextPageParam: nextCursor },
+    },
+  );
+  return <GridPage title="Shows" kind="show" query={query} />;
 }

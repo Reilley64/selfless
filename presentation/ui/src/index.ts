@@ -1,5 +1,6 @@
 export { clientId } from "./clientId";
 export { FocusGuide, type FocusGuideInstance } from "./FocusGuide";
+export { GridSelectors, useGridQuery } from "./GridSelectors";
 export { initials } from "./initials";
 export { forgetInviteIdempotencyKey, inviteIdempotencyKey } from "./inviteIdempotencyKey";
 export { serverUnreachable } from "./messages";

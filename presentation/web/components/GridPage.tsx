@@ -1,6 +1,6 @@
 import type { InfiniteData, UseInfiniteQueryResult } from "@tanstack/react-query";
 import type { TilePage } from "@selfless/api-client";
-import { TileGrid } from "@selfless/ui";
+import { GridSelectors, TileGrid } from "@selfless/ui";
 import { useWindowDimensions } from "react-native";
 import { Text, View } from "react-native-css/components";
 import { ServerUnreachable } from "./form";
@@ -16,9 +16,11 @@ export const nextCursor = (page: TilePageResponse) =>
 
 export function GridPage({
   title,
+  kind,
   query,
 }: {
   title: string;
+  kind: "movie" | "show";
   query: UseInfiniteQueryResult<InfiniteData<TilePageResponse, string | undefined>, unknown>;
 }) {
   const { width } = useWindowDimensions();
@@ -38,7 +40,10 @@ export function GridPage({
         onEndReached={loadMore}
         header={
           <View className="gap-4 px-2 pt-8 pb-5">
-            <Text className="font-sans font-extrabold text-web-heading text-text-primary">{title}</Text>
+            <View className="z-50 flex-row items-center gap-6">
+              <Text className="font-sans font-extrabold text-web-heading text-text-primary">{title}</Text>
+              <GridSelectors kind={kind} />
+            </View>
             {query.isError && <ServerUnreachable />}
           </View>
         }

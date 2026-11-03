@@ -268,8 +268,6 @@ dependencies = [
  "opentelemetry",
  "opentelemetry-appender-tracing",
  "opentelemetry_sdk",
- "serde",
- "serde_json",
  "sha2 0.11.1",
  "test-fixtures",
  "toasty",
@@ -2770,6 +2768,7 @@ dependencies = [
  "jiff",
  "quick-xml",
  "serde",
+ "tempfile",
  "tokio",
 ]
 
@@ -3267,6 +3266,7 @@ name = "persistence"
 version = "0.1.0"
 dependencies = [
  "application",
+ "bytes",
  "domain",
  "email",
  "jiff",
@@ -3683,7 +3683,9 @@ dependencies = [
  "serde",
  "serde_json",
  "servarr",
+ "tokio",
  "url",
+ "wiremock",
 ]
 
 [[package]]
@@ -4189,6 +4191,7 @@ dependencies = [
  "admin",
  "api",
  "application",
+ "base64 0.22.1",
  "domain",
  "email",
  "ffmpeg",
@@ -4209,6 +4212,7 @@ dependencies = [
  "radarr",
  "reqwest",
  "serde_json",
+ "servarr",
  "settings",
  "sonarr",
  "telemetry",
@@ -4341,11 +4345,15 @@ dependencies = [
 name = "servarr"
 version = "0.1.0"
 dependencies = [
+ "application",
  "ohno",
  "reqwest",
  "serde",
+ "serde_json",
+ "tokio",
  "tracing",
  "url",
+ "wiremock",
 ]
 
 [[package]]
@@ -4556,7 +4564,9 @@ dependencies = [
  "serde",
  "serde_json",
  "servarr",
+ "tokio",
  "url",
+ "wiremock",
 ]
 
 [[package]]
@@ -6380,7 +6390,12 @@ dependencies = [
  "application",
  "base64 0.22.1",
  "domain",
+ "http",
  "infrastructure",
+ "serde_json",
+ "test-app",
+ "test-fixtures",
+ "tokio",
  "topcoat",
  "tracing",
 ]

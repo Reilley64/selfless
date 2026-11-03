@@ -315,9 +315,11 @@ paths:
     get:
       operationId: listMovies
       summary: A page of the movies grid
-      description: Every visible movie, sorted by sort title, then by ID. A movie is visible when its file is on disk.
+      description: Every visible movie, or every visible movie of one genre, in the chosen sort, then by ID. A movie is visible when its file is on disk. The released sort uses the premiere date.
       tags: [browsing]
       parameters:
+        - $ref: "#/components/parameters/Genre"
+        - $ref: "#/components/parameters/Sort"
         - $ref: "#/components/parameters/Cursor"
       responses:
         "200":
@@ -326,9 +328,9 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TilePage"
-              example: {"tiles":[{"id":"0190f3c4-5b6a-7c8d-9e0f-1a2b3c4d5e6f","kind":"movie","title":"Arrival","year":2016,"certification":"PG-13","runtimeMinutes":116,"seasonCount":null,"genres":["Drama","Science Fiction"],"plot":"A linguist works with the military to talk to aliens.","images":{"fanart":null,"logo":null,"thumb":null},"progress":null,"watched":false,"episode":null}],"nextCursor":"MDE5MGYzYzQtNWI2YS03YzhkLTllMGYtMWEyYjNjNGQ1ZTZmYXJyaXZhbA"}
+              example: {"tiles":[{"id":"0190f3c4-5b6a-7c8d-9e0f-1a2b3c4d5e6f","kind":"movie","title":"Arrival","year":2016,"certification":"PG-13","runtimeMinutes":116,"seasonCount":null,"genres":["Drama","Science Fiction"],"plot":"A linguist works with the military to talk to aliens.","images":{"fanart":null,"logo":null,"thumb":null},"progress":null,"watched":false,"episode":null}],"nextCursor":"MDE5MGYzYzQtNWI2YS03YzhkLTllMGYtMWEyYjNjNGQ1ZTZmdGFycml2YWw"}
         "400":
-          $ref: "#/components/responses/InvalidCursor"
+          $ref: "#/components/responses/InvalidGridQuery"
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "500":
@@ -337,9 +339,11 @@ paths:
     get:
       operationId: listShows
       summary: A page of the shows grid
-      description: Every visible show, sorted by sort title, then by ID. A show is visible when one of its episodes has its file on disk.
+      description: Every visible show, or every visible show of one genre, in the chosen sort, then by ID. A show is visible when one of its episodes has its file on disk. The added and released sorts use the newest added date and air date among its visible episodes.
       tags: [browsing]
       parameters:
+        - $ref: "#/components/parameters/Genre"
+        - $ref: "#/components/parameters/Sort"
         - $ref: "#/components/parameters/Cursor"
       responses:
         "200":
@@ -350,11 +354,105 @@ paths:
                 $ref: "#/components/schemas/TilePage"
               example: {"tiles":[{"id":"0190f3c4-6c7d-7e8f-9a0b-1c2d3e4f5a6b","kind":"show","title":"Severance","year":2022,"certification":"TV-MA","runtimeMinutes":null,"seasonCount":2,"genres":["Drama","Mystery"],"plot":"Office workers have their memories split.","images":{"fanart":null,"logo":null,"thumb":null},"progress":null,"watched":false,"episode":null}],"nextCursor":null}
         "400":
-          $ref: "#/components/responses/InvalidCursor"
+          $ref: "#/components/responses/InvalidGridQuery"
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "500":
           $ref: "#/components/responses/InternalError"
+  /api/genres/v1:
+    get:
+      operationId: listGenres
+      summary: The genres of the movies or shows grid
+      description: Every genre with at least one visible title of the kind, with the number of those titles, sorted by name. A title with several genres counts once in each.
+      tags: [browsing]
+      parameters:
+        - name: kind
+          in: query
+          required: true
+          description: Whether to list the genres of movies or of shows.
+          schema:
+            $ref: "#/components/schemas/GenreKind"
+          example: movie
+      responses:
+        "200":
+          description: The genres, sorted by name.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenreList"
+              example: {"genres":[{"name":"Drama","count":2},{"name":"Science Fiction","count":1}]}
+        "400":
+          $ref: "#/components/responses/InvalidGenreKind"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /webhooks/radarr/v1:
+    post:
+      operationId: postRadarrWebhook
+      summary: Store a webhook delivery that Radarr sends by POST
+      description: The server checks only the HTTP Basic password, against RADARR__WEBHOOK_PASSWORD, and stores the delivery in the inbox. The inbox worker then re-syncs the movie a library event names.
+      tags: [webhooks]
+      security:
+        - webhookPassword: []
+      requestBody:
+        $ref: "#/components/requestBodies/RadarrWebhook"
+      responses:
+        "200":
+          $ref: "#/components/responses/WebhookStored"
+        "401":
+          $ref: "#/components/responses/WrongWebhookPassword"
+        "500":
+          $ref: "#/components/responses/WebhookNotStored"
+    put:
+      operationId: putRadarrWebhook
+      summary: Store a webhook delivery that Radarr sends by PUT
+      description: The same as POST /webhooks/radarr/v1, for a Radarr webhook set to the PUT method.
+      tags: [webhooks]
+      security:
+        - webhookPassword: []
+      requestBody:
+        $ref: "#/components/requestBodies/RadarrWebhook"
+      responses:
+        "200":
+          $ref: "#/components/responses/WebhookStored"
+        "401":
+          $ref: "#/components/responses/WrongWebhookPassword"
+        "500":
+          $ref: "#/components/responses/WebhookNotStored"
+  /webhooks/sonarr/v1:
+    post:
+      operationId: postSonarrWebhook
+      summary: Store a webhook delivery that Sonarr sends by POST
+      description: The server checks only the HTTP Basic password, against SONARR__WEBHOOK_PASSWORD, and stores the delivery in the inbox. The inbox worker then re-syncs the show a library event names.
+      tags: [webhooks]
+      security:
+        - webhookPassword: []
+      requestBody:
+        $ref: "#/components/requestBodies/SonarrWebhook"
+      responses:
+        "200":
+          $ref: "#/components/responses/WebhookStored"
+        "401":
+          $ref: "#/components/responses/WrongWebhookPassword"
+        "500":
+          $ref: "#/components/responses/WebhookNotStored"
+    put:
+      operationId: putSonarrWebhook
+      summary: Store a webhook delivery that Sonarr sends by PUT
+      description: The same as POST /webhooks/sonarr/v1, for a Sonarr webhook set to the PUT method.
+      tags: [webhooks]
+      security:
+        - webhookPassword: []
+      requestBody:
+        $ref: "#/components/requestBodies/SonarrWebhook"
+      responses:
+        "200":
+          $ref: "#/components/responses/WebhookStored"
+        "401":
+          $ref: "#/components/responses/WrongWebhookPassword"
+        "500":
+          $ref: "#/components/responses/WebhookNotStored"
   /api/images/{imageId}/{width}/v1:
     get:
       operationId: getImage
@@ -431,6 +529,8 @@ tags:
     description: The relay that forwards OTLP from the web and TV apps to the server's collector.
   - name: browsing
     description: The movies, shows and episodes a user browses in the web and TV apps.
+  - name: webhooks
+    description: The webhooks Radarr and Sonarr send when the library changes.
   - name: images
     description: The artwork images that tiles and pages draw, fetched through signed URLs.
 components:
@@ -439,16 +539,67 @@ components:
       description: A session token from POST /api/sessions/v1, sent as Authorization Bearer.
       type: http
       scheme: bearer
+    webhookPassword:
+      description: HTTP Basic credentials that Radarr or Sonarr sends. The server checks only the password.
+      type: http
+      scheme: basic
+  requestBodies:
+    RadarrWebhook:
+      description: The webhook delivery as Radarr sends it.
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+          example: {"eventType":"Test"}
+    SonarrWebhook:
+      description: The webhook delivery as Sonarr sends it.
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+          example: {"eventType":"Test"}
   parameters:
     Cursor:
       name: cursor
       in: query
       required: false
-      description: The nextCursor of the previous page. Leave it out for the first page.
+      description: The nextCursor of the previous page, fetched with the same genre and sort. Leave it out for the first page.
       schema:
         type: string
-      example: MDE5MGYzYzQtNWI2YS03YzhkLTllMGYtMWEyYjNjNGQ1ZTZmYXJyaXZhbA
+      example: MDE5MGYzYzQtNWI2YS03YzhkLTllMGYtMWEyYjNjNGQ1ZTZmdGFycml2YWw
+    Genre:
+      name: genre
+      in: query
+      required: false
+      description: Only list the titles of this genre, a name from GET /api/genres/v1. Leave it out for every genre.
+      schema:
+        type: string
+      example: Comedy
+    Sort:
+      name: sort
+      in: query
+      required: false
+      description: The order of the grid. title is by sort title, A to Z. added is newest added first. released is newest release first, with undated titles last. Each sort breaks ties by ID.
+      schema:
+        type: string
+        enum: [title, added, released]
+        default: title
+      example: added
   responses:
+    WebhookStored:
+      description: The delivery is stored in the inbox.
+    WebhookNotStored:
+      description: The server could not store the delivery.
+    WrongWebhookPassword:
+      description: The password is wrong or missing. The server stores nothing and counts a rejected webhook for the source.
+      headers:
+        WWW-Authenticate:
+          description: The HTTP Basic challenge.
+          schema:
+            type: string
+            const: Basic realm="selfless"
     MalformedTelemetry:
       description: The body is not a valid OTLP protobuf request for this signal.
     CollectorFailed:
@@ -561,8 +712,21 @@ components:
                   status:
                     const: 404
           example: {"type":"urn:selfless:problem:invite-not-found","title":"The invite link no longer works.","status":404}
-    InvalidCursor:
-      description: The cursor is not a nextCursor the server returned.
+    InvalidGridQuery:
+      description: The sort is not title, added or released, or the cursor is not a nextCursor the server returned for that sort.
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Problem"
+              - properties:
+                  type:
+                    const: urn:selfless:problem:bad-request
+                  status:
+                    const: 400
+          example: {"type":"urn:selfless:problem:bad-request","title":"The request body is not valid.","status":400}
+    InvalidGenreKind:
+      description: The kind is missing, or it is not movie or show.
       content:
         application/problem+json:
           schema:
@@ -856,7 +1020,7 @@ components:
         nextCursor:
           description: Pass it as the cursor query parameter to get the next page. It is null on the last page.
           type: [string, "null"]
-          examples: [MDE5MGYzYzQtNWI2YS03YzhkLTllMGYtMWEyYjNjNGQ1ZTZmYXJyaXZhbA]
+          examples: [MDE5MGYzYzQtNWI2YS03YzhkLTllMGYtMWEyYjNjNGQ1ZTZmdGFycml2YWw]
       additionalProperties: false
     TileKind:
       description: What a tile shows.
@@ -993,4 +1157,34 @@ components:
           type: string
           format: uri-reference
           examples: ["/api/images/0190f3c4-7d8e-7f90-a1b2-c3d4e5f6a7b8/480/v1?expires=1793836800&signature=Jm2vX8kQ0rH3c1yF5bR7tVw9nL4pA6sD0eG2iK8uO1M"]
+      additionalProperties: false
+    GenreKind:
+      description: The kind of title a genre list counts.
+      type: string
+      enum: [movie, show]
+      examples: [movie]
+    GenreList:
+      description: The genres of one kind of title.
+      type: object
+      required: [genres]
+      properties:
+        genres:
+          type: array
+          items:
+            $ref: "#/components/schemas/Genre"
+          examples:
+            - [{"name":"Drama","count":2},{"name":"Science Fiction","count":1}]
+      additionalProperties: false
+    Genre:
+      description: A genre and the number of visible titles in it.
+      type: object
+      required: [name, count]
+      properties:
+        name:
+          type: string
+          examples: [Drama]
+        count:
+          type: integer
+          minimum: 1
+          examples: [2]
       additionalProperties: false

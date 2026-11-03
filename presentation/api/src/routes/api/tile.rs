@@ -1,11 +1,17 @@
 use crate::routes::api::image::ImageBody;
 use application::browsing::Cursor;
+use application::browsing::SortKey;
 use application::browsing::Tile;
 use application::browsing::TileKind;
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use domain::GridSort;
 use serde::Deserialize;
 use serde::Serialize;
+use std::cmp::Reverse;
+use std::str::FromStr;
+use topcoat::router::error::BadRequestError;
+use topcoat::router::error::bad_request;
 use uuid::Uuid;
 
 #[derive(Serialize)]
@@ -19,14 +25,55 @@ impl TilePageBody {
     pub(crate) fn new(tiles: Vec<Tile>, next: Option<Cursor>) -> Self {
         Self {
             tiles: tiles.into_iter().map(TileBody::from).collect(),
-            next_cursor: next.map(|x| URL_SAFE_NO_PAD.encode(format!("{}{}", x.id, x.sort_title))),
+            next_cursor: next.map(|x| {
+                let key = match x.key {
+                    SortKey::Title(sort_title) => format!("t{sort_title}"),
+                    SortKey::Added(Reverse(added_at)) => {
+                        format!("a{}", added_at.map(|x| x.to_string()).unwrap_or_default())
+                    }
+                    SortKey::Released(Reverse(released)) => {
+                        format!("r{}", released.map(|x| x.to_string()).unwrap_or_default())
+                    }
+                };
+                URL_SAFE_NO_PAD.encode(format!("{}{key}", x.id))
+            }),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum SortParam {
+    #[default]
+    Title,
+    Added,
+    Released,
+}
+
+impl From<SortParam> for GridSort {
+    fn from(sort: SortParam) -> Self {
+        match sort {
+            SortParam::Title => GridSort::Title,
+            SortParam::Added => GridSort::Added,
+            SortParam::Released => GridSort::Released,
         }
     }
 }
 
 #[derive(Deserialize)]
 #[serde(try_from = "String")]
-pub(crate) struct CursorParam(pub(crate) Cursor);
+pub(crate) struct CursorParam(Cursor);
+
+impl CursorParam {
+    pub(crate) fn for_sort(&self, sort: SortParam) -> Result<Cursor, BadRequestError> {
+        match (&self.0.key, sort) {
+            (SortKey::Title(_), SortParam::Title)
+            | (SortKey::Added(_), SortParam::Added)
+            | (SortKey::Released(_), SortParam::Released) => Ok(self.0.clone()),
+            _ => Err(bad_request("the cursor belongs to another sort")),
+        }
+    }
+}
 
 #[ohno::error]
 #[display("the cursor is not one the server issued")]
@@ -42,14 +89,27 @@ impl TryFrom<String> for CursorParam {
             .and_then(|x| String::from_utf8(x).ok())
             .ok_or_else(InvalidCursor::new)?;
         let id_length = Uuid::nil().to_string().len();
-        let (id, sort_title) = decoded
+        let (id, key) = decoded
             .split_at_checked(id_length)
             .ok_or_else(InvalidCursor::new)?;
+        let key = match key.split_at_checked(1) {
+            Some(("t", sort_title)) => SortKey::Title(sort_title.to_owned()),
+            Some(("a", added_at)) => SortKey::Added(Reverse(parse_optional(added_at)?)),
+            Some(("r", released)) => SortKey::Released(Reverse(parse_optional(released)?)),
+            _ => return Err(InvalidCursor::new()),
+        };
         Ok(Self(Cursor {
-            sort_title: sort_title.to_owned(),
+            key,
             id: id.parse().map_err(|_| InvalidCursor::new())?,
         }))
     }
+}
+
+fn parse_optional<T: FromStr>(text: &str) -> Result<Option<T>, InvalidCursor> {
+    if text.is_empty() {
+        return Ok(None);
+    }
+    text.parse().map(Some).map_err(|_| InvalidCursor::new())
 }
 
 #[derive(Serialize)]

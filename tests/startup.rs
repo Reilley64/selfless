@@ -7,9 +7,13 @@ use application::ports::ProbeMediaFile;
 use application::ports::SendEmail;
 use selfless_test::ADMIN_NAME;
 use selfless_test::ADMIN_PASSWORD;
+use selfless_test::RADARR_WEBHOOK_PASSWORD;
+use selfless_test::SONARR_API_KEY;
+use selfless_test::SONARR_WEBHOOK_PASSWORD;
 use selfless_test::settings;
 use settings::AdminSettings;
 use settings::AppSettings;
+use std::process::Command;
 use test_fixtures::FakeClock;
 use test_fixtures::FakeMailer;
 use test_fixtures::TestDatabase;
@@ -63,6 +67,65 @@ async fn once_an_admin_exists_the_server_starts_with_the_first_admin_settings_em
     drop(selfless_test::start(settings, &clock, &mailer).await);
 
     database.drop().await;
+}
+
+#[test]
+fn the_server_exits_naming_a_missing_radarr_setting() {
+    let settings = [
+        ("RADARR__URL", "http://127.0.0.1:7878"),
+        ("RADARR__API_KEY", "radarr api key"),
+        ("RADARR__WEBHOOK_PASSWORD", RADARR_WEBHOOK_PASSWORD),
+    ];
+    for (missing, _) in settings {
+        let output = Command::new(env!("CARGO_BIN_EXE_selfless"))
+            .env(
+                "DATABASE__URL",
+                "postgres://selfless:selfless@127.0.0.1:1/selfless",
+            )
+            .envs(
+                settings
+                    .iter()
+                    .filter(|(name, _)| *name != missing)
+                    .copied(),
+            )
+            .env_remove(missing)
+            .output()
+            .unwrap();
+
+        assert!(!output.status.success());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains(missing), "{missing} is not named: {stderr}");
+    }
+}
+
+#[test]
+fn the_server_exits_naming_a_missing_sonarr_setting() {
+    let settings = [
+        ("RADARR__URL", "http://127.0.0.1:7878"),
+        ("RADARR__API_KEY", "radarr api key"),
+        ("RADARR__WEBHOOK_PASSWORD", RADARR_WEBHOOK_PASSWORD),
+        ("SONARR__URL", "http://127.0.0.1:8989"),
+        ("SONARR__API_KEY", SONARR_API_KEY),
+        ("SONARR__WEBHOOK_PASSWORD", SONARR_WEBHOOK_PASSWORD),
+    ];
+    for (missing, _) in settings
+        .iter()
+        .filter(|(name, _)| name.starts_with("SONARR"))
+    {
+        let output = Command::new(env!("CARGO_BIN_EXE_selfless"))
+            .env(
+                "DATABASE__URL",
+                "postgres://selfless:selfless@127.0.0.1:1/selfless",
+            )
+            .envs(settings.iter().filter(|(name, _)| name != missing).copied())
+            .env_remove(missing)
+            .output()
+            .unwrap();
+
+        assert!(!output.status.success());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains(missing), "{missing} is not named: {stderr}");
+    }
 }
 
 #[tokio::test]

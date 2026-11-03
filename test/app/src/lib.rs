@@ -31,6 +31,7 @@ use application::ports::ReadRadarrWebhook;
 use application::ports::ReadShowFolder;
 use application::ports::ReadShowNfo;
 use application::ports::ReadSonarrWebhook;
+use application::ports::ReadWebhookEventType;
 use application::ports::ResizeImage;
 use application::ports::ResizeImageError;
 use application::ports::SaveCachedImage;
@@ -119,6 +120,7 @@ impl TestApp {
             read_show_folder: ReadShowFolder::new(|_, _| Box::pin(async { Default::default() })),
             read_show_nfo: ReadShowNfo::new(|_| Box::pin(async { Err(UnreadableNfo::default()) })),
             read_sonarr_webhook: ReadSonarrWebhook::new(|_| Err(UnreadableWebhook::default())),
+            read_webhook_event_type: ReadWebhookEventType::new(|_| None),
             reconciles: Reconciles::default(),
             resizer: Resizer::new(ResizeImage::new(|_, _| {
                 Box::pin(async { Err(ResizeImageError::default()) })

@@ -25,3 +25,49 @@ impl Prober {
         self.probe_media_file.call(path).await
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures_util::poll;
+    use std::sync::Mutex;
+
+    #[tokio::test]
+    async fn a_fifth_probe_starts_only_once_one_of_four_running_probes_finishes() {
+        let started = Arc::new(Mutex::new(Vec::new()));
+        let finish = Arc::new(Semaphore::new(0));
+        let prober = Prober::new(ProbeMediaFile::new({
+            let started = started.clone();
+            let finish = finish.clone();
+            move |path| {
+                started.lock().unwrap().push(path);
+                let finish = finish.clone();
+                Box::pin(async move {
+                    finish.acquire().await.unwrap().forget();
+                    Ok(Probe {
+                        container: "matroska,webm".to_owned(),
+                        duration: None,
+                        video_streams: Vec::new(),
+                        audio_streams: Vec::new(),
+                        subtitle_streams: Vec::new(),
+                    })
+                })
+            }
+        }));
+        let paths = (0..5).map(|x| format!("{x}.mkv")).collect::<Vec<_>>();
+        let mut probes = paths
+            .iter()
+            .map(|path| Box::pin(prober.probe(path)))
+            .collect::<Vec<_>>();
+        for probe in &mut probes {
+            assert!(poll!(probe).is_pending());
+        }
+        assert_eq!(*started.lock().unwrap(), paths[..4]);
+
+        finish.add_permits(1);
+        assert!(poll!(&mut probes[0]).is_ready());
+        assert!(poll!(&mut probes[4]).is_pending());
+
+        assert_eq!(*started.lock().unwrap(), paths);
+    }
+}

@@ -11,3 +11,6 @@ jiff = { workspace = true }
 quick-xml = { workspace = true, features = ["overlapped-lists", "serialize"] }
 serde = { workspace = true }
 tokio = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

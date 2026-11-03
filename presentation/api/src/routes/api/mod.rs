@@ -1,3 +1,4 @@
+pub(crate) mod genres;
 pub(crate) mod image;
 pub(crate) mod images;
 pub(crate) mod invites;
