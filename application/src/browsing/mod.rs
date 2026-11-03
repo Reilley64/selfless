@@ -4,6 +4,7 @@ mod resizer;
 mod tile;
 
 pub mod clean_image_cache;
+pub mod get_episode;
 pub mod get_home;
 pub mod get_image;
 pub mod get_movie;
