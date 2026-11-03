@@ -27,8 +27,8 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<Output, Error
                     (EmailStatus::Queued { queued_at }, queued_at)
                 }
                 InviteEmailStatus::Sent { sent_at } => (EmailStatus::Sent { sent_at }, sent_at),
-                InviteEmailStatus::Rejected { rejected_at } => {
-                    (EmailStatus::Rejected { rejected_at }, rejected_at)
+                InviteEmailStatus::Refused { refused_at } => {
+                    (EmailStatus::Refused { refused_at }, refused_at)
                 }
             };
             let invite = output::Invite {
@@ -81,8 +81,8 @@ mod tests {
         let mut db_context = mock_db_context().await;
         let sent_at: Timestamp = "2026-05-01T12:00:00Z".parse().unwrap();
         let expired_at: Timestamp = "2026-05-08T12:00:00Z".parse().unwrap();
-        let rejected_at = sent_at + SignedDuration::from_hours(9 * 24);
-        let queued_at = rejected_at + SignedDuration::from_hours(1);
+        let refused_at = sent_at + SignedDuration::from_hours(9 * 24);
+        let queued_at = refused_at + SignedDuration::from_hours(1);
         let resent_at = queued_at + SignedDuration::from_hours(1);
         let resend_expires_at: Timestamp = "2026-05-16T12:00:00Z".parse().unwrap();
         seed(
@@ -104,7 +104,7 @@ mod tests {
         seed(
             &mut db_context,
             "refused@household.example",
-            InviteEmailStatus::Rejected { rejected_at },
+            InviteEmailStatus::Refused { refused_at },
             None,
         )
         .await;
@@ -141,7 +141,7 @@ mod tests {
                 ),
                 (
                     "refused@household.example".to_owned(),
-                    EmailStatus::Rejected { rejected_at },
+                    EmailStatus::Refused { refused_at },
                     None,
                 ),
                 (

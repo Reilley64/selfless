@@ -192,14 +192,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_rejected_invite_can_be_resent() {
+    async fn a_refused_invite_can_be_resent() {
         let mut db_context = mock_db_context().await;
         let clock = FakeClock::new();
         let mut invite = queue_invite(&db_context, &clock).await;
         invite
             .update()
-            .email_status(InviteEmailStatus::Rejected {
-                rejected_at: clock.now(),
+            .email_status(InviteEmailStatus::Refused {
+                refused_at: clock.now(),
             })
             .exec(db_context.executor_mut())
             .await
