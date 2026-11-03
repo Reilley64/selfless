@@ -6,6 +6,7 @@ use application::ports::persistence::DbContext;
 use application::ports::persistence::DbScope;
 use application::sessions::sign_in;
 use application::users::create_user;
+use application::users::rename_user;
 use domain::ClientKind;
 use domain::EmailAddress;
 use domain::Password;
@@ -107,6 +108,68 @@ async fn user_names_ignore_case_at_sign_in() {
         panic!("the name matches ignoring case");
     };
     assert_eq!(name, "Noor");
+    drop(db_context);
+    database.drop().await;
+}
+
+async fn rename_user(
+    db_context: &DbContext,
+    id: Uuid,
+    name: &str,
+) -> Result<rename_user::Output, rename_user::Error> {
+    rename_user::call(
+        rename_user::Dependencies {
+            db_context: db_context.clone(),
+        },
+        id,
+        name.to_owned(),
+    )
+    .await
+}
+
+#[tokio::test]
+async fn a_user_cannot_be_renamed_to_another_users_name_in_other_capitals() {
+    let database = TestDatabase::create().await;
+    let db_context = db_context(&database).await;
+    create_user(&db_context, "Noor", "noor@example.com")
+        .await
+        .unwrap();
+    let ravi = create_user(&db_context, "Ravi", "ravi@example.com")
+        .await
+        .unwrap()
+        .id;
+
+    let error = rename_user(&db_context, ravi, "nOOR")
+        .await
+        .expect_err("the name is taken");
+
+    assert!(
+        error.find_source::<rename_user::NameTaken>().is_some(),
+        "{error}"
+    );
+    drop(db_context);
+    database.drop().await;
+}
+
+#[tokio::test]
+async fn a_user_can_be_renamed_to_their_own_name_in_other_capitals() {
+    let database = TestDatabase::create().await;
+    let mut db_context = db_context(&database).await;
+    let noor = create_user(&db_context, "Noor", "noor@example.com")
+        .await
+        .unwrap()
+        .id;
+
+    rename_user(&db_context, noor, "NOOR").await.unwrap();
+
+    let stored = db_context
+        .users()
+        .find(noor)
+        .exec(db_context.executor_mut())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.name, "NOOR");
     drop(db_context);
     database.drop().await;
 }
