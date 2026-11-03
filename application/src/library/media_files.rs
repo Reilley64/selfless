@@ -3,12 +3,6 @@ use crate::ports::FindMediaFile;
 use crate::ports::FoundMediaFile;
 use crate::ports::ListSubtitleFiles;
 use crate::ports::Probe;
-use crate::ports::ReadEpisodeFolder;
-use crate::ports::ReadEpisodeNfo;
-use crate::ports::ReadMovieFolder;
-use crate::ports::ReadMovieNfo;
-use crate::ports::ReadShowFolder;
-use crate::ports::ReadShowNfo;
 use domain::AudioStream;
 use domain::MediaFile;
 use domain::SubtitleFile;
@@ -36,63 +30,49 @@ impl Inspected {
     }
 }
 
-#[derive(Clone)]
-pub struct MediaFolder {
-    pub find_media_file: FindMediaFile,
-    pub list_subtitle_files: ListSubtitleFiles,
-    pub prober: Prober,
-    pub read_episode_folder: ReadEpisodeFolder,
-    pub read_episode_nfo: ReadEpisodeNfo,
-    pub read_movie_folder: ReadMovieFolder,
-    pub read_movie_nfo: ReadMovieNfo,
-    pub read_show_folder: ReadShowFolder,
-    pub read_show_nfo: ReadShowNfo,
-}
-
 #[ohno::error]
 #[display("failed to inspect a media file")]
 pub(crate) struct Error;
 
-impl MediaFolder {
-    pub(crate) async fn inspect(
-        &self,
-        stored: Option<&MediaFile>,
-        path: &str,
-    ) -> Result<Inspected, Error> {
-        let Some(found) = self.find_media_file.call(path).await else {
-            return Ok(Inspected {
-                found: None,
-                probed: Probed::Unchanged,
-                subtitle_files: Vec::new(),
-            });
-        };
-        let probed = match stored {
-            Some(x) if x.size == Some(found.size) && x.modified_at == Some(found.modified_at) => {
-                Probed::Unchanged
+pub(crate) async fn inspect(
+    find_media_file: &FindMediaFile,
+    list_subtitle_files: &ListSubtitleFiles,
+    prober: &Prober,
+    stored: Option<&MediaFile>,
+    path: &str,
+) -> Result<Inspected, Error> {
+    let Some(found) = find_media_file.call(path).await else {
+        return Ok(Inspected {
+            found: None,
+            probed: Probed::Unchanged,
+            subtitle_files: Vec::new(),
+        });
+    };
+    let probed = match stored {
+        Some(x) if x.size == Some(found.size) && x.modified_at == Some(found.modified_at) => {
+            Probed::Unchanged
+        }
+        _ => match prober.probe(path).await {
+            Ok(probe) => Probed::Read(probe),
+            Err(error) => {
+                tracing::warn!(
+                    error = &error as &dyn std::error::Error,
+                    file.path = path,
+                    "ffprobe failed to read a media file"
+                );
+                Probed::Failed
             }
-            _ => match self.prober.probe(path).await {
-                Ok(probe) => Probed::Read(probe),
-                Err(error) => {
-                    tracing::warn!(
-                        error = &error as &dyn std::error::Error,
-                        file.path = path,
-                        "ffprobe failed to read a media file"
-                    );
-                    Probed::Failed
-                }
-            },
-        };
-        let subtitle_files = self
-            .list_subtitle_files
-            .call(path)
-            .await
-            .map_err(Error::caused_by)?;
-        Ok(Inspected {
-            found: Some(found),
-            probed,
-            subtitle_files,
-        })
-    }
+        },
+    };
+    let subtitle_files = list_subtitle_files
+        .call(path)
+        .await
+        .map_err(Error::caused_by)?;
+    Ok(Inspected {
+        found: Some(found),
+        probed,
+        subtitle_files,
+    })
 }
 
 pub(crate) async fn save(

@@ -1,20 +1,30 @@
 use crate::attributes::SELFLESS_LIBRARY_SOURCE;
 use crate::attributes::SELFLESS_RECONCILE_RESULT;
-use crate::library::MediaFolder;
+use crate::library::Prober;
 use crate::library::Reconciles;
 use crate::library::SourceHealth;
 use crate::library::prober::CONCURRENT_PROBES;
 use crate::library::source_states;
 use crate::library::sync_movie;
+use crate::library::sync_movie::MovieFiles;
 use crate::library::sync_show;
+use crate::library::sync_show::ShowFiles;
 use crate::library::sync_status::ReconcileProgress;
 use crate::metrics::SELFLESS_RECONCILE_DURATION;
 use crate::ports::CheckRadarrKodiMetadata;
 use crate::ports::CheckSonarrKodiMetadata;
 use crate::ports::Clock;
+use crate::ports::FindMediaFile;
 use crate::ports::GetSonarrEpisodes;
 use crate::ports::ListRadarrMovies;
 use crate::ports::ListSonarrShows;
+use crate::ports::ListSubtitleFiles;
+use crate::ports::ReadEpisodeFolder;
+use crate::ports::ReadEpisodeNfo;
+use crate::ports::ReadMovieFolder;
+use crate::ports::ReadMovieNfo;
+use crate::ports::ReadShowFolder;
+use crate::ports::ReadShowNfo;
 use crate::ports::SonarrShow;
 use crate::ports::persistence::DbContext;
 use crate::ports::persistence::DbScope;
@@ -42,10 +52,18 @@ pub struct Dependencies {
     pub check_sonarr_kodi_metadata: CheckSonarrKodiMetadata,
     pub clock: Clock,
     pub db_context: DbContext,
+    pub find_media_file: FindMediaFile,
     pub get_sonarr_episodes: GetSonarrEpisodes,
     pub list_radarr_movies: ListRadarrMovies,
     pub list_sonarr_shows: ListSonarrShows,
-    pub media_folder: MediaFolder,
+    pub list_subtitle_files: ListSubtitleFiles,
+    pub prober: Prober,
+    pub read_episode_folder: ReadEpisodeFolder,
+    pub read_episode_nfo: ReadEpisodeNfo,
+    pub read_movie_folder: ReadMovieFolder,
+    pub read_movie_nfo: ReadMovieNfo,
+    pub read_show_folder: ReadShowFolder,
+    pub read_show_nfo: ReadShowNfo,
     pub reconciles: Reconciles,
     pub source_health: SourceHealth,
 }
@@ -60,10 +78,18 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
         check_sonarr_kodi_metadata,
         clock,
         mut db_context,
+        find_media_file,
         get_sonarr_episodes,
         list_radarr_movies,
         list_sonarr_shows,
-        media_folder,
+        list_subtitle_files,
+        prober,
+        read_episode_folder,
+        read_episode_nfo,
+        read_movie_folder,
+        read_movie_nfo,
+        read_show_folder,
+        read_show_nfo,
         reconciles,
         source_health,
     } = dependencies.into();
@@ -94,7 +120,13 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
                 ),
                 sync_movies(
                     &mut db_context,
-                    &media_folder,
+                    &MovieFiles {
+                        find_media_file,
+                        list_subtitle_files,
+                        prober,
+                        read_movie_folder,
+                        read_movie_nfo,
+                    },
                     &list_radarr_movies,
                     &source_health,
                     progress,
@@ -109,7 +141,15 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
                 ),
                 sync_shows(
                     &mut db_context,
-                    &media_folder,
+                    &ShowFiles {
+                        find_media_file,
+                        list_subtitle_files,
+                        prober,
+                        read_episode_folder,
+                        read_episode_nfo,
+                        read_show_folder,
+                        read_show_nfo,
+                    },
                     &list_sonarr_shows,
                     &get_sonarr_episodes,
                     &source_health,
@@ -206,7 +246,7 @@ struct Listing {
 
 async fn sync_movies(
     db_context: &mut DbContext,
-    media_folder: &MediaFolder,
+    files: &MovieFiles,
     list_radarr_movies: &ListRadarrMovies,
     source_health: &SourceHealth,
     progress: &Mutex<Option<ReconcileProgress>>,
@@ -244,7 +284,7 @@ async fn sync_movies(
                 .as_ref()
                 .and_then(|x| stored.get(&x.path));
             async move {
-                let inspected = sync_movie::inspect(media_folder, stored, &radarr_movie)
+                let inspected = sync_movie::inspect(files, stored, &radarr_movie)
                     .instrument(span.clone())
                     .await;
                 (radarr_movie, inspected, span)
@@ -253,7 +293,7 @@ async fn sync_movies(
         .buffered(CONCURRENT_PROBES);
     while let Some((radarr_movie, inspected, span)) = inspections.next().await {
         let inspected = inspected.map_err(Error::caused_by)?;
-        sync_movie::save(db_context, media_folder, radarr_movie, inspected)
+        sync_movie::save(db_context, files, radarr_movie, inspected)
             .instrument(span)
             .await
             .map_err(Error::caused_by)?;
@@ -269,7 +309,7 @@ async fn sync_movies(
 
 async fn sync_shows(
     db_context: &mut DbContext,
-    media_folder: &MediaFolder,
+    files: &ShowFiles,
     list_sonarr_shows: &ListSonarrShows,
     get_sonarr_episodes: &GetSonarrEpisodes,
     source_health: &SourceHealth,
@@ -299,7 +339,7 @@ async fn sync_shows(
             .await;
         match source_health.api_call(Source::Sonarr, episodes) {
             Ok(episodes) => {
-                sync_show::save(db_context, media_folder, SonarrShow { listing, episodes })
+                sync_show::save(db_context, files, SonarrShow { listing, episodes })
                     .instrument(span)
                     .await
                     .map_err(Error::caused_by)?;

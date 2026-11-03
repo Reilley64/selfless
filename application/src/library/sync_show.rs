@@ -1,4 +1,4 @@
-use crate::library::MediaFolder;
+use crate::library::Prober;
 use crate::library::SourceHealth;
 use crate::library::library_items;
 use crate::library::library_items::Change;
@@ -10,7 +10,13 @@ use crate::library::metadata::Nfo;
 use crate::library::metadata::Owner;
 use crate::ports::EpisodeFolder;
 use crate::ports::EpisodeNfo;
+use crate::ports::FindMediaFile;
 use crate::ports::GetSonarrShow;
+use crate::ports::ListSubtitleFiles;
+use crate::ports::ReadEpisodeFolder;
+use crate::ports::ReadEpisodeNfo;
+use crate::ports::ReadShowFolder;
+use crate::ports::ReadShowNfo;
 use crate::ports::ShowFolder;
 use crate::ports::ShowNfo;
 use crate::ports::SonarrEpisode;
@@ -36,8 +42,14 @@ use tracing::Span;
 #[fundle::deps]
 pub struct Dependencies {
     pub db_context: DbContext,
+    pub find_media_file: FindMediaFile,
     pub get_sonarr_show: GetSonarrShow,
-    pub media_folder: MediaFolder,
+    pub list_subtitle_files: ListSubtitleFiles,
+    pub prober: Prober,
+    pub read_episode_folder: ReadEpisodeFolder,
+    pub read_episode_nfo: ReadEpisodeNfo,
+    pub read_show_folder: ReadShowFolder,
+    pub read_show_nfo: ReadShowNfo,
     pub source_health: SourceHealth,
 }
 
@@ -48,17 +60,32 @@ pub struct Error;
 pub async fn call(dependencies: impl Into<Dependencies>, sonarr_id: i64) -> Result<(), Error> {
     let Dependencies {
         mut db_context,
+        find_media_file,
         get_sonarr_show,
-        media_folder,
+        list_subtitle_files,
+        prober,
+        read_episode_folder,
+        read_episode_nfo,
+        read_show_folder,
+        read_show_nfo,
         source_health,
     } = dependencies.into();
+    let files = ShowFiles {
+        find_media_file,
+        list_subtitle_files,
+        prober,
+        read_episode_folder,
+        read_episode_nfo,
+        read_show_folder,
+        read_show_nfo,
+    };
     async {
         let sonarr_show = get_sonarr_show.call(sonarr_id).await;
         match source_health
             .api_call(Source::Sonarr, sonarr_show)
             .map_err(Error::caused_by)?
         {
-            Some(sonarr_show) => save(&mut db_context, &media_folder, sonarr_show).await,
+            Some(sonarr_show) => save(&mut db_context, &files, sonarr_show).await,
             None => match Show::filter_by_sonarr_id(sonarr_id)
                 .first()
                 .exec(db_context.executor_mut())
@@ -72,6 +99,16 @@ pub async fn call(dependencies: impl Into<Dependencies>, sonarr_id: i64) -> Resu
     }
     .instrument(span())
     .await
+}
+
+pub(crate) struct ShowFiles {
+    pub(crate) find_media_file: FindMediaFile,
+    pub(crate) list_subtitle_files: ListSubtitleFiles,
+    pub(crate) prober: Prober,
+    pub(crate) read_episode_folder: ReadEpisodeFolder,
+    pub(crate) read_episode_nfo: ReadEpisodeNfo,
+    pub(crate) read_show_folder: ReadShowFolder,
+    pub(crate) read_show_nfo: ReadShowNfo,
 }
 
 pub(crate) fn span() -> Span {
@@ -204,7 +241,7 @@ impl EpisodeMetadata {
 
 pub(crate) async fn save(
     db_context: &mut DbContext,
-    media_folder: &MediaFolder,
+    files: &ShowFiles,
     sonarr_show: SonarrShow,
 ) -> Result<(), Error> {
     let mut episode_folders = HashMap::new();
@@ -216,7 +253,7 @@ pub(crate) async fn save(
         if !episode_folders.contains_key(&file.path) {
             episode_folders.insert(
                 file.path.clone(),
-                media_folder.read_episode_folder.call(&file.path).await,
+                files.read_episode_folder.call(&file.path).await,
             );
         }
     }
@@ -225,7 +262,7 @@ pub(crate) async fn save(
         .iter()
         .map(|x| x.season_number)
         .collect::<BTreeSet<_>>();
-    let folder = media_folder
+    let folder = files
         .read_show_folder
         .call(
             &sonarr_show.listing.path,
@@ -248,7 +285,14 @@ pub(crate) async fn save(
         .collect::<HashMap<_, _>>()
     };
     let inspected = try_join_all(episode_folders.keys().map(async |path| {
-        let inspected = media_folder.inspect(stored.get(path), path).await?;
+        let inspected = media_files::inspect(
+            &files.find_media_file,
+            &files.list_subtitle_files,
+            &files.prober,
+            stored.get(path),
+            path,
+        )
+        .await?;
         Ok::<_, media_files::Error>((path.clone(), inspected))
     }))
     .await
@@ -262,7 +306,7 @@ pub(crate) async fn save(
         &episode_folders,
         inspected,
         folder,
-        media_folder,
+        files,
     )
     .await?;
     transaction.commit().await.map_err(Error::caused_by)?;
@@ -303,7 +347,7 @@ async fn write(
     episode_folders: &HashMap<String, EpisodeFolder>,
     mut inspected: HashMap<String, Inspected>,
     folder: ShowFolder,
-    media_folder: &MediaFolder,
+    files: &ShowFiles,
 ) -> Result<Option<Change>, Error> {
     let listing = sonarr_show.listing;
     let stored = Show::filter_by_tvdb_id(listing.tvdb_id)
@@ -314,7 +358,7 @@ async fn write(
     let nfo = Nfo::read(
         folder.nfo,
         stored.as_ref().and_then(|x| x.nfo_modified_at),
-        |path| media_folder.read_show_nfo.call(path),
+        |path| files.read_show_nfo.call(path),
     )
     .await;
     let had_nfo = stored.as_ref().is_some_and(|x| x.nfo_modified_at.is_some());
@@ -426,7 +470,7 @@ async fn write(
             }
             Some(nfo_file) => {
                 if !nfo_roots.contains_key(&nfo_file.path) {
-                    let roots = media_folder.read_episode_nfo.call(&nfo_file.path).await;
+                    let roots = files.read_episode_nfo.call(&nfo_file.path).await;
                     if let Err(error) = &roots {
                         metadata::warn_unreadable(error, &nfo_file.path);
                     }

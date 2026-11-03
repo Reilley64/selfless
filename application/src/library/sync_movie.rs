@@ -1,4 +1,4 @@
-use crate::library::MediaFolder;
+use crate::library::Prober;
 use crate::library::SourceHealth;
 use crate::library::library_items;
 use crate::library::library_items::Change;
@@ -7,10 +7,14 @@ use crate::library::media_files::Inspected;
 use crate::library::metadata;
 use crate::library::metadata::Nfo;
 use crate::library::metadata::Owner;
+use crate::ports::FindMediaFile;
 use crate::ports::GetRadarrMovie;
+use crate::ports::ListSubtitleFiles;
 use crate::ports::MovieFolder;
 use crate::ports::MovieNfo;
 use crate::ports::RadarrMovie;
+use crate::ports::ReadMovieFolder;
+use crate::ports::ReadMovieNfo;
 use crate::ports::persistence::DbContext;
 use crate::ports::persistence::DbScope;
 use domain::MediaFile;
@@ -25,8 +29,12 @@ use tracing::Span;
 #[fundle::deps]
 pub struct Dependencies {
     pub db_context: DbContext,
+    pub find_media_file: FindMediaFile,
     pub get_radarr_movie: GetRadarrMovie,
-    pub media_folder: MediaFolder,
+    pub list_subtitle_files: ListSubtitleFiles,
+    pub prober: Prober,
+    pub read_movie_folder: ReadMovieFolder,
+    pub read_movie_nfo: ReadMovieNfo,
     pub source_health: SourceHealth,
 }
 
@@ -37,10 +45,21 @@ pub struct Error;
 pub async fn call(dependencies: impl Into<Dependencies>, radarr_id: i64) -> Result<(), Error> {
     let Dependencies {
         mut db_context,
+        find_media_file,
         get_radarr_movie,
-        media_folder,
+        list_subtitle_files,
+        prober,
+        read_movie_folder,
+        read_movie_nfo,
         source_health,
     } = dependencies.into();
+    let files = MovieFiles {
+        find_media_file,
+        list_subtitle_files,
+        prober,
+        read_movie_folder,
+        read_movie_nfo,
+    };
     async {
         let radarr_movie = get_radarr_movie.call(radarr_id).await;
         match source_health
@@ -56,8 +75,8 @@ pub async fn call(dependencies: impl Into<Dependencies>, radarr_id: i64) -> Resu
                         .map_err(Error::caused_by)?,
                     None => None,
                 };
-                let inspected = inspect(&media_folder, stored.as_ref(), &radarr_movie).await?;
-                save(&mut db_context, &media_folder, radarr_movie, inspected).await
+                let inspected = inspect(&files, stored.as_ref(), &radarr_movie).await?;
+                save(&mut db_context, &files, radarr_movie, inspected).await
             }
             None => {
                 let movies = Movie::filter_by_radarr_id(radarr_id)
@@ -70,6 +89,14 @@ pub async fn call(dependencies: impl Into<Dependencies>, radarr_id: i64) -> Resu
     }
     .instrument(span())
     .await
+}
+
+pub(crate) struct MovieFiles {
+    pub(crate) find_media_file: FindMediaFile,
+    pub(crate) list_subtitle_files: ListSubtitleFiles,
+    pub(crate) prober: Prober,
+    pub(crate) read_movie_folder: ReadMovieFolder,
+    pub(crate) read_movie_nfo: ReadMovieNfo,
 }
 
 pub(crate) fn span() -> Span {
@@ -157,16 +184,21 @@ impl Metadata {
 }
 
 pub(crate) async fn inspect(
-    media_folder: &MediaFolder,
+    files: &MovieFiles,
     stored: Option<&MediaFile>,
     radarr_movie: &RadarrMovie,
 ) -> Result<Option<Inspected>, Error> {
     match &radarr_movie.movie_file {
         Some(file) => Ok(Some(
-            media_folder
-                .inspect(stored, &file.path)
-                .await
-                .map_err(Error::caused_by)?,
+            media_files::inspect(
+                &files.find_media_file,
+                &files.list_subtitle_files,
+                &files.prober,
+                stored,
+                &file.path,
+            )
+            .await
+            .map_err(Error::caused_by)?,
         )),
         None => Ok(None),
     }
@@ -174,12 +206,12 @@ pub(crate) async fn inspect(
 
 pub(crate) async fn save(
     db_context: &mut DbContext,
-    media_folder: &MediaFolder,
+    files: &MovieFiles,
     radarr_movie: RadarrMovie,
     inspected: Option<Inspected>,
 ) -> Result<(), Error> {
     let folder = match &radarr_movie.movie_file {
-        Some(file) => media_folder.read_movie_folder.call(&file.path).await,
+        Some(file) => files.read_movie_folder.call(&file.path).await,
         None => MovieFolder::default(),
     };
     let visible = inspected.as_ref().is_some_and(Inspected::on_disk);
@@ -204,7 +236,7 @@ pub(crate) async fn save(
     let nfo = Nfo::read(
         folder.nfo,
         stored.as_ref().and_then(|x| x.nfo_modified_at),
-        |path| media_folder.read_movie_nfo.call(path),
+        |path| files.read_movie_nfo.call(path),
     )
     .await;
     let metadata = Metadata::of(&nfo, &radarr_movie, stored.as_ref());

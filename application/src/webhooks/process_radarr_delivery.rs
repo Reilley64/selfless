@@ -25,8 +25,12 @@ pub async fn call(
 ) -> Result<Output, Error> {
     let Dependencies {
         db_context,
+        find_media_file,
         get_radarr_movie,
-        media_folder,
+        list_subtitle_files,
+        prober,
+        read_movie_folder,
+        read_movie_nfo,
         read_radarr_webhook,
         source_health,
     } = dependencies.into();
@@ -40,8 +44,12 @@ pub async fn call(
         Ok(RadarrWebhook::Movie { radarr_id }) => sync_movie::call(
             sync_movie::Dependencies {
                 db_context,
+                find_media_file,
                 get_radarr_movie,
-                media_folder,
+                list_subtitle_files,
+                prober,
+                read_movie_folder,
+                read_movie_nfo,
                 source_health,
             },
             radarr_id,
@@ -73,8 +81,12 @@ mod tests {
     use crate::ports::RadarrError;
     use crate::ports::ReadRadarrWebhook;
     use crate::ports::UnreadableWebhook;
-    use crate::test::empty_media_folder;
+    use crate::test::empty_movie_folder;
+    use crate::test::failing_prober;
+    use crate::test::missing_media_file;
     use crate::test::mock_db_context;
+    use crate::test::no_subtitle_files;
+    use crate::test::unreadable_movie_nfo;
     use std::sync::Arc;
     use std::sync::atomic::AtomicUsize;
     use std::sync::atomic::Ordering;
@@ -85,11 +97,15 @@ mod tests {
     ) -> Dependencies {
         Dependencies {
             db_context: mock_db_context().await,
+            find_media_file: missing_media_file(),
             get_radarr_movie: GetRadarrMovie::new(move |_| {
                 movie_calls.fetch_add(1, Ordering::Relaxed);
                 Box::pin(async { Err(RadarrError::caused_by("Radarr is down")) })
             }),
-            media_folder: empty_media_folder(),
+            list_subtitle_files: no_subtitle_files(),
+            prober: failing_prober(),
+            read_movie_folder: empty_movie_folder(),
+            read_movie_nfo: unreadable_movie_nfo(),
             read_radarr_webhook,
             source_health: SourceHealth::default(),
         }

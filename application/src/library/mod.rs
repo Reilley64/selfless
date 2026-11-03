@@ -18,7 +18,6 @@ pub mod sync_now;
 pub mod sync_show;
 pub mod sync_status;
 
-pub use media_files::MediaFolder;
 pub use prober::Prober;
 pub use reconciles::Reconciles;
 pub use source_health::SourceHealth;

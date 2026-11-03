@@ -25,8 +25,14 @@ pub async fn call(
 ) -> Result<Output, Error> {
     let Dependencies {
         db_context,
+        find_media_file,
         get_sonarr_show,
-        media_folder,
+        list_subtitle_files,
+        prober,
+        read_episode_folder,
+        read_episode_nfo,
+        read_show_folder,
+        read_show_nfo,
         read_sonarr_webhook,
         source_health,
     } = dependencies.into();
@@ -40,8 +46,14 @@ pub async fn call(
         Ok(SonarrWebhook::Show { sonarr_id }) => sync_show::call(
             sync_show::Dependencies {
                 db_context,
+                find_media_file,
                 get_sonarr_show,
-                media_folder,
+                list_subtitle_files,
+                prober,
+                read_episode_folder,
+                read_episode_nfo,
+                read_show_folder,
+                read_show_nfo,
                 source_health,
             },
             sonarr_id,
@@ -73,8 +85,14 @@ mod tests {
     use crate::ports::ReadSonarrWebhook;
     use crate::ports::SonarrError;
     use crate::ports::UnreadableWebhook;
-    use crate::test::empty_media_folder;
+    use crate::test::empty_episode_folder;
+    use crate::test::empty_show_folder;
+    use crate::test::failing_prober;
+    use crate::test::missing_media_file;
     use crate::test::mock_db_context;
+    use crate::test::no_subtitle_files;
+    use crate::test::unreadable_episode_nfo;
+    use crate::test::unreadable_show_nfo;
     use std::sync::Arc;
     use std::sync::atomic::AtomicUsize;
     use std::sync::atomic::Ordering;
@@ -85,11 +103,17 @@ mod tests {
     ) -> Dependencies {
         Dependencies {
             db_context: mock_db_context().await,
+            find_media_file: missing_media_file(),
             get_sonarr_show: GetSonarrShow::new(move |_| {
                 show_calls.fetch_add(1, Ordering::Relaxed);
                 Box::pin(async { Err(SonarrError::caused_by("Sonarr is down")) })
             }),
-            media_folder: empty_media_folder(),
+            list_subtitle_files: no_subtitle_files(),
+            prober: failing_prober(),
+            read_episode_folder: empty_episode_folder(),
+            read_episode_nfo: unreadable_episode_nfo(),
+            read_show_folder: empty_show_folder(),
+            read_show_nfo: unreadable_show_nfo(),
             read_sonarr_webhook,
             source_health: SourceHealth::default(),
         }

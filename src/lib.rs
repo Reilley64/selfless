@@ -1,6 +1,7 @@
 use api::Availability;
 use application::BuildInfo;
 use application::admins::bootstrap_first_admin::MissingFirstAdmin;
+use application::library::Prober;
 use application::library::Reconciles;
 use application::library::SourceHealth;
 use application::ports::Clock;
@@ -65,13 +66,21 @@ pub async fn start(
         .clock(|_| clock.clone())
         .db_context(|_| DbContext::new(db.clone(), settings.database.location()))
         .export_telemetry_try(|_| telemetry::export_telemetry(&settings.otlp))?
+        .find_media_file(|_| media_folder::find_media_file())
         .get_radarr_movie(|_| get_radarr_movie.clone())
         .get_sonarr_episodes(|_| get_sonarr_episodes.clone())
         .get_sonarr_show(|_| get_sonarr_show.clone())
         .list_radarr_movies(|_| list_radarr_movies.clone())
         .list_sonarr_shows(|_| list_sonarr_shows.clone())
-        .media_folder(|_| media_folder::media_folder(probe_media_file.clone()))
+        .list_subtitle_files(|_| media_folder::list_subtitle_files())
+        .prober(|_| Prober::new(probe_media_file.clone()))
+        .read_episode_folder(|_| media_folder::read_episode_folder())
+        .read_episode_nfo(|_| media_folder::read_episode_nfo())
+        .read_movie_folder(|_| media_folder::read_movie_folder())
+        .read_movie_nfo(|_| media_folder::read_movie_nfo())
         .read_radarr_webhook(|_| radarr::read_webhook())
+        .read_show_folder(|_| media_folder::read_show_folder())
+        .read_show_nfo(|_| media_folder::read_show_nfo())
         .read_sonarr_webhook(|_| sonarr::read_webhook())
         .reconciles(|_| Reconciles::default())
         .send_email(|_| send_email.clone())
