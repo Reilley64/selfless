@@ -1,0 +1,133 @@
+{
+  "title": "Severance",
+  "alternateTitles": [],
+  "sortTitle": "severance",
+  "status": "continuing",
+  "ended": false,
+  "overview": "Mark leads a team of office workers whose memories have been surgically divided between their work and personal lives. When a mysterious colleague appears outside of work, it begins a journey to discover the truth about their jobs.",
+  "network": "Apple TV+",
+  "airTime": "21:00",
+  "images": [
+    {
+      "coverType": "banner",
+      "url": "/MediaCover/7/banner.jpg?lastWrite=638975328000000000",
+      "remoteUrl": "https://artworks.thetvdb.com/banners/graphical/371980-g.jpg"
+    },
+    {
+      "coverType": "poster",
+      "url": "/MediaCover/7/poster.jpg?lastWrite=638975328000000000",
+      "remoteUrl": "https://artworks.thetvdb.com/banners/v4/series/371980/posters/61f1c12fdb3f0.jpg"
+    },
+    {
+      "coverType": "fanart",
+      "url": "/MediaCover/7/fanart.jpg?lastWrite=638975328000000000",
+      "remoteUrl": "https://artworks.thetvdb.com/banners/v4/series/371980/backgrounds/61f1c2f2a1b6f.jpg"
+    }
+  ],
+  "originalLanguage": {
+    "id": 1,
+    "name": "English"
+  },
+  "seasons": [
+    {
+      "seasonNumber": 0,
+      "monitored": false,
+      "statistics": {
+        "episodeFileCount": 1,
+        "episodeCount": 1,
+        "totalEpisodeCount": 4,
+        "sizeOnDisk": 1073741824,
+        "releaseGroups": [
+          "NTb"
+        ],
+        "percentOfEpisodes": 100.0
+      }
+    },
+    {
+      "seasonNumber": 1,
+      "monitored": true,
+      "statistics": {
+        "episodeFileCount": 2,
+        "episodeCount": 3,
+        "totalEpisodeCount": 9,
+        "sizeOnDisk": 9663676416,
+        "releaseGroups": [
+          "NTb"
+        ],
+        "percentOfEpisodes": 66.66666666666667
+      }
+    },
+    {
+      "seasonNumber": 2,
+      "monitored": true,
+      "statistics": {
+        "episodeFileCount": 1,
+        "episodeCount": 2,
+        "totalEpisodeCount": 10,
+        "sizeOnDisk": 7516192768,
+        "releaseGroups": [
+          "NTb"
+        ],
+        "percentOfEpisodes": 50.0
+      }
+    },
+    {
+      "seasonNumber": 3,
+      "monitored": true,
+      "statistics": {
+        "episodeFileCount": 0,
+        "episodeCount": 0,
+        "totalEpisodeCount": 1,
+        "sizeOnDisk": 0,
+        "releaseGroups": [],
+        "percentOfEpisodes": 0.0
+      }
+    }
+  ],
+  "year": 2022,
+  "path": "/mnt/media/TV/Severance",
+  "qualityProfileId": 4,
+  "seasonFolder": true,
+  "monitored": true,
+  "monitorNewItems": "all",
+  "useSceneNumbering": false,
+  "runtime": 55,
+  "tvdbId": 371980,
+  "tvRageId": 0,
+  "tvMazeId": 44933,
+  "tmdbId": 95396,
+  "firstAired": "2022-02-18T00:00:00Z",
+  "lastAired": "2025-03-21T00:00:00Z",
+  "seriesType": "standard",
+  "cleanTitle": "severance",
+  "imdbId": "tt11280740",
+  "titleSlug": "severance",
+  "rootFolderPath": "/mnt/media/TV/",
+  "certification": "TV-MA",
+  "genres": [
+    "Drama",
+    "Mystery",
+    "Science Fiction",
+    "Thriller"
+  ],
+  "tags": [],
+  "added": "2022-02-20T08:15:31Z",
+  "ratings": {
+    "votes": 0,
+    "value": 0.0
+  },
+  "statistics": {
+    "seasonCount": 3,
+    "episodeFileCount": 4,
+    "episodeCount": 6,
+    "totalEpisodeCount": 24,
+    "sizeOnDisk": 18253611008,
+    "releaseGroups": [
+      "NTb",
+      "FLUX"
+    ],
+    "percentOfEpisodes": 66.66666666666667
+  },
+  "languageProfileId": 1,
+  "id": 7
+}

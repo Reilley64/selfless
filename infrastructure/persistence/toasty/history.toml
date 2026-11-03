@@ -34,3 +34,78 @@ snapshot_name = "20261102_230512_snapshot.toml"
 id = 6080205868210475351
 name = "20261103_015518_invite_email_refused.sql"
 snapshot_name = "20261103_015518_snapshot.toml"
+
+[[migrations]]
+id = 7970161901788024549
+name = "20261103_025001_inbox.sql"
+snapshot_name = "20261103_025001_snapshot.toml"
+
+[[migrations]]
+id = 9184114027457929078
+name = "20261103_025002_movies.sql"
+snapshot_name = "20261103_025002_snapshot.toml"
+
+[[migrations]]
+id = 4143259819458086914
+name = "20261103_025003_shows.sql"
+snapshot_name = "20261103_025003_snapshot.toml"
+
+[[migrations]]
+id = 182719258117971046
+name = "20261103_025004_reconcile.sql"
+snapshot_name = "20261103_025004_snapshot.toml"
+
+[[migrations]]
+id = 8526660021506937677
+name = "20261103_025005_delivery_retries.sql"
+snapshot_name = "20261103_025005_snapshot.toml"
+
+[[migrations]]
+id = 6166417879876173805
+name = "20261103_025006_movie_nfo.sql"
+snapshot_name = "20261103_025006_snapshot.toml"
+
+[[migrations]]
+id = 8136365159950297493
+name = "20261103_025007_sync_problem_owners.sql"
+snapshot_name = "20261103_025007_snapshot.toml"
+
+[[migrations]]
+id = 1052469859776271405
+name = "20261103_025008_show_nfo.sql"
+snapshot_name = "20261103_025008_snapshot.toml"
+
+[[migrations]]
+id = 6625847279185020701
+name = "20261103_025009_streams.sql"
+snapshot_name = "20261103_025009_snapshot.toml"
+
+[[migrations]]
+id = 8836271285327210844
+name = "20261103_030157_inboxes.sql"
+snapshot_name = "20261103_030157_snapshot.toml"
+
+[[migrations]]
+id = 7081594573970924209
+name = "20261103_065140_held_removal_items.sql"
+snapshot_name = "20261103_065140_snapshot.toml"
+
+[[migrations]]
+id = 3336060432851291098
+name = "20261103_090454_last_reconcile.sql"
+snapshot_name = "20261103_090454_snapshot.toml"
+
+[[migrations]]
+id = 2469040836121779164
+name = "20261103_101533_glossary_names.sql"
+snapshot_name = "20261103_101533_snapshot.toml"
+
+[[migrations]]
+id = 7079601595222518552
+name = "20261103_102632_held_removal_item_owners.sql"
+snapshot_name = "20261103_102632_snapshot.toml"
+
+[[migrations]]
+id = 3715521200510682525
+name = "20261103_102715_movies_radarr_id_unique.sql"
+snapshot_name = "20261103_102715_snapshot.toml"

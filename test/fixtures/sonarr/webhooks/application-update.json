@@ -1,0 +1,8 @@
+{
+  "message": "Sonarr updated from 4.0.19.2979 to 4.0.20.3014",
+  "previousVersion": "4.0.19.2979",
+  "newVersion": "4.0.20.3014",
+  "eventType": "ApplicationUpdate",
+  "instanceName": "Sonarr",
+  "applicationUrl": ""
+}

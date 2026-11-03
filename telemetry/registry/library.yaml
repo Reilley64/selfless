@@ -1,0 +1,89 @@
+groups:
+  - id: registry.selfless.library
+    type: attribute_group
+    display_name: Library attributes
+    brief: Attributes of library sync from Radarr and Sonarr.
+    attributes:
+      - id: selfless.library.source
+        type:
+          members:
+            - id: radarr
+              value: radarr
+              brief: Radarr manages the movies.
+              stability: development
+            - id: sonarr
+              value: sonarr
+              brief: Sonarr manages the shows.
+              stability: development
+        stability: development
+        brief: The app whose library items a sync or reconcile covers.
+  - id: registry.selfless.reconcile
+    type: attribute_group
+    display_name: Reconcile attributes
+    brief: Attributes of a reconcile of the library with Radarr or Sonarr.
+    attributes:
+      - id: selfless.reconcile.result
+        type:
+          members:
+            - id: succeeded
+              value: succeeded
+              brief: Every call to Radarr or Sonarr succeeded.
+              stability: development
+            - id: failed
+              value: failed
+              brief: A call to Radarr or Sonarr or the database failed, so the reconcile removed nothing.
+              stability: development
+        stability: development
+        brief: How a reconcile ended.
+  - id: metric.selfless.reconcile.duration
+    type: metric
+    metric_name: selfless.reconcile.duration
+    brief: How long a reconcile of one source took.
+    instrument: histogram
+    unit: s
+    stability: development
+    attributes:
+      - ref: selfless.library.source
+        requirement_level: required
+      - ref: selfless.reconcile.result
+        requirement_level: required
+  - id: metric.selfless.library.items.added
+    type: metric
+    metric_name: selfless.library.items.added
+    brief: Movies or shows added to the library by a webhook re-sync or a reconcile.
+    instrument: counter
+    unit: "{item}"
+    stability: development
+    attributes:
+      - ref: selfless.library.source
+        requirement_level: required
+  - id: metric.selfless.library.items.changed
+    type: metric
+    metric_name: selfless.library.items.changed
+    brief: Movies or shows whose Radarr or Sonarr data or media files changed, found by a webhook re-sync or a reconcile.
+    instrument: counter
+    unit: "{item}"
+    stability: development
+    attributes:
+      - ref: selfless.library.source
+        requirement_level: required
+  - id: metric.selfless.library.items.removed
+    type: metric
+    metric_name: selfless.library.items.removed
+    brief: Movies or shows removed from the library because Radarr or Sonarr no longer has them.
+    instrument: counter
+    unit: "{item}"
+    stability: development
+    attributes:
+      - ref: selfless.library.source
+        requirement_level: required
+  - id: span.selfless.reconcile
+    type: span
+    span_kind: internal
+    brief: One reconcile of the library with the full Radarr or Sonarr listing.
+    stability: development
+    attributes:
+      - ref: selfless.library.source
+        requirement_level: required
+      - ref: selfless.reconcile.result
+        requirement_level: required

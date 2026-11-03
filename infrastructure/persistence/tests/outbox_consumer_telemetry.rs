@@ -269,7 +269,7 @@ async fn a_failed_send_logs_no_address() {
     let smtp =
         ScriptedSmtpServer::refusing("RCPT", format!("451 4.3.0 <{address}> try later")).await;
     let clock = FakeClock::new();
-    let acquire_lock = locking::acquire_lock();
+    let acquire_lock = locking::Locks::default().acquire_lock();
     let send_email = email::send_email_through(
         AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous("127.0.0.1")
             .port(smtp.port())

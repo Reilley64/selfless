@@ -1,0 +1,182 @@
+[
+  {
+    "enable": false,
+    "name": "Emby (Legacy)",
+    "fields": [
+      {
+        "order": 0,
+        "name": "seriesMetadata",
+        "label": "Series Metadata",
+        "value": true,
+        "type": "checkbox",
+        "advanced": false,
+        "privacy": "normal",
+        "isFloat": false
+      }
+    ],
+    "implementationName": "Emby (Legacy)",
+    "implementation": "MediaBrowserMetadata",
+    "configContract": "MediaBrowserMetadataSettings",
+    "infoLink": "https://wiki.servarr.com/sonarr/supported#mediabrowsermetadata",
+    "tags": [],
+    "id": 3
+  },
+  {
+    "enable": true,
+    "name": "Kodi (XBMC) / Emby",
+    "fields": [
+      {
+        "order": 0,
+        "name": "seriesMetadata",
+        "label": "Series Metadata",
+        "value": true,
+        "type": "checkbox",
+        "advanced": false,
+        "privacy": "normal",
+        "isFloat": false
+      },
+      {
+        "order": 1,
+        "name": "seriesMetadataEpisodeGuide",
+        "label": "Series Metadata Episode Guide",
+        "value": true,
+        "type": "checkbox",
+        "advanced": false,
+        "privacy": "normal",
+        "isFloat": false
+      },
+      {
+        "order": 2,
+        "name": "seriesMetadataUrl",
+        "label": "Series Metadata URL",
+        "value": false,
+        "type": "checkbox",
+        "advanced": false,
+        "privacy": "normal",
+        "isFloat": false
+      },
+      {
+        "order": 3,
+        "name": "episodeMetadata",
+        "label": "Episode Metadata",
+        "value": true,
+        "type": "checkbox",
+        "advanced": false,
+        "privacy": "normal",
+        "isFloat": false
+      },
+      {
+        "order": 4,
+        "name": "episodeImageThumb",
+        "label": "Episode Metadata Image Thumbs",
+        "value": false,
+        "type": "checkbox",
+        "advanced": false,
+        "privacy": "normal",
+        "isFloat": false
+      },
+      {
+        "order": 5,
+        "name": "seriesImages",
+        "label": "Series Images",
+        "value": true,
+        "type": "checkbox",
+        "advanced": false,
+        "privacy": "normal",
+        "isFloat": false
+      },
+      {
+        "order": 6,
+        "name": "seasonImages",
+        "label": "Season Images",
+        "value": true,
+        "type": "checkbox",
+        "advanced": false,
+        "privacy": "normal",
+        "isFloat": false
+      },
+      {
+        "order": 7,
+        "name": "episodeImages",
+        "label": "Episode Images",
+        "value": true,
+        "type": "checkbox",
+        "advanced": false,
+        "privacy": "normal",
+        "isFloat": false
+      }
+    ],
+    "implementationName": "Kodi (XBMC) / Emby",
+    "implementation": "XbmcMetadata",
+    "configContract": "XbmcMetadataSettings",
+    "infoLink": "https://wiki.servarr.com/sonarr/supported#xbmcmetadata",
+    "tags": [],
+    "id": 1
+  },
+  {
+    "enable": false,
+    "name": "Plex",
+    "fields": [
+      {
+        "order": 0,
+        "name": "seriesPlexMatchFile",
+        "label": "Series Plex Match File",
+        "value": true,
+        "type": "checkbox",
+        "advanced": false,
+        "privacy": "normal",
+        "isFloat": false
+      }
+    ],
+    "implementationName": "Plex",
+    "implementation": "PlexMetadata",
+    "configContract": "PlexMetadataSettings",
+    "infoLink": "https://wiki.servarr.com/sonarr/supported#plexmetadata",
+    "tags": [],
+    "id": 5
+  },
+  {
+    "enable": false,
+    "name": "Roksbox",
+    "fields": [
+      {
+        "order": 0,
+        "name": "episodeMetadata",
+        "label": "Episode Metadata",
+        "value": true,
+        "type": "checkbox",
+        "advanced": false,
+        "privacy": "normal",
+        "isFloat": false
+      }
+    ],
+    "implementationName": "Roksbox",
+    "implementation": "RoksboxMetadata",
+    "configContract": "RoksboxMetadataSettings",
+    "infoLink": "https://wiki.servarr.com/sonarr/supported#roksboxmetadata",
+    "tags": [],
+    "id": 4
+  },
+  {
+    "enable": false,
+    "name": "WDTV",
+    "fields": [
+      {
+        "order": 0,
+        "name": "episodeMetadata",
+        "label": "Episode Metadata",
+        "value": true,
+        "type": "checkbox",
+        "advanced": false,
+        "privacy": "normal",
+        "isFloat": false
+      }
+    ],
+    "implementationName": "WDTV",
+    "implementation": "WdtvMetadata",
+    "configContract": "WdtvMetadataSettings",
+    "infoLink": "https://wiki.servarr.com/sonarr/supported#wdtvmetadata",
+    "tags": [],
+    "id": 2
+  }
+]

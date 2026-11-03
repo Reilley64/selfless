@@ -1,14 +1,17 @@
+mod by_source;
 mod passwords;
 mod tokens;
 
 pub mod actuator;
 pub mod admins;
 pub mod invites;
+pub mod library;
 pub mod ports;
 pub mod sessions;
 pub mod telemetry;
 pub mod trace_context;
 pub mod users;
+pub mod webhooks;
 
 #[cfg(test)]
 #[path = "../../test/application.rs"]

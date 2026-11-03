@@ -7,7 +7,10 @@ publish.workspace = true
 
 [dependencies]
 config = { workspace = true }
+jiff = { workspace = true, features = ["serde"] }
 email = { workspace = true }
 persistence = { workspace = true }
+radarr = { workspace = true }
 serde = { workspace = true }
+sonarr = { workspace = true }
 telemetry = { workspace = true }

@@ -1,0 +1,72 @@
+<episodedetails>
+  <title>Half Loop</title>
+  <season>1</season>
+  <episode>2</episode>
+  <aired>2022-02-18</aired>
+  <plot>Mark takes new hire Helly on a tour of the office, while a disturbing discovery is made about Petey.</plot>
+  <uniqueid type="tvdb" default="true">8786934</uniqueid>
+  <uniqueid type="sonarr">1012</uniqueid>
+  <thumb />
+  <watched>false</watched>
+  <rating>8.1</rating>
+  <fileinfo>
+    <streamdetails>
+      <video>
+        <aspect>1.78</aspect>
+        <bitrate>0</bitrate>
+        <codec>h264</codec>
+        <framerate>23.976</framerate>
+        <height>1080</height>
+        <scantype>Progressive</scantype>
+        <width>1920</width>
+        <duration>55.2</duration>
+        <durationinseconds>3312</durationinseconds>
+      </video>
+      <audio>
+        <bitrate>640000</bitrate>
+        <channels>6</channels>
+        <codec>EAC3</codec>
+        <language>eng</language>
+      </audio>
+      <subtitle>
+        <language>eng</language>
+      </subtitle>
+    </streamdetails>
+  </fileinfo>
+</episodedetails>
+<episodedetails>
+  <title>In Perpetuity</title>
+  <season>1</season>
+  <episode>3</episode>
+  <aired>2022-02-25</aired>
+  <plot>Helly takes a tour of the Perpetuity Wing, and Mark meets someone from his past outside of work.</plot>
+  <uniqueid type="tvdb" default="true">8786935</uniqueid>
+  <uniqueid type="sonarr">1013</uniqueid>
+  <thumb />
+  <watched>false</watched>
+  <rating>8.3</rating>
+  <fileinfo>
+    <streamdetails>
+      <video>
+        <aspect>1.78</aspect>
+        <bitrate>0</bitrate>
+        <codec>h264</codec>
+        <framerate>23.976</framerate>
+        <height>1080</height>
+        <scantype>Progressive</scantype>
+        <width>1920</width>
+        <duration>55.2</duration>
+        <durationinseconds>3312</durationinseconds>
+      </video>
+      <audio>
+        <bitrate>640000</bitrate>
+        <channels>6</channels>
+        <codec>EAC3</codec>
+        <language>eng</language>
+      </audio>
+      <subtitle>
+        <language>eng</language>
+      </subtitle>
+    </streamdetails>
+  </fileinfo>
+</episodedetails>

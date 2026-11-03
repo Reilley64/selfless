@@ -1,12 +1,19 @@
 #[path = "../test/selfless.rs"]
-mod selfless_test;
+pub mod selfless_test;
 
 use application::ports::Clock;
+use application::ports::ProbeError;
+use application::ports::ProbeMediaFile;
 use application::ports::SendEmail;
 use selfless_test::ADMIN_NAME;
 use selfless_test::ADMIN_PASSWORD;
+use selfless_test::RADARR_API_KEY;
+use selfless_test::RADARR_WEBHOOK_PASSWORD;
+use selfless_test::SONARR_API_KEY;
+use selfless_test::SONARR_WEBHOOK_PASSWORD;
 use selfless_test::settings;
 use settings::AdminSettings;
+use std::process::Command;
 use test_fixtures::FakeClock;
 use test_fixtures::FakeMailer;
 use test_fixtures::TestDatabase;
@@ -32,6 +39,7 @@ async fn the_server_refuses_to_start_without_a_first_admin() {
             settings,
             Clock::new(FakeClock::new().reader()),
             SendEmail::new(FakeMailer::default().sender()),
+            ProbeMediaFile::new(|_| Box::pin(async { Err(ProbeError::default()) })),
         )
         .await
         .err()
@@ -59,4 +67,51 @@ async fn once_an_admin_exists_the_server_starts_with_the_first_admin_settings_em
     drop(selfless_test::start(settings, &clock, &mailer).await);
 
     database.drop().await;
+}
+
+const RADARR_SETTINGS: [(&str, &str); 3] = [
+    ("RADARR__URL", "http://127.0.0.1:7878"),
+    ("RADARR__API_KEY", RADARR_API_KEY),
+    ("RADARR__WEBHOOK_PASSWORD", RADARR_WEBHOOK_PASSWORD),
+];
+const SONARR_SETTINGS: [(&str, &str); 3] = [
+    ("SONARR__URL", "http://127.0.0.1:8989"),
+    ("SONARR__API_KEY", SONARR_API_KEY),
+    ("SONARR__WEBHOOK_PASSWORD", SONARR_WEBHOOK_PASSWORD),
+];
+
+fn assert_exits_naming(missing: &str, settings: &[(&str, &str)]) {
+    let output = Command::new(env!("CARGO_BIN_EXE_selfless"))
+        .env(
+            "DATABASE__URL",
+            "postgres://selfless:selfless@127.0.0.1:1/selfless",
+        )
+        .envs(
+            settings
+                .iter()
+                .filter(|(name, _)| *name != missing)
+                .copied(),
+        )
+        .env_remove(missing)
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains(missing), "{missing} is not named: {stderr}");
+}
+
+#[test]
+fn the_server_exits_naming_a_missing_radarr_setting() {
+    for (missing, _) in RADARR_SETTINGS {
+        assert_exits_naming(missing, &RADARR_SETTINGS);
+    }
+}
+
+#[test]
+fn the_server_exits_naming_a_missing_sonarr_setting() {
+    let settings = [RADARR_SETTINGS, SONARR_SETTINGS].concat();
+    for (missing, _) in SONARR_SETTINGS {
+        assert_exits_naming(missing, &settings);
+    }
 }

@@ -7,15 +7,20 @@ wildcards = "allow"
 deny = [
     { name = "native-tls" },
 
-    { name = "domain", wrappers = ["selfless", "application", "api", "persistence", "workers"] },
-    { name = "application", wrappers = ["selfless", "infrastructure", "email", "locking", "persistence", "telemetry", "api", "admin", "workers"] },
+    { name = "domain", wrappers = ["selfless", "application", "ffmpeg", "media-folder", "persistence", "radarr", "sonarr", "api", "webhooks", "workers"] },
+    { name = "application", wrappers = ["selfless", "infrastructure", "email", "ffmpeg", "locking", "media-folder", "persistence", "radarr", "servarr", "sonarr", "telemetry", "api", "admin", "webhooks", "workers"] },
 
     { name = "email", wrappers = ["selfless", "settings"] },
+    { name = "ffmpeg", wrappers = ["selfless"] },
     { name = "locking", wrappers = ["selfless"] },
+    { name = "media-folder", wrappers = ["selfless"] },
     { name = "persistence", wrappers = ["selfless", "settings", "workers"] },
+    { name = "radarr", wrappers = ["selfless", "settings"] },
+    { name = "sonarr", wrappers = ["selfless", "settings"] },
+    { name = "servarr", wrappers = ["selfless", "radarr", "sonarr"] },
     { name = "telemetry", wrappers = ["selfless", "settings"] },
     { name = "settings", wrappers = ["selfless"] },
-    { name = "infrastructure", wrappers = ["selfless", "api", "admin", "workers"] },
+    { name = "infrastructure", wrappers = ["selfless", "api", "admin", "webhooks", "workers"] },
 
     { name = "admin", wrappers = ["selfless"] },
     { name = "api", wrappers = ["selfless"] },

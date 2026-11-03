@@ -1,6 +1,9 @@
+mod inbox_consumer;
 mod outbox_consumer;
 mod queue_consumer;
 
+pub use inbox_consumer::HandleInboxError;
+pub use inbox_consumer::consume_inbox;
 pub use outbox_consumer::HandleOutboxError;
 pub use outbox_consumer::consume_outbox;
 pub use queue_consumer::QueuePauses;

@@ -1,9 +1,14 @@
 use api::Availability;
 use application::BuildInfo;
 use application::admins::bootstrap_first_admin::MissingFirstAdmin;
+use application::library::Prober;
+use application::library::Reconciles;
+use application::library::SourceHealth;
 use application::ports::Clock;
+use application::ports::ProbeMediaFile;
 use application::ports::SendEmail;
 use application::ports::persistence::DbContext;
+use application::webhooks::WebhookPasswords;
 use domain::Password;
 use infrastructure::AppState;
 use ohno::AppError;
@@ -25,17 +30,27 @@ pub struct Server {
     router: Router,
     availability: Availability,
     state: AppState,
+    reconcile_interval: Duration,
 }
 
 pub async fn start(
     settings: AppSettings,
     clock: Clock,
     send_email: SendEmail,
+    probe_media_file: ProbeMediaFile,
 ) -> Result<Server, AppError> {
+    let client = servarr::client()?;
+    let radarr_api = settings.radarr.api(client.clone())?;
+    let webhook_passwords = WebhookPasswords {
+        radarr: settings.radarr.webhook_password()?,
+        sonarr: settings.sonarr.webhook_password()?,
+    };
+    let sonarr_api = settings.sonarr.api(client)?;
     let db = persistence::connect(&settings.database).await?;
     persistence::migrate(&db).await?;
+    let locks = locking::Locks::default();
     let state = AppState::builder()
-        .acquire_lock(|_| locking::acquire_lock())
+        .acquire_lock(|_| locks.acquire_lock())
         .build_info(|_| BuildInfo {
             name: env!("CARGO_PKG_NAME"),
             version: env!("CARGO_PKG_VERSION"),
@@ -43,10 +58,33 @@ pub async fn start(
             git_commit_id: env!("GIT_COMMIT"),
             git_commit_time: env!("GIT_COMMIT_TIME"),
         })
+        .check_radarr_kodi_metadata(|_| radarr::check_kodi_metadata(radarr_api.clone()))
+        .check_sonarr_kodi_metadata(|_| sonarr::check_kodi_metadata(sonarr_api.clone()))
         .clock(|_| clock.clone())
         .db_context(|_| DbContext::new(db.clone(), settings.database.location()))
         .export_telemetry_try(|_| telemetry::export_telemetry(&settings.otlp))?
+        .find_media_file(|_| media_folder::find_media_file())
+        .get_radarr_movie(|_| radarr::get_movie(radarr_api.clone()))
+        .get_sonarr_episodes(|_| sonarr::get_episodes(sonarr_api.clone()))
+        .get_sonarr_show(|_| sonarr::get_show(sonarr_api.clone()))
+        .list_radarr_movies(|_| radarr::list_movies(radarr_api.clone()))
+        .list_sonarr_shows(|_| sonarr::list_shows(sonarr_api.clone()))
+        .list_subtitle_files(|_| media_folder::list_subtitle_files())
+        .prober(|_| Prober::new(probe_media_file.clone()))
+        .read_episode_folder(|_| media_folder::read_episode_folder())
+        .read_episode_nfo(|_| media_folder::read_episode_nfo())
+        .read_movie_folder(|_| media_folder::read_movie_folder())
+        .read_movie_nfo(|_| media_folder::read_movie_nfo())
+        .read_radarr_webhook(|_| radarr::read_webhook())
+        .read_show_folder(|_| media_folder::read_show_folder())
+        .read_show_nfo(|_| media_folder::read_show_nfo())
+        .read_sonarr_webhook(|_| sonarr::read_webhook())
+        .read_webhook_event_type(|_| servarr::read_webhook_event_type())
+        .reconciles(|_| Reconciles::default())
         .send_email(|_| send_email.clone())
+        .source_health(|_| SourceHealth::default())
+        .try_acquire_lock(|_| locks.try_acquire_lock())
+        .webhook_passwords(|_| webhook_passwords.clone())
         .build();
     let first_admin = match (
         settings.admin.username.filter(|x| !x.is_empty()),
@@ -67,7 +105,7 @@ pub async fn start(
     workers::start(&state).await?;
     let availability = Availability::default();
     let router = api::router(
-        admin::register(Router::builder()),
+        webhooks::register(admin::register(Router::builder())),
         state.clone(),
         availability.clone(),
         std::path::absolute(&settings.web.dir)?,
@@ -78,6 +116,7 @@ pub async fn start(
         router,
         availability,
         state,
+        reconcile_interval: settings.library_sync.reconcile_interval,
     })
 }
 
@@ -89,7 +128,11 @@ impl Server {
     pub async fn serve(self, shutdown: impl Future<Output = ()>) -> Result<(), AppError> {
         let availability = self.availability;
         let stop_workers = CancellationToken::new();
-        let workers = tokio::spawn(workers::serve(self.state, stop_workers.clone()));
+        let workers = tokio::spawn(workers::serve(
+            self.state,
+            self.reconcile_interval,
+            stop_workers.clone(),
+        ));
         availability.accept_traffic();
         tracing::info!(
             server.port = self.listener.local_addr()?.port(),

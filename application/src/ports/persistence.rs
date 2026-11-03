@@ -1,9 +1,20 @@
 use async_trait::async_trait;
+use domain::Actor;
 use domain::Admin;
 use domain::AdminSession;
+use domain::Artwork;
+use domain::Episode;
+use domain::HeldRemoval;
+use domain::Inbox;
 use domain::Invite;
+use domain::MediaFile;
+use domain::Movie;
 use domain::Outbox;
+use domain::Season;
 use domain::Session;
+use domain::Show;
+use domain::SourceState;
+use domain::SyncProblem;
 use domain::User;
 use opentelemetry::KeyValue;
 use opentelemetry::global;
@@ -65,6 +76,10 @@ impl<T: Model> DbSet<T> {
 }
 
 pub trait DbScope {
+    fn actors(&self) -> DbSet<Actor> {
+        DbSet::new()
+    }
+
     fn admins(&self) -> DbSet<Admin> {
         DbSet::new()
     }
@@ -73,7 +88,31 @@ pub trait DbScope {
         DbSet::new()
     }
 
+    fn artwork(&self) -> DbSet<Artwork> {
+        DbSet::new()
+    }
+
+    fn episodes(&self) -> DbSet<Episode> {
+        DbSet::new()
+    }
+
+    fn held_removals(&self) -> DbSet<HeldRemoval> {
+        DbSet::new()
+    }
+
+    fn inboxes(&self) -> DbSet<Inbox> {
+        DbSet::new()
+    }
+
     fn invites(&self) -> DbSet<Invite> {
+        DbSet::new()
+    }
+
+    fn media_files(&self) -> DbSet<MediaFile> {
+        DbSet::new()
+    }
+
+    fn movies(&self) -> DbSet<Movie> {
         DbSet::new()
     }
 
@@ -81,7 +120,23 @@ pub trait DbScope {
         DbSet::new()
     }
 
+    fn seasons(&self) -> DbSet<Season> {
+        DbSet::new()
+    }
+
     fn sessions(&self) -> DbSet<Session> {
+        DbSet::new()
+    }
+
+    fn shows(&self) -> DbSet<Show> {
+        DbSet::new()
+    }
+
+    fn source_states(&self) -> DbSet<SourceState> {
+        DbSet::new()
+    }
+
+    fn sync_problems(&self) -> DbSet<SyncProblem> {
         DbSet::new()
     }
 

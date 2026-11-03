@@ -1,0 +1,210 @@
+[
+  {
+    "seriesId": 7,
+    "seasonNumber": 0,
+    "relativePath": "Specials/Severance - S00E01 - Inside the Episode WEBDL-1080p.mkv",
+    "path": "/mnt/media/TV/Severance/Specials/Severance - S00E01 - Inside the Episode WEBDL-1080p.mkv",
+    "size": 1073741824,
+    "dateAdded": "2022-03-04T11:02:19Z",
+    "sceneName": "",
+    "releaseGroup": "NTb",
+    "languages": [
+      {
+        "id": 1,
+        "name": "English"
+      }
+    ],
+    "quality": {
+      "quality": {
+        "id": 3,
+        "name": "WEBDL-1080p",
+        "source": "web",
+        "resolution": 1080
+      },
+      "revision": {
+        "version": 1,
+        "real": 0,
+        "isRepack": false
+      }
+    },
+    "customFormats": [],
+    "customFormatScore": 0,
+    "indexerFlags": 0,
+    "releaseType": "singleEpisode",
+    "mediaInfo": {
+      "audioBitrate": 640000,
+      "audioChannels": 5.1,
+      "audioCodec": "EAC3",
+      "audioLanguages": "eng",
+      "audioStreamCount": 1,
+      "videoBitDepth": 8,
+      "videoBitrate": 0,
+      "videoCodec": "h264",
+      "videoFps": 23.976,
+      "videoDynamicRange": "",
+      "videoDynamicRangeType": "",
+      "resolution": "1920x1080",
+      "runTime": "57:12",
+      "scanType": "Progressive",
+      "subtitles": "eng"
+    },
+    "qualityCutoffNotMet": false,
+    "id": 2001
+  },
+  {
+    "seriesId": 7,
+    "seasonNumber": 1,
+    "relativePath": "Season 01/Severance - S01E01 - Good News About Hell WEBDL-1080p.mkv",
+    "path": "/mnt/media/TV/Severance/Season 01/Severance - S01E01 - Good News About Hell WEBDL-1080p.mkv",
+    "size": 3221225472,
+    "dateAdded": "2022-03-01T09:30:00Z",
+    "sceneName": "",
+    "releaseGroup": "NTb",
+    "languages": [
+      {
+        "id": 1,
+        "name": "English"
+      }
+    ],
+    "quality": {
+      "quality": {
+        "id": 3,
+        "name": "WEBDL-1080p",
+        "source": "web",
+        "resolution": 1080
+      },
+      "revision": {
+        "version": 1,
+        "real": 0,
+        "isRepack": false
+      }
+    },
+    "customFormats": [],
+    "customFormatScore": 0,
+    "indexerFlags": 0,
+    "releaseType": "singleEpisode",
+    "mediaInfo": {
+      "audioBitrate": 640000,
+      "audioChannels": 5.1,
+      "audioCodec": "EAC3",
+      "audioLanguages": "eng",
+      "audioStreamCount": 1,
+      "videoBitDepth": 8,
+      "videoBitrate": 0,
+      "videoCodec": "h264",
+      "videoFps": 23.976,
+      "videoDynamicRange": "",
+      "videoDynamicRangeType": "",
+      "resolution": "1920x1080",
+      "runTime": "57:12",
+      "scanType": "Progressive",
+      "subtitles": "eng"
+    },
+    "qualityCutoffNotMet": false,
+    "id": 2011
+  },
+  {
+    "seriesId": 7,
+    "seasonNumber": 1,
+    "relativePath": "Season 01/Severance - S01E02-E03 - Half Loop + In Perpetuity WEBDL-1080p.mkv",
+    "path": "/mnt/media/TV/Severance/Season 01/Severance - S01E02-E03 - Half Loop + In Perpetuity WEBDL-1080p.mkv",
+    "size": 6442450944,
+    "dateAdded": "2022-03-01T09:31:00Z",
+    "sceneName": "",
+    "releaseGroup": "NTb",
+    "languages": [
+      {
+        "id": 1,
+        "name": "English"
+      }
+    ],
+    "quality": {
+      "quality": {
+        "id": 3,
+        "name": "WEBDL-1080p",
+        "source": "web",
+        "resolution": 1080
+      },
+      "revision": {
+        "version": 1,
+        "real": 0,
+        "isRepack": false
+      }
+    },
+    "customFormats": [],
+    "customFormatScore": 0,
+    "indexerFlags": 0,
+    "releaseType": "multiEpisode",
+    "mediaInfo": {
+      "audioBitrate": 640000,
+      "audioChannels": 5.1,
+      "audioCodec": "EAC3",
+      "audioLanguages": "eng",
+      "audioStreamCount": 1,
+      "videoBitDepth": 8,
+      "videoBitrate": 0,
+      "videoCodec": "h264",
+      "videoFps": 23.976,
+      "videoDynamicRange": "",
+      "videoDynamicRangeType": "",
+      "resolution": "1920x1080",
+      "runTime": "57:12",
+      "scanType": "Progressive",
+      "subtitles": "eng"
+    },
+    "qualityCutoffNotMet": false,
+    "id": 2012
+  },
+  {
+    "seriesId": 7,
+    "seasonNumber": 2,
+    "relativePath": "Season 02/Severance - S02E01 - Hello, Ms. Cobel WEBDL-2160p.mkv",
+    "path": "/mnt/media/TV/Severance/Season 02/Severance - S02E01 - Hello, Ms. Cobel WEBDL-2160p.mkv",
+    "size": 7516192768,
+    "dateAdded": "2025-02-02T20:41:07Z",
+    "sceneName": "",
+    "releaseGroup": "FLUX",
+    "languages": [
+      {
+        "id": 1,
+        "name": "English"
+      }
+    ],
+    "quality": {
+      "quality": {
+        "id": 18,
+        "name": "WEBDL-2160p",
+        "source": "web",
+        "resolution": 2160
+      },
+      "revision": {
+        "version": 1,
+        "real": 0,
+        "isRepack": false
+      }
+    },
+    "customFormats": [],
+    "customFormatScore": 0,
+    "indexerFlags": 0,
+    "releaseType": "singleEpisode",
+    "mediaInfo": {
+      "audioBitrate": 640000,
+      "audioChannels": 5.1,
+      "audioCodec": "EAC3",
+      "audioLanguages": "eng",
+      "audioStreamCount": 1,
+      "videoBitDepth": 10,
+      "videoBitrate": 0,
+      "videoCodec": "x265",
+      "videoFps": 23.976,
+      "videoDynamicRange": "HDR",
+      "videoDynamicRangeType": "DV HDR10",
+      "resolution": "3840x2160",
+      "runTime": "57:12",
+      "scanType": "Progressive",
+      "subtitles": "eng"
+    },
+    "qualityCutoffNotMet": false,
+    "id": 2022
+  }
+]

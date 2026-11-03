@@ -5,15 +5,18 @@
 ## Fixtures
 
 - `test/fixtures/src/lib.rs` lists the shared fakes and helpers: the fake clock and mailer, `TestServer` and `Browser` for HTTP, `TestDatabase` for PostgreSQL, `Logs`, `ScriptedSmtpServer` and `set_default_subscriber`.
-- `TestApp` runs on the mocked database. Its `AcquireLock` holds nothing, and its `ExportTelemetry` always fails. A relay test that needs a 200 replaces `app.state.export_telemetry` with its own port.
-- The glue files are `test/application.rs`, `api.rs`, `admin.rs`, `persistence.rs` and `selfless.rs`. A helper that one crate needs goes in that crate's glue file. It goes in `test/fixtures` only when several crates need it. `test/application.rs` has `RecordingLock`, which records the lock keys a use case asks for, and mailers that fail or refuse.
-- A root test includes the glue as `#[path = "../test/selfless.rs"] mod selfless_test;`. Naming the module `selfless` makes `selfless::start` ambiguous with the crate.
+- `TestApp` runs on the mocked database. Its `AcquireLock` holds nothing, its `TryAcquireLock` always succeeds, and its `ExportTelemetry` always fails. A relay test that needs a 200 replaces `app.state.export_telemetry` with its own port.
+- The glue files are `test/application.rs`, `api.rs`, `admin.rs`, `persistence.rs`, `selfless.rs` and `webhooks.rs`. A helper that one crate needs goes in that crate's glue file. It goes in `test/fixtures` only when several crates need it. `test/application.rs` has `RecordingLock`, which records the lock keys a use case asks for, and mailers that fail or refuse.
+- `test/selfless.rs` starts the server for root tests. It also has the stub Radarr and Sonarr servers, a temporary media folder, `fixture()`, `send_webhook` and `eventually`.
+- Data fixtures, such as Radarr and Sonarr API responses, webhook bodies, NFO files and ffprobe output, live in `test/fixtures/radarr/`, `sonarr/` and `ffprobe/`.
+- A root test includes the glue as `#[path = "../test/selfless.rs"] pub mod selfless_test;`. Naming the module `selfless` makes `selfless::start` ambiguous with the crate. The module is `pub` because each root test uses only some of the helpers, and Rust warns about unused items in a private module.
 - Seed the mocked database through the `DbSet` roots, such as `db_context.users().create()`. A session row needs a `client_id`. When a test needs a real password hash, seed through `create_user::call` or `create_admin::call` instead.
 - A domain test can build a Toasty model as a struct literal. Use `Deferred::default()` for a `#[belongs_to]` field and `Uuid::nil()` for IDs, as the tests in `domain/src/session.rs` do.
 
 ## HTTP tests
 
 - `TestServer::request`, `request_with_headers` and `Browser` check each JSON response against the one response `openapi.yaml` lists for its status. If a status can carry two problem types, that response's `type` is an `enum` of both, like `BadRequestOrInvalidIdempotencyKey`.
+- `request_with_response_headers` also returns the response headers, such as the `WWW-Authenticate` of a webhook's 401.
 - `get_text` follows redirects and checks nothing against `openapi.yaml`, so `get_text("/admin")` returns the sign-in page with 200.
 - `post_protobuf` panics with `openapi.yaml has nothing at` when the file lists no protobuf body for that path and status, such as a 401.
 - `#[route(GET "/x")]` works inside a `#[cfg(test)] mod tests`, so a test can serve its own routes with `TestServer::serve(Router::builder().route(x).layer(ProblemLayer).build())`. The macro turns the function into a unit struct, so a route named like a local variable in the same test fails to compile.

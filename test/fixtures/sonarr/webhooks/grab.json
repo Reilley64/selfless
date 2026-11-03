@@ -1,0 +1,72 @@
+{
+  "series": {
+    "id": 7,
+    "title": "Severance",
+    "titleSlug": "severance",
+    "path": "/mnt/media/TV/Severance",
+    "tvdbId": 371980,
+    "tvMazeId": 44933,
+    "tmdbId": 95396,
+    "imdbId": "tt11280740",
+    "type": "standard",
+    "year": 2022,
+    "genres": [
+      "Drama",
+      "Mystery",
+      "Science Fiction",
+      "Thriller"
+    ],
+    "images": [
+      {
+        "coverType": "poster",
+        "url": "/MediaCover/7/poster.jpg?lastWrite=638975328000000000",
+        "remoteUrl": "https://artworks.thetvdb.com/banners/v4/series/371980/posters/61f1c12fdb3f0.jpg"
+      }
+    ],
+    "tags": [],
+    "originalLanguage": {
+      "id": 1,
+      "name": "English"
+    }
+  },
+  "episodes": [
+    {
+      "id": 1021,
+      "episodeNumber": 1,
+      "seasonNumber": 2,
+      "title": "Hello, Ms. Cobel",
+      "overview": "Mark leads his team on a search for answers.",
+      "airDate": "2025-01-17",
+      "airDateUtc": "2025-01-17T02:00:00Z",
+      "seriesId": 7,
+      "tvdbId": 10535541
+    }
+  ],
+  "release": {
+    "quality": "WEBDL-2160p",
+    "qualityVersion": 1,
+    "releaseGroup": "FLUX",
+    "releaseTitle": "Severance.S02E01.Hello.Ms.Cobel.2160p.ATVP.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265-FLUX",
+    "indexer": "NZBgeek (Prowlarr)",
+    "size": 7516192768,
+    "customFormatScore": 0,
+    "customFormats": [],
+    "languages": [
+      {
+        "id": 1,
+        "name": "English"
+      }
+    ],
+    "indexerFlags": []
+  },
+  "downloadClient": "SABnzbd",
+  "downloadClientType": "SABnzbd",
+  "downloadId": "SABnzbd_nzo_5f2k9d1a",
+  "customFormatInfo": {
+    "customFormats": [],
+    "customFormatScore": 0
+  },
+  "eventType": "Grab",
+  "instanceName": "Sonarr",
+  "applicationUrl": ""
+}

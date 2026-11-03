@@ -44,7 +44,7 @@ The `code-review` step applies these rules to each diff. Each rule is a judgemen
 
 - A use case loads models, calls domain methods and saves them. It owns the transaction, the order of steps and the ownership or authorization check.
 - A use case takes domain value types for input it stores or acts on. Presentation builds them and maps their marker errors. Input the use case only checks, such as a sign-in password, stays a plain type.
-- A use case's `Dependencies` holds only the ports it calls.
+- A use case's `Dependencies` holds only the ports it calls. In-process shared state may sit beside them: `SourceHealth`, `Reconciles`, `WebhookPasswords`, and `Prober`, which holds the probe semaphore. A worker loop may await `Reconciles::requested()` directly to learn that a reconcile was asked for.
 - A port is named for what the use case needs. Its parameters, results and errors are application or domain types, never a vendor's request or response shapes.
 - Radarr, Sonarr, NFO and SMTP shapes stay in the crate that talks to that system. That crate translates them into domain types before they cross a port, and keeps only the IDs and fields selfless uses.
 - A use case that must reach Radarr, Sonarr or the SMTP server after a change writes an outbox row in the same transaction, and a worker makes the call. The row holds IDs and the values the handler cannot look up, such as the request origin. No call to those systems runs inside a transaction or a request.

@@ -1,5 +1,5 @@
 #[path = "../test/selfless.rs"]
-mod selfless_test;
+pub mod selfless_test;
 
 use reqwest::StatusCode;
 use serde_json::json;

@@ -12,6 +12,7 @@ base64 = { workspace = true }
 bytes = { workspace = true }
 domain = { workspace = true }
 fundle = { workspace = true }
+futures-util = { workspace = true }
 getrandom = { workspace = true }
 jiff = { workspace = true }
 ohno = { workspace = true }

@@ -1,10 +1,20 @@
 use bytes::Bytes;
 use domain::EmailAddress;
+use domain::EpisodeNfo;
+use domain::HdrType;
+use domain::MovieNfo;
+use domain::RadarrId;
+use domain::ShowNfo;
+use domain::SonarrId;
+use domain::TmdbId;
+use domain::TvdbId;
 use jiff::Timestamp;
+use jiff::civil::Date;
 use std::error::Error;
 use std::fmt;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::time::Duration;
 
 pub mod persistence;
 
@@ -63,6 +73,40 @@ impl LockGuard {
         Self {
             _held: Box::new(held),
         }
+    }
+}
+
+type CheckRadarrKodiMetadataFn = dyn Fn() -> PortFuture<Result<bool, RadarrError>> + Send + Sync;
+
+#[derive(Clone)]
+pub struct CheckRadarrKodiMetadata(Arc<CheckRadarrKodiMetadataFn>);
+
+impl CheckRadarrKodiMetadata {
+    pub fn new(
+        f: impl Fn() -> PortFuture<Result<bool, RadarrError>> + Send + Sync + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self) -> PortFuture<Result<bool, RadarrError>> {
+        (self.0)()
+    }
+}
+
+type CheckSonarrKodiMetadataFn = dyn Fn() -> PortFuture<Result<bool, SonarrError>> + Send + Sync;
+
+#[derive(Clone)]
+pub struct CheckSonarrKodiMetadata(Arc<CheckSonarrKodiMetadataFn>);
+
+impl CheckSonarrKodiMetadata {
+    pub fn new(
+        f: impl Fn() -> PortFuture<Result<bool, SonarrError>> + Send + Sync + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self) -> PortFuture<Result<bool, SonarrError>> {
+        (self.0)()
     }
 }
 
@@ -139,6 +183,610 @@ pub enum TelemetrySignal {
     Logs,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FoundMediaFile {
+    pub size: i64,
+    pub modified_at: Timestamp,
+}
+
+type FindMediaFileFn =
+    dyn Fn(String) -> PortFuture<Result<Option<FoundMediaFile>, UnreadableFile>> + Send + Sync;
+
+#[derive(Clone)]
+pub struct FindMediaFile(Arc<FindMediaFileFn>);
+
+impl FindMediaFile {
+    pub fn new(
+        f: impl Fn(String) -> PortFuture<Result<Option<FoundMediaFile>, UnreadableFile>>
+        + Send
+        + Sync
+        + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self, path: &str) -> PortFuture<Result<Option<FoundMediaFile>, UnreadableFile>> {
+        (self.0)(path.to_owned())
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct SourceMovie {
+    pub radarr_id: RadarrId,
+    pub tmdb_id: TmdbId,
+    pub title: String,
+    pub year: i64,
+    pub overview: Option<String>,
+    pub genres: Vec<String>,
+    pub media_file: Option<SourceMediaFile>,
+}
+
+#[derive(Clone, Debug)]
+pub struct SourceMediaFile {
+    pub path: String,
+    pub added_at: Timestamp,
+}
+
+type GetRadarrMovieFn =
+    dyn Fn(RadarrId) -> PortFuture<Result<Option<SourceMovie>, RadarrError>> + Send + Sync;
+
+#[derive(Clone)]
+pub struct GetRadarrMovie(Arc<GetRadarrMovieFn>);
+
+impl GetRadarrMovie {
+    pub fn new(
+        f: impl Fn(RadarrId) -> PortFuture<Result<Option<SourceMovie>, RadarrError>>
+        + Send
+        + Sync
+        + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(
+        &self,
+        radarr_id: RadarrId,
+    ) -> PortFuture<Result<Option<SourceMovie>, RadarrError>> {
+        (self.0)(radarr_id)
+    }
+}
+
+#[derive(ohno::Error, Default)]
+#[no_constructors]
+#[display("failed to call the Radarr API")]
+pub struct RadarrError {
+    core: ohno::OhnoCore,
+}
+
+impl RadarrError {
+    pub fn caused_by(source: impl Into<Box<dyn Error + Send + Sync>>) -> Self {
+        Self {
+            core: ohno::OhnoCore::from(source),
+        }
+    }
+}
+
+type GetSonarrEpisodesFn =
+    dyn Fn(SonarrId) -> PortFuture<Result<Vec<SourceEpisode>, SonarrError>> + Send + Sync;
+
+#[derive(Clone)]
+pub struct GetSonarrEpisodes(Arc<GetSonarrEpisodesFn>);
+
+impl GetSonarrEpisodes {
+    pub fn new(
+        f: impl Fn(SonarrId) -> PortFuture<Result<Vec<SourceEpisode>, SonarrError>>
+        + Send
+        + Sync
+        + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self, sonarr_id: SonarrId) -> PortFuture<Result<Vec<SourceEpisode>, SonarrError>> {
+        (self.0)(sonarr_id)
+    }
+}
+
+#[derive(Clone)]
+pub struct SourceShowListing {
+    pub sonarr_id: SonarrId,
+    pub tvdb_id: TvdbId,
+    pub path: String,
+    pub title: String,
+    pub year: Option<i64>,
+    pub genres: Vec<String>,
+    pub overview: Option<String>,
+}
+
+#[derive(Clone)]
+pub struct SourceShow {
+    pub listing: SourceShowListing,
+    pub episodes: Vec<SourceEpisode>,
+}
+
+#[derive(Clone)]
+pub struct SourceEpisode {
+    pub sonarr_id: SonarrId,
+    pub tvdb_id: TvdbId,
+    pub season_number: i64,
+    pub episode_number: i64,
+    pub title: String,
+    pub air_date: Option<Date>,
+    pub overview: Option<String>,
+    pub media_file: Option<SourceMediaFile>,
+}
+
+type GetSonarrShowFn =
+    dyn Fn(SonarrId) -> PortFuture<Result<Option<SourceShow>, SonarrError>> + Send + Sync;
+
+#[derive(Clone)]
+pub struct GetSonarrShow(Arc<GetSonarrShowFn>);
+
+impl GetSonarrShow {
+    pub fn new(
+        f: impl Fn(SonarrId) -> PortFuture<Result<Option<SourceShow>, SonarrError>>
+        + Send
+        + Sync
+        + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self, sonarr_id: SonarrId) -> PortFuture<Result<Option<SourceShow>, SonarrError>> {
+        (self.0)(sonarr_id)
+    }
+}
+
+#[derive(ohno::Error, Default)]
+#[no_constructors]
+#[display("failed to call the Sonarr API")]
+pub struct SonarrError {
+    core: ohno::OhnoCore,
+}
+
+impl SonarrError {
+    pub fn caused_by(source: impl Into<Box<dyn Error + Send + Sync>>) -> Self {
+        Self {
+            core: ohno::OhnoCore::from(source),
+        }
+    }
+}
+
+type ListRadarrMoviesFn =
+    dyn Fn() -> PortFuture<Result<Vec<SourceMovie>, RadarrError>> + Send + Sync;
+
+#[derive(Clone)]
+pub struct ListRadarrMovies(Arc<ListRadarrMoviesFn>);
+
+impl ListRadarrMovies {
+    pub fn new(
+        f: impl Fn() -> PortFuture<Result<Vec<SourceMovie>, RadarrError>> + Send + Sync + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self) -> PortFuture<Result<Vec<SourceMovie>, RadarrError>> {
+        (self.0)()
+    }
+}
+
+type ListSonarrShowsFn =
+    dyn Fn() -> PortFuture<Result<Vec<SourceShowListing>, SonarrError>> + Send + Sync;
+
+#[derive(Clone)]
+pub struct ListSonarrShows(Arc<ListSonarrShowsFn>);
+
+impl ListSonarrShows {
+    pub fn new(
+        f: impl Fn() -> PortFuture<Result<Vec<SourceShowListing>, SonarrError>> + Send + Sync + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self) -> PortFuture<Result<Vec<SourceShowListing>, SonarrError>> {
+        (self.0)()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct FoundSubtitleFile {
+    pub path: String,
+    pub language: Option<String>,
+    pub hearing_impaired: bool,
+    pub forced: bool,
+}
+
+type ListSubtitleFilesFn = dyn Fn(String) -> PortFuture<Result<Vec<FoundSubtitleFile>, ListSubtitleFilesError>>
+    + Send
+    + Sync;
+
+#[derive(Clone)]
+pub struct ListSubtitleFiles(Arc<ListSubtitleFilesFn>);
+
+impl ListSubtitleFiles {
+    pub fn new(
+        f: impl Fn(String) -> PortFuture<Result<Vec<FoundSubtitleFile>, ListSubtitleFilesError>>
+        + Send
+        + Sync
+        + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(
+        &self,
+        media_file_path: &str,
+    ) -> PortFuture<Result<Vec<FoundSubtitleFile>, ListSubtitleFilesError>> {
+        (self.0)(media_file_path.to_owned())
+    }
+}
+
+#[derive(ohno::Error, Default)]
+#[no_constructors]
+#[display("failed to list the subtitle files beside a media file")]
+pub struct ListSubtitleFilesError {
+    core: ohno::OhnoCore,
+}
+
+impl ListSubtitleFilesError {
+    pub fn caused_by(source: impl Into<Box<dyn Error + Send + Sync>>) -> Self {
+        Self {
+            core: ohno::OhnoCore::from(source),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Probe {
+    pub container: String,
+    pub duration: Option<Duration>,
+    pub video_streams: Vec<VideoStream>,
+    pub audio_streams: Vec<AudioStream>,
+    pub subtitle_streams: Vec<SubtitleStream>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct VideoStream {
+    pub index: i64,
+    pub codec: String,
+    pub profile: Option<String>,
+    pub width: i64,
+    pub height: i64,
+    pub frame_rate: Option<f64>,
+    pub hdr_type: HdrType,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AudioStream {
+    pub index: i64,
+    pub codec: String,
+    pub language: Option<String>,
+    pub channels: i64,
+    pub title: Option<String>,
+    pub default: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SubtitleStream {
+    pub index: i64,
+    pub codec: String,
+    pub language: Option<String>,
+    pub title: Option<String>,
+    pub default: bool,
+    pub forced: bool,
+    pub hearing_impaired: bool,
+    pub text: bool,
+}
+
+type ProbeMediaFileFn = dyn Fn(String) -> PortFuture<Result<Probe, ProbeError>> + Send + Sync;
+
+#[derive(Clone)]
+pub struct ProbeMediaFile(Arc<ProbeMediaFileFn>);
+
+impl ProbeMediaFile {
+    pub fn new(
+        f: impl Fn(String) -> PortFuture<Result<Probe, ProbeError>> + Send + Sync + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self, path: &str) -> PortFuture<Result<Probe, ProbeError>> {
+        (self.0)(path.to_owned())
+    }
+}
+
+#[derive(ohno::Error, Default)]
+#[no_constructors]
+#[display("ffprobe failed")]
+pub struct ProbeError {
+    core: ohno::OhnoCore,
+}
+
+impl ProbeError {
+    pub fn caused_by(source: impl Into<Box<dyn Error + Send + Sync>>) -> Self {
+        Self {
+            core: ohno::OhnoCore::from(source),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct EpisodeFolder {
+    pub nfo: Option<FoundFile>,
+    pub thumb: Option<FoundFile>,
+}
+
+type ReadEpisodeFolderFn =
+    dyn Fn(String) -> PortFuture<Result<EpisodeFolder, UnreadableFile>> + Send + Sync;
+
+#[derive(Clone)]
+pub struct ReadEpisodeFolder(Arc<ReadEpisodeFolderFn>);
+
+impl ReadEpisodeFolder {
+    pub fn new(
+        f: impl Fn(String) -> PortFuture<Result<EpisodeFolder, UnreadableFile>> + Send + Sync + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self, media_file_path: &str) -> PortFuture<Result<EpisodeFolder, UnreadableFile>> {
+        (self.0)(media_file_path.to_owned())
+    }
+}
+
+type ReadEpisodeNfoFn =
+    dyn Fn(String) -> PortFuture<Result<Vec<EpisodeNfo>, ReadNfoError>> + Send + Sync;
+
+#[derive(Clone)]
+pub struct ReadEpisodeNfo(Arc<ReadEpisodeNfoFn>);
+
+impl ReadEpisodeNfo {
+    pub fn new(
+        f: impl Fn(String) -> PortFuture<Result<Vec<EpisodeNfo>, ReadNfoError>> + Send + Sync + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self, path: &str) -> PortFuture<Result<Vec<EpisodeNfo>, ReadNfoError>> {
+        (self.0)(path.to_owned())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FoundFile {
+    pub path: String,
+    pub modified_at: Timestamp,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct MovieFolder {
+    pub nfo: Option<FoundFile>,
+    pub poster: Option<FoundFile>,
+    pub fanart: Option<FoundFile>,
+    pub clearlogo: Option<FoundFile>,
+}
+
+type ReadMovieFolderFn =
+    dyn Fn(String) -> PortFuture<Result<MovieFolder, UnreadableFile>> + Send + Sync;
+
+#[derive(Clone)]
+pub struct ReadMovieFolder(Arc<ReadMovieFolderFn>);
+
+impl ReadMovieFolder {
+    pub fn new(
+        f: impl Fn(String) -> PortFuture<Result<MovieFolder, UnreadableFile>> + Send + Sync + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self, media_file_path: &str) -> PortFuture<Result<MovieFolder, UnreadableFile>> {
+        (self.0)(media_file_path.to_owned())
+    }
+}
+
+type ReadMovieNfoFn = dyn Fn(String) -> PortFuture<Result<MovieNfo, ReadNfoError>> + Send + Sync;
+
+#[derive(Clone)]
+pub struct ReadMovieNfo(Arc<ReadMovieNfoFn>);
+
+impl ReadMovieNfo {
+    pub fn new(
+        f: impl Fn(String) -> PortFuture<Result<MovieNfo, ReadNfoError>> + Send + Sync + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self, path: &str) -> PortFuture<Result<MovieNfo, ReadNfoError>> {
+        (self.0)(path.to_owned())
+    }
+}
+
+#[derive(Debug)]
+pub enum ReadNfoError {
+    UnreadableFile(UnreadableFile),
+    UnreadableNfo(UnreadableNfo),
+}
+
+impl From<UnreadableFile> for ReadNfoError {
+    fn from(error: UnreadableFile) -> Self {
+        Self::UnreadableFile(error)
+    }
+}
+
+impl From<UnreadableNfo> for ReadNfoError {
+    fn from(error: UnreadableNfo) -> Self {
+        Self::UnreadableNfo(error)
+    }
+}
+
+#[derive(ohno::Error, Default)]
+#[no_constructors]
+#[display("failed to read an NFO file")]
+pub struct UnreadableNfo {
+    core: ohno::OhnoCore,
+}
+
+impl UnreadableNfo {
+    pub fn caused_by(source: impl Into<Box<dyn Error + Send + Sync>>) -> Self {
+        Self {
+            core: ohno::OhnoCore::from(source),
+        }
+    }
+}
+
+#[derive(ohno::Error)]
+#[no_constructors]
+#[display("failed to read a file")]
+pub struct UnreadableFile {
+    pub path: String,
+    core: ohno::OhnoCore,
+}
+
+impl UnreadableFile {
+    pub fn new(path: String) -> Self {
+        Self {
+            path,
+            core: ohno::OhnoCore::default(),
+        }
+    }
+
+    pub fn caused_by(path: String, source: impl Into<Box<dyn Error + Send + Sync>>) -> Self {
+        Self {
+            path,
+            core: ohno::OhnoCore::from(source),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum MovieWebhookDelivery {
+    Movie { radarr_id: RadarrId },
+    Ignored,
+}
+
+type ReadRadarrWebhookFn =
+    dyn Fn(&[u8]) -> Result<MovieWebhookDelivery, UnreadableWebhook> + Send + Sync;
+
+#[derive(Clone)]
+pub struct ReadRadarrWebhook(Arc<ReadRadarrWebhookFn>);
+
+impl ReadRadarrWebhook {
+    pub fn new(
+        f: impl Fn(&[u8]) -> Result<MovieWebhookDelivery, UnreadableWebhook> + Send + Sync + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self, body: &[u8]) -> Result<MovieWebhookDelivery, UnreadableWebhook> {
+        (self.0)(body)
+    }
+}
+
+#[derive(ohno::Error, Default)]
+#[no_constructors]
+#[display("failed to read a webhook delivery")]
+pub struct UnreadableWebhook {
+    core: ohno::OhnoCore,
+}
+
+impl UnreadableWebhook {
+    pub fn caused_by(source: impl Into<Box<dyn Error + Send + Sync>>) -> Self {
+        Self {
+            core: ohno::OhnoCore::from(source),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct ShowFolder {
+    pub nfo: Option<FoundFile>,
+    pub poster: Option<FoundFile>,
+    pub fanart: Option<FoundFile>,
+    pub clearlogo: Option<FoundFile>,
+    pub season_posters: Vec<(i64, FoundFile)>,
+}
+
+type ReadShowFolderFn =
+    dyn Fn(String, Vec<i64>) -> PortFuture<Result<ShowFolder, UnreadableFile>> + Send + Sync;
+
+#[derive(Clone)]
+pub struct ReadShowFolder(Arc<ReadShowFolderFn>);
+
+impl ReadShowFolder {
+    pub fn new(
+        f: impl Fn(String, Vec<i64>) -> PortFuture<Result<ShowFolder, UnreadableFile>>
+        + Send
+        + Sync
+        + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(
+        &self,
+        show_path: &str,
+        season_numbers: Vec<i64>,
+    ) -> PortFuture<Result<ShowFolder, UnreadableFile>> {
+        (self.0)(show_path.to_owned(), season_numbers)
+    }
+}
+
+type ReadShowNfoFn = dyn Fn(String) -> PortFuture<Result<ShowNfo, ReadNfoError>> + Send + Sync;
+
+#[derive(Clone)]
+pub struct ReadShowNfo(Arc<ReadShowNfoFn>);
+
+impl ReadShowNfo {
+    pub fn new(
+        f: impl Fn(String) -> PortFuture<Result<ShowNfo, ReadNfoError>> + Send + Sync + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self, path: &str) -> PortFuture<Result<ShowNfo, ReadNfoError>> {
+        (self.0)(path.to_owned())
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum ShowWebhookDelivery {
+    Show { sonarr_id: SonarrId },
+    Ignored,
+}
+
+type ReadSonarrWebhookFn =
+    dyn Fn(&[u8]) -> Result<ShowWebhookDelivery, UnreadableWebhook> + Send + Sync;
+
+#[derive(Clone)]
+pub struct ReadSonarrWebhook(Arc<ReadSonarrWebhookFn>);
+
+impl ReadSonarrWebhook {
+    pub fn new(
+        f: impl Fn(&[u8]) -> Result<ShowWebhookDelivery, UnreadableWebhook> + Send + Sync + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self, body: &[u8]) -> Result<ShowWebhookDelivery, UnreadableWebhook> {
+        (self.0)(body)
+    }
+}
+
+type ReadWebhookEventTypeFn = dyn Fn(&[u8]) -> Option<String> + Send + Sync;
+
+#[derive(Clone)]
+pub struct ReadWebhookEventType(Arc<ReadWebhookEventTypeFn>);
+
+impl ReadWebhookEventType {
+    pub fn new(f: impl Fn(&[u8]) -> Option<String> + Send + Sync + 'static) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self, body: &[u8]) -> Option<String> {
+        (self.0)(body)
+    }
+}
+
 type SendEmailFn =
     dyn Fn(EmailAddress, String, String) -> PortFuture<Result<(), SendEmailError>> + Send + Sync;
 
@@ -196,5 +844,22 @@ impl EmailRefused {
         Self {
             core: ohno::OhnoCore::from(source),
         }
+    }
+}
+
+type TryAcquireLockFn = dyn Fn(String) -> PortFuture<Option<LockGuard>> + Send + Sync;
+
+#[derive(Clone)]
+pub struct TryAcquireLock(Arc<TryAcquireLockFn>);
+
+impl TryAcquireLock {
+    pub fn new(
+        f: impl Fn(String) -> PortFuture<Option<LockGuard>> + Send + Sync + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self, key: String) -> PortFuture<Option<LockGuard>> {
+        (self.0)(key)
     }
 }
