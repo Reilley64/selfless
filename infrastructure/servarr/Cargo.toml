@@ -11,3 +11,7 @@ reqwest = { workspace = true, features = ["json", "rustls"] }
 serde = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+wiremock = { workspace = true }
