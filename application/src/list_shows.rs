@@ -2,7 +2,6 @@ use crate::list_movies::Actor;
 use crate::list_movies::Artwork;
 use crate::list_movies::actors;
 use crate::list_movies::artwork;
-use crate::list_movies::sort_key;
 use crate::ports::persistence::DbContext;
 use crate::ports::persistence::DbScope;
 use domain::Episode;
@@ -76,6 +75,6 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<Vec<Show>, Er
         artwork: artwork(show.artwork.into_inner()),
     })
     .collect::<Vec<_>>();
-    shows.sort_by_cached_key(|x| sort_key(x.sort_title.as_ref(), &x.title));
+    shows.sort_by_cached_key(|x| domain::sort_key(x.sort_title.as_deref(), &x.title));
     Ok(shows)
 }

@@ -78,15 +78,8 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<Vec<Movie>, E
             media_file_id: movie.media_file_id,
         })
         .collect::<Vec<_>>();
-    movies.sort_by_cached_key(|x| sort_key(x.sort_title.as_ref(), &x.title));
+    movies.sort_by_cached_key(|x| domain::sort_key(x.sort_title.as_deref(), &x.title));
     Ok(movies)
-}
-
-pub(crate) fn sort_key(sort_title: Option<&String>, title: &str) -> (String, String) {
-    (
-        sort_title.map_or(title, String::as_str).to_lowercase(),
-        title.to_owned(),
-    )
 }
 
 pub(crate) fn actors(stored: Vec<domain::Actor>) -> Vec<Actor> {
