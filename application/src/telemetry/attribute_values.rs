@@ -1,8 +1,15 @@
+use crate::attributes::selfless_auth_client_kind;
 use crate::attributes::selfless_library_source;
+use crate::attributes::selfless_playback_method;
 use crate::attributes::selfless_reconcile_result;
 use crate::attributes::selfless_webhook_source;
+use domain::ClientKind;
+use domain::PlayMethod;
+use domain::PlayReason;
 use domain::ReconcileResult;
 use domain::Source;
+use opentelemetry::Array;
+use opentelemetry::Value;
 
 pub fn library_source(source: Source) -> &'static str {
     match source {
@@ -23,4 +30,40 @@ pub(crate) fn reconcile_result(result: ReconcileResult) -> &'static str {
         ReconcileResult::Succeeded => selfless_reconcile_result::SUCCEEDED,
         ReconcileResult::Failed => selfless_reconcile_result::FAILED,
     }
+}
+
+pub(crate) fn client_kind(client_kind: ClientKind) -> &'static str {
+    match client_kind {
+        ClientKind::Web => selfless_auth_client_kind::WEB,
+        ClientKind::AppleTv => selfless_auth_client_kind::APPLE_TV,
+        ClientKind::GoogleTv => selfless_auth_client_kind::GOOGLE_TV,
+    }
+}
+
+pub(crate) fn play_method(method: PlayMethod) -> &'static str {
+    match method {
+        PlayMethod::DirectPlay => selfless_playback_method::DIRECT_PLAY,
+        PlayMethod::Remux => selfless_playback_method::REMUX,
+        PlayMethod::Transcode => selfless_playback_method::TRANSCODE,
+    }
+}
+
+pub(crate) fn reason_kinds(reasons: &[PlayReason]) -> Value {
+    Value::Array(Array::String(
+        reasons
+            .iter()
+            .map(|x| {
+                match x {
+                    PlayReason::Container(_) => "container",
+                    PlayReason::VideoCodec(_) => "videoCodec",
+                    PlayReason::VideoProfile(_) => "videoProfile",
+                    PlayReason::VideoSize { .. } => "videoSize",
+                    PlayReason::VideoRange(_) => "videoRange",
+                    PlayReason::AudioCodec(_) => "audioCodec",
+                    PlayReason::AudioChannels(_) => "audioChannels",
+                }
+                .into()
+            })
+            .collect(),
+    ))
 }

@@ -1,3 +1,4 @@
+mod active_playbacks;
 mod image_cache_cleanup;
 mod inbox;
 mod inbox_cleanup;
@@ -16,6 +17,7 @@ pub async fn start(state: &AppState) -> Result<(), delete_expired_sessions::Erro
 
 pub async fn serve(state: AppState, reconcile_interval: Duration, cancellation: CancellationToken) {
     tokio::join!(
+        active_playbacks::serve(state.clone(), cancellation.clone()),
         session_cleanup::serve(state.clone(), cancellation.clone()),
         outbox::serve(state.clone(), cancellation.clone()),
         inbox::serve(state.clone(), cancellation.clone()),

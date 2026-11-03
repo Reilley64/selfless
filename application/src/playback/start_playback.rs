@@ -11,20 +11,42 @@ pub use output::Output;
 pub use output::Playback;
 pub use output::SubtitleTrack;
 
+use crate::attributes::SELFLESS_AUTH_CLIENT_KIND;
+use crate::attributes::SELFLESS_PLAYBACK_METHOD;
+use crate::attributes::SELFLESS_PLAYBACK_REASON_KINDS;
+use crate::metrics::SELFLESS_PLAYBACK_DECISIONS;
 use crate::playback::resource;
 use crate::ports::persistence::DbScope;
+use crate::telemetry::attribute_values::client_kind;
+use crate::telemetry::attribute_values::play_method;
+use crate::telemetry::attribute_values::reason_kinds;
 use domain::AudioStream;
 use domain::CapabilityProfile;
+use domain::ClientKind;
 use domain::MediaFile;
 use domain::PlayMethod;
+use opentelemetry::KeyValue;
+use opentelemetry::global;
+use opentelemetry::metrics::Counter;
 use std::collections::HashMap;
+use std::sync::LazyLock;
 use std::time::Duration;
+use tracing::Span;
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 use uuid::Uuid;
+
+static DECISIONS: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    global::meter("selfless")
+        .u64_counter(SELFLESS_PLAYBACK_DECISIONS)
+        .with_unit("{decision}")
+        .build()
+});
 
 pub async fn call(
     dependencies: impl Into<Dependencies>,
     user_id: Uuid,
     session_id: Uuid,
+    session_client_kind: ClientKind,
     media_file_id: Uuid,
     start_position: f64,
     profile: &CapabilityProfile,
@@ -90,6 +112,7 @@ pub async fn call(
         AudioStream::selected_by_default(&audio_streams),
     );
     if !reasons.is_empty() {
+        Span::current().set_attribute(SELFLESS_PLAYBACK_REASON_KINDS, reason_kinds(&reasons));
         return Ok(Output::NeedsHls);
     }
     let episodes = player_episodes(&mut db_context, episodes)
@@ -130,6 +153,18 @@ pub async fn call(
         .await
         .map_err(Error::caused_by)?;
     transaction.commit().await.map_err(Error::caused_by)?;
+    Span::current().set_attribute(SELFLESS_PLAYBACK_METHOD, play_method(playback.method));
+    let mut decision = vec![
+        KeyValue::new(SELFLESS_PLAYBACK_METHOD, play_method(playback.method)),
+        KeyValue::new(SELFLESS_AUTH_CLIENT_KIND, client_kind(session_client_kind)),
+    ];
+    if !reasons.is_empty() {
+        decision.push(KeyValue::new(
+            SELFLESS_PLAYBACK_REASON_KINDS,
+            reason_kinds(&reasons),
+        ));
+    }
+    DECISIONS.add(1, &decision);
     audio_streams.sort_by_key(|x| x.index);
     subtitle_streams.sort_by_key(|x| x.index);
     subtitle_files.sort_by(|a, b| a.path.cmp(&b.path));

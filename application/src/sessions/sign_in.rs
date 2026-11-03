@@ -6,9 +6,9 @@ pub use dependencies::Dependencies;
 pub use error::Error;
 pub use output::Output;
 
-use crate::attributes::selfless_auth_client_kind;
 use crate::ports::persistence::DbScope;
 use crate::sessions::sign_in_attempts;
+use crate::telemetry::attribute_values;
 use crate::tokens;
 use domain::ClientKind;
 use domain::Session;
@@ -37,11 +37,7 @@ pub async fn call(
     let matches = sign_in_attempts::check_and_count(
         password,
         user.as_ref().map(|x| x.password_hash.clone()),
-        match client_kind {
-            ClientKind::Web => selfless_auth_client_kind::WEB,
-            ClientKind::AppleTv => selfless_auth_client_kind::APPLE_TV,
-            ClientKind::GoogleTv => selfless_auth_client_kind::GOOGLE_TV,
-        },
+        attribute_values::client_kind(client_kind),
     )
     .await
     .map_err(Error::caused_by)?;

@@ -1,6 +1,7 @@
 pub mod change_playback_settings;
 pub mod get_playback_file;
 pub mod get_playback_settings;
+pub mod record_active_playbacks;
 pub mod report_progress;
 pub mod start_playback;
 

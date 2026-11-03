@@ -1,6 +1,7 @@
 use crate::problem::UNAUTHENTICATED;
 use crate::routes::api::user::UserBody;
 use application::sessions::get_current_user;
+use domain::ClientKind;
 use infrastructure::AppState;
 use topcoat::context::Cx;
 use topcoat::context::app_context;
@@ -18,6 +19,7 @@ use uuid::Uuid;
 
 pub(crate) struct CurrentSession {
     pub(crate) id: Uuid,
+    pub(crate) client_kind: ClientKind,
     pub(crate) token: String,
     pub(crate) user: UserBody,
 }
@@ -41,6 +43,7 @@ impl Layer for UserAuthLayer {
             let get_current_user::Output::SignedIn {
                 id,
                 session_id,
+                client_kind,
                 name,
                 colour,
             } = get_current_user::call(app_context::<AppState>(cx), token).await?
@@ -50,6 +53,7 @@ impl Layer for UserAuthLayer {
             Span::current().set_attribute("user.id", id.to_string());
             let session = CurrentSession {
                 id: session_id,
+                client_kind,
                 token: token.to_owned(),
                 user: UserBody {
                     id,

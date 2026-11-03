@@ -280,6 +280,7 @@ pub(crate) async fn start(
         app_context::<AppState>(cx),
         session.user.id,
         session.id,
+        session.client_kind,
         request.media_file_id,
         request.start_position,
         &request.profile.into(),
@@ -367,11 +368,20 @@ mod tests {
     use http::header::CONTENT_RANGE;
     use http::header::CONTENT_TYPE;
     use http::header::RANGE;
+    use opentelemetry::Array;
+    use opentelemetry::Value as OtelValue;
+    use opentelemetry::trace::SpanKind;
+    use opentelemetry::trace::TracerProvider;
+    use opentelemetry_sdk::trace::InMemorySpanExporter;
+    use opentelemetry_sdk::trace::SdkTracerProvider;
+    use opentelemetry_sdk::trace::SpanData;
     use serde_json::Value;
     use serde_json::json;
     use std::path::PathBuf;
     use test_app::TestApp;
     use test_fixtures::TestServer;
+    use tracing::level_filters::LevelFilter;
+    use tracing_subscriber::layer::SubscriberExt;
     use uuid::Uuid;
 
     const NAME: &str = "Noor";
@@ -652,6 +662,58 @@ mod tests {
 
         assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
         assert_eq!(problem["type"], "urn:selfless:problem:needs-hls");
+    }
+
+    #[tokio::test]
+    async fn the_play_request_span_carries_the_play_method_and_the_reason_kinds() {
+        let app = TestApp::new().await;
+        let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;
+        let (mp4, _mp4_file) = add_media_file(&app, "mp4", Some(MP4)).await;
+        add_movie_playing(&app, mp4, true).await;
+        let (mkv, _mkv_file) = add_media_file(&app, "mkv", Some("matroska,webm")).await;
+        add_movie_playing(&app, mkv, true).await;
+        let server = serve(&app).await;
+        let exporter = InMemorySpanExporter::default();
+        let provider = SdkTracerProvider::builder()
+            .with_simple_exporter(exporter.clone())
+            .build();
+        let _tracing = test_fixtures::set_default_subscriber(
+            tracing_subscriber::registry()
+                .with(LevelFilter::INFO)
+                .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("selfless"))),
+        );
+
+        start(&server, &token, mp4).await;
+        start(&server, &token, mkv).await;
+
+        let attribute = |span: &SpanData, key: &str| {
+            span.attributes
+                .iter()
+                .find(|x| x.key.as_str() == key)
+                .map(|x| x.value.clone())
+        };
+        let spans = exporter
+            .get_finished_spans()
+            .unwrap()
+            .into_iter()
+            .filter(|x| x.span_kind == SpanKind::Server)
+            .map(|x| {
+                (
+                    attribute(&x, "selfless.playback.method"),
+                    attribute(&x, "selfless.playback.reason_kinds"),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            spans,
+            [
+                (Some(OtelValue::from("directPlay")), None),
+                (
+                    None,
+                    Some(OtelValue::Array(Array::String(vec!["container".into()])))
+                ),
+            ]
+        );
     }
 
     #[tokio::test]
