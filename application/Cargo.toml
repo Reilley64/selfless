@@ -14,6 +14,7 @@ domain = { workspace = true }
 fundle = { workspace = true }
 futures-util = { workspace = true }
 getrandom = { workspace = true }
+hmac = { workspace = true }
 jiff = { workspace = true }
 ohno = { workspace = true }
 opentelemetry = { workspace = true }

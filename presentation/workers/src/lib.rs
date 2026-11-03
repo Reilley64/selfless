@@ -1,3 +1,4 @@
+mod image_cache_cleanup;
 mod inbox;
 mod inbox_cleanup;
 mod outbox;
@@ -22,6 +23,7 @@ pub async fn serve(state: AppState, reconcile_interval: Duration, cancellation: 
         outbox::serve(state.clone(), cancellation.clone()),
         inbox::serve(state.clone(), cancellation.clone()),
         inbox_cleanup::serve(state.clone(), cancellation.clone()),
+        image_cache_cleanup::serve(state.clone(), cancellation.clone()),
         cancellation.run_until_cancelled(reconcile(state, reconcile_interval)),
     );
 }

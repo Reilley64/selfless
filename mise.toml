@@ -23,6 +23,8 @@ SMTP__PORT = "587"
 SMTP__USERNAME = "selfless"
 SMTP__PASSWORD = "selfless"
 SMTP__FROM = "selfless <selfless@localhost>"
+IMAGES__CACHE_DIR = "{{ config_root }}/target/images"
+SIGNED_URLS__KEY = "selfless"
 
 [tasks.services]
 description = "Start PostgreSQL and grafana/otel-lgtm for local development"

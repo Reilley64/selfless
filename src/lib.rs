@@ -1,6 +1,7 @@
 use api::Availability;
 use application::BuildInfo;
 use application::admins::bootstrap_first_admin::MissingFirstAdmin;
+use application::browsing::Resizer;
 use application::library::Prober;
 use application::library::Reconciles;
 use application::library::SourceHealth;
@@ -8,6 +9,7 @@ use application::ports::Clock;
 use application::ports::ProbeMediaFile;
 use application::ports::SendEmail;
 use application::ports::persistence::DbContext;
+use application::url_signer::UrlSigner;
 use application::webhooks::WebhookPasswords;
 use domain::Password;
 use infrastructure::AppState;
@@ -50,6 +52,8 @@ pub async fn start(
     let get_sonarr_episodes = settings.sonarr.get_episodes()?;
     let check_radarr_kodi_metadata = settings.radarr.check_kodi_metadata()?;
     let check_sonarr_kodi_metadata = settings.sonarr.check_kodi_metadata()?;
+    let url_signer = UrlSigner::new(settings.signed_urls.key()?.as_bytes());
+    let image_cache_dir = settings.images.cache_dir()?;
     let db = persistence::connect(&settings.database).await?;
     persistence::migrate(&db).await?;
     let state = AppState::builder()
@@ -65,15 +69,18 @@ pub async fn start(
         .check_sonarr_kodi_metadata(|_| check_sonarr_kodi_metadata.clone())
         .clock(|_| clock.clone())
         .db_context(|_| DbContext::new(db.clone(), settings.database.location()))
+        .delete_cached_image(|_| images::delete_cached_image(image_cache_dir.clone()))
         .export_telemetry_try(|_| telemetry::export_telemetry(&settings.otlp))?
         .find_media_file(|_| media_folder::find_media_file())
         .get_radarr_movie(|_| get_radarr_movie.clone())
         .get_sonarr_episodes(|_| get_sonarr_episodes.clone())
         .get_sonarr_show(|_| get_sonarr_show.clone())
+        .list_cached_images(|_| images::list_cached_images(image_cache_dir.clone()))
         .list_radarr_movies(|_| list_radarr_movies.clone())
         .list_sonarr_shows(|_| list_sonarr_shows.clone())
         .list_subtitle_files(|_| media_folder::list_subtitle_files())
         .prober(|_| Prober::new(probe_media_file.clone()))
+        .read_cached_image(|_| images::read_cached_image(image_cache_dir.clone()))
         .read_episode_folder(|_| media_folder::read_episode_folder())
         .read_episode_nfo(|_| media_folder::read_episode_nfo())
         .read_movie_folder(|_| media_folder::read_movie_folder())
@@ -83,8 +90,11 @@ pub async fn start(
         .read_show_nfo(|_| media_folder::read_show_nfo())
         .read_sonarr_webhook(|_| sonarr::read_webhook())
         .reconciles(|_| Reconciles::default())
+        .resizer(|_| Resizer::new(images::resize_image()))
+        .save_cached_image(|_| images::save_cached_image(image_cache_dir.clone()))
         .send_email(|_| send_email.clone())
         .source_health(|_| SourceHealth::default())
+        .url_signer(|_| url_signer.clone())
         .webhook_passwords(|_| webhook_passwords.clone())
         .build();
     let first_admin = match (

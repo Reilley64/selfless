@@ -6,6 +6,7 @@ members = [
     "infrastructure/dependencies",
     "infrastructure/email",
     "infrastructure/ffmpeg",
+    "infrastructure/images",
     "infrastructure/locking",
     "infrastructure/media-folder",
     "infrastructure/persistence",
@@ -37,7 +38,9 @@ email_address = { version = "0.2.9", default-features = false }
 fundle = "0.4.1"
 futures-util = "0.3.34"
 getrandom = "0.4.3"
+hmac = "0.13.0"
 http = "1.5.0"
+image = { version = "0.25.10", default-features = false, features = ["jpeg", "png"] }
 jiff = "0.2.38"
 jsonschema = { version = "0.60.2", default-features = false }
 lettre = { version = "0.11.23", default-features = false }
@@ -76,6 +79,7 @@ application = { path = "application" }
 domain = { path = "domain" }
 email = { path = "infrastructure/email" }
 ffmpeg = { path = "infrastructure/ffmpeg" }
+images = { path = "infrastructure/images" }
 infrastructure = { path = "infrastructure/dependencies" }
 locking = { path = "infrastructure/locking" }
 media-folder = { path = "infrastructure/media-folder" }
@@ -107,6 +111,7 @@ application = { workspace = true }
 domain = { workspace = true }
 email = { workspace = true }
 ffmpeg = { workspace = true }
+images = { workspace = true }
 infrastructure = { workspace = true }
 locking = { workspace = true }
 media-folder = { workspace = true }

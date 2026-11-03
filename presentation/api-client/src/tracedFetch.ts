@@ -20,13 +20,17 @@ export function provideSession(provided: Session) {
   session = provided;
 }
 
+export function serverUrl(path: string) {
+  return `${session.serverUrl()}${path}`;
+}
+
 export function authorizationHeaders(token = session.token()): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 export async function tracedFetch<T>(url: string, options: RequestInit): Promise<T> {
   const method = options.method ?? "GET";
-  const href = `${session.serverUrl()}${url}`;
+  const href = serverUrl(url);
   const target = new URL(href, globalThis.location?.href);
   const span = trace.getTracer("@selfless/api-client").startSpan(method, {
     kind: SpanKind.CLIENT,

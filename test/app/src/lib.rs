@@ -1,4 +1,5 @@
 use application::BuildInfo;
+use application::browsing::Resizer;
 use application::library::Prober;
 use application::library::Reconciles;
 use application::library::SourceHealth;
@@ -6,12 +7,14 @@ use application::ports::AcquireLock;
 use application::ports::CheckRadarrKodiMetadata;
 use application::ports::CheckSonarrKodiMetadata;
 use application::ports::Clock;
+use application::ports::DeleteCachedImage;
 use application::ports::ExportTelemetry;
 use application::ports::ExportTelemetryError;
 use application::ports::FindMediaFile;
 use application::ports::GetRadarrMovie;
 use application::ports::GetSonarrEpisodes;
 use application::ports::GetSonarrShow;
+use application::ports::ListCachedImages;
 use application::ports::ListRadarrMovies;
 use application::ports::ListSonarrShows;
 use application::ports::ListSubtitleFiles;
@@ -19,6 +22,7 @@ use application::ports::LockGuard;
 use application::ports::ProbeError;
 use application::ports::ProbeMediaFile;
 use application::ports::RadarrError;
+use application::ports::ReadCachedImage;
 use application::ports::ReadEpisodeFolder;
 use application::ports::ReadEpisodeNfo;
 use application::ports::ReadMovieFolder;
@@ -27,6 +31,9 @@ use application::ports::ReadRadarrWebhook;
 use application::ports::ReadShowFolder;
 use application::ports::ReadShowNfo;
 use application::ports::ReadSonarrWebhook;
+use application::ports::ResizeImage;
+use application::ports::ResizeImageError;
+use application::ports::SaveCachedImage;
 use application::ports::SendEmail;
 use application::ports::SonarrError;
 use application::ports::UnreadableNfo;
@@ -34,6 +41,7 @@ use application::ports::UnreadableWebhook;
 use application::ports::persistence;
 use application::ports::persistence::DbContext;
 use application::ports::persistence::DbLocation;
+use application::url_signer::UrlSigner;
 use application::webhooks::WebhookPasswords;
 use infrastructure::AppState;
 use test_fixtures::FakeClock;
@@ -73,6 +81,7 @@ impl TestApp {
                     port: 0,
                 },
             ),
+            delete_cached_image: DeleteCachedImage::new(|_| Box::pin(async { Ok(()) })),
             export_telemetry: ExportTelemetry::new(|_, _| {
                 Box::pin(async { Err(ExportTelemetryError::default()) })
             }),
@@ -86,6 +95,7 @@ impl TestApp {
             get_sonarr_show: GetSonarrShow::new(|_| {
                 Box::pin(async { Err(SonarrError::default()) })
             }),
+            list_cached_images: ListCachedImages::new(|| Box::pin(async { Ok(Vec::new()) })),
             list_radarr_movies: ListRadarrMovies::new(|| {
                 Box::pin(async { Err(RadarrError::default()) })
             }),
@@ -96,6 +106,7 @@ impl TestApp {
             prober: Prober::new(ProbeMediaFile::new(|_| {
                 Box::pin(async { Err(ProbeError::default()) })
             })),
+            read_cached_image: ReadCachedImage::new(|_| Box::pin(async { Ok(None) })),
             read_episode_folder: ReadEpisodeFolder::new(|_| Box::pin(async { Default::default() })),
             read_episode_nfo: ReadEpisodeNfo::new(|_| {
                 Box::pin(async { Err(UnreadableNfo::default()) })
@@ -109,8 +120,13 @@ impl TestApp {
             read_show_nfo: ReadShowNfo::new(|_| Box::pin(async { Err(UnreadableNfo::default()) })),
             read_sonarr_webhook: ReadSonarrWebhook::new(|_| Err(UnreadableWebhook::default())),
             reconciles: Reconciles::default(),
+            resizer: Resizer::new(ResizeImage::new(|_, _| {
+                Box::pin(async { Err(ResizeImageError::default()) })
+            })),
+            save_cached_image: SaveCachedImage::new(|_, _| Box::pin(async { Ok(()) })),
             send_email: SendEmail::new(mailer.sender()),
             source_health: SourceHealth::default(),
+            url_signer: UrlSigner::new(b"a household secret"),
             webhook_passwords: WebhookPasswords::default(),
         };
         Self {

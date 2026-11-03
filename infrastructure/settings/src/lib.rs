@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 pub use email::SmtpSettings;
+pub use images::ImagesSettings;
 pub use persistence::DatabaseSettings;
 pub use radarr::RadarrSettings;
 pub use sonarr::SonarrSettings;
@@ -30,6 +31,10 @@ pub struct AppSettings {
     pub sonarr: SonarrSettings,
     #[serde(default)]
     pub library_sync: LibrarySyncSettings,
+    #[serde(default)]
+    pub images: ImagesSettings,
+    #[serde(default)]
+    pub signed_urls: SignedUrlsSettings,
 }
 
 impl AppSettings {
@@ -86,4 +91,24 @@ impl Default for LibrarySyncSettings {
             reconcile_interval: Duration::from_secs(3600),
         }
     }
+}
+
+#[derive(Clone, Default, Deserialize)]
+pub struct SignedUrlsSettings {
+    pub key: Option<String>,
+}
+
+impl SignedUrlsSettings {
+    pub fn key(&self) -> Result<String, MissingSetting> {
+        self.key
+            .clone()
+            .filter(|x| !x.is_empty())
+            .ok_or_else(|| MissingSetting::new("SIGNED_URLS__KEY"))
+    }
+}
+
+#[ohno::error]
+#[display("missing setting: {name}")]
+pub struct MissingSetting {
+    name: &'static str,
 }

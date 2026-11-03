@@ -8,7 +8,9 @@ publish.workspace = true
 [dependencies]
 config = { workspace = true }
 jiff = { workspace = true, features = ["serde"] }
+ohno = { workspace = true }
 email = { workspace = true }
+images = { workspace = true }
 persistence = { workspace = true }
 radarr = { workspace = true }
 serde = { workspace = true }

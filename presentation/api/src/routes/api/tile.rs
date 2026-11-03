@@ -1,3 +1,4 @@
+use crate::routes::api::image::ImageBody;
 use application::browsing::Cursor;
 use application::browsing::Tile;
 use application::browsing::TileKind;
@@ -78,9 +79,9 @@ enum Kind {
 
 #[derive(Serialize)]
 struct TileImagesBody {
-    fanart: (),
-    logo: (),
-    thumb: (),
+    fanart: Option<ImageBody>,
+    logo: Option<ImageBody>,
+    thumb: Option<ImageBody>,
 }
 
 impl From<Tile> for TileBody {
@@ -100,9 +101,9 @@ impl From<Tile> for TileBody {
             genres: tile.genres,
             plot: tile.plot,
             images: TileImagesBody {
-                fanart: (),
-                logo: (),
-                thumb: (),
+                fanart: tile.images.fanart.map(ImageBody::from),
+                logo: tile.images.logo.map(ImageBody::from),
+                thumb: tile.images.thumb.map(ImageBody::from),
             },
             progress: None,
             watched: false,

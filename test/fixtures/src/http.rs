@@ -83,19 +83,35 @@ impl TestServer {
         let response = request.send().await.unwrap();
         let status = response.status();
         let content_type = media_type(&response);
-        let text = response.text().await.unwrap();
+        let bytes = response.bytes().await.unwrap();
         let body = openapi::check_response(
             method.as_str(),
             path.split('?').next().unwrap(),
             status.as_u16(),
             content_type.as_deref(),
-            &text,
+            &bytes,
         );
         (status, body)
     }
 
     pub async fn get(&self, path: &str) -> (StatusCode, Value) {
         self.request(Method::GET, path, None, None).await
+    }
+
+    pub async fn get_bytes(&self, path: &str) -> (StatusCode, HeaderMap, Vec<u8>) {
+        let response = reqwest::get(self.url(path)).await.unwrap();
+        let status = response.status();
+        let headers = response.headers().clone();
+        let content_type = media_type(&response);
+        let body = response.bytes().await.unwrap().to_vec();
+        openapi::check_response(
+            Method::GET.as_str(),
+            path.split('?').next().unwrap(),
+            status.as_u16(),
+            content_type.as_deref(),
+            &body,
+        );
+        (status, headers, body)
     }
 
     pub async fn get_text(&self, path: &str) -> (StatusCode, HeaderMap, String) {
@@ -275,7 +291,7 @@ impl Browser {
                 path,
                 status.as_u16(),
                 content_type.as_deref(),
-                &body,
+                body.as_bytes(),
             );
         }
         Page {

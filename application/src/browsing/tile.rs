@@ -1,3 +1,4 @@
+use crate::browsing::TileImages;
 use uuid::Uuid;
 
 #[derive(Debug)]
@@ -9,6 +10,7 @@ pub struct Tile {
     pub genres: Vec<String>,
     pub plot: Option<String>,
     pub kind: TileKind,
+    pub images: TileImages,
 }
 
 #[derive(Debug)]

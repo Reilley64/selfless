@@ -1,8 +1,17 @@
+mod image;
+mod resizer;
 mod tile;
 
+pub mod clean_image_cache;
+pub mod get_image;
 pub mod list_movies;
 pub mod list_shows;
 
+pub use image::Image;
+pub use image::ImageUrl;
+pub use image::TileImages;
+use image::title_images;
+pub use resizer::Resizer;
 pub use tile::Cursor;
 pub use tile::Tile;
 pub use tile::TileKind;

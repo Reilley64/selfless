@@ -10,6 +10,7 @@ pub mod ports;
 pub mod sessions;
 pub mod telemetry;
 pub mod trace_context;
+pub mod url_signer;
 pub mod users;
 pub mod webhooks;
 

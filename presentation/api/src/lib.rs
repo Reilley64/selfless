@@ -55,6 +55,7 @@ pub fn router(
         .route(routes::api::me::v1::change_password)
         .route(routes::api::movies::v1::movies)
         .route(routes::api::shows::v1::shows)
+        .route(routes::api::images::v1::image)
         .route(routes::api::invites::v1::accept)
         .route(routes::api::telemetry::v1::traces)
         .route(routes::api::telemetry::v1::metrics)

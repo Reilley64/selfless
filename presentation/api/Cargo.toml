@@ -11,6 +11,7 @@ base64 = { workspace = true }
 domain = { workspace = true }
 http = { workspace = true }
 infrastructure = { workspace = true }
+jiff = { workspace = true }
 ohno = { workspace = true }
 opentelemetry = { workspace = true }
 opentelemetry_sdk = { workspace = true }
@@ -22,7 +23,6 @@ tracing-opentelemetry = { workspace = true }
 uuid = { workspace = true, features = ["serde"] }
 
 [dev-dependencies]
-jiff = { workspace = true }
 opentelemetry-appender-tracing = { workspace = true }
 opentelemetry_sdk = { workspace = true, features = ["testing"] }
 test-app = { workspace = true }

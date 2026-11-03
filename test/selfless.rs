@@ -6,9 +6,11 @@ use settings::AdminSettings;
 use settings::AppSettings;
 use settings::DatabaseSettings;
 use settings::HttpSettings;
+use settings::ImagesSettings;
 use settings::LibrarySyncSettings;
 use settings::OtlpSettings;
 use settings::RadarrSettings;
+use settings::SignedUrlsSettings;
 use settings::SmtpSettings;
 use settings::SonarrSettings;
 use settings::WebSettings;
@@ -47,6 +49,14 @@ pub fn settings(database_url: Url) -> AppSettings {
             webhook_password: Some(SONARR_WEBHOOK_PASSWORD.to_owned()),
         },
         library_sync: LibrarySyncSettings::default(),
+        images: ImagesSettings {
+            cache_dir: Some(
+                std::env::temp_dir().join(format!("selfless-images-{}", uuid::Uuid::new_v4())),
+            ),
+        },
+        signed_urls: SignedUrlsSettings {
+            key: Some("a household secret".to_owned()),
+        },
     }
 }
 

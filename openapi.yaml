@@ -355,6 +355,69 @@ paths:
           $ref: "#/components/responses/Unauthenticated"
         "500":
           $ref: "#/components/responses/InternalError"
+  /api/images/{imageId}/{width}/v1:
+    get:
+      operationId: getImage
+      summary: One artwork image at one width
+      description: The signed query string authorizes the call, so it needs no session token. Take the URL from an image in another response. Fanart comes at 480 and 960 for tiles and 1280 and 1920 for backdrops, episode thumbs at 480 and 960, and clearlogos at 300 and 600. An image narrower than the width comes at its own size. A JPEG stays a JPEG and a PNG stays a PNG.
+      tags: [images]
+      security: []
+      parameters:
+        - name: imageId
+          in: path
+          required: true
+          description: The image's ID.
+          schema:
+            type: string
+            format: uuid
+          example: 0190f3c4-7d8e-7f90-a1b2-c3d4e5f6a7b8
+        - name: width
+          in: path
+          required: true
+          description: One of the widths the image comes in, in pixels.
+          schema:
+            type: integer
+          example: 480
+        - name: expires
+          in: query
+          required: true
+          description: When the URL stops working, in seconds since the Unix epoch. It is the end of the UTC day after the one the server signed it on.
+          schema:
+            type: integer
+          example: 1793836800
+        - name: signature
+          in: query
+          required: true
+          description: The server's signature of the image, its width, its modification time and the expiry.
+          schema:
+            type: string
+          example: Jm2vX8kQ0rH3c1yF5bR7tVw9nL4pA6sD0eG2iK8uO1M
+      responses:
+        "200":
+          description: The image. The app may cache it until the URL expires.
+          headers:
+            Cache-Control:
+              description: private, with max-age set to the seconds until the URL expires.
+              schema:
+                type: string
+              example: private, max-age=136800
+          content:
+            image/jpeg:
+              schema:
+                description: A JPEG image, for fanart and thumbs.
+                type: string
+                contentMediaType: image/jpeg
+            image/png:
+              schema:
+                description: A PNG image with transparency, for clearlogos.
+                type: string
+                contentMediaType: image/png
+        "403":
+          $ref: "#/components/responses/InvalidSignature"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
 tags:
   - name: actuator
     description: Health and info endpoints in the shape of Spring Boot Actuator.
@@ -368,6 +431,8 @@ tags:
     description: The relay that forwards OTLP from the web and TV apps to the server's collector.
   - name: browsing
     description: The movies, shows and episodes a user browses in the web and TV apps.
+  - name: images
+    description: The artwork images that tiles and pages draw, fetched through signed URLs.
 components:
   securitySchemes:
     sessionToken:
@@ -509,6 +574,32 @@ components:
                   status:
                     const: 400
           example: {"type":"urn:selfless:problem:bad-request","title":"The request body is not valid.","status":400}
+    NotFound:
+      description: Nothing exists at this URL, such as an unknown ID or an image width that is not offered.
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Problem"
+              - properties:
+                  type:
+                    const: urn:selfless:problem:not-found
+                  status:
+                    const: 404
+          example: {"type":"urn:selfless:problem:not-found","title":"Nothing exists at this URL.","status":404}
+    InvalidSignature:
+      description: The signed URL has no signature, a wrong one, or it has expired. Get a new URL from the response that gave this one.
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Problem"
+              - properties:
+                  type:
+                    const: urn:selfless:problem:invalid-signature
+                  status:
+                    const: 403
+          example: {"type":"urn:selfless:problem:invalid-signature","title":"The signed URL is not valid or has expired.","status":403}
     InternalError:
       description: The server failed. The body holds no error details, and the server logs the error.
       content:
@@ -836,17 +927,17 @@ components:
         fanart:
           description: The fanart of the movie or show, or of an episode's show.
           anyOf:
-            - $ref: "#/components/schemas/Image"
+            - $ref: "#/components/schemas/Artwork"
             - type: "null"
         logo:
           description: The clearlogo of the movie or show. It is null for an episode, whose show's logo is in episode.show.
           anyOf:
-            - $ref: "#/components/schemas/Image"
+            - $ref: "#/components/schemas/Artwork"
             - type: "null"
         thumb:
           description: The thumb of an episode. It is null for a movie or show.
           anyOf:
-            - $ref: "#/components/schemas/Image"
+            - $ref: "#/components/schemas/Artwork"
             - type: "null"
       additionalProperties: false
     TileEpisode:
@@ -867,7 +958,7 @@ components:
               examples: [Severance]
             logo:
               anyOf:
-                - $ref: "#/components/schemas/Image"
+                - $ref: "#/components/schemas/Artwork"
                 - type: "null"
           additionalProperties: false
         seasonNumber:
@@ -878,17 +969,17 @@ components:
           type: integer
           examples: [4]
       additionalProperties: false
-    Image:
-      description: One artwork image, with a URL for each width it comes in.
+    Artwork:
+      description: One artwork image, with a URL for each width it comes in. The URLs change when the image changes, and they expire at the end of the UTC day after the one they were made on.
       type: object
       required: [urls]
       properties:
         urls:
           type: array
           items:
-            $ref: "#/components/schemas/ImageUrl"
+            $ref: "#/components/schemas/ArtworkUrl"
       additionalProperties: false
-    ImageUrl:
+    ArtworkUrl:
       description: The image at one width.
       type: object
       required: [width, url]
@@ -901,5 +992,5 @@ components:
           description: A signed URL that needs no Authorization header.
           type: string
           format: uri-reference
-          examples: ["/api/images/0190f3c4-7d8e-7f90-a1b2-c3d4e5f6a7b8/480/v1?expires=1793750400&signature=3q2-7w"]
+          examples: ["/api/images/0190f3c4-7d8e-7f90-a1b2-c3d4e5f6a7b8/480/v1?expires=1793836800&signature=Jm2vX8kQ0rH3c1yF5bR7tVw9nL4pA6sD0eG2iK8uO1M"]
       additionalProperties: false

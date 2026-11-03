@@ -31,6 +31,7 @@ use tracing::field;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 const OTHER_METHOD: &str = "_OTHER";
+const SIGNATURE: &str = "signature";
 
 pub(crate) struct HttpServerLayer {
     duration: Histogram<f64>,
@@ -109,7 +110,7 @@ impl Layer for HttpServerLayer {
                 http.route = route,
                 http.response.status_code = field::Empty,
                 url.path = uri(cx).path(),
-                url.query = uri(cx).query(),
+                url.query = uri(cx).query().map(redacted),
                 url.scheme = scheme,
                 network.protocol.version = protocol_version,
                 client.address = client_ip(cx).map(field::display),
@@ -162,6 +163,17 @@ impl Layer for HttpServerLayer {
             .instrument(span),
         )
     }
+}
+
+fn redacted(query: &str) -> String {
+    query
+        .split('&')
+        .map(|pair| match pair.split_once('=') {
+            Some((SIGNATURE, _)) => format!("{SIGNATURE}=REDACTED"),
+            _ => pair.to_owned(),
+        })
+        .collect::<Vec<_>>()
+        .join("&")
 }
 
 struct Rewritten {
@@ -273,5 +285,32 @@ mod tests {
         server.get("/actuator/health/readiness/v1").await;
 
         assert_eq!(exporter.get_finished_spans().unwrap(), []);
+    }
+
+    #[tokio::test]
+    async fn the_http_span_redacts_the_signature_of_a_signed_url() {
+        let app = TestApp::new().await;
+        let server = serve(&app).await;
+        let exporter = InMemorySpanExporter::default();
+        let _tracing = trace_into(&exporter);
+
+        server
+            .get_bytes("/api/images/0190f3c4-7d8e-7f90-a1b2-c3d4e5f6a7b8/480/v1?expires=1793836800&signature=a-secret-signature")
+            .await;
+
+        let spans = exporter.get_finished_spans().unwrap();
+        let http = spans
+            .iter()
+            .find(|x| x.span_kind == SpanKind::Server)
+            .expect("an HTTP server span");
+        assert!(
+            http.attributes.contains(&KeyValue::new(
+                "url.query",
+                "expires=1793836800&signature=REDACTED"
+            )),
+            "{:?}",
+            http.attributes
+        );
+        assert!(!format!("{spans:?}").contains("a-secret-signature"));
     }
 }

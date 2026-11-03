@@ -8,6 +8,7 @@ use std::fmt;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
+use uuid::Uuid;
 
 pub mod persistence;
 
@@ -115,6 +116,46 @@ impl Clock {
 
     pub fn call(&self) -> Timestamp {
         (self.0)()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct CachedImage {
+    pub image_id: Uuid,
+    pub width: i64,
+    pub modified_at: Timestamp,
+}
+
+#[derive(ohno::Error, Default)]
+#[no_constructors]
+#[display("failed to use the image cache")]
+pub struct ImageCacheError {
+    core: ohno::OhnoCore,
+}
+
+impl ImageCacheError {
+    pub fn caused_by(source: impl Into<Box<dyn Error + Send + Sync>>) -> Self {
+        Self {
+            core: ohno::OhnoCore::from(source),
+        }
+    }
+}
+
+type DeleteCachedImageFn =
+    dyn Fn(CachedImage) -> PortFuture<Result<(), ImageCacheError>> + Send + Sync;
+
+#[derive(Clone)]
+pub struct DeleteCachedImage(Arc<DeleteCachedImageFn>);
+
+impl DeleteCachedImage {
+    pub fn new(
+        f: impl Fn(CachedImage) -> PortFuture<Result<(), ImageCacheError>> + Send + Sync + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self, image: &CachedImage) -> PortFuture<Result<(), ImageCacheError>> {
+        (self.0)(image.clone())
     }
 }
 
@@ -331,6 +372,24 @@ impl SonarrError {
     }
 }
 
+type ListCachedImagesFn =
+    dyn Fn() -> PortFuture<Result<Vec<CachedImage>, ImageCacheError>> + Send + Sync;
+
+#[derive(Clone)]
+pub struct ListCachedImages(Arc<ListCachedImagesFn>);
+
+impl ListCachedImages {
+    pub fn new(
+        f: impl Fn() -> PortFuture<Result<Vec<CachedImage>, ImageCacheError>> + Send + Sync + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self) -> PortFuture<Result<Vec<CachedImage>, ImageCacheError>> {
+        (self.0)()
+    }
+}
+
 type ListRadarrMoviesFn =
     dyn Fn() -> PortFuture<Result<Vec<RadarrMovie>, RadarrError>> + Send + Sync;
 
@@ -486,6 +545,42 @@ impl ProbeError {
         Self {
             core: ohno::OhnoCore::from(source),
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ImageFormat {
+    Jpeg,
+    Png,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ImageFile {
+    pub format: ImageFormat,
+    pub bytes: Bytes,
+}
+
+type ReadCachedImageFn =
+    dyn Fn(CachedImage) -> PortFuture<Result<Option<ImageFile>, ImageCacheError>> + Send + Sync;
+
+#[derive(Clone)]
+pub struct ReadCachedImage(Arc<ReadCachedImageFn>);
+
+impl ReadCachedImage {
+    pub fn new(
+        f: impl Fn(CachedImage) -> PortFuture<Result<Option<ImageFile>, ImageCacheError>>
+        + Send
+        + Sync
+        + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(
+        &self,
+        image: &CachedImage,
+    ) -> PortFuture<Result<Option<ImageFile>, ImageCacheError>> {
+        (self.0)(image.clone())
     }
 }
 
@@ -740,6 +835,67 @@ impl ReadSonarrWebhook {
 
     pub fn call(&self, body: &[u8]) -> Result<SonarrWebhook, UnreadableWebhook> {
         (self.0)(body)
+    }
+}
+
+type ResizeImageFn =
+    dyn Fn(String, i64) -> PortFuture<Result<ImageFile, ResizeImageError>> + Send + Sync;
+
+#[derive(Clone)]
+pub struct ResizeImage(Arc<ResizeImageFn>);
+
+impl ResizeImage {
+    pub fn new(
+        f: impl Fn(String, i64) -> PortFuture<Result<ImageFile, ResizeImageError>>
+        + Send
+        + Sync
+        + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self, path: &str, width: i64) -> PortFuture<Result<ImageFile, ResizeImageError>> {
+        (self.0)(path.to_owned(), width)
+    }
+}
+
+#[derive(ohno::Error, Default)]
+#[no_constructors]
+#[display("failed to resize an image")]
+pub struct ResizeImageError {
+    core: ohno::OhnoCore,
+}
+
+impl ResizeImageError {
+    pub fn caused_by(source: impl Into<Box<dyn Error + Send + Sync>>) -> Self {
+        Self {
+            core: ohno::OhnoCore::from(source),
+        }
+    }
+}
+
+type SaveCachedImageFn =
+    dyn Fn(CachedImage, ImageFile) -> PortFuture<Result<(), ImageCacheError>> + Send + Sync;
+
+#[derive(Clone)]
+pub struct SaveCachedImage(Arc<SaveCachedImageFn>);
+
+impl SaveCachedImage {
+    pub fn new(
+        f: impl Fn(CachedImage, ImageFile) -> PortFuture<Result<(), ImageCacheError>>
+        + Send
+        + Sync
+        + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(
+        &self,
+        image: &CachedImage,
+        file: ImageFile,
+    ) -> PortFuture<Result<(), ImageCacheError>> {
+        (self.0)(image.clone(), file)
     }
 }
 

@@ -2,6 +2,7 @@ use crate::Availability;
 use application::ports::persistence::DbScope;
 use application::sessions::sign_in;
 use application::users::create_user;
+use domain::ArtworkKind;
 use domain::ClientKind;
 use domain::EmailAddress;
 use domain::Episode;
@@ -116,4 +117,24 @@ pub(crate) async fn add_show(app: &TestApp, title: &str, season_numbers: &[i64])
             .unwrap();
     }
     show.id
+}
+
+pub(crate) async fn add_artwork(
+    app: &TestApp,
+    movie_id: Uuid,
+    kind: ArtworkKind,
+    path: &str,
+) -> Uuid {
+    let mut db_context = app.state.db_context.clone();
+    db_context
+        .artwork()
+        .create()
+        .movie_id(Some(movie_id))
+        .kind(kind)
+        .path(path)
+        .modified_at(app.clock.now())
+        .exec(db_context.executor_mut())
+        .await
+        .unwrap()
+        .id
 }

@@ -1,5 +1,5 @@
 import type { Tile as TileData } from "@selfless/api-client";
-import { render, screen } from "@testing-library/react-native";
+import { fireEvent, render, screen } from "@testing-library/react-native";
 import { Tile } from "./Tile";
 
 const arrival: TileData = {
@@ -18,8 +18,36 @@ const arrival: TileData = {
   episode: null,
 };
 
+const image = (id: string, widths: number[]) => ({
+  urls: widths.map((width) => ({ width, url: `/api/images/${id}/${width}/v1?expires=1793836800&signature=s` })),
+});
+const fanart = image("0190f3c4-7d8e-7f90-a1b2-c3d4e5f6a7b8", [480, 960, 1280, 1920]);
+const logo = image("0190f3c4-8e9f-7a01-b2c3-d4e5f6a7b8c9", [300, 600]);
+
+async function drawnAt(testId: string, width: number) {
+  await fireEvent(screen.getByTestId(testId), "layout", { nativeEvent: { layout: { width, height: width / 2 } } });
+  return screen.getByTestId(testId).props.source?.uri as string;
+}
+
 test("a tile without fanart shows the dark placeholder with the title", async () => {
   await render(<Tile tile={arrival} />);
 
+  expect(screen.getByText("Arrival")).toBeOnTheScreen();
+  expect(screen.queryByTestId("tile-fanart")).toBeNull();
+});
+
+test("a tile shows the fanart with the logo laid over it instead of the title", async () => {
+  await render(<Tile tile={{ ...arrival, images: { fanart, logo, thumb: null } }} />);
+
+  expect(await drawnAt("tile-fanart", 480)).toContain("/0190f3c4-7d8e-7f90-a1b2-c3d4e5f6a7b8/");
+  expect(await drawnAt("tile-logo", 300)).toContain("/0190f3c4-8e9f-7a01-b2c3-d4e5f6a7b8c9/");
+  expect(screen.queryByText("Arrival")).toBeNull();
+});
+
+test("a tile without a logo shows the title as text over the fanart", async () => {
+  await render(<Tile tile={{ ...arrival, images: { fanart, logo: null, thumb: null } }} />);
+
+  expect(screen.getByTestId("tile-fanart")).toBeOnTheScreen();
+  expect(screen.queryByTestId("tile-logo")).toBeNull();
   expect(screen.getByText("Arrival")).toBeOnTheScreen();
 });

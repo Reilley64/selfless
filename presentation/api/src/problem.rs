@@ -87,6 +87,18 @@ const INVITE_NOT_FOUND: Problem = Problem {
     status: StatusCode::NOT_FOUND,
 };
 
+pub(crate) const NOT_FOUND: Problem = Problem {
+    problem_type: "urn:selfless:problem:not-found",
+    title: "Nothing exists at this URL.",
+    status: StatusCode::NOT_FOUND,
+};
+
+pub(crate) const INVALID_SIGNATURE: Problem = Problem {
+    problem_type: "urn:selfless:problem:invalid-signature",
+    title: "The signed URL is not valid or has expired.",
+    status: StatusCode::FORBIDDEN,
+};
+
 const NAME_TAKEN: Problem = Problem {
     problem_type: "urn:selfless:problem:name-taken",
     title: "A user already has this name.",

@@ -10,7 +10,9 @@ use crate::browsing::Cursor;
 use crate::browsing::Tile;
 use crate::browsing::TileKind;
 use crate::browsing::page;
+use crate::browsing::title_images;
 use crate::ports::persistence::DbScope;
+use domain::Artwork;
 use domain::Episode;
 use domain::Season;
 use domain::Show;
@@ -22,7 +24,11 @@ pub async fn call(
     dependencies: impl Into<Dependencies>,
     after: Option<Cursor>,
 ) -> Result<Output, Error> {
-    let mut db_context = dependencies.into().db_context;
+    let Dependencies {
+        mut db_context,
+        clock,
+        url_signer,
+    } = dependencies.into();
     let has_visible_episode = || {
         Season::fields()
             .episodes()
@@ -56,10 +62,22 @@ pub async fn call(
     {
         *season_counts.entry(season.show_id).or_default() += 1;
     }
+    let mut images = title_images(
+        &mut db_context,
+        |x| x.show_id,
+        Artwork::fields()
+            .show_id()
+            .in_list(shows.iter().map(|x| x.id).collect::<Vec<_>>()),
+        &url_signer,
+        clock.call(),
+    )
+    .await
+    .map_err(Error::caused_by)?;
     Ok(Output {
         tiles: shows
             .into_iter()
             .map(|show| Tile {
+                images: images.remove(&show.id).unwrap_or_default(),
                 id: show.id,
                 title: show.title,
                 year: show.year,
@@ -78,15 +96,48 @@ pub async fn call(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ports::Clock;
     use crate::ports::persistence::DbContext;
     use crate::test::mock_db_context;
+    use crate::test::url_signer;
+    use domain::ArtworkKind;
+    use jiff::Timestamp;
+    use test_fixtures::FakeClock;
+
+    fn dependencies(db_context: &DbContext) -> Dependencies {
+        Dependencies {
+            db_context: db_context.clone(),
+            clock: Clock::new(FakeClock::new().reader()),
+            url_signer: url_signer(),
+        }
+    }
+
+    async fn add_artwork(
+        db_context: &mut DbContext,
+        show_id: Uuid,
+        episode_id: Option<Uuid>,
+        kind: ArtworkKind,
+    ) -> Uuid {
+        db_context
+            .artwork()
+            .create()
+            .show_id(Some(show_id))
+            .episode_id(episode_id)
+            .kind(kind)
+            .path(format!("/mnt/media/shows/Severance/{kind:?}"))
+            .modified_at(Timestamp::UNIX_EPOCH)
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap()
+            .id
+    }
 
     async fn add_show(
         db_context: &mut DbContext,
         title: &str,
         sort_title: Option<&str>,
         seasons: &[(i64, bool)],
-    ) {
+    ) -> Uuid {
         let tvdb_id = Uuid::new_v4().as_u64_pair().0 as i64;
         let show = Show::create()
             .tvdb_id(tvdb_id)
@@ -115,17 +166,11 @@ mod tests {
                 .await
                 .unwrap();
         }
+        show.id
     }
 
     async fn list(db_context: &DbContext, after: Option<Cursor>) -> Output {
-        call(
-            Dependencies {
-                db_context: db_context.clone(),
-            },
-            after,
-        )
-        .await
-        .unwrap()
+        call(dependencies(db_context), after).await.unwrap()
     }
 
     fn titles(output: &Output) -> Vec<&str> {
@@ -191,5 +236,46 @@ mod tests {
         assert_eq!(first.tiles.len(), 60);
         assert_eq!(titles(&second), ["Show 60"]);
         assert_eq!(second.next, None);
+    }
+
+    #[tokio::test]
+    async fn a_show_tile_carries_the_show_fanart_and_logo_but_no_episode_thumb() {
+        let mut db_context = mock_db_context().await;
+        let show_id = add_show(&mut db_context, "Severance", None, &[(1, true)]).await;
+        let episode_id = db_context
+            .episodes()
+            .all()
+            .first()
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        let fanart = add_artwork(&mut db_context, show_id, None, ArtworkKind::Fanart).await;
+        add_artwork(
+            &mut db_context,
+            show_id,
+            Some(episode_id),
+            ArtworkKind::Thumb,
+        )
+        .await;
+
+        let output = list(&db_context, None).await;
+
+        let images = &output.tiles[0].images;
+        assert_eq!(images.fanart.as_ref().map(|x| x.id), Some(fanart));
+        assert_eq!(
+            images
+                .fanart
+                .as_ref()
+                .unwrap()
+                .urls
+                .iter()
+                .map(|x| x.width)
+                .collect::<Vec<_>>(),
+            [480, 960, 1280, 1920]
+        );
+        assert!(images.logo.is_none());
+        assert!(images.thumb.is_none());
     }
 }

@@ -18,6 +18,10 @@ impl FakeClock {
         *self.0.lock().unwrap()
     }
 
+    pub fn set(&self, now: Timestamp) {
+        *self.0.lock().unwrap() = now;
+    }
+
     pub fn advance(&self, duration: SignedDuration) {
         *self.0.lock().unwrap() += duration;
     }

@@ -8,10 +8,11 @@ deny = [
     { name = "native-tls" },
 
     { name = "domain", wrappers = ["selfless", "application", "api", "persistence", "webhooks", "workers"] },
-    { name = "application", wrappers = ["selfless", "infrastructure", "email", "ffmpeg", "locking", "media-folder", "persistence", "radarr", "sonarr", "telemetry", "api", "admin", "webhooks", "workers"] },
+    { name = "application", wrappers = ["selfless", "infrastructure", "email", "ffmpeg", "images", "locking", "media-folder", "persistence", "radarr", "sonarr", "telemetry", "api", "admin", "webhooks", "workers"] },
 
     { name = "email", wrappers = ["selfless", "settings"] },
     { name = "ffmpeg", wrappers = ["selfless"] },
+    { name = "images", wrappers = ["selfless", "settings"] },
     { name = "locking", wrappers = ["selfless"] },
     { name = "media-folder", wrappers = ["selfless"] },
     { name = "persistence", wrappers = ["selfless", "settings", "workers"] },

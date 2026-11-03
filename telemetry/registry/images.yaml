@@ -1,0 +1,42 @@
+groups:
+  - id: registry.selfless.images
+    type: attribute_group
+    display_name: Image attributes
+    brief: Attributes of the artwork images the server resizes and serves.
+    attributes:
+      - id: selfless.images.cache
+        type:
+          members:
+            - id: hit
+              value: hit
+              brief: The image cache already held the image at this width.
+              stability: development
+            - id: resized
+              value: resized
+              brief: The server resized the source image and saved the result in the image cache.
+              stability: development
+        stability: development
+        brief: Whether the image cache already held the image a request asked for.
+      - id: selfless.images.width
+        type: int
+        stability: development
+        brief: The width in pixels that an image was asked for.
+        examples: [480]
+  - id: metric.selfless.images.requests
+    type: metric
+    metric_name: selfless.images.requests
+    brief: Image requests with a valid signature that the server answered with an image.
+    instrument: counter
+    unit: "{request}"
+    stability: development
+    attributes:
+      - ref: selfless.images.cache
+        requirement_level: required
+  - id: span.selfless.images.resize
+    type: span
+    span_kind: internal
+    brief: Resizing one source image to one width.
+    stability: development
+    attributes:
+      - ref: selfless.images.width
+        requirement_level: required
