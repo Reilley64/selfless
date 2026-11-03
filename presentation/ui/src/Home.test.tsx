@@ -1,6 +1,6 @@
 import type { Home as HomeData, Tile } from "@selfless/api-client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, renderRouter, screen } from "expo-router/testing-library";
+import { act, fireEvent, renderRouter, screen } from "expo-router/testing-library";
 import { Platform } from "react-native";
 import { Home } from "./Home";
 
@@ -56,6 +56,7 @@ async function renderHome(response: HomeData = home) {
       ),
       "movies/[movieId]": () => null,
       "shows/[showId]": () => null,
+      "play/episodes/[episodeId]": () => null,
     },
     { initialUrl: "/" },
   );
@@ -134,9 +135,29 @@ describe("on TV", () => {
     await fireEvent(screen.getByLabelText("Half Loop"), "focus");
 
     expect(screen.getByRole("heading", { name: "Severance" })).toBeOnTheScreen();
-    expect(screen.getByText("S1:E2")).toBeOnTheScreen();
+    expect(screen.getByText("S1:E2 Half Loop")).toBeOnTheScreen();
     expect(screen.getByText("30 min left")).toBeOnTheScreen();
   });
+});
+
+test("hovering an episode tile opens a card with its show, episode number and title, and Play plays the episode", async () => {
+  const episode: Tile = {
+    ...tile("0190f3c4-7d8e-7f9a-8b0c-1d2e3f4a5b6c", "episode", "Half Loop"),
+    episode: { show: { id: severance.id, title: "Severance", logo: null }, seasonNumber: 1, episodeNumber: 2 },
+  };
+  await renderHome({
+    featured: null,
+    rows: [{ kind: "continueWatching", genre: null, tiles: [episode] }],
+  });
+  jest.useFakeTimers();
+
+  await fireEvent(screen.getByLabelText("Half Loop"), "pointerEnter");
+  await act(() => jest.advanceTimersByTime(400));
+  jest.useRealTimers();
+
+  expect(screen.getByText("S1:E2 Half Loop")).toBeOnTheScreen();
+  await fireEvent.press(screen.getByText("Play"));
+  expect(screen).toHavePathname(`/play/episodes/${episode.id}`);
 });
 
 test("a movie tile opens the movie page", async () => {
