@@ -84,6 +84,10 @@ mod tests {
         devices
     }
 
+    async fn let_serve_run() {
+        tokio::task::yield_now().await;
+    }
+
     #[tokio::test]
     async fn starting_deletes_expired_sessions() {
         let app = TestApp::new().await;
@@ -103,15 +107,12 @@ mod tests {
             .advance(SignedDuration::from_hours(30 * 24) + SignedDuration::from_secs(1));
         let cancellation = CancellationToken::new();
         let serving = tokio::spawn(serve(app.state.clone(), cancellation.clone()));
-        // `serve` reads the start of its interval when it first runs.
-        tokio::task::yield_now().await;
+        let_serve_run().await;
 
         tokio::time::advance(PERIOD - Duration::from_secs(1)).await;
-        // A tick that came early would start its delete here, before the read.
-        tokio::task::yield_now().await;
+        let_serve_run().await;
         let before_a_day = devices(&app).await;
         tokio::time::advance(Duration::from_secs(1)).await;
-        // `serve` finishes a due tick's delete before it sees the cancellation.
         cancellation.cancel();
         serving.await.unwrap();
         let after_a_day = devices(&app).await;
