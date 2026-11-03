@@ -79,9 +79,10 @@ impl Fixture {
         };
         eventually(async || {
             let status = self.status().await;
-            (reconciled(&status.radarr) && reconciled(&status.sonarr)).then_some(status)
+            (reconciled(&status.radarr) && reconciled(&status.sonarr)).then_some(())
         })
-        .await
+        .await;
+        self.status().await
     }
 
     async fn sync_now(&self) -> SyncStatus {

@@ -1,5 +1,4 @@
 use application::BuildInfo;
-use application::InboxWakeup;
 use application::MediaFolder;
 use application::Prober;
 use application::Reconciles;
@@ -26,11 +25,14 @@ use application::ports::ReadEpisodeFolder;
 use application::ports::ReadEpisodeNfo;
 use application::ports::ReadMovieFolder;
 use application::ports::ReadMovieNfo;
+use application::ports::ReadRadarrWebhook;
 use application::ports::ReadShowFolder;
 use application::ports::ReadShowNfo;
+use application::ports::ReadSonarrWebhook;
 use application::ports::SendEmail;
 use application::ports::SonarrError;
 use application::ports::UnreadableNfo;
+use application::ports::UnreadableWebhook;
 use application::ports::persistence;
 use application::ports::persistence::DbContext;
 use application::ports::persistence::DbLocation;
@@ -84,7 +86,6 @@ impl TestApp {
             get_sonarr_show: GetSonarrShow::new(|_| {
                 Box::pin(async { Err(SonarrError::default()) })
             }),
-            inbox_wakeup: InboxWakeup::default(),
             list_radarr_movies: ListRadarrMovies::new(|| {
                 Box::pin(async { Err(RadarrError::default()) })
             }),
@@ -114,6 +115,8 @@ impl TestApp {
                     Box::pin(async { Err(UnreadableNfo::default()) })
                 }),
             },
+            read_radarr_webhook: ReadRadarrWebhook::new(|_| Err(UnreadableWebhook::default())),
+            read_sonarr_webhook: ReadSonarrWebhook::new(|_| Err(UnreadableWebhook::default())),
             reconciles: Reconciles::default(),
             send_email: SendEmail::new(mailer.sender()),
             source_health: SourceHealth::default(),

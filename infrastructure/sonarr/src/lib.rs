@@ -1,3 +1,7 @@
+mod webhook;
+
+pub use webhook::read_webhook;
+
 use application::ports::CheckSonarrKodiMetadata;
 use application::ports::GetSonarrEpisodes;
 use application::ports::GetSonarrShow;

@@ -1,6 +1,5 @@
 use api::Availability;
 use application::BuildInfo;
-use application::InboxWakeup;
 use application::Reconciles;
 use application::SourceHealth;
 use application::WebhookPasswords;
@@ -71,10 +70,11 @@ pub async fn start(
         .get_radarr_movie(|_| get_radarr_movie.clone())
         .get_sonarr_episodes(|_| get_sonarr_episodes.clone())
         .get_sonarr_show(|_| get_sonarr_show.clone())
-        .inbox_wakeup(|_| InboxWakeup::default())
         .list_radarr_movies(|_| list_radarr_movies.clone())
         .list_sonarr_series(|_| list_sonarr_series.clone())
         .media_folder(|_| media_folder::media_folder(probe_media_file.clone()))
+        .read_radarr_webhook(|_| radarr::read_webhook())
+        .read_sonarr_webhook(|_| sonarr::read_webhook())
         .reconciles(|_| Reconciles::default())
         .send_email(|_| send_email.clone())
         .source_health(|_| SourceHealth::default())

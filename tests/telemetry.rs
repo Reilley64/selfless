@@ -11,6 +11,7 @@ use opentelemetry::trace::TraceId;
 use opentelemetry::trace::TracerProvider;
 use opentelemetry_sdk::trace::InMemorySpanExporter;
 use opentelemetry_sdk::trace::SdkTracerProvider;
+use std::time::Duration;
 use test_fixtures::TestDatabase;
 use tracing::level_filters::LevelFilter;
 use tracing::subscriber::DefaultGuard;
@@ -49,6 +50,7 @@ async fn the_inbox_worker_links_its_span_to_the_webhook_request() {
         .find(|x| x.span_kind == SpanKind::Server)
         .expect("an HTTP server span");
     assert_eq!(webhook.name, "POST /webhooks/radarr/v1");
+    assert_eq!(worker.name, "process inboxes");
     assert_ne!(
         worker.span_context.trace_id(),
         webhook.span_context.trace_id()
@@ -71,6 +73,33 @@ async fn the_inbox_worker_links_its_span_to_the_webhook_request() {
     );
     drop(server);
     database.drop().await;
+}
+
+#[tokio::test]
+async fn idle_workers_export_no_span_after_the_startup_reconciles() {
+    let exporter = InMemorySpanExporter::default();
+    let _tracing = trace_into(&exporter);
+    let database = TestDatabase::create().await;
+    let server = LibraryServer::start(database.url()).await;
+    let started = startup_reconciled(&exporter).await;
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    assert_eq!(exporter.get_finished_spans().unwrap().len(), started);
+    drop(server);
+    database.drop().await;
+}
+
+async fn startup_reconciled(exporter: &InMemorySpanExporter) -> usize {
+    eventually(async || {
+        let spans = exporter.get_finished_spans().unwrap();
+        let reconciles = spans
+            .iter()
+            .filter(|x| x.name.starts_with("reconcile "))
+            .count();
+        (reconciles == 2).then_some(spans.len())
+    })
+    .await
 }
 
 fn trace_into(exporter: &InMemorySpanExporter) -> DefaultGuard {

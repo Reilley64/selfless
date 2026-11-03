@@ -10,5 +10,6 @@ application = { workspace = true }
 jiff = { workspace = true, features = ["serde"] }
 reqwest = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 servarr = { workspace = true }
 url = { workspace = true, features = ["serde"] }

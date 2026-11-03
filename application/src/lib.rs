@@ -4,6 +4,7 @@ mod tokens;
 pub mod actuator;
 pub mod admins;
 pub mod invites;
+pub mod library;
 pub mod ports;
 pub mod sessions;
 pub mod telemetry;
@@ -11,7 +12,6 @@ pub mod trace_context;
 pub mod users;
 
 pub mod confirm_held_removal;
-pub mod delete_old_inbox_rows;
 pub mod get_media_file;
 mod library_items;
 pub mod list_episodes;
@@ -20,18 +20,13 @@ pub mod list_seasons;
 pub mod list_shows;
 mod media_files;
 mod metadata;
-pub mod next_inbox_attempt;
-pub mod process_inbox_row;
 pub mod reconcile;
-pub mod release_inbox_rows;
-pub mod retry_failed_row;
 mod source_states;
 pub mod store_webhook_delivery;
 pub mod sync_movie;
 pub mod sync_now;
 pub mod sync_show;
 pub mod sync_status;
-mod unsampled;
 mod webhook_deliveries;
 
 #[cfg(test)]
@@ -94,19 +89,6 @@ impl<T> BySource<T> {
 }
 
 pub type WebhookPasswords = BySource<String>;
-
-#[derive(Clone, Default)]
-pub struct InboxWakeup(Arc<Notify>);
-
-impl InboxWakeup {
-    pub async fn notified(&self) {
-        self.0.notified().await;
-    }
-
-    fn wake(&self) {
-        self.0.notify_one();
-    }
-}
 
 #[derive(Clone, Default)]
 pub struct Reconciles {

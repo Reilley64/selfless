@@ -9,7 +9,6 @@ publish.workspace = true
 application = { workspace = true }
 domain = { workspace = true }
 infrastructure = { workspace = true }
-jiff = { workspace = true }
 persistence = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
@@ -17,5 +16,6 @@ tracing = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
+jiff = { workspace = true }
 test-app = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }

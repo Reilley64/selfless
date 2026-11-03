@@ -4,8 +4,6 @@ use crate::ports::persistence::DbContext;
 use crate::ports::persistence::DbScope;
 use domain::Episode;
 use domain::HeldRemoval as StoredHeldRemoval;
-use domain::InboxRow;
-use domain::InboxRowStatus;
 use domain::Movie;
 use domain::ReconcileResult;
 use domain::Season;
@@ -34,26 +32,9 @@ pub const PROBLEMS_PER_PAGE: usize = 50;
 pub struct SyncStatus {
     pub radarr: SourceStatus,
     pub sonarr: SourceStatus,
-    pub failed_rows: Vec<FailedRow>,
     pub problems: Vec<Problem>,
     pub problem_page: usize,
     pub problem_pages: usize,
-}
-
-pub struct FailedRow {
-    pub id: Uuid,
-    pub source: Source,
-    pub event_type: Option<String>,
-    pub error: String,
-    pub attempts: i64,
-    pub received_at: Timestamp,
-    pub attempt_log: Vec<Attempt>,
-    pub body: Vec<u8>,
-}
-
-pub struct Attempt {
-    pub attempted_at: Timestamp,
-    pub error: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -155,36 +136,6 @@ pub async fn call(
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?;
-    let failed_rows = InboxRow::filter(InboxRow::fields().status().eq(InboxRowStatus::Failed))
-        .order_by(InboxRow::fields().received_at().asc())
-        .include(InboxRow::fields().attempt_log())
-        .exec(db_context.executor_mut())
-        .await
-        .map_err(Error::caused_by)?
-        .into_iter()
-        .map(|x| {
-            let mut attempt_log: Vec<Attempt> = x
-                .attempt_log
-                .get()
-                .iter()
-                .map(|x| Attempt {
-                    attempted_at: x.attempted_at,
-                    error: x.error.clone(),
-                })
-                .collect();
-            attempt_log.sort_by_key(|x| x.attempted_at);
-            FailedRow {
-                id: x.id,
-                source: x.source,
-                event_type: x.event_type,
-                error: x.error.unwrap_or_default(),
-                attempts: x.attempts,
-                received_at: x.received_at,
-                attempt_log,
-                body: x.body,
-            }
-        })
-        .collect();
     let (problems, problem_page, problem_pages) =
         problems(&mut db_context, problem_kind, problem_page).await?;
     Ok(SyncStatus {
@@ -204,7 +155,6 @@ pub async fn call(
             VisibleCounts::Shows { shows, episodes },
         )
         .await?,
-        failed_rows,
         problems,
         problem_page,
         problem_pages,

@@ -4,8 +4,8 @@ mod persistence_test;
 mod selfless_test;
 
 use application::invites::create_invite;
-use application::invites::list_pending_invites;
 use application::ports::Clock;
+use application::ports::persistence::DbScope;
 use domain::EmailAddress;
 use reqwest::Method;
 use reqwest::StatusCode;
@@ -40,33 +40,23 @@ async fn an_invite_email_goes_out_while_the_server_runs() {
     )
     .await
     .unwrap();
-    let email = tokio::time::timeout(Duration::from_secs(5), async {
-        loop {
-            if let Some(email) = mailer.sent().pop() {
-                return email;
-            }
+    let mut outbox = db_context.clone();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while outbox
+            .outboxes()
+            .all()
+            .exec(outbox.executor_mut())
+            .await
+            .unwrap()
+            .iter()
+            .any(|x| x.delivered_at.is_none())
+        {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
     })
     .await
     .expect("the worker sends the invite email");
-    tokio::time::timeout(Duration::from_secs(5), async {
-        while !matches!(
-            list_pending_invites::call(list_pending_invites::Dependencies {
-                db_context: db_context.clone(),
-                clock: Clock::new(clock.reader()),
-            })
-            .await
-            .unwrap()
-            .invites[0]
-                .email_status,
-            list_pending_invites::EmailStatus::Sent { .. }
-        ) {
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-    })
-    .await
-    .expect("the worker records that the email went out");
+    let email = mailer.sent().pop().unwrap();
     let token = email.invite_token(ORIGIN);
     let mut headers = HeaderMap::new();
     headers.insert(

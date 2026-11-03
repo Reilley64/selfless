@@ -5,6 +5,19 @@ use crate::metrics::SELFLESS_WEBHOOK_DELIVERIES;
 use domain::Source;
 use opentelemetry::KeyValue;
 use opentelemetry::global;
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EventType {
+    event_type: String,
+}
+
+pub(crate) fn event_type(body: &[u8]) -> Option<String> {
+    serde_json::from_slice::<EventType>(body)
+        .ok()
+        .map(|x| x.event_type)
+}
 
 #[derive(Clone, Copy)]
 pub(crate) enum Outcome {
@@ -12,6 +25,7 @@ pub(crate) enum Outcome {
     Rejected,
     Processed,
     Ignored,
+    Skipped,
     Failed,
 }
 
@@ -22,6 +36,7 @@ impl Outcome {
             Outcome::Rejected => "rejected",
             Outcome::Processed => "processed",
             Outcome::Ignored => "ignored",
+            Outcome::Skipped => "skipped",
             Outcome::Failed => "failed",
         }
     }

@@ -3593,6 +3593,7 @@ dependencies = [
  "jiff",
  "reqwest",
  "serde",
+ "serde_json",
  "servarr",
  "url",
 ]
@@ -4464,6 +4465,7 @@ dependencies = [
  "jiff",
  "reqwest",
  "serde",
+ "serde_json",
  "servarr",
  "url",
 ]

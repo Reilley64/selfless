@@ -1,17 +1,16 @@
+mod inbox;
+mod inbox_cleanup;
 mod outbox;
 mod session_cleanup;
 
 use application::sessions::delete_expired_sessions;
 use domain::Source;
 use infrastructure::AppState;
-use jiff::Timestamp;
 use std::error::Error;
 use std::time::Duration;
+use tokio::task::JoinSet;
 use tokio::time::MissedTickBehavior;
 use tokio_util::sync::CancellationToken;
-
-const AFTER_AN_INBOX_ERROR: Duration = Duration::from_secs(60);
-const INBOX_CLEANUP_INTERVAL: Duration = Duration::from_secs(3600);
 
 pub async fn start(state: &AppState) -> Result<(), delete_expired_sessions::Error> {
     session_cleanup::start(state).await
@@ -21,88 +20,73 @@ pub async fn serve(state: AppState, reconcile_interval: Duration, cancellation: 
     tokio::join!(
         session_cleanup::serve(state.clone(), cancellation.clone()),
         outbox::serve(state.clone(), cancellation.clone()),
-        cancellation.run_until_cancelled(inbox(state.clone())),
-        cancellation.run_until_cancelled(inbox_cleanup(state.clone())),
+        inbox::serve(state.clone(), cancellation.clone()),
+        inbox_cleanup::serve(state.clone(), cancellation.clone()),
         cancellation.run_until_cancelled(reconcile(state, reconcile_interval)),
     );
-}
-
-async fn inbox(state: AppState) {
-    let mut release = true;
-    loop {
-        if release {
-            if let Err(error) = application::release_inbox_rows::call(&state).await {
-                tracing::error!(
-                    error = &error as &dyn Error,
-                    "failed to release the claimed inbox rows"
-                );
-                tokio::time::sleep(AFTER_AN_INBOX_ERROR).await;
-                continue;
-            }
-            release = false;
-        }
-        match process_due_rows(&state).await {
-            Ok(Some(next_attempt_at)) => {
-                let wait = Duration::try_from(next_attempt_at.duration_since(state.clock.call()))
-                    .unwrap_or_default();
-                tokio::select! {
-                    () = state.inbox_wakeup.notified() => {}
-                    () = tokio::time::sleep(wait) => {}
-                }
-            }
-            Ok(None) => state.inbox_wakeup.notified().await,
-            Err(error) => {
-                tracing::error!(error = &*error as &dyn Error, "failed to process the inbox");
-                release = true;
-                tokio::time::sleep(AFTER_AN_INBOX_ERROR).await;
-            }
-        }
-    }
-}
-
-async fn process_due_rows(
-    state: &AppState,
-) -> Result<Option<Timestamp>, Box<dyn Error + Send + Sync>> {
-    while application::process_inbox_row::call(state).await? {}
-    Ok(application::next_inbox_attempt::call(state).await?)
-}
-
-async fn inbox_cleanup(state: AppState) {
-    let mut ticks = tokio::time::interval(INBOX_CLEANUP_INTERVAL);
-    ticks.set_missed_tick_behavior(MissedTickBehavior::Delay);
-    loop {
-        ticks.tick().await;
-        match application::delete_old_inbox_rows::call(&state).await {
-            Ok(0) => {}
-            Ok(deleted) => tracing::info!(
-                selfless.webhook.deleted_deliveries = deleted,
-                "deleted old inbox rows"
-            ),
-            Err(error) => {
-                tracing::error!(
-                    error = &error as &dyn Error,
-                    "failed to delete old inbox rows"
-                );
-            }
-        }
-    }
 }
 
 async fn reconcile(state: AppState, interval: Duration) {
     let mut ticks = tokio::time::interval(interval);
     ticks.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    let mut running = JoinSet::new();
     loop {
         tokio::select! {
             _ = ticks.tick() => {}
             () = state.reconciles.requested() => {}
         }
+        while running.try_join_next().is_some() {}
         for source in [Source::Radarr, Source::Sonarr] {
             let state = state.clone();
-            tokio::spawn(async move {
+            running.spawn(async move {
                 if let Err(error) = application::reconcile::call(&state, source).await {
                     tracing::error!(error = &error as &dyn Error, "failed to record a reconcile");
                 }
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use application::ports::ListRadarrMovies;
+    use std::sync::Arc;
+    use test_app::TestApp;
+
+    async fn until(condition: impl Fn() -> bool) {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while !condition() {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn shutdown_stops_a_running_reconcile() {
+        let mut app = TestApp::new().await;
+        let listing = Arc::new(());
+        let port_listing = listing.clone();
+        app.state.list_radarr_movies = ListRadarrMovies::new(move || {
+            let listing = port_listing.clone();
+            Box::pin(async move {
+                let _listing = listing;
+                std::future::pending().await
+            })
+        });
+        let cancellation = CancellationToken::new();
+        let serving = tokio::spawn(serve(
+            app.state.clone(),
+            Duration::from_secs(3600),
+            cancellation.clone(),
+        ));
+        until(|| Arc::strong_count(&listing) == 3).await;
+
+        cancellation.cancel();
+        serving.await.unwrap();
+
+        until(|| Arc::strong_count(&listing) == 2).await;
     }
 }

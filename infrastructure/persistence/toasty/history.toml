@@ -81,6 +81,11 @@ name = "20261103_025009_streams.sql"
 snapshot_name = "20261103_025009_snapshot.toml"
 
 [[migrations]]
+id = 8836271285327210844
+name = "20261103_030157_inboxes.sql"
+snapshot_name = "20261103_030157_snapshot.toml"
+
+[[migrations]]
 id = 6665036974824412014
 name = "20261103_033710_admin_sign_in_times.sql"
 snapshot_name = "20261103_033710_snapshot.toml"
