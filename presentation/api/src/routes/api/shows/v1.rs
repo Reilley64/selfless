@@ -7,6 +7,7 @@ use crate::routes::api::tile::TilePageBody;
 use crate::user_auth::CurrentSession;
 use application::browsing::get_show;
 use domain::PlayVerb;
+use domain::Season;
 use infrastructure::AppState;
 use serde::Serialize;
 use topcoat::context::Cx;
@@ -152,7 +153,11 @@ impl From<get_show::Show> for ShowPageBody {
                 .map(|x| SeasonBody {
                     id: x.id,
                     number: x.number,
-                    name: x.name,
+                    name: if Season::is_specials(x.number) {
+                        "Specials".to_owned()
+                    } else {
+                        format!("Season {}", x.number)
+                    },
                     episode_count: x.episode_count,
                 })
                 .collect(),

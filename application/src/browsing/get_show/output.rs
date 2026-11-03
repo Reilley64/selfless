@@ -38,7 +38,6 @@ pub struct CastMember {
 pub struct Season {
     pub id: Uuid,
     pub number: i64,
-    pub name: String,
     pub episode_count: i64,
 }
 

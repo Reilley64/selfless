@@ -155,7 +155,6 @@ pub async fn call(
             .map(|x| Season {
                 id: x.id,
                 number: x.number,
-                name: x.name(),
                 episode_count: episode_counts.get(&x.id).copied().unwrap_or_default(),
             })
             .collect(),
@@ -372,9 +371,9 @@ mod tests {
         assert_eq!(
             page.seasons
                 .iter()
-                .map(|x| (x.number, x.name.as_str(), x.episode_count))
+                .map(|x| (x.number, x.episode_count))
                 .collect::<Vec<_>>(),
-            [(1, "Season 1", 3), (2, "Season 2", 1), (0, "Specials", 1)]
+            [(1, 3), (2, 1), (0, 1)]
         );
         assert_eq!(page.season_count, 2);
     }
