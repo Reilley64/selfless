@@ -6,7 +6,7 @@ import {
   StackContextManager,
   TracerProvider,
 } from "@opentelemetry/sdk-trace";
-import type { reportPlaybackProgressResponse } from "@selfless/api-client";
+import type { PlayMethod, reportPlaybackProgressResponse } from "@selfless/api-client";
 import { type ProgressReport, type Resume, createPlayerLogic, startPlaybackSpans } from "./playerLogic";
 
 const userId = "01890a5d-ac96-774b-bcce-b302099a8057";
@@ -41,19 +41,26 @@ const notFound: reportPlaybackProgressResponse = {
   headers,
 };
 
-function player(response = reported) {
+function player(
+  response = reported,
+  { method = "directPlay", forceHls = false }: { method?: PlayMethod; forceHls?: boolean } = {},
+) {
   const reports: ProgressReport[] = [];
   const restarts: Resume[] = [];
+  const errors: number[] = [];
   const spans = startPlaybackSpans(userId, mediaFileId);
   const logic = createPlayerLogic({
+    method,
+    forceHls,
     sendReport: async (report) => {
       reports.push(report);
       return response;
     },
     restart: (resume) => restarts.push(resume),
+    showError: () => errors.push(errors.length),
     spans,
   });
-  return { reports, restarts, spans, logic };
+  return { reports, restarts, errors, spans, logic };
 }
 
 function playbackSpans() {
@@ -129,8 +136,44 @@ test("a report on an ended playback starts a new playback at the position, pause
   paused.logic.handle({ type: "paused", position: 7 });
   await jest.advanceTimersByTimeAsync(10_000);
 
-  expect(playing.restarts).toEqual([{ position: 9.9, paused: false }]);
-  expect(paused.restarts).toEqual([{ position: 7, paused: true }]);
+  expect(playing.restarts).toEqual([{ position: 9.9, paused: false, forceHls: false }]);
+  expect(paused.restarts).toEqual([{ position: 7, paused: true, forceHls: false }]);
+});
+
+test("a playback that ended after a switch to HLS starts again through HLS", async () => {
+  const { restarts, logic } = player(ended, { method: "remux", forceHls: true });
+  logic.handle({ type: "playing", position: 0 });
+
+  logic.handle({ type: "position", position: 9.9 });
+  await jest.advanceTimersByTimeAsync(10_000);
+
+  expect(restarts).toEqual([{ position: 9.9, paused: false, forceHls: true }]);
+});
+
+test("a direct play error starts the playback again through HLS at the same position", async () => {
+  const { reports, restarts, errors, logic } = player();
+  logic.handle({ type: "playing", position: 0 });
+
+  logic.handle({ type: "failed", position: 42, errorType: "MEDIA_ERR_SRC_NOT_SUPPORTED" });
+  await jest.advanceTimersByTimeAsync(30_000);
+
+  const switched = playbackSpans()[1];
+  expect(restarts).toEqual([{ position: 42, paused: false, forceHls: true }]);
+  expect(errors).toEqual([]);
+  expect(reports).toEqual([]);
+  expect(switched?.events.map((event) => event.name)).toEqual(["selfless.playback.switched"]);
+  expect(switched?.attributes["error.type"]).toBe("MEDIA_ERR_SRC_NOT_SUPPORTED");
+  expect(switched?.status.code).toBe(SpanStatusCode.UNSET);
+});
+
+test("an HLS playback error shows the error and starts no new playback", () => {
+  const { restarts, errors, logic } = player(reported, { method: "remux", forceHls: true });
+  logic.handle({ type: "playing", position: 0 });
+
+  logic.handle({ type: "failed", position: 42, errorType: "MEDIA_ERR_DECODE" });
+
+  expect(restarts).toEqual([]);
+  expect(errors).toHaveLength(1);
 });
 
 test("after the playback ended, the old playback sends no more reports", async () => {
@@ -214,7 +257,7 @@ test("the seek to the start position before playback starts is not recorded", ()
 });
 
 test("a failure records failed on an error span with its error type", () => {
-  const { logic } = player();
+  const { logic } = player(reported, { method: "remux" });
   logic.handle({ type: "playing", position: 0 });
 
   logic.handle({ type: "failed", position: 12, errorType: "MEDIA_ERR_DECODE" });

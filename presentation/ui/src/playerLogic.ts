@@ -1,6 +1,6 @@
 import { type Attributes, ROOT_CONTEXT, type Span, SpanStatusCode, context, trace } from "@opentelemetry/api";
 import { ATTR_ERROR_TYPE } from "@opentelemetry/semantic-conventions";
-import type { reportPlaybackProgress } from "@selfless/api-client";
+import type { PlayMethod, reportPlaybackProgress } from "@selfless/api-client";
 import { SELFLESS_MEDIA_FILE_ID } from "./telemetry/attributes";
 import {
   SELFLESS_PLAYBACK_FAILED,
@@ -8,6 +8,7 @@ import {
   SELFLESS_PLAYBACK_SEEKED,
   SELFLESS_PLAYBACK_STARTED,
   SELFLESS_PLAYBACK_STOPPED,
+  SELFLESS_PLAYBACK_SWITCHED,
 } from "./telemetry/events";
 import { SELFLESS_PLAYBACK } from "./telemetry/spans";
 
@@ -21,7 +22,7 @@ export type PlayerEvent =
 
 export type ProgressReport = { position: number; paused: boolean; stopped: boolean };
 
-export type Resume = { position: number; paused: boolean };
+export type Resume = { position: number; paused: boolean; forceHls: boolean };
 
 export type PlaybackSpans = ReturnType<typeof startPlaybackSpans>;
 
@@ -54,16 +55,27 @@ export function startPlaybackSpans(userId: string, mediaFileId: string) {
       span.setStatus({ code: SpanStatusCode.ERROR });
       span.end();
     },
+    switched(errorType: string) {
+      const span = spanFor(SELFLESS_PLAYBACK_SWITCHED);
+      span.setAttribute(ATTR_ERROR_TYPE, errorType);
+      span.end();
+    },
   };
 }
 
 export function createPlayerLogic({
+  method,
+  forceHls,
   sendReport,
   restart,
+  showError,
   spans,
 }: {
+  method: PlayMethod;
+  forceHls: boolean;
   sendReport: (report: ProgressReport) => ReturnType<typeof reportPlaybackProgress>;
   restart: (resume: Resume) => void;
+  showError: () => void;
   spans: PlaybackSpans;
 }) {
   let position = 0;
@@ -85,7 +97,7 @@ export function createPlayerLogic({
           response.data.type === "urn:selfless:problem:playback-ended"
         ) {
           end();
-          restart({ position, paused });
+          restart({ position, paused, forceHls });
         }
       },
       () => undefined,
@@ -121,7 +133,14 @@ export function createPlayerLogic({
           }
           break;
         case "failed":
-          spans.failed(event.errorType);
+          if (method === "directPlay") {
+            end();
+            spans.switched(event.errorType);
+            restart({ position, paused, forceHls: true });
+          } else {
+            spans.failed(event.errorType);
+            showError();
+          }
           break;
         case "stopped":
           end();
