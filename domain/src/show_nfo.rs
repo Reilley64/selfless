@@ -5,7 +5,7 @@ use jiff::civil::Date;
 pub struct ShowNfo {
     pub title: Option<String>,
     pub sort_title: Option<String>,
-    pub plot: Option<String>,
+    pub overview: Option<String>,
     pub certification: Option<String>,
     pub premiered: Option<Date>,
     pub end_date: Option<Date>,

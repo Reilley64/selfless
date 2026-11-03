@@ -273,7 +273,7 @@ impl From<NfoMovie> for MovieNfo {
             sort_title: text(movie.sorttitle),
             original_title: text(movie.originaltitle),
             year: parsed(movie.year),
-            plot: text(movie.plot),
+            overview: text(movie.plot),
             runtime_minutes: parsed(movie.runtime),
             certification: text(movie.mpaa),
             premiered: parsed(movie.premiered),
@@ -296,7 +296,7 @@ impl From<NfoShow> for ShowNfo {
         Self {
             title: text(show.title),
             sort_title: text(show.sorttitle),
-            plot: text(show.plot),
+            overview: text(show.plot),
             certification: text(show.mpaa),
             premiered: parsed(show.premiered),
             end_date: parsed(show.enddate),
@@ -321,7 +321,7 @@ impl From<NfoEpisode> for EpisodeNfo {
             season_number: parsed(episode.season),
             episode_number: parsed(episode.episode),
             air_date: parsed(episode.aired),
-            plot: text(episode.plot),
+            overview: text(episode.plot),
             rating: parsed(episode.rating),
         }
     }
@@ -453,7 +453,7 @@ mod tests {
         assert_eq!(nfo.original_title.as_deref(), Some("Arrival"));
         assert_eq!(nfo.year, Some(2016));
         assert_eq!(
-            nfo.plot.as_deref(),
+            nfo.overview.as_deref(),
             Some(
                 "When twelve mysterious spacecraft appear around the world, linguistics professor \
                  Louise Banks is tasked with interpreting the language of the apparent alien visitors."
@@ -517,7 +517,7 @@ mod tests {
         assert_eq!(nfo.title.as_deref(), Some("Andor"));
         assert_eq!(nfo.sort_title.as_deref(), Some("andor"));
         assert!(
-            nfo.plot
+            nfo.overview
                 .as_deref()
                 .unwrap()
                 .ends_with("destined to turn him into a rebel hero.")
@@ -558,7 +558,7 @@ mod tests {
         assert_eq!(nfo.episode_number, Some(1));
         assert_eq!(nfo.air_date, Some(date(2022, 9, 21)));
         assert_eq!(
-            nfo.plot.as_deref(),
+            nfo.overview.as_deref(),
             Some(
                 "Cassian Andor looks for his missing sister on the industrial planet of Morlana One."
             )

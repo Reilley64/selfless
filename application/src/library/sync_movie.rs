@@ -223,7 +223,7 @@ pub(crate) async fn save(
         }
         _ => (None, false),
     };
-    let radarr_metadata = MovieMetadata::from_radarr(
+    let radarr_metadata = MovieMetadata::from_source(
         radarr_movie.title,
         radarr_movie.year,
         radarr_movie.overview,
@@ -458,7 +458,9 @@ mod tests {
             sort_title: Some("arrival".to_owned()),
             original_title: Some("Story of Your Life".to_owned()),
             year: Some(2016),
-            plot: Some("Linguistics professor Louise Banks interprets the visitors.".to_owned()),
+            overview: Some(
+                "Linguistics professor Louise Banks interprets the visitors.".to_owned(),
+            ),
             runtime_minutes: Some(116),
             certification: Some("PG-13".to_owned()),
             premiered: Some(date(2016, 11, 10)),

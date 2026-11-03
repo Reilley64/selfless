@@ -10,7 +10,7 @@ pub struct EpisodeMetadata {
 }
 
 impl EpisodeMetadata {
-    pub fn from_sonarr(title: String, air_date: Option<Date>, overview: Option<String>) -> Self {
+    pub fn from_source(title: String, air_date: Option<Date>, overview: Option<String>) -> Self {
         Self {
             title,
             air_date,
@@ -23,7 +23,7 @@ impl EpisodeMetadata {
         Self {
             title: nfo.title.clone().unwrap_or(self.title),
             air_date: nfo.air_date.or(self.air_date),
-            overview: nfo.plot.clone().or(self.overview),
+            overview: nfo.overview.clone().or(self.overview),
             rating: nfo.rating,
         }
     }
@@ -35,7 +35,7 @@ mod tests {
     use jiff::civil::date;
 
     fn sonarr() -> EpisodeMetadata {
-        EpisodeMetadata::from_sonarr(
+        EpisodeMetadata::from_source(
             "Kassa".to_owned(),
             Some(date(2022, 9, 21)),
             Some("Sonarr's overview".to_owned()),
@@ -60,7 +60,7 @@ mod tests {
         let nfo = EpisodeNfo {
             title: Some("Kassa (Extended)".to_owned()),
             air_date: Some(date(2022, 9, 22)),
-            plot: Some("The NFO's plot".to_owned()),
+            overview: Some("The NFO's overview".to_owned()),
             rating: Some(7.5),
             ..EpisodeNfo::default()
         };
@@ -70,7 +70,7 @@ mod tests {
             EpisodeMetadata {
                 title: "Kassa (Extended)".to_owned(),
                 air_date: Some(date(2022, 9, 22)),
-                overview: Some("The NFO's plot".to_owned()),
+                overview: Some("The NFO's overview".to_owned()),
                 rating: Some(7.5),
             }
         );

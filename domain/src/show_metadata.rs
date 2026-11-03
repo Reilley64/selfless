@@ -16,7 +16,7 @@ pub struct ShowMetadata {
 }
 
 impl ShowMetadata {
-    pub fn from_sonarr(title: String, overview: Option<String>, genres: Vec<String>) -> Self {
+    pub fn from_source(title: String, overview: Option<String>, genres: Vec<String>) -> Self {
         Self {
             title,
             sort_title: None,
@@ -35,7 +35,7 @@ impl ShowMetadata {
         Self {
             title: nfo.title.clone().unwrap_or(self.title),
             sort_title: nfo.sort_title.clone(),
-            overview: nfo.plot.clone().or(self.overview),
+            overview: nfo.overview.clone().or(self.overview),
             certification: nfo.certification.clone(),
             premiered: nfo.premiered,
             end_date: nfo.end_date,
@@ -57,7 +57,7 @@ mod tests {
     use jiff::civil::date;
 
     fn sonarr() -> ShowMetadata {
-        ShowMetadata::from_sonarr(
+        ShowMetadata::from_source(
             "Andor".to_owned(),
             Some("Sonarr's overview".to_owned()),
             vec!["Action".to_owned(), "Drama".to_owned()],
@@ -88,7 +88,7 @@ mod tests {
         let nfo = ShowNfo {
             title: Some("Andor (Extended)".to_owned()),
             sort_title: Some("andor".to_owned()),
-            plot: Some("The NFO's plot".to_owned()),
+            overview: Some("The NFO's overview".to_owned()),
             certification: Some("TV-14".to_owned()),
             premiered: Some(date(2022, 9, 21)),
             end_date: Some(date(2025, 5, 13)),
@@ -104,7 +104,7 @@ mod tests {
             ShowMetadata {
                 title: "Andor (Extended)".to_owned(),
                 sort_title: Some("andor".to_owned()),
-                overview: Some("The NFO's plot".to_owned()),
+                overview: Some("The NFO's overview".to_owned()),
                 certification: Some("TV-14".to_owned()),
                 premiered: Some(date(2022, 9, 21)),
                 end_date: Some(date(2025, 5, 13)),

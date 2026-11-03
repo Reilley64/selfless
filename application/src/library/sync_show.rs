@@ -397,7 +397,7 @@ async fn write(
         .map_err(Error::caused_by)?;
     let had_nfo = stored.as_ref().is_some_and(|x| x.nfo_modified_at.is_some());
     let sonarr_metadata =
-        ShowMetadata::from_sonarr(listing.title, listing.overview, listing.genres);
+        ShowMetadata::from_source(listing.title, listing.overview, listing.genres);
     let (metadata, nfo_modified_at) = match (&nfo, &stored) {
         (Nfo::Unchanged, Some(show)) => (show.metadata(), show.nfo_modified_at),
         (Nfo::Read(nfo, modified_at), _) => (sonarr_metadata.with_nfo(nfo), Some(*modified_at)),
@@ -492,7 +492,7 @@ async fn write(
             .as_ref()
             .and_then(|x| episode_folders.get(&x.path));
         let stored = episodes.remove(&sonarr_episode.tvdb_id);
-        let sonarr_metadata = EpisodeMetadata::from_sonarr(
+        let sonarr_metadata = EpisodeMetadata::from_source(
             sonarr_episode.title,
             sonarr_episode.air_date,
             sonarr_episode.overview,
@@ -831,7 +831,7 @@ mod tests {
         ShowNfo {
             title: Some("Severance".to_owned()),
             sort_title: Some("severance".to_owned()),
-            plot: Some("Mark leads a team whose memories are surgically divided.".to_owned()),
+            overview: Some("Mark leads a team whose memories are surgically divided.".to_owned()),
             certification: Some("TV-MA".to_owned()),
             premiered: Some(date(2022, 2, 18)),
             end_date: None,
@@ -868,7 +868,7 @@ mod tests {
             season_number: Some(season_number),
             episode_number: Some(episode_number),
             air_date: None,
-            plot: Some(format!("The NFO's plot of {title}")),
+            overview: Some(format!("The NFO's overview of {title}")),
             rating: Some(rating),
         }
     }
@@ -1468,7 +1468,7 @@ mod tests {
         );
         assert_eq!(
             episode(&library, 1, 3).await.overview.as_deref(),
-            Some("The NFO's plot of In Perpetuity")
+            Some("The NFO's overview of In Perpetuity")
         );
         assert_eq!(
             episode(&library, 1, 3).await.air_date,

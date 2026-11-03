@@ -7,6 +7,6 @@ pub struct EpisodeNfo {
     pub season_number: Option<i64>,
     pub episode_number: Option<i64>,
     pub air_date: Option<Date>,
-    pub plot: Option<String>,
+    pub overview: Option<String>,
     pub rating: Option<f64>,
 }
