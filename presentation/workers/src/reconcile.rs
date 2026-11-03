@@ -1,4 +1,3 @@
-use application::library::wait_for_reconcile_request;
 use domain::Source;
 use infrastructure::AppState;
 use std::collections::HashMap;
@@ -22,7 +21,7 @@ async fn reconcile(state: AppState, interval: Duration) {
     loop {
         tokio::select! {
             _ = ticks.tick() => {}
-            Ok(_) = wait_for_reconcile_request::call(&state) => {}
+            () = state.reconciles.requested() => {}
             Some(joined) = running.join_next_with_id() => {
                 match joined {
                     Ok((id, ())) => {
