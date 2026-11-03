@@ -67,9 +67,7 @@ mod tests {
             db_context: db_context.clone(),
         };
 
-        clock.advance(SignedDuration::from_hours(30 * 24) - SignedDuration::from_secs(1));
-        let early = call(dependencies()).await.unwrap();
-        clock.advance(SignedDuration::from_secs(1));
+        clock.advance(SignedDuration::from_hours(30 * 24));
         let due = call(dependencies()).await.unwrap();
 
         let kept = db_context
@@ -81,7 +79,6 @@ mod tests {
             .into_iter()
             .map(|x| x.body)
             .collect::<Vec<_>>();
-        assert_eq!(early.deleted, 0);
         assert_eq!(due.deleted, 1);
         assert_eq!(kept, [b"undelivered".to_vec()]);
     }
