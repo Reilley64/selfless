@@ -12,6 +12,7 @@ import {
   type NextEpisodeButtonState,
   type PlaybackSpans,
   type Resume,
+  StillWatchingPrompt,
   startPlaybackSpans,
   type Tracks,
 } from "@selfless/ui";
@@ -43,17 +44,30 @@ const languageNames = new Intl.DisplayNames([navigator.language], { type: "langu
 
 type Start = { response: Awaited<ReturnType<typeof startPlayback>>; spans: PlaybackSpans } | "unreachable";
 
-type PlayerProps = { mediaFileId: string; startPosition: number; backHref: Href; titleHref: Href };
+type PlayerProps = {
+  mediaFileId: string;
+  startPosition: number;
+  autoplayed: number;
+  stillWatching: boolean;
+  backHref: Href;
+  titleHref: Href;
+};
 
 export function Player(props: PlayerProps) {
   return <Playing key={`${props.mediaFileId}@${props.startPosition}`} {...props} />;
 }
 
-function Playing({ mediaFileId, startPosition, backHref, titleHref }: PlayerProps) {
+function Playing({ mediaFileId, startPosition, autoplayed, stillWatching, backHref, titleHref }: PlayerProps) {
   const { data: me, isError } = useGetMe();
   const userId = me?.status === 200 ? me.data.id : undefined;
   const [start, setStart] = useState<Start>();
-  const [resume, setResume] = useState<Resume>({ position: startPosition, paused: false, forceHls: false });
+  const [resume, setResume] = useState<Resume>({
+    position: startPosition,
+    paused: stillWatching,
+    forceHls: false,
+    autoplayed,
+    stillWatching,
+  });
   useEffect(() => {
     if (userId === undefined) {
       return;
@@ -121,6 +135,7 @@ function Playing({ mediaFileId, startPosition, backHref, titleHref }: PlayerProp
             spans={start.spans}
             resume={resume}
             restart={setResume}
+            backHref={backHref}
             titleHref={titleHref}
           />
         </Screen>
@@ -145,17 +160,21 @@ function Video({
   spans,
   resume,
   restart,
+  backHref,
   titleHref,
 }: {
   playback: Playback;
   spans: PlaybackSpans;
   resume: Resume;
   restart: (resume: Resume) => void;
+  backHref: Href;
   titleHref: Href;
 }) {
   const router = useRouter();
+  const back = useBack(backHref);
   const [failed, setFailed] = useState(false);
   const [nextButton, setNextButton] = useState<NextEpisodeButtonState | null>(null);
+  const [stillWatching, setStillWatching] = useState(resume.stillWatching);
   const [selected, setSelected] = useState<Tracks>({
     audioTrackId: playback.audioTrackId,
     subtitleTrackId: playback.subtitleTrackId,
@@ -193,8 +212,8 @@ function Video({
       showAudio,
       ...createPlayerLogic({
         playback,
+        resume,
         audioSwitchesInPlace: playback.method !== "directPlay" || "audioTracks" in HTMLMediaElement.prototype,
-        forceHls: resume.forceHls,
         sendReport: (report) => reportPlaybackProgress(playback.playbackId, report, { keepalive: true }),
         restart,
         showError: () => setFailed(true),
@@ -207,12 +226,19 @@ function Video({
           setSelected((current) => ({ ...current, subtitleTrackId: track?.id ?? null }));
         },
         showNextEpisode: setNextButton,
-        playNextEpisode: (episode) => router.replace(`/play/episodes/${episode.id}?position=0`),
+        playNextEpisode: (episode, { autoplayed, stillWatching }) =>
+          router.replace(
+            `/play/episodes/${episode.id}?position=0&autoplayed=${autoplayed}&stillWatching=${stillWatching}`,
+          ),
         returnToTitle: () => router.replace(titleHref),
+        showStillWatching: setStillWatching,
+        play: () => {
+          media.video?.play().catch(() => undefined);
+        },
         spans,
       }),
     };
-  }, [playback, resume.forceHls, restart, spans, router, titleHref]);
+  }, [playback, resume, restart, spans, router, titleHref]);
   useEffect(() => {
     const stop = () => logic.handle({ type: "stopped", position: position.current });
     const closed = (event: PageTransitionEvent) => {
@@ -306,12 +332,20 @@ function Video({
           })
         }
       />
-      <TrackMenus
-        playback={playback}
-        selected={selected}
-        onAudio={logic.selectAudio}
-        onSubtitle={logic.selectSubtitle}
-      />
+      {stillWatching && playback.episodes[0] ? (
+        <StillWatchingPrompt
+          showTitle={playback.episodes[0].showTitle}
+          onKeepWatching={logic.keepWatching}
+          onBack={back}
+        />
+      ) : (
+        <TrackMenus
+          playback={playback}
+          selected={selected}
+          onAudio={logic.selectAudio}
+          onSubtitle={logic.selectSubtitle}
+        />
+      )}
       {nextButton && playback.nextEpisode && (
         <NextEpisodeButton
           episode={playback.nextEpisode}
@@ -432,9 +466,13 @@ function Message({ backHref, children }: { backHref: Href; children: ReactNode }
   );
 }
 
-function Screen({ backHref, children }: { backHref: Href; children?: ReactNode }) {
+function useBack(backHref: Href) {
   const router = useRouter();
-  const back = () => (router.canGoBack() ? router.back() : router.replace(backHref));
+  return () => (router.canGoBack() ? router.back() : router.replace(backHref));
+}
+
+function Screen({ backHref, children }: { backHref: Href; children?: ReactNode }) {
+  const back = useBack(backHref);
   return (
     <View className="flex-1 bg-black">
       {children}

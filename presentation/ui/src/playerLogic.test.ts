@@ -14,6 +14,7 @@ import type {
   reportPlaybackProgressResponse,
 } from "@selfless/api-client";
 import {
+  type EpisodeStart,
   type NextEpisodeButtonState,
   type ProgressReport,
   type Resume,
@@ -78,6 +79,7 @@ function subtitleTrack(id: string, overrides: Partial<PlaybackSubtitleTrack> = {
 const english = audioTrack("english", { default: true });
 const japanese = audioTrack("japanese", { language: "jpn" });
 const tracks = { audioTrackId: "english", subtitleTrackId: null };
+const unasked = { autoplayed: 0, stillWatching: false };
 const nextEpisode: PlaybackNextEpisode = {
   id: "s01e04",
   mediaFileId: "01890a5d-ac96-774b-bcce-b302099a8061",
@@ -96,6 +98,9 @@ function player(
     audioSwitchesInPlace = true,
     nextEpisode = null,
     autoplayNextEpisode = true,
+    askIfStillWatching = false,
+    autoplayed = 0,
+    stillWatching = false,
   }: {
     method?: PlayMethod;
     forceHls?: boolean;
@@ -103,6 +108,9 @@ function player(
     audioSwitchesInPlace?: boolean;
     nextEpisode?: PlaybackNextEpisode | null;
     autoplayNextEpisode?: boolean;
+    askIfStillWatching?: boolean;
+    autoplayed?: number;
+    stillWatching?: boolean;
   } = {},
 ) {
   const reports: ProgressReport[] = [];
@@ -111,6 +119,9 @@ function player(
   const switches: (string | null)[] = [];
   const buttons: (NextEpisodeButtonState | null)[] = [];
   const endings: string[] = [];
+  const nextStarts: EpisodeStart[] = [];
+  const prompts: boolean[] = [];
+  const plays: number[] = [];
   const spans = startPlaybackSpans(userId, mediaFileId);
   const logic = createPlayerLogic({
     playback: {
@@ -121,9 +132,10 @@ function player(
       subtitleTrackId: null,
       nextEpisode,
       autoplayNextEpisode,
+      askIfStillWatching,
     },
+    resume: { position: 0, paused: stillWatching, forceHls, autoplayed, stillWatching },
     audioSwitchesInPlace,
-    forceHls,
     sendReport: async (report) => {
       reports.push(report);
       return response;
@@ -133,11 +145,16 @@ function player(
     switchAudio: (track) => switches.push(track.id),
     switchSubtitle: (track) => switches.push(track?.id ?? null),
     showNextEpisode: (button) => buttons.push(button),
-    playNextEpisode: (episode) => endings.push(episode.id),
+    playNextEpisode: (episode, start) => {
+      endings.push(episode.id);
+      nextStarts.push(start);
+    },
     returnToTitle: () => endings.push("title page"),
+    showStillWatching: (show) => prompts.push(show),
+    play: () => plays.push(plays.length),
     spans,
   });
-  return { reports, restarts, errors, switches, buttons, endings, spans, logic };
+  return { reports, restarts, errors, switches, buttons, endings, nextStarts, prompts, plays, spans, logic };
 }
 
 function playbackSpans() {
@@ -213,8 +230,8 @@ test("a report on an ended playback starts a new playback at the position, pause
   paused.logic.handle({ type: "paused", position: 7 });
   await jest.advanceTimersByTimeAsync(10_000);
 
-  expect(playing.restarts).toEqual([{ position: 9.9, paused: false, forceHls: false, tracks }]);
-  expect(paused.restarts).toEqual([{ position: 7, paused: true, forceHls: false, tracks }]);
+  expect(playing.restarts).toEqual([{ position: 9.9, paused: false, forceHls: false, tracks, ...unasked }]);
+  expect(paused.restarts).toEqual([{ position: 7, paused: true, forceHls: false, tracks, ...unasked }]);
 });
 
 test("a playback that ended after a switch to HLS starts again through HLS", async () => {
@@ -224,7 +241,7 @@ test("a playback that ended after a switch to HLS starts again through HLS", asy
   logic.handle({ type: "position", position: 9.9 });
   await jest.advanceTimersByTimeAsync(10_000);
 
-  expect(restarts).toEqual([{ position: 9.9, paused: false, forceHls: true, tracks }]);
+  expect(restarts).toEqual([{ position: 9.9, paused: false, forceHls: true, tracks, ...unasked }]);
 });
 
 test("a direct play error starts the playback again through HLS at the same position", async () => {
@@ -235,7 +252,7 @@ test("a direct play error starts the playback again through HLS at the same posi
   await jest.advanceTimersByTimeAsync(30_000);
 
   const switched = playbackSpans()[1];
-  expect(restarts).toEqual([{ position: 42, paused: false, forceHls: true, tracks }]);
+  expect(restarts).toEqual([{ position: 42, paused: false, forceHls: true, tracks, ...unasked }]);
   expect(errors).toEqual([]);
   expect(reports).toEqual([]);
   expect(switched?.events.map((event) => event.name)).toEqual(["selfless.playback.switched"]);
@@ -394,7 +411,7 @@ test("a subtitle outside the stream starts a new playback at the current positio
   const switched = playbackSpans()[1];
   expect(switches).toEqual([]);
   expect(restarts).toEqual([
-    { position: 61, paused: false, forceHls: false, tracks: { audioTrackId: "english", subtitleTrackId: "external" } },
+    { position: 61, paused: false, forceHls: false, tracks: { audioTrackId: "english", subtitleTrackId: "external" }, ...unasked },
   ]);
   expect(switched?.events.map((event) => event.name)).toEqual(["selfless.playback.switched"]);
   expect(switched?.attributes["error.type"]).toBeUndefined();
@@ -408,7 +425,7 @@ test("an audio track the player can't switch to in place starts a new playback t
 
   expect(switches).toEqual([]);
   expect(restarts).toEqual([
-    { position: 30, paused: false, forceHls: true, tracks: { audioTrackId: "japanese", subtitleTrackId: null } },
+    { position: 30, paused: false, forceHls: true, tracks: { audioTrackId: "japanese", subtitleTrackId: null }, ...unasked },
   ]);
 });
 
@@ -434,7 +451,7 @@ test("a direct play of a selected audio track that is not the file's default swi
   expect(inPlace.switches).toEqual(["japanese"]);
   expect(inPlace.restarts).toEqual([]);
   expect(notInPlace.restarts).toEqual([
-    { position: 0, paused: false, forceHls: true, tracks: { audioTrackId: "japanese", subtitleTrackId: null } },
+    { position: 0, paused: false, forceHls: true, tracks: { audioTrackId: "japanese", subtitleTrackId: null }, ...unasked },
   ]);
   expect(theDefault.restarts).toEqual([]);
 });
@@ -557,4 +574,154 @@ test("seeking back before the last 5 seconds hides the button, and leaving the p
 
   expect(buttons).toEqual([{ countdown: 4 }, null]);
   expect(endings).toEqual([]);
+});
+
+test("with Ask if I'm still watching on, the end of the third episode autoplayed in a row loads the next one behind the prompt", () => {
+  const { nextStarts, logic } = player(reported, { nextEpisode, askIfStillWatching: true, autoplayed: 3 });
+  logic.handle({ type: "playing", position: 1_498 });
+
+  logic.handle({ type: "ended", position: 1_500 });
+
+  expect(nextStarts).toEqual([{ autoplayed: 0, stillWatching: true }]);
+});
+
+test("each episode autoplayed in a row adds one to the count, and only Ask if I'm still watching stops the third", () => {
+  const started = player(reported, { nextEpisode, askIfStillWatching: true });
+  const second = player(reported, { nextEpisode, askIfStillWatching: true, autoplayed: 2 });
+  const notAsking = player(reported, { nextEpisode, autoplayed: 3 });
+
+  for (const { logic } of [started, second, notAsking]) {
+    logic.handle({ type: "playing", position: 1_498 });
+    logic.handle({ type: "ended", position: 1_500 });
+  }
+
+  expect([started.nextStarts, second.nextStarts, notAsking.nextStarts]).toEqual([
+    [{ autoplayed: 1, stillWatching: false }],
+    [{ autoplayed: 3, stillWatching: false }],
+    [{ autoplayed: 4, stillWatching: false }],
+  ]);
+});
+
+test("a pause resets the count once playback goes on, so the pause at the end of a file doesn't", () => {
+  const resumed = player(reported, { nextEpisode, askIfStillWatching: true, autoplayed: 3 });
+  const atTheEnd = player(reported, { nextEpisode, askIfStillWatching: true, autoplayed: 3 });
+  resumed.logic.handle({ type: "playing", position: 1_000 });
+  atTheEnd.logic.handle({ type: "playing", position: 1_000 });
+
+  resumed.logic.handle({ type: "paused", position: 1_200 });
+  resumed.logic.handle({ type: "playing", position: 1_200 });
+  resumed.logic.handle({ type: "ended", position: 1_500 });
+  atTheEnd.logic.handle({ type: "paused", position: 1_500 });
+  atTheEnd.logic.handle({ type: "ended", position: 1_500 });
+
+  expect(resumed.nextStarts).toEqual([{ autoplayed: 1, stillWatching: false }]);
+  expect(atTheEnd.nextStarts).toEqual([{ autoplayed: 0, stillWatching: true }]);
+});
+
+test("a seek resets the count, but the seek to the start position doesn't", () => {
+  const seeked = player(reported, { nextEpisode, askIfStillWatching: true, autoplayed: 3 });
+  const started = player(reported, { nextEpisode, askIfStillWatching: true, autoplayed: 3 });
+
+  seeked.logic.handle({ type: "playing", position: 0 });
+  seeked.logic.handle({ type: "seeked", position: 1_400 });
+  started.logic.handle({ type: "seeked", position: 1_400 });
+  started.logic.handle({ type: "playing", position: 1_400 });
+  for (const { logic } of [seeked, started]) {
+    logic.handle({ type: "ended", position: 1_500 });
+  }
+
+  expect(seeked.nextStarts).toEqual([{ autoplayed: 1, stillWatching: false }]);
+  expect(started.nextStarts).toEqual([{ autoplayed: 0, stillWatching: true }]);
+});
+
+test("an audio or subtitle change resets the count, and picking the track that plays doesn't", () => {
+  const audio = player(reported, { method: "remux", nextEpisode, askIfStillWatching: true, autoplayed: 3 });
+  const subtitle = player(reported, { method: "remux", nextEpisode, askIfStillWatching: true, autoplayed: 3 });
+  const same = player(reported, { method: "remux", nextEpisode, askIfStillWatching: true, autoplayed: 3 });
+  for (const { logic } of [audio, subtitle, same]) {
+    logic.handle({ type: "playing", position: 1_000 });
+  }
+
+  audio.logic.selectAudio(japanese);
+  subtitle.logic.selectSubtitle(subtitleTrack("english"));
+  same.logic.selectAudio(english);
+  for (const { logic } of [audio, subtitle, same]) {
+    logic.handle({ type: "ended", position: 1_500 });
+  }
+
+  expect([audio.nextStarts, subtitle.nextStarts, same.nextStarts]).toEqual([
+    [{ autoplayed: 1, stillWatching: false }],
+    [{ autoplayed: 1, stillWatching: false }],
+    [{ autoplayed: 0, stillWatching: true }],
+  ]);
+});
+
+test("a track change that starts a new playback carries a reset count, and other new playbacks carry the count", async () => {
+  const switched = player(reported, { nextEpisode, autoplayed: 2 });
+  const failed = player(reported, { nextEpisode, autoplayed: 2 });
+  const silent = player(ended, { method: "remux", nextEpisode, autoplayed: 2 });
+  const remembered = player(reported, { audioTrackId: "japanese", audioSwitchesInPlace: false, autoplayed: 2 });
+  for (const { logic } of [switched, failed, silent]) {
+    logic.handle({ type: "playing", position: 0 });
+  }
+
+  switched.logic.selectSubtitle(subtitleTrack("external", { external: true, inStream: false }));
+  failed.logic.handle({ type: "failed", position: 0, errorType: "MEDIA_ERR_SRC_NOT_SUPPORTED" });
+  remembered.logic.applySelectedAudio();
+  await jest.advanceTimersByTimeAsync(10_000);
+
+  expect([switched, failed, silent, remembered].map(({ restarts }) => restarts[0]?.autoplayed)).toEqual([0, 2, 2, 2]);
+});
+
+test("pressing the Next episode button resets the count", () => {
+  const { nextStarts, logic } = player(reported, { nextEpisode, askIfStillWatching: true, autoplayed: 3 });
+  logic.handle({ type: "playing", position: 1_496 });
+
+  logic.playNextEpisode();
+
+  expect(nextStarts).toEqual([{ autoplayed: 0, stillWatching: false }]);
+});
+
+test("the prompt records still_watching_prompt on the playback whose end brought it up", () => {
+  const { logic } = player(reported, { nextEpisode, askIfStillWatching: true, autoplayed: 3 });
+  logic.handle({ type: "playing", position: 1_498 });
+
+  logic.handle({ type: "ended", position: 1_500 });
+
+  expect(events(playbackSpans())).toEqual([
+    ["selfless.playback.started"],
+    ["selfless.playback.stopped"],
+    ["selfless.playback.still_watching_prompt"],
+  ]);
+});
+
+test("Keep watching hides the prompt and plays, and a new playback after that comes without the prompt", async () => {
+  const { prompts, plays, restarts, logic } = player(ended, { nextEpisode, stillWatching: true });
+
+  logic.keepWatching();
+  logic.handle({ type: "playing", position: 0 });
+  await jest.advanceTimersByTimeAsync(10_000);
+
+  expect(prompts).toEqual([false]);
+  expect(plays).toHaveLength(1);
+  expect(restarts).toEqual([{ position: 0, paused: false, forceHls: false, tracks, ...unasked }]);
+});
+
+test("a new playback while the prompt waits starts paused behind the prompt", () => {
+  const { restarts, logic } = player(reported, { nextEpisode, stillWatching: true });
+
+  logic.handle({ type: "failed", position: 0, errorType: "MEDIA_ERR_SRC_NOT_SUPPORTED" });
+
+  expect(restarts).toEqual([
+    { position: 0, paused: true, forceHls: true, tracks, autoplayed: 0, stillWatching: true },
+  ]);
+});
+
+test("playing from the player's own controls while the prompt waits hides it", () => {
+  const { prompts, plays, logic } = player(reported, { nextEpisode, stillWatching: true });
+
+  logic.handle({ type: "playing", position: 0 });
+
+  expect(prompts).toEqual([false]);
+  expect(plays).toEqual([]);
 });

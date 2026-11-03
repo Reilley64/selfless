@@ -19,6 +19,7 @@ import {
   playerTrackFor,
   type Resume,
   serverUnreachable,
+  StillWatchingPrompt,
   startPlaybackSpans,
 } from "@selfless/ui";
 import { type Href, useRouter } from "expo-router";
@@ -33,17 +34,31 @@ import { NotFound } from "./NotFound";
 
 type Start = { response: Awaited<ReturnType<typeof startPlayback>>; spans: PlaybackSpans } | "unreachable";
 
-type PlayerProps = { mediaFileId: string; startPosition: number; titleHref: Href };
+type PlayerProps = {
+  mediaFileId: string;
+  startPosition: number;
+  autoplayed: number;
+  stillWatching: boolean;
+  titleHref: Href;
+};
+
+const seekJump = 3;
 
 export function Player(props: PlayerProps) {
   return <Playing key={`${props.mediaFileId}@${props.startPosition}`} {...props} />;
 }
 
-function Playing({ mediaFileId, startPosition, titleHref }: PlayerProps) {
+function Playing({ mediaFileId, startPosition, autoplayed, stillWatching, titleHref }: PlayerProps) {
   const { data: me, isError } = useGetMe();
   const userId = me?.status === 200 ? me.data.id : undefined;
   const [start, setStart] = useState<Start>();
-  const [resume, setResume] = useState<Resume>({ position: startPosition, paused: false, forceHls: false });
+  const [resume, setResume] = useState<Resume>({
+    position: startPosition,
+    paused: stillWatching,
+    forceHls: false,
+    autoplayed,
+    stillWatching,
+  });
   useEffect(() => {
     if (userId === undefined) {
       return;
@@ -147,6 +162,7 @@ function Video({
   const router = useRouter();
   const [failed, setFailed] = useState(false);
   const [nextButton, setNextButton] = useState<NextEpisodeButtonState | null>(null);
+  const [stillWatching, setStillWatching] = useState(resume.stillWatching);
   const position = useRef(resume.position);
   const available = useRef<{ audio: AudioTrack[]; subtitle: SubtitleTrack[] }>({ audio: [], subtitle: [] });
   const player = useVideoPlayer({ uri: serverUrl(playback.url), metadata: { title: title(playback) } }, (player) => {
@@ -173,20 +189,25 @@ function Video({
       showSubtitle,
       ...createPlayerLogic({
         playback,
+        resume,
         audioSwitchesInPlace: true,
-        forceHls: resume.forceHls,
         sendReport: (report) => reportPlaybackProgress(playback.playbackId, report),
         restart,
         showError: () => setFailed(true),
         switchAudio: () => undefined,
         switchSubtitle: () => undefined,
         showNextEpisode: setNextButton,
-        playNextEpisode: (episode) => router.replace(`/play/episodes/${episode.id}?position=0`),
+        playNextEpisode: (episode, { autoplayed, stillWatching }) =>
+          router.replace(
+            `/play/episodes/${episode.id}?position=0&autoplayed=${autoplayed}&stillWatching=${stillWatching}`,
+          ),
         returnToTitle: () => router.dismissTo(titleHref),
+        showStillWatching: setStillWatching,
+        play: () => player.play(),
         spans,
       }),
     };
-  }, [player, playback, resume.forceHls, restart, spans, router, titleHref]);
+  }, [player, playback, resume, restart, spans, router, titleHref]);
   useEffect(() => {
     let selectionShown = false;
     const subscriptions = [
@@ -198,8 +219,9 @@ function Video({
         }
       }),
       player.addListener("timeUpdate", ({ currentTime }) => {
+        const seeked = Math.abs(currentTime - position.current) > seekJump;
         position.current = currentTime;
-        logic.handle({ type: "position", position: currentTime });
+        logic.handle({ type: seeked ? "seeked" : "position", position: currentTime });
       }),
       player.addListener("playToEnd", () => logic.handle({ type: "ended", position: position.current })),
       player.addListener("sourceLoad", ({ availableAudioTracks, availableSubtitleTracks }) => {
@@ -255,7 +277,14 @@ function Video({
       <Failure
         message="This file stopped playing."
         onRetry={() =>
-          restart({ position: position.current, paused: false, forceHls: resume.forceHls, tracks: logic.selected() })
+          restart({
+            position: position.current,
+            paused: false,
+            forceHls: resume.forceHls,
+            tracks: logic.selected(),
+            autoplayed: 0,
+            stillWatching: false,
+          })
         }
       />
     );
@@ -264,7 +293,7 @@ function Video({
     <>
       <VideoView
         player={player}
-        nativeControls={nextButton === null}
+        nativeControls={nextButton === null && !stillWatching}
         contentFit="contain"
         style={StyleSheet.absoluteFill}
       />
@@ -273,6 +302,13 @@ function Video({
           episode={playback.nextEpisode}
           countdown={nextButton.countdown}
           onPress={logic.playNextEpisode}
+        />
+      )}
+      {stillWatching && playback.episodes[0] && (
+        <StillWatchingPrompt
+          showTitle={playback.episodes[0].showTitle}
+          onKeepWatching={logic.keepWatching}
+          onBack={() => router.back()}
         />
       )}
     </>

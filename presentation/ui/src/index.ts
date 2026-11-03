@@ -19,6 +19,7 @@ export { PlayActions } from "./PlayActions";
 export { playHref } from "./playHref";
 export {
   createPlayerLogic,
+  type EpisodeStart,
   matchTrack,
   type NextEpisodeButtonState,
   type PlaybackSpans,
@@ -36,6 +37,7 @@ export { runtimeLabel } from "./runtimeLabel";
 export { ServerInfo } from "./ServerInfo";
 export { ShowEpisodes, useShowSeason } from "./ShowEpisodes";
 export { ShowHeader, showPlayLabel } from "./ShowHeader";
+export { StillWatchingPrompt } from "./StillWatchingPrompt";
 export { type PickerUser, type SessionStorage, startTvSession, startWebSession } from "./session";
 export { startTelemetry } from "./telemetry/startTelemetry";
 export { ArtworkImage, Tile } from "./Tile";

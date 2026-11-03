@@ -144,3 +144,10 @@ groups:
       for an audio or subtitle track the stream it played could not switch to.
     note: After a failed direct play, error.type holds the player's error.
     stability: development
+  - id: event.selfless.playback.still_watching_prompt
+    type: event
+    name: selfless.playback.still_watching_prompt
+    brief: >
+      The player asked "Are you still watching?" and loaded the next episode paused behind the prompt, because the
+      episode that ended was the third autoplayed in a row.
+    stability: development
