@@ -1,19 +1,17 @@
-mod support;
+#[path = "../test/library.rs"]
+mod library_test;
 
+use library_test::LibraryServer;
+use library_test::eventually;
+use library_test::fixture;
+use library_test::selfless_test::RADARR_WEBHOOK_PASSWORD;
 use opentelemetry::KeyValue;
-use opentelemetry::trace::SpanId;
 use opentelemetry::trace::SpanKind;
 use opentelemetry::trace::TraceId;
 use opentelemetry::trace::TracerProvider;
 use opentelemetry_sdk::trace::InMemorySpanExporter;
 use opentelemetry_sdk::trace::SdkTracerProvider;
-use opentelemetry_sdk::trace::SpanData;
-use std::collections::HashSet;
-use support::RADARR_WEBHOOK_PASSWORD;
-use support::TestDatabase;
-use support::TestServer;
-use support::eventually;
-use support::fixture;
+use test_fixtures::TestDatabase;
 use tracing::level_filters::LevelFilter;
 use tracing::subscriber::DefaultGuard;
 use tracing_subscriber::layer::SubscriberExt;
@@ -22,83 +20,11 @@ const TRACE_ID: &str = "4bf92f3577b34da6a3ce929d0e0e4736";
 const PARENT_SPAN_ID: &str = "00f067aa0ba902b7";
 
 #[tokio::test]
-async fn readiness_with_a_traceparent_exports_an_http_span_with_a_child_database_span() {
-    let exporter = InMemorySpanExporter::default();
-    let _tracing = trace_into(&exporter);
-    let database = TestDatabase::create().await;
-    let server = TestServer::start(database.url()).await;
-    let reconciles = startup_reconciles(&exporter).await;
-
-    server
-        .get_with_traceparent(
-            "/actuator/health/readiness/v1",
-            &format!("00-{TRACE_ID}-{PARENT_SPAN_ID}-01"),
-        )
-        .await;
-
-    let spans = spans_outside(&exporter, &reconciles);
-    let http = spans
-        .iter()
-        .find(|x| x.span_kind == SpanKind::Server)
-        .expect("an HTTP server span");
-    assert_eq!(http.name, "GET /actuator/health/readiness/v1");
-    assert_eq!(
-        http.span_context.trace_id(),
-        TraceId::from_hex(TRACE_ID).unwrap()
-    );
-    assert_eq!(
-        http.parent_span_id,
-        SpanId::from_hex(PARENT_SPAN_ID).unwrap()
-    );
-    let db = spans
-        .iter()
-        .find(|x| x.span_kind == SpanKind::Client)
-        .expect("a database client span");
-    assert_eq!(db.parent_span_id, http.span_context.span_id());
-    assert!(
-        db.attributes
-            .contains(&KeyValue::new("db.system.name", "postgresql"))
-    );
-    drop(server);
-    database.drop().await;
-}
-
-#[tokio::test]
-async fn liveness_probe_exports_no_span() {
-    let exporter = InMemorySpanExporter::default();
-    let _tracing = trace_into(&exporter);
-    let database = TestDatabase::create().await;
-    let server = TestServer::start(database.url()).await;
-    let reconciles = startup_reconciles(&exporter).await;
-
-    server.get("/actuator/health/liveness/v1").await;
-
-    assert!(spans_outside(&exporter, &reconciles).is_empty());
-    drop(server);
-    database.drop().await;
-}
-
-#[tokio::test]
-async fn readiness_probe_without_a_traceparent_exports_no_span() {
-    let exporter = InMemorySpanExporter::default();
-    let _tracing = trace_into(&exporter);
-    let database = TestDatabase::create().await;
-    let server = TestServer::start(database.url()).await;
-    let reconciles = startup_reconciles(&exporter).await;
-
-    server.get("/actuator/health/readiness/v1").await;
-
-    assert!(spans_outside(&exporter, &reconciles).is_empty());
-    drop(server);
-    database.drop().await;
-}
-
-#[tokio::test]
 async fn the_inbox_worker_links_its_span_to_the_webhook_request() {
     let exporter = InMemorySpanExporter::default();
     let _tracing = trace_into(&exporter);
     let database = TestDatabase::create().await;
-    let server = TestServer::start(database.url()).await;
+    let server = LibraryServer::start(database.url()).await;
 
     reqwest::Client::new()
         .post(format!("{}/webhooks/radarr/v1", server.base_url()))
@@ -147,34 +73,11 @@ async fn the_inbox_worker_links_its_span_to_the_webhook_request() {
     database.drop().await;
 }
 
-async fn startup_reconciles(exporter: &InMemorySpanExporter) -> HashSet<TraceId> {
-    eventually(async || {
-        let traces = exporter
-            .get_finished_spans()
-            .unwrap()
-            .into_iter()
-            .filter(|x| x.name.starts_with("reconcile "))
-            .map(|x| x.span_context.trace_id())
-            .collect::<HashSet<_>>();
-        (traces.len() == 2).then_some(traces)
-    })
-    .await
-}
-
-fn spans_outside(exporter: &InMemorySpanExporter, traces: &HashSet<TraceId>) -> Vec<SpanData> {
-    exporter
-        .get_finished_spans()
-        .unwrap()
-        .into_iter()
-        .filter(|x| !traces.contains(&x.span_context.trace_id()))
-        .collect()
-}
-
 fn trace_into(exporter: &InMemorySpanExporter) -> DefaultGuard {
     let provider = SdkTracerProvider::builder()
         .with_simple_exporter(exporter.clone())
         .build();
-    tracing::subscriber::set_default(
+    test_fixtures::set_default_subscriber(
         tracing_subscriber::registry()
             .with(LevelFilter::INFO)
             .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("selfless"))),

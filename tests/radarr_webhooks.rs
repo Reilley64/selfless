@@ -1,17 +1,18 @@
-mod support;
+#[path = "../test/library.rs"]
+mod library_test;
 
+use library_test::LibraryServer;
+use library_test::fixture;
+use library_test::selfless_test::RADARR_WEBHOOK_PASSWORD;
 use reqwest::Method;
 use reqwest::StatusCode;
 use std::process::Command;
-use support::RADARR_WEBHOOK_PASSWORD;
-use support::TestDatabase;
-use support::TestServer;
-use support::fixture;
+use test_fixtures::TestDatabase;
 
 #[tokio::test]
 async fn an_accepted_test_webhook_is_the_last_radarr_webhook_in_the_sync_status() {
     let database = TestDatabase::create().await;
-    let server = TestServer::start(database.url()).await;
+    let server = LibraryServer::start(database.url()).await;
 
     let status = server
         .send_radarr_webhook(
@@ -32,7 +33,7 @@ async fn an_accepted_test_webhook_is_the_last_radarr_webhook_in_the_sync_status(
 #[tokio::test]
 async fn a_wrong_or_missing_password_is_rejected_and_counted_in_the_sync_status() {
     let database = TestDatabase::create().await;
-    let server = TestServer::start(database.url()).await;
+    let server = LibraryServer::start(database.url()).await;
     let body = fixture("radarr/webhooks/test.json");
 
     let wrong = server
@@ -52,7 +53,7 @@ async fn a_wrong_or_missing_password_is_rejected_and_counted_in_the_sync_status(
 #[tokio::test]
 async fn post_and_put_accept_the_right_password_with_any_username() {
     let database = TestDatabase::create().await;
-    let server = TestServer::start(database.url()).await;
+    let server = LibraryServer::start(database.url()).await;
     let body = fixture("radarr/webhooks/test.json");
 
     let post = server

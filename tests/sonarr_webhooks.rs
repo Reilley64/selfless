@@ -1,19 +1,20 @@
-mod support;
+#[path = "../test/library.rs"]
+mod library_test;
 
+use library_test::LibraryServer;
+use library_test::fixture;
+use library_test::selfless_test::RADARR_WEBHOOK_PASSWORD;
+use library_test::selfless_test::SONARR_API_KEY;
+use library_test::selfless_test::SONARR_WEBHOOK_PASSWORD;
 use reqwest::Method;
 use reqwest::StatusCode;
 use std::process::Command;
-use support::RADARR_WEBHOOK_PASSWORD;
-use support::SONARR_API_KEY;
-use support::SONARR_WEBHOOK_PASSWORD;
-use support::TestDatabase;
-use support::TestServer;
-use support::fixture;
+use test_fixtures::TestDatabase;
 
 #[tokio::test]
 async fn an_accepted_test_webhook_is_the_last_sonarr_webhook_in_the_sync_status() {
     let database = TestDatabase::create().await;
-    let server = TestServer::start(database.url()).await;
+    let server = LibraryServer::start(database.url()).await;
 
     let status = server
         .send_sonarr_webhook(
@@ -35,7 +36,7 @@ async fn an_accepted_test_webhook_is_the_last_sonarr_webhook_in_the_sync_status(
 #[tokio::test]
 async fn a_wrong_or_missing_sonarr_password_is_rejected_and_counted_in_the_sync_status() {
     let database = TestDatabase::create().await;
-    let server = TestServer::start(database.url()).await;
+    let server = LibraryServer::start(database.url()).await;
     let body = fixture("sonarr/webhooks/test.json");
 
     let wrong = server
@@ -56,7 +57,7 @@ async fn a_wrong_or_missing_sonarr_password_is_rejected_and_counted_in_the_sync_
 #[tokio::test]
 async fn the_radarr_password_does_not_open_the_sonarr_endpoint() {
     let database = TestDatabase::create().await;
-    let server = TestServer::start(database.url()).await;
+    let server = LibraryServer::start(database.url()).await;
 
     let status = server
         .send_sonarr_webhook(

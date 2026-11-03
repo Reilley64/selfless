@@ -1,5 +1,13 @@
-mod support;
+#[path = "../test/library.rs"]
+mod library_test;
 
+use library_test::LibraryServer;
+use library_test::MediaFolder;
+use library_test::StubSonarr;
+use library_test::eventually;
+use library_test::fixture;
+use library_test::selfless_test::RADARR_WEBHOOK_PASSWORD;
+use library_test::selfless_test::SONARR_WEBHOOK_PASSWORD;
 use opentelemetry::KeyValue;
 use opentelemetry::global;
 use opentelemetry_sdk::metrics::InMemoryMetricExporter;
@@ -8,14 +16,7 @@ use opentelemetry_sdk::metrics::data::AggregatedMetrics;
 use opentelemetry_sdk::metrics::data::MetricData;
 use reqwest::Method;
 use reqwest::StatusCode;
-use support::MediaFolder;
-use support::RADARR_WEBHOOK_PASSWORD;
-use support::SONARR_WEBHOOK_PASSWORD;
-use support::StubSonarr;
-use support::TestDatabase;
-use support::TestServer;
-use support::eventually;
-use support::fixture;
+use test_fixtures::TestDatabase;
 
 const IGNORED_EVENTS: [(&str, &str); 6] = [
     ("Test", "test"),
@@ -36,7 +37,7 @@ async fn deliveries_are_counted_as_stored_rejected_processed_and_ignored_by_sour
     global::set_meter_provider(provider.clone());
     let database = TestDatabase::create().await;
     let sonarr = StubSonarr::start().await;
-    let server = TestServer::start_with_sonarr(database.url(), &sonarr).await;
+    let server = LibraryServer::start_with_sonarr(database.url(), &sonarr).await;
 
     for (_, name) in IGNORED_EVENTS {
         let status = server

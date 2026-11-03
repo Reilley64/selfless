@@ -36,7 +36,13 @@ export default {
       transformGroup: "css",
       transforms: ["name/tailwind"],
       buildPath: "theme/",
-      files: [{ destination: "theme.css", format: "css/variables", options: { selector: "@theme" } }],
+      files: [
+        {
+          destination: "theme.css",
+          format: "css/variables",
+          options: { selector: "@theme" },
+        },
+      ],
     },
     fonts: {
       transforms: ["name/tailwind", "fontFamily/first"],

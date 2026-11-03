@@ -28,6 +28,7 @@ A work item is **open** while its state group is `backlog`, `unstarted` or `star
 ## Conventions
 
 - **Create an issue**: `workitem create` with `project_id`, `name` and `description_html`. Descriptions and comments are HTML, so convert markdown before sending it.
+- **No whitespace between HTML tags**: send `description_html` and `comment_html` with no newline next to a block tag such as `<p>`, `<li>`, `<ul>` or `<h2>`; strip what a markdown converter adds. Plane's editor turns each of those newlines into an empty paragraph or list item the first time the work item is opened.
 - **Read an issue**: `workitem retrieve_by_identifier` with `workitem_identifier: "SELFLESS-<n>"`. Read its comments with `workitem_comment list`.
 - **List issues**: `workitem list` with `project_id` and a PQL filter, for example `stateGroup IN openStates() AND label = "<label id>"`. Pass `fields` (such as `id,name,parent,assignees,labels,sequence_id,state`) to keep the result small. Call `get_pql_reference` for the syntax. PQL cannot filter on `parent`, so filter children in code.
 - **Make an issue a sub-issue of a parent**: pass `parent: <parent id>` to `workitem create`, or set it later with `workitem update`.

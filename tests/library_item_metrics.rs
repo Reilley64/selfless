@@ -1,7 +1,13 @@
-mod support;
+#[path = "../test/library.rs"]
+mod library_test;
 
 use domain::Source;
 use jiff::SignedDuration;
+use library_test::LibraryServer;
+use library_test::MediaFolder;
+use library_test::StubRadarr;
+use library_test::eventually;
+use library_test::selfless_test::settings;
 use opentelemetry::KeyValue;
 use opentelemetry::global;
 use opentelemetry_sdk::metrics::InMemoryMetricExporter;
@@ -10,13 +16,8 @@ use opentelemetry_sdk::metrics::data::AggregatedMetrics;
 use opentelemetry_sdk::metrics::data::MetricData;
 use reqwest::StatusCode;
 use serde_json::Value;
-use support::FakeClock;
-use support::MediaFolder;
-use support::StubRadarr;
-use support::TestDatabase;
-use support::TestServer;
-use support::eventually;
-use support::settings;
+use test_fixtures::FakeClock;
+use test_fixtures::TestDatabase;
 
 async fn radarr_lists(radarr: &StubRadarr, media: &MediaFolder, ids: &[i64]) -> Vec<String> {
     let movies = serde_json::from_str::<Vec<Value>>(&media.fixture("radarr/api/movies.json"))
@@ -49,7 +50,7 @@ async fn reconciles_count_movies_added_changed_and_removed_by_source() {
     }
     let mut settings = settings(database.url());
     settings.radarr.url = Some(radarr.url());
-    let server = TestServer::start_with(settings, FakeClock::new()).await;
+    let server = LibraryServer::start_with(settings, FakeClock::new()).await;
     let reconciled = async || {
         let started_at = server.clock.now();
         eventually(async || {

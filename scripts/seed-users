@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+server=${1:-http://localhost:8080}
+
+seed() {
+  local name=$1 password=$2 idempotency_key=$3
+  local handle
+  handle=$(tr '[:upper:]' '[:lower:]' <<<"$name")
+  local email="$handle@example.com" token="seed-$handle"
+
+  psql "$DATABASE__URL" --quiet --no-psqlrc --set ON_ERROR_STOP=1 \
+    --set email="$email" --set token="$token" >/dev/null <<'SQL'
+INSERT INTO invites (id, email, token_hash, admin_id, email_status, email_status_sent_at, expires_at)
+SELECT gen_random_uuid(), :'email', sha256(convert_to(:'token', 'UTF8')), gen_random_uuid(), 'sent', now(), now() + interval '7 days'
+WHERE NOT EXISTS (SELECT FROM users WHERE email = :'email')
+ON CONFLICT (email) DO UPDATE SET
+  token_hash = excluded.token_hash,
+  email_status = excluded.email_status,
+  email_status_sent_at = excluded.email_status_sent_at,
+  expires_at = excluded.expires_at;
+SQL
+
+  curl --fail-with-body --silent --show-error --output /dev/null \
+    --header "Content-Type: application/json" \
+    --header "Idempotency-Key: $idempotency_key" \
+    --data "{\"token\":\"$token\",\"name\":\"$name\",\"password\":\"$password\"}" \
+    "$server/api/invites/accept/v1"
+  echo "$name: $password"
+}
+
+seed Noor noor-password 6f1c2a3e-0000-4000-8000-000000000001
+seed Theo theo-password 6f1c2a3e-0000-4000-8000-000000000002

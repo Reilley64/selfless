@@ -1,82 +1,23 @@
-mod support;
+#[path = "../test/selfless.rs"]
+mod selfless_test;
 
 use reqwest::StatusCode;
 use serde_json::json;
-use support::Proxy;
-use support::TestDatabase;
-use support::TestServer;
-
-#[tokio::test]
-async fn health_is_up_when_postgresql_is_reachable() {
-    let database = TestDatabase::create().await;
-    let server = TestServer::start(database.url()).await;
-
-    let (status, body) = server.get("/actuator/health/v1").await;
-
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(
-        body,
-        json!({
-            "status": "UP",
-            "components": {
-                "db": { "status": "UP" },
-                "livenessState": { "status": "UP" },
-                "readinessState": { "status": "UP" },
-            },
-        })
-    );
-    drop(server);
-    database.drop().await;
-}
-
-#[tokio::test]
-async fn liveness_is_up_when_postgresql_is_reachable() {
-    let database = TestDatabase::create().await;
-    let server = TestServer::start(database.url()).await;
-
-    let (status, body) = server.get("/actuator/health/liveness/v1").await;
-
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(
-        body,
-        json!({
-            "status": "UP",
-            "components": {
-                "livenessState": { "status": "UP" },
-            },
-        })
-    );
-    drop(server);
-    database.drop().await;
-}
-
-#[tokio::test]
-async fn readiness_is_up_when_postgresql_is_reachable() {
-    let database = TestDatabase::create().await;
-    let server = TestServer::start(database.url()).await;
-
-    let (status, body) = server.get("/actuator/health/readiness/v1").await;
-
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(
-        body,
-        json!({
-            "status": "UP",
-            "components": {
-                "db": { "status": "UP" },
-                "readinessState": { "status": "UP" },
-            },
-        })
-    );
-    drop(server);
-    database.drop().await;
-}
+use test_fixtures::FakeClock;
+use test_fixtures::FakeMailer;
+use test_fixtures::Proxy;
+use test_fixtures::TestDatabase;
 
 #[tokio::test]
 async fn readiness_is_down_and_liveness_stays_up_when_postgresql_is_unreachable() {
     let database = TestDatabase::create().await;
     let proxy = Proxy::start(&database.url()).await;
-    let server = TestServer::start(proxy.url(&database.url())).await;
+    let server = selfless_test::start(
+        selfless_test::settings(proxy.url(&database.url())),
+        &FakeClock::new(),
+        &FakeMailer::default(),
+    )
+    .await;
 
     proxy.stop();
     let (readiness_status, readiness) = server.get("/actuator/health/readiness/v1").await;
@@ -110,7 +51,12 @@ async fn readiness_is_down_and_liveness_stays_up_when_postgresql_is_unreachable(
 #[tokio::test]
 async fn readiness_is_out_of_service_after_shutdown_starts() {
     let database = TestDatabase::create().await;
-    let server = TestServer::start(database.url()).await;
+    let server = selfless_test::start(
+        selfless_test::settings(database.url()),
+        &FakeClock::new(),
+        &FakeMailer::default(),
+    )
+    .await;
 
     server.shut_down();
     let (status, body) = server.get("/actuator/health/readiness/v1").await;

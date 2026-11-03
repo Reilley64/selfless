@@ -1,4 +1,5 @@
-mod support;
+#[path = "../test/library.rs"]
+mod library_test;
 
 use application::list_episodes::Episode;
 use application::list_movies::Actor;
@@ -10,14 +11,14 @@ use domain::SyncProblemKind;
 use jiff::SignedDuration;
 use jiff::Timestamp;
 use jiff::civil::date;
+use library_test::LibraryServer;
+use library_test::MediaFolder;
+use library_test::StubSonarr;
+use library_test::eventually;
+use library_test::fixture;
 use serde_json::Value;
 use std::time::Duration;
-use support::MediaFolder;
-use support::StubSonarr;
-use support::TestDatabase;
-use support::TestServer;
-use support::eventually;
-use support::fixture;
+use test_fixtures::TestDatabase;
 use uuid::Uuid;
 
 struct SonarrSeries {
@@ -51,7 +52,7 @@ const IMAGE_MODIFIED_AT: &str = "2026-10-28T12:30:00Z";
 
 struct Fixture {
     database: TestDatabase,
-    server: TestServer,
+    server: LibraryServer,
     sonarr: StubSonarr,
     media: MediaFolder,
 }
@@ -60,7 +61,7 @@ impl Fixture {
     async fn start() -> Self {
         let database = TestDatabase::create().await;
         let sonarr = StubSonarr::start().await;
-        let server = TestServer::start_with_sonarr(database.url(), &sonarr).await;
+        let server = LibraryServer::start_with_sonarr(database.url(), &sonarr).await;
         eventually(async || {
             application::sync_status::call(&server.state)
                 .await
@@ -589,7 +590,7 @@ async fn a_reconcile_picks_up_changed_nfos_and_images() {
 
     fixture.media.write(
         &format!("{ANDOR_FOLDER}/tvshow.nfo"),
-        &support::fixture("sonarr/nfo/tvshow.nfo")
+        &library_test::fixture("sonarr/nfo/tvshow.nfo")
             .replace("<status>Ended</status>", "<status>Continuing</status>"),
     );
     fixture.media.set_modified(
@@ -598,7 +599,7 @@ async fn a_reconcile_picks_up_changed_nfos_and_images() {
     );
     fixture.media.write(
         &format!("{KASSA}.nfo"),
-        &support::fixture("sonarr/nfo/episode.nfo")
+        &library_test::fixture("sonarr/nfo/episode.nfo")
             .replace("<rating>7.5</rating>", "<rating>7.7</rating>"),
     );
     fixture

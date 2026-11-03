@@ -1,4 +1,3 @@
-use crate::DbContext;
 use crate::MediaFolder;
 use crate::SourceHealth;
 use crate::attributes::SELFLESS_WEBHOOK_EVENT_TYPE;
@@ -7,6 +6,8 @@ use crate::attributes::SELFLESS_WEBHOOK_SOURCE;
 use crate::ports::Clock;
 use crate::ports::GetRadarrMovie;
 use crate::ports::GetSonarrShow;
+use crate::ports::persistence::DbContext;
+use crate::ports::persistence::DbScope;
 use crate::sync_movie;
 use crate::sync_show;
 use crate::unsampled;

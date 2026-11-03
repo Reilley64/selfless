@@ -1,6 +1,7 @@
-use crate::DbContext;
 use crate::Reconciles;
 use crate::SourceHealth;
+use crate::ports::persistence::DbContext;
+use crate::ports::persistence::DbScope;
 use domain::Episode;
 use domain::HeldRemoval as StoredHeldRemoval;
 use domain::InboxRow;

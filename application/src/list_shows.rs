@@ -1,9 +1,10 @@
-use crate::DbContext;
 use crate::list_movies::Actor;
 use crate::list_movies::Artwork;
 use crate::list_movies::actors;
 use crate::list_movies::artwork;
 use crate::list_movies::sort_key;
+use crate::ports::persistence::DbContext;
+use crate::ports::persistence::DbScope;
 use domain::Episode;
 use domain::Season;
 use jiff::civil::Date;

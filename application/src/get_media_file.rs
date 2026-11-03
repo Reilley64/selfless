@@ -1,8 +1,9 @@
-use crate::DbContext;
 use crate::ports::AudioStream;
 use crate::ports::FoundSubtitleFile;
 use crate::ports::SubtitleStream;
 use crate::ports::VideoStream;
+use crate::ports::persistence::DbContext;
+use crate::ports::persistence::DbScope;
 use std::time::Duration;
 use uuid::Uuid;
 

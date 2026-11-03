@@ -1,23 +1,26 @@
 use api::Availability;
 use application::BuildInfo;
-use application::DbContext;
 use application::InboxWakeup;
 use application::Reconciles;
 use application::SourceHealth;
 use application::WebhookPasswords;
+use application::admins::bootstrap_first_admin::MissingFirstAdmin;
 use application::ports::Clock;
 use application::ports::ProbeMediaFile;
+use application::ports::SendEmail;
+use application::ports::persistence::DbContext;
+use domain::Password;
 use infrastructure::AppState;
-use infrastructure::media_folder;
-use infrastructure::persistence;
-use infrastructure::telemetry;
 use ohno::AppError;
+use ohno::ErrorExt;
+use ohno::app_err;
 use settings::AppSettings;
 use std::future::Future;
 use std::io;
 use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::net::TcpListener;
+use tokio_util::sync::CancellationToken;
 use topcoat::router::Router;
 
 const DRAIN_PERIOD: Duration = Duration::from_secs(5);
@@ -33,6 +36,7 @@ pub struct Server {
 pub async fn start(
     settings: AppSettings,
     clock: Clock,
+    send_email: SendEmail,
     probe_media_file: ProbeMediaFile,
 ) -> Result<Server, AppError> {
     let get_radarr_movie = settings.radarr.get_movie()?;
@@ -49,6 +53,7 @@ pub async fn start(
     let db = persistence::connect(&settings.database).await?;
     persistence::migrate(&db).await?;
     let state = AppState::builder()
+        .acquire_lock(|_| locking::acquire_lock())
         .build_info(|_| BuildInfo {
             name: env!("CARGO_PKG_NAME"),
             version: env!("CARGO_PKG_VERSION"),
@@ -69,9 +74,27 @@ pub async fn start(
         .list_sonarr_series(|_| list_sonarr_series.clone())
         .media_folder(|_| media_folder::media_folder(probe_media_file.clone()))
         .reconciles(|_| Reconciles::default())
+        .send_email(|_| send_email.clone())
         .source_health(|_| SourceHealth::default())
         .webhook_passwords(|_| webhook_passwords.clone())
         .build();
+    let first_admin = match (
+        settings.admin.username.filter(|x| !x.is_empty()),
+        settings.admin.password.map(Password::new),
+    ) {
+        (Some(name), Some(Ok(password))) => Some((name, password)),
+        _ => None,
+    };
+    application::admins::bootstrap_first_admin::call(&state, first_admin)
+    .await
+    .map_err(|error| {
+        if error.find_source::<MissingFirstAdmin>().is_some() {
+            app_err!("no admin exists, so set ADMIN__USERNAME and ADMIN__PASSWORD to create the first one")
+        } else {
+            AppError::new(error)
+        }
+    })?;
+    workers::start(&state).await?;
     let availability = Availability::default();
     let router = api::router(
         webhooks::register(admin::register(Router::builder())),
@@ -100,24 +123,26 @@ impl Server {
 
     pub async fn serve(self, shutdown: impl Future<Output = ()>) -> Result<(), AppError> {
         let availability = self.availability;
-        let inbox = tokio::spawn(workers::inbox(self.state.clone()));
-        let inbox_cleanup = tokio::spawn(workers::inbox_cleanup(self.state.clone()));
-        let reconciles = tokio::spawn(workers::reconcile(self.state, self.reconcile_interval));
+        let stop_workers = CancellationToken::new();
+        let workers = tokio::spawn(workers::serve(
+            self.state,
+            self.reconcile_interval,
+            stop_workers.clone(),
+        ));
         availability.accept_traffic();
         tracing::info!(
             server.port = self.listener.local_addr()?.port(),
             "accepting traffic"
         );
-        let served = topcoat::serve_until(self.listener, self.router, async {
+        topcoat::serve_until(self.listener, self.router, async {
             shutdown.await;
             tracing::info!("shutdown started, refusing traffic");
+            stop_workers.cancel();
             availability.refuse_traffic();
             tokio::time::sleep(DRAIN_PERIOD).await;
         })
-        .await;
-        inbox.abort();
-        inbox_cleanup.abort();
-        reconciles.abort();
-        Ok(served?)
+        .await?;
+        workers.await?;
+        Ok(())
     }
 }

@@ -1,5 +1,4 @@
 use crate::CONCURRENT_PROBES;
-use crate::DbContext;
 use crate::MediaFolder;
 use crate::Reconciles;
 use crate::SourceHealth;
@@ -13,6 +12,8 @@ use crate::ports::GetSonarrEpisodes;
 use crate::ports::ListRadarrMovies;
 use crate::ports::ListSonarrSeries;
 use crate::ports::SonarrShow;
+use crate::ports::persistence::DbContext;
+use crate::ports::persistence::DbScope;
 use crate::process_inbox_row::RadarrEvent;
 use crate::process_inbox_row::SonarrEvent;
 use crate::source_states;

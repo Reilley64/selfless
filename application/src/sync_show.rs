@@ -1,4 +1,3 @@
-use crate::DbContext;
 use crate::MediaFolder;
 use crate::SourceHealth;
 use crate::library_items;
@@ -17,6 +16,8 @@ use crate::ports::ShowNfo;
 use crate::ports::SonarrEpisode;
 use crate::ports::SonarrSeries;
 use crate::ports::SonarrShow;
+use crate::ports::persistence::DbContext;
+use crate::ports::persistence::DbScope;
 use domain::ArtworkKind;
 use domain::Episode;
 use domain::MediaFile;

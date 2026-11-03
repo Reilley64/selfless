@@ -1,0 +1,4 @@
+{% for span in ctx.spans %}
+{% set name = span.id | replace("span.", "") %}
+pub const {{ name | screaming_snake_case }}: &str = "{{ name }}";
+{% endfor %}

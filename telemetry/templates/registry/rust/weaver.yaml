@@ -8,3 +8,6 @@ templates:
   - template: metrics.rs.j2
     filter: '{metrics: [.groups[] | select(.type == "metric")] | sort_by(.metric_name)}'
     application_mode: single
+  - template: spans.rs.j2
+    filter: '{spans: [.groups[] | select(.type == "span")] | sort_by(.id)}'
+    application_mode: single

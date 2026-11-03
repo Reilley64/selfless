@@ -1,4 +1,3 @@
-use crate::DbContext;
 use crate::MediaFolder;
 use crate::SourceHealth;
 use crate::library_items;
@@ -12,6 +11,8 @@ use crate::ports::GetRadarrMovie;
 use crate::ports::MovieFolder;
 use crate::ports::MovieNfo;
 use crate::ports::RadarrMovie;
+use crate::ports::persistence::DbContext;
+use crate::ports::persistence::DbScope;
 use domain::MediaFile;
 use domain::Movie;
 use domain::Source;

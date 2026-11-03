@@ -1,3 +1,9 @@
-export { FocusGuide } from "./FocusGuide";
+export { clientId } from "./clientId";
+export { FocusGuide, type FocusGuideInstance } from "./FocusGuide";
+export { initials } from "./initials";
+export { forgetInviteIdempotencyKey, inviteIdempotencyKey } from "./inviteIdempotencyKey";
+export { serverUnreachable } from "./messages";
+export { randomUuid } from "./randomUuid";
 export { ServerInfo } from "./ServerInfo";
+export { type PickerUser, type SessionStorage, startTvSession, startWebSession } from "./session";
 export { startTelemetry } from "./telemetry/startTelemetry";

@@ -1,4 +1,5 @@
-mod support;
+#[path = "../test/library.rs"]
+mod library_test;
 
 use application::get_media_file::MediaFileDetails;
 use application::ports::AudioStream;
@@ -10,18 +11,18 @@ use application::ports::VideoStream;
 use application::sync_status::SyncStatus;
 use domain::Source;
 use jiff::SignedDuration;
+use library_test::FakeProber;
+use library_test::LibraryServer;
+use library_test::MediaFolder;
+use library_test::StubRadarr;
+use library_test::StubSonarr;
+use library_test::eventually;
+use library_test::selfless_test::settings;
 use reqwest::StatusCode;
 use serde_json::Value;
 use std::time::Duration;
-use support::FakeClock;
-use support::FakeProber;
-use support::MediaFolder;
-use support::StubRadarr;
-use support::StubSonarr;
-use support::TestDatabase;
-use support::TestServer;
-use support::eventually;
-use support::settings;
+use test_fixtures::FakeClock;
+use test_fixtures::TestDatabase;
 
 const ALL_MOVIES: [i64; 4] = [42, 43, 44, 45];
 const ARRIVAL: i64 = 42;
@@ -36,7 +37,7 @@ struct Setup {
 
 struct Fixture {
     setup: Setup,
-    server: TestServer,
+    server: LibraryServer,
 }
 
 impl Setup {
@@ -102,7 +103,7 @@ impl Setup {
         settings.radarr.url = Some(self.radarr.url());
         settings.sonarr.url = Some(self.sonarr.url());
         let server =
-            TestServer::start_with_prober(settings, FakeClock::new(), self.prober.clone()).await;
+            LibraryServer::start_with_prober(settings, FakeClock::new(), self.prober.clone()).await;
         let fixture = Fixture {
             setup: self,
             server,
@@ -302,7 +303,7 @@ async fn at_most_four_files_are_probed_at_a_time() {
     let mut settings = settings(setup.database.url());
     settings.radarr.url = Some(setup.radarr.url());
     settings.sonarr.url = Some(setup.sonarr.url());
-    let server = TestServer::start_with_prober(settings, FakeClock::new(), prober.clone()).await;
+    let server = LibraryServer::start_with_prober(settings, FakeClock::new(), prober.clone()).await;
 
     eventually(async || (prober.running() == 4).then_some(())).await;
     tokio::time::sleep(Duration::from_millis(300)).await;
