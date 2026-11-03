@@ -1,18 +1,17 @@
 use crate::Season;
 use crate::ShowEpisode;
 use crate::last_watched_episode;
+use crate::next_episode;
 
 pub fn next_up<'a>(episodes: impl IntoIterator<Item = ShowEpisode<'a>>) -> Option<ShowEpisode<'a>> {
-    let numbered: Vec<_> = episodes
-        .into_iter()
-        .filter(|x| !Season::is_specials(x.season.number))
-        .collect();
-    let anchor = last_watched_episode(numbered.iter().copied())?;
-    let anchor = (anchor.season.number, anchor.episode.number);
-    numbered
-        .into_iter()
-        .filter(|x| x.episode.in_library && (x.season.number, x.episode.number) > anchor)
-        .min_by_key(|x| (x.season.number, x.episode.number))
+    let episodes: Vec<_> = episodes.into_iter().collect();
+    let anchor = last_watched_episode(
+        episodes
+            .iter()
+            .copied()
+            .filter(|x| !Season::is_specials(x.season.number)),
+    )?;
+    next_episode(episodes, [anchor])
 }
 
 #[cfg(test)]

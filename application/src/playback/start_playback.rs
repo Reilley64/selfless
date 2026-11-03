@@ -7,6 +7,7 @@ pub use error::Error;
 pub use output::AudioTrack;
 pub use output::Episode;
 pub use output::Movie;
+pub use output::NextEpisode;
 pub use output::Output;
 pub use output::Playback;
 pub use output::SubtitleTrack;
@@ -14,6 +15,7 @@ pub use output::SubtitleTrack;
 use crate::attributes::SELFLESS_AUTH_CLIENT_KIND;
 use crate::attributes::SELFLESS_PLAYBACK_METHOD;
 use crate::attributes::SELFLESS_PLAYBACK_REASON_KINDS;
+use crate::browsing::Image;
 use crate::metrics::SELFLESS_PLAYBACK_DECISIONS;
 use crate::playback::resource;
 use crate::ports;
@@ -24,6 +26,8 @@ use crate::ports::persistence::DbScope;
 use crate::telemetry::attribute_values::client_kind;
 use crate::telemetry::attribute_values::play_method;
 use crate::telemetry::attribute_values::reason_kinds;
+use crate::url_signer::UrlSigner;
+use domain::Artwork;
 use domain::AudioStream;
 use domain::CapabilityProfile;
 use domain::ClientKind;
@@ -31,7 +35,10 @@ use domain::KeyframeIndex;
 use domain::MediaFile;
 use domain::PlayMethod;
 use domain::PlayReason;
+use domain::PlaybackSettings;
+use domain::ShowEpisode;
 use domain::usable_keyframe_index;
+use jiff::Timestamp;
 use opentelemetry::KeyValue;
 use opentelemetry::global;
 use opentelemetry::metrics::Counter;
@@ -122,14 +129,25 @@ pub async fn call(
         .get()
         .iter()
         .min_by_key(|x| x.index);
-    let settings = db_context
-        .playback_settings()
-        .find(user_id)
+    PlaybackSettings::upsert_by_user_id(user_id)
+        .or_ignore()
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?;
-    let (audio_language, subtitle_language) =
-        settings.map_or((None, None), |x| (x.audio_language, x.subtitle_language));
+    let settings = db_context
+        .playback_settings()
+        .filter(PlaybackSettings::fields().user_id().eq(user_id))
+        .one()
+        .exec(db_context.executor_mut())
+        .await
+        .map_err(Error::caused_by)?;
+    let PlaybackSettings {
+        audio_language,
+        subtitle_language,
+        autoplay_next_episode,
+        ask_if_still_watching,
+        ..
+    } = settings;
     let audio_streams = media_file.audio_streams.get();
     let default_audio = AudioStream::selected_by_default(audio_streams, audio_language.as_deref());
     let audio = audio_track_id
@@ -227,6 +245,10 @@ pub async fn call(
         }
         Some(_) => PlayMethod::Transcode,
     };
+    let now = clock.call();
+    let next_episode = next_episode(&mut db_context, &episodes, &url_signer, now)
+        .await
+        .map_err(Error::caused_by)?;
     let episodes = player_episodes(&mut db_context, episodes)
         .await
         .map_err(Error::caused_by)?;
@@ -234,7 +256,6 @@ pub async fn call(
     let mut subtitle_files = media_file.subtitle_files.into_inner();
     subtitle_streams.sort_by_key(|x| x.index);
     subtitle_files.sort_by(|a, b| a.path.cmp(&b.path));
-    let now = clock.call();
     let mut transaction = db_context.transaction().await.map_err(Error::caused_by)?;
     let mut ended = Vec::new();
     for mut open in transaction
@@ -402,6 +423,9 @@ pub async fn call(
                 in_stream: hls,
             }))
             .collect(),
+        next_episode,
+        autoplay_next_episode,
+        ask_if_still_watching,
     })))
 }
 
@@ -485,4 +509,79 @@ async fn player_episodes(
         .collect::<Vec<_>>();
     episodes.sort_by_key(|x| (x.season_number, x.episode_number));
     Ok(episodes)
+}
+
+async fn next_episode(
+    db_context: &mut impl DbScope,
+    playing: &[domain::Episode],
+    url_signer: &UrlSigner,
+    now: Timestamp,
+) -> toasty::Result<Option<NextEpisode>> {
+    let Some(first) = playing.first() else {
+        return Ok(None);
+    };
+    let show_id = db_context
+        .seasons()
+        .filter(domain::Season::fields().id().eq(first.season_id))
+        .get(db_context.executor_mut())
+        .await?
+        .show_id;
+    let seasons: HashMap<Uuid, domain::Season> = db_context
+        .seasons()
+        .filter(domain::Season::fields().show_id().eq(show_id))
+        .exec(db_context.executor_mut())
+        .await?
+        .into_iter()
+        .map(|x| (x.id, x))
+        .collect();
+    let episodes = db_context
+        .episodes()
+        .filter(
+            domain::Episode::fields()
+                .season_id()
+                .in_list(seasons.keys().copied().collect::<Vec<_>>()),
+        )
+        .exec(db_context.executor_mut())
+        .await?;
+    fn show_episodes<'a>(
+        seasons: &'a HashMap<Uuid, domain::Season>,
+        episodes: &'a [domain::Episode],
+    ) -> impl Iterator<Item = ShowEpisode<'a>> {
+        episodes.iter().filter_map(|x| {
+            Some(ShowEpisode {
+                season: seasons.get(&x.season_id)?,
+                episode: x,
+                watch_state: None,
+            })
+        })
+    }
+    let Some(next) = domain::next_episode(
+        show_episodes(&seasons, &episodes),
+        show_episodes(&seasons, playing),
+    ) else {
+        return Ok(None);
+    };
+    let Some(media_file_id) = next.episode.media_file_id else {
+        return Ok(None);
+    };
+    let thumb = db_context
+        .artwork()
+        .filter(
+            Artwork::fields()
+                .episode_id()
+                .eq(next.episode.id)
+                .and(Artwork::fields().kind().is_thumb()),
+        )
+        .first()
+        .exec(db_context.executor_mut())
+        .await?
+        .map(|x| Image::new(&x, url_signer, now));
+    Ok(Some(NextEpisode {
+        id: next.episode.id,
+        media_file_id,
+        season_number: next.season.number,
+        episode_number: next.episode.number,
+        title: next.episode.title.clone(),
+        thumb,
+    }))
 }

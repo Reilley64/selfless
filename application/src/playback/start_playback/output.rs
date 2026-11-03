@@ -1,3 +1,4 @@
+use crate::browsing::Image;
 use domain::PlayMethod;
 use domain::PlayReason;
 use std::time::Duration;
@@ -24,6 +25,9 @@ pub struct Playback {
     pub subtitle_track_id: Option<Uuid>,
     pub audio_tracks: Vec<AudioTrack>,
     pub subtitle_tracks: Vec<SubtitleTrack>,
+    pub next_episode: Option<NextEpisode>,
+    pub autoplay_next_episode: bool,
+    pub ask_if_still_watching: bool,
 }
 
 #[derive(Debug)]
@@ -39,6 +43,16 @@ pub struct Episode {
     pub season_number: i64,
     pub episode_number: i64,
     pub title: String,
+}
+
+#[derive(Debug)]
+pub struct NextEpisode {
+    pub id: Uuid,
+    pub media_file_id: Uuid,
+    pub season_number: i64,
+    pub episode_number: i64,
+    pub title: String,
+    pub thumb: Option<Image>,
 }
 
 #[derive(Debug)]

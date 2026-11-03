@@ -763,7 +763,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Playback"
-              example: {"playbackId":"0190f3c4-d3e4-7f5a-8b6c-7d8e9f0a1b2c","method":"directPlay","reasons":[],"url":"/api/playbacks/0190f3c4-d3e4-7f5a-8b6c-7d8e9f0a1b2c/media/Jm2vX8kQ0rH3c1yF5bR7tVw9nL4pA6sD0eG2iK8uO1M/v1/file","duration":6981.0,"movie":{"id":"0190f3c4-5b6a-7c8d-9e0f-1a2b3c4d5e6f","title":"Arrival"},"episodes":[],"audioTrackId":"0190f3c4-e4f5-7a6b-8c7d-8e9f0a1b2c3d","subtitleTrackId":null,"audioTracks":[{"id":"0190f3c4-e4f5-7a6b-8c7d-8e9f0a1b2c3d","language":"eng","label":"Stereo","codec":"aac","channels":2,"default":true,"inStream":true}],"subtitleTracks":[]}
+              example: {"playbackId":"0190f3c4-d3e4-7f5a-8b6c-7d8e9f0a1b2c","method":"directPlay","reasons":[],"url":"/api/playbacks/0190f3c4-d3e4-7f5a-8b6c-7d8e9f0a1b2c/media/Jm2vX8kQ0rH3c1yF5bR7tVw9nL4pA6sD0eG2iK8uO1M/v1/file","duration":6981.0,"movie":{"id":"0190f3c4-5b6a-7c8d-9e0f-1a2b3c4d5e6f","title":"Arrival"},"episodes":[],"audioTrackId":"0190f3c4-e4f5-7a6b-8c7d-8e9f0a1b2c3d","subtitleTrackId":null,"audioTracks":[{"id":"0190f3c4-e4f5-7a6b-8c7d-8e9f0a1b2c3d","language":"eng","label":"Stereo","codec":"aac","channels":2,"default":true,"inStream":true}],"subtitleTracks":[],"nextEpisode":null,"autoplayNextEpisode":true,"askIfStillWatching":false}
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -2332,7 +2332,7 @@ components:
     Playback:
       description: A playback the server started, with what the player needs to play it.
       type: object
-      required: [playbackId, method, reasons, url, duration, movie, episodes, audioTrackId, subtitleTrackId, audioTracks, subtitleTracks]
+      required: [playbackId, method, reasons, url, duration, movie, episodes, audioTrackId, subtitleTrackId, audioTracks, subtitleTracks, nextEpisode, autoplayNextEpisode, askIfStillWatching]
       properties:
         playbackId:
           type: string
@@ -2390,6 +2390,20 @@ components:
           items:
             $ref: "#/components/schemas/PlaybackSubtitleTrack"
           examples: [[]]
+        nextEpisode:
+          description: For an episode, the first episode in the library after the last episode the media file holds, in season and episode order, carrying on into the next season and leaving out Specials. It is null for a movie, a special, or a show's last episode.
+          anyOf:
+            - $ref: "#/components/schemas/PlaybackNextEpisode"
+            - type: "null"
+          examples: [null]
+        autoplayNextEpisode:
+          description: The user's playback setting. When it is on, the Next episode button counts down and the next episode plays when the file ends.
+          type: boolean
+          examples: [true]
+        askIfStillWatching:
+          description: The user's playback setting for the "Are you still watching?" prompt.
+          type: boolean
+          examples: [false]
       additionalProperties: false
     PlayMethod:
       description: How the media file plays.
@@ -2446,6 +2460,37 @@ components:
         title:
           type: string
           examples: [Half Loop]
+      additionalProperties: false
+    PlaybackNextEpisode:
+      description: The episode the Next episode button plays.
+      type: object
+      required: [id, mediaFileId, seasonNumber, episodeNumber, title, thumb]
+      properties:
+        id:
+          type: string
+          format: uuid
+          examples: ["0190f3c4-ab1c-7d2e-8f3a-4b5c6d7e8f9b"]
+        mediaFileId:
+          description: The media file to start the next playback with.
+          type: string
+          format: uuid
+          examples: ["0190f3c4-c2d3-7e4f-8a5b-6c7d8e9f0a1c"]
+        seasonNumber:
+          type: integer
+          minimum: 1
+          examples: [1]
+        episodeNumber:
+          type: integer
+          examples: [4]
+        title:
+          type: string
+          examples: [The You You Are]
+        thumb:
+          description: The episode's thumb. A missing thumb is null.
+          anyOf:
+            - $ref: "#/components/schemas/Artwork"
+            - type: "null"
+          examples: [null]
       additionalProperties: false
     PlaybackAudioTrack:
       description: One audio track of a playback.

@@ -3,6 +3,7 @@ use crate::problem::NEEDS_TRANSCODE;
 use crate::problem::NOT_FOUND;
 use crate::problem::PLAYBACK_ENDED;
 use crate::problem::UNREADABLE_MEDIA_FILE;
+use crate::routes::api::image::ImageBody;
 use crate::user_auth::CurrentSession;
 use application::playback::get_hls_file;
 use application::playback::get_playback_file;
@@ -142,6 +143,20 @@ struct PlaybackBody {
     subtitle_track_id: Option<Uuid>,
     audio_tracks: Vec<AudioTrackBody>,
     subtitle_tracks: Vec<SubtitleTrackBody>,
+    next_episode: Option<NextEpisodeBody>,
+    autoplay_next_episode: bool,
+    ask_if_still_watching: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct NextEpisodeBody {
+    id: Uuid,
+    media_file_id: Uuid,
+    season_number: i64,
+    episode_number: i64,
+    title: String,
+    thumb: Option<ImageBody>,
 }
 
 #[derive(Serialize)]
@@ -298,6 +313,16 @@ impl From<start_playback::Playback> for PlaybackBody {
                     in_stream: x.in_stream,
                 })
                 .collect(),
+            next_episode: playback.next_episode.map(|x| NextEpisodeBody {
+                id: x.id,
+                media_file_id: x.media_file_id,
+                season_number: x.season_number,
+                episode_number: x.episode_number,
+                title: x.title,
+                thumb: x.thumb.map(ImageBody::from),
+            }),
+            autoplay_next_episode: playback.autoplay_next_episode,
+            ask_if_still_watching: playback.ask_if_still_watching,
         }
     }
 }
@@ -441,6 +466,7 @@ mod tests {
     use crate::test::signed_in_user;
     use application::ports::ReadKeyframes;
     use application::ports::persistence::DbScope;
+    use domain::ArtworkKind;
     use domain::AudioTranscode;
     use domain::AudioTranscodeCodec;
     use domain::ClientKind;
@@ -737,6 +763,9 @@ mod tests {
                     "text": true,
                     "inStream": false,
                 }],
+                "nextEpisode": null,
+                "autoplayNextEpisode": true,
+                "askIfStillWatching": false,
             })
         );
     }
@@ -794,6 +823,97 @@ mod tests {
                     "title": "In Perpetuity",
                 },
             ])
+        );
+    }
+
+    #[tokio::test]
+    async fn an_episode_playback_carries_the_next_episode_after_its_file_and_the_playback_settings()
+    {
+        let app = TestApp::new().await;
+        let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;
+        let (media_file_id, _file) = add_media_file(&app, "mp4", Some(MP4)).await;
+        let (next_media_file_id, _next_file) = add_media_file(&app, "mp4", Some(MP4)).await;
+        let show_id = add_show(&app, "Severance", &[1, 0, 2]).await;
+        let mut db_context = app.state.db_context.clone();
+        let seasons = db_context
+            .seasons()
+            .filter(Season::fields().show_id().eq(show_id))
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap();
+        let season = |number| seasons.iter().find(|x| x.number == number).unwrap().id;
+        for number in [2, 3] {
+            Episode::create()
+                .season_id(season(1))
+                .tvdb_id(domain::TvdbId(number))
+                .number(number)
+                .title("Half Loop")
+                .media_file_id(Some(media_file_id))
+                .in_library(true)
+                .exec(db_context.executor_mut())
+                .await
+                .unwrap();
+        }
+        let mut next = db_context
+            .episodes()
+            .filter(Episode::fields().season_id().eq(season(2)))
+            .get(db_context.executor_mut())
+            .await
+            .unwrap();
+        next.update()
+            .media_file_id(Some(next_media_file_id))
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap();
+        db_context
+            .artwork()
+            .create()
+            .show_id(Some(show_id))
+            .episode_id(Some(next.id))
+            .kind(ArtworkKind::Thumb)
+            .path("/media/TV/Severance/Season 02/Severance - S02E01-thumb.jpg")
+            .modified_at(app.clock.now())
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap();
+        let server = serve(&app).await;
+        server
+            .request(
+                Method::PUT,
+                "/api/me/playback-settings/v1",
+                Some(&token),
+                Some(json!({ "autoplayNextEpisode": false, "askIfStillWatching": true })),
+            )
+            .await;
+
+        let (status, mut playback) = start(&server, &token, media_file_id).await;
+
+        assert_eq!(status, StatusCode::CREATED);
+        let widths: Vec<_> = playback["nextEpisode"]["thumb"]["urls"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .map(|x| (x["width"].take(), x["url"].take().is_string()))
+            .collect();
+        assert_eq!(widths, [(json!(480), true), (json!(960), true)]);
+        assert_eq!(
+            (
+                &playback["nextEpisode"],
+                &playback["autoplayNextEpisode"],
+                &playback["askIfStillWatching"],
+            ),
+            (
+                &json!({
+                    "id": next.id,
+                    "mediaFileId": next_media_file_id,
+                    "seasonNumber": 2,
+                    "episodeNumber": 1,
+                    "title": "Good News About Hell",
+                    "thumb": { "urls": [{ "width": null, "url": null }, { "width": null, "url": null }] },
+                }),
+                &json!(false),
+                &json!(true),
+            )
         );
     }
 
