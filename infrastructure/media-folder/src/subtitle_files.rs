@@ -82,3 +82,58 @@ fn language(tag: &str) -> Option<String> {
         Some(_) => None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::list_subtitle_files;
+    use application::ports::FoundSubtitleFile;
+    use tempfile::TempDir;
+
+    const VIDEO: &str = "Arrival (2016) Bluray-1080p";
+
+    #[tokio::test]
+    async fn subtitle_files_count_when_their_name_is_the_video_name_then_a_language_and_flags() {
+        let folder = TempDir::new().unwrap();
+        let path = |name: &str| folder.path().join(name).to_str().unwrap().to_owned();
+        for name in [
+            format!("{VIDEO}.mkv"),
+            format!("{VIDEO}.en.srt"),
+            format!("{VIDEO}.en.hi.srt"),
+            format!("{VIDEO}.hi.srt"),
+            format!("{VIDEO}.fr.forced.ass"),
+            format!("{VIDEO}.pt-br.srt"),
+            format!("{VIDEO}.en.sdh.srt"),
+            format!("{VIDEO}.sdh.srt"),
+            format!("{VIDEO}.nfo"),
+            format!("{VIDEO}.en.commentary.srt"),
+            "Arrival (2016) WEBDL-720p.en.srt".to_owned(),
+        ] {
+            std::fs::write(path(&name), []).unwrap();
+        }
+        let subtitle_file =
+            |suffix: &str, language: Option<&str>, hearing_impaired, forced| FoundSubtitleFile {
+                path: path(&format!("{VIDEO}{suffix}")),
+                language: language.map(str::to_owned),
+                hearing_impaired,
+                forced,
+            };
+
+        let subtitle_files = list_subtitle_files()
+            .call(&path(&format!("{VIDEO}.mkv")))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            subtitle_files,
+            [
+                subtitle_file(".en.hi.srt", Some("en"), true, false),
+                subtitle_file(".en.sdh.srt", Some("en"), true, false),
+                subtitle_file(".en.srt", Some("en"), false, false),
+                subtitle_file(".fr.forced.ass", Some("fr"), false, true),
+                subtitle_file(".hi.srt", None, true, false),
+                subtitle_file(".pt-br.srt", Some("pt-BR"), false, false),
+                subtitle_file(".sdh.srt", None, true, false),
+            ]
+        );
+    }
+}
