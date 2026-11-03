@@ -4,6 +4,7 @@ pub use webhook::read_webhook_event_type;
 
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
+use std::time::Duration;
 use tracing::Instrument;
 use tracing::field;
 use url::Url;
@@ -17,6 +18,9 @@ pub struct MissingSetting {
 pub fn setting<T: Clone>(value: &Option<T>, name: &'static str) -> Result<T, MissingSetting> {
     value.clone().ok_or_else(|| MissingSetting::new(name))
 }
+
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Clone)]
 pub struct Api {
@@ -32,7 +36,10 @@ struct MetadataConsumer {
 }
 
 pub fn client() -> Result<reqwest::Client, reqwest::Error> {
-    reqwest::Client::builder().build()
+    reqwest::Client::builder()
+        .connect_timeout(CONNECT_TIMEOUT)
+        .timeout(REQUEST_TIMEOUT)
+        .build()
 }
 
 impl Api {
@@ -110,7 +117,9 @@ impl Api {
 #[cfg(test)]
 mod tests {
     use super::Api;
+    use super::REQUEST_TIMEOUT;
     use super::client;
+    use tokio::time::Instant;
     use wiremock::Mock;
     use wiremock::MockServer;
     use wiremock::ResponseTemplate;
@@ -173,5 +182,34 @@ mod tests {
 
             assert!(api.kodi_metadata().await.is_err(), "{status}");
         }
+    }
+
+    #[tokio::test]
+    async fn a_request_without_an_answer_fails_after_the_request_timeout() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v3/metadata"))
+            .respond_with(ResponseTemplate::new(200).set_body_raw(METADATA, "application/json"))
+            .up_to_n_times(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/api/v3/metadata"))
+            .respond_with(ResponseTemplate::new(200).set_delay(REQUEST_TIMEOUT * 2))
+            .mount(&server)
+            .await;
+        let api = Api::new(
+            client().unwrap(),
+            server.uri().parse().unwrap(),
+            API_KEY.to_owned(),
+        );
+        api.kodi_metadata().await.unwrap();
+        tokio::time::pause();
+        let started = Instant::now();
+
+        let error = api.kodi_metadata().await.unwrap_err();
+
+        assert!(error.is_timeout());
+        assert_eq!(started.elapsed().as_secs(), REQUEST_TIMEOUT.as_secs());
     }
 }
