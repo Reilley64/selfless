@@ -1,4 +1,3 @@
-use crate::DbContext;
 use crate::MediaFolder;
 use crate::SourceHealth;
 use crate::library_items;
@@ -17,6 +16,8 @@ use crate::ports::ShowNfo;
 use crate::ports::SonarrEpisode;
 use crate::ports::SonarrSeries;
 use crate::ports::SonarrShow;
+use crate::ports::persistence::DbContext;
+use crate::ports::persistence::DbScope;
 use domain::ArtworkKind;
 use domain::Episode;
 use domain::MediaFile;
@@ -31,7 +32,6 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use tracing::Instrument;
 use tracing::Span;
-use uuid::Uuid;
 
 #[fundle::deps]
 pub struct Dependencies {
@@ -175,7 +175,10 @@ impl EpisodeMetadata {
         stored: Option<&EpisodeMetadata>,
     ) -> Self {
         match (nfo, stored) {
-            (Nfo::Unchanged, Some(stored)) => stored.clone(),
+            (Nfo::Unchanged, Some(stored)) => Self {
+                number: sonarr_episode.episode_number,
+                ..stored.clone()
+            },
             (Nfo::Read(nfo, modified_at), _) => Self {
                 number: sonarr_episode.episode_number,
                 title: nfo
@@ -204,14 +207,14 @@ pub(crate) async fn save(
     media_folder: &MediaFolder,
     sonarr_show: SonarrShow,
 ) -> Result<(), Error> {
-    let mut files = HashMap::new();
+    let mut episode_folders = HashMap::new();
     for file in sonarr_show
         .episodes
         .iter()
         .filter_map(|x| x.episode_file.as_ref())
     {
-        if !files.contains_key(&file.path) {
-            files.insert(
+        if !episode_folders.contains_key(&file.path) {
+            episode_folders.insert(
                 file.path.clone(),
                 media_folder.read_episode_folder.call(&file.path).await,
             );
@@ -229,13 +232,13 @@ pub(crate) async fn save(
             season_numbers.into_iter().collect(),
         )
         .await;
-    let stored = if files.is_empty() {
+    let stored = if episode_folders.is_empty() {
         HashMap::new()
     } else {
         MediaFile::filter(
             MediaFile::fields()
                 .path()
-                .in_list(files.keys().cloned().collect::<Vec<_>>()),
+                .in_list(episode_folders.keys().cloned().collect::<Vec<_>>()),
         )
         .exec(db_context.executor_mut())
         .await
@@ -244,7 +247,7 @@ pub(crate) async fn save(
         .map(|x| (x.path.clone(), x))
         .collect::<HashMap<_, _>>()
     };
-    let inspected = try_join_all(files.keys().map(async |path| {
+    let inspected = try_join_all(episode_folders.keys().map(async |path| {
         let inspected = media_folder.inspect(stored.get(path), path).await?;
         Ok::<_, media_files::Error>((path.clone(), inspected))
     }))
@@ -256,7 +259,7 @@ pub(crate) async fn save(
     let change = write(
         transaction.executor_mut(),
         sonarr_show,
-        &files,
+        &episode_folders,
         inspected,
         folder,
         media_folder,
@@ -272,17 +275,14 @@ pub(crate) async fn save(
 pub(crate) async fn remove(db_context: &mut DbContext, show: Show) -> Result<(), Error> {
     let mut transaction = db_context.transaction().await.map_err(Error::caused_by)?;
     let db = transaction.executor_mut();
-    let seasons = show
+    let media_file_ids = show
         .seasons()
+        .include(Season::fields().episodes())
         .exec(db)
         .await
         .map_err(Error::caused_by)?
         .into_iter()
-        .map(|x| x.id)
-        .collect::<Vec<_>>();
-    let media_file_ids = episodes_of(db, &seasons)
-        .await?
-        .into_iter()
+        .flat_map(|x| x.episodes.into_inner())
         .filter_map(|x| x.media_file_id)
         .collect::<HashSet<_>>();
     metadata::delete(db, Owner::Show(show.id))
@@ -300,7 +300,7 @@ pub(crate) async fn remove(db_context: &mut DbContext, show: Show) -> Result<(),
 async fn write(
     db: &mut dyn toasty::Executor,
     sonarr_show: SonarrShow,
-    files: &HashMap<String, EpisodeFolder>,
+    episode_folders: &HashMap<String, EpisodeFolder>,
     mut inspected: HashMap<String, Inspected>,
     folder: ShowFolder,
     media_folder: &MediaFolder,
@@ -369,44 +369,29 @@ async fn write(
         ),
     };
     let owner = Owner::Show(show.id);
-    if !matches!(nfo, Nfo::Unchanged) {
-        let actors = match &nfo {
-            Nfo::Read(nfo, _) => nfo.actors.as_slice(),
-            _ => &[],
-        };
-        metadata::replace_actors(db, owner, had_nfo, actors)
-            .await
-            .map_err(Error::caused_by)?;
-    }
+    metadata::save_actors(db, owner, had_nfo, &nfo, |x| &x.actors)
+        .await
+        .map_err(Error::caused_by)?;
     let mut changed = show_change.is_some();
-    let mut artwork = [
-        (ArtworkKind::Poster, folder.poster),
-        (ArtworkKind::Fanart, folder.fanart),
-        (ArtworkKind::Clearlogo, folder.clearlogo),
-    ]
-    .into_iter()
-    .filter_map(|(kind, file)| {
-        Some(FoundArtwork {
-            season_id: None,
-            episode_id: None,
-            kind,
-            file: file?,
-        })
-    })
-    .collect::<Vec<_>>();
-    let mut seasons = show
+    let mut artwork = metadata::item_artwork(folder.poster, folder.fanart, folder.clearlogo);
+    let mut seasons = HashMap::new();
+    let mut episodes = HashMap::new();
+    for season in show
         .seasons()
+        .include(Season::fields().episodes())
         .exec(db)
         .await
         .map_err(Error::caused_by)?
-        .into_iter()
-        .map(|x| (x.number, x))
-        .collect::<HashMap<_, _>>();
-    let mut episodes = episodes_of(db, &seasons.values().map(|x| x.id).collect::<Vec<_>>())
-        .await?
-        .into_iter()
-        .map(|x| (x.tvdb_id, x))
-        .collect::<HashMap<_, _>>();
+    {
+        seasons.insert(season.number, season.id);
+        episodes.extend(
+            season
+                .episodes
+                .into_inner()
+                .into_iter()
+                .map(|x| (x.tvdb_id, x)),
+        );
+    }
     let old_media_files = episodes
         .values()
         .filter_map(|x| x.media_file_id)
@@ -416,16 +401,21 @@ async fn write(
     let mut nfo_roots = HashMap::new();
     let mut unreadable_nfos = HashMap::new();
     let mut saved = HashMap::new();
+    let sonarr_ids = sonarr_show
+        .episodes
+        .iter()
+        .map(|x| x.sonarr_id)
+        .collect::<HashSet<_>>();
     for sonarr_episode in sonarr_show.episodes {
-        let file = sonarr_episode
+        let episode_folder = sonarr_episode
             .episode_file
             .as_ref()
-            .and_then(|x| files.get(&x.path));
+            .and_then(|x| episode_folders.get(&x.path));
         let stored = episodes.remove(&sonarr_episode.tvdb_id).map(|x| {
             let metadata = EpisodeMetadata::stored(&x);
             (x, metadata)
         });
-        let nfo = match file.and_then(|x| x.nfo.as_ref()) {
+        let nfo = match episode_folder.and_then(|x| x.nfo.as_ref()) {
             None => Nfo::Missing,
             Some(nfo_file)
                 if stored
@@ -444,12 +434,16 @@ async fn write(
                 }
                 match &nfo_roots[&nfo_file.path] {
                     None => Nfo::Unreadable(nfo_file.path.clone()),
-                    Some(roots) => match roots.iter().find(|x| {
-                        x.sonarr_id == Some(sonarr_episode.sonarr_id)
-                            || x.sonarr_id.is_none()
-                                && x.season_number == Some(sonarr_episode.season_number)
-                                && x.episode_number == Some(sonarr_episode.episode_number)
-                    }) {
+                    Some(roots) => match roots
+                        .iter()
+                        .find(|x| x.sonarr_id == Some(sonarr_episode.sonarr_id))
+                        .or_else(|| {
+                            roots.iter().find(|x| {
+                                !x.sonarr_id.is_some_and(|x| sonarr_ids.contains(&x))
+                                    && x.season_number == Some(sonarr_episode.season_number)
+                                    && x.episode_number == Some(sonarr_episode.episode_number)
+                            })
+                        }) {
                         Some(root) => Nfo::Read(root.clone(), nfo_file.modified_at),
                         None => Nfo::Missing,
                     },
@@ -459,7 +453,7 @@ async fn write(
         let metadata = EpisodeMetadata::of(&nfo, &sonarr_episode, stored.as_ref().map(|(_, x)| x));
         let season_number = sonarr_episode.season_number;
         let season_id = match seasons.get(&season_number) {
-            Some(season) => season.id,
+            Some(id) => *id,
             None => {
                 let season = toasty::create!(Season {
                     show_id: show.id,
@@ -469,9 +463,8 @@ async fn write(
                 .await
                 .map_err(Error::caused_by)?;
                 changed = true;
-                let id = season.id;
-                seasons.insert(season_number, season);
-                id
+                seasons.insert(season_number, season.id);
+                season.id
             }
         };
         synced_seasons.insert(season_number);
@@ -548,7 +541,7 @@ async fn write(
                 .id
             }
         };
-        if let Some(thumb) = file.and_then(|x| x.thumb.clone()) {
+        if let Some(thumb) = episode_folder.and_then(|x| x.thumb.clone()) {
             artwork.push(FoundArtwork {
                 season_id: None,
                 episode_id: Some(episode_id),
@@ -558,11 +551,11 @@ async fn write(
         }
     }
     for (number, file) in folder.season_posters {
-        if let Some(season) = seasons.get(&number)
+        if let Some(id) = seasons.get(&number)
             && synced_seasons.contains(&number)
         {
             artwork.push(FoundArtwork {
-                season_id: Some(season.id),
+                season_id: Some(*id),
                 episode_id: None,
                 kind: ArtworkKind::Poster,
                 file,
@@ -571,17 +564,29 @@ async fn write(
     }
     let episodes = episodes.into_values().map(|x| x.id).collect::<Vec<_>>();
     let seasons = seasons
-        .into_values()
-        .filter(|x| !synced_seasons.contains(&x.number))
-        .map(|x| x.id)
+        .into_iter()
+        .filter(|(number, _)| !synced_seasons.contains(number))
+        .map(|(_, id)| id)
         .collect::<Vec<_>>();
     let removed_media_files = old_media_files
         .difference(&media_file_ids)
         .copied()
         .collect::<Vec<_>>();
     changed |= !episodes.is_empty() || !seasons.is_empty() || !removed_media_files.is_empty();
-    delete_episodes(db, episodes).await?;
-    delete_seasons(db, seasons).await?;
+    if !episodes.is_empty() {
+        Episode::filter(Episode::fields().id().in_list(episodes))
+            .delete()
+            .exec(db)
+            .await
+            .map_err(Error::caused_by)?;
+    }
+    if !seasons.is_empty() {
+        Season::filter(Season::fields().id().in_list(seasons))
+            .delete()
+            .exec(db)
+            .await
+            .map_err(Error::caused_by)?;
+    }
     media_files::delete(db, removed_media_files)
         .await
         .map_err(Error::caused_by)?;
@@ -607,39 +612,4 @@ async fn write(
     .await
     .map_err(Error::caused_by)?;
     Ok(show_change.or(changed.then_some(Change::Changed)))
-}
-
-async fn episodes_of(
-    db: &mut dyn toasty::Executor,
-    season_ids: &[Uuid],
-) -> Result<Vec<Episode>, Error> {
-    if season_ids.is_empty() {
-        return Ok(Vec::new());
-    }
-    Episode::filter(Episode::fields().season_id().in_list(season_ids))
-        .exec(db)
-        .await
-        .map_err(Error::caused_by)
-}
-
-async fn delete_episodes(db: &mut dyn toasty::Executor, ids: Vec<Uuid>) -> Result<(), Error> {
-    if ids.is_empty() {
-        return Ok(());
-    }
-    Episode::filter(Episode::fields().id().in_list(ids))
-        .delete()
-        .exec(db)
-        .await
-        .map_err(Error::caused_by)
-}
-
-async fn delete_seasons(db: &mut dyn toasty::Executor, ids: Vec<Uuid>) -> Result<(), Error> {
-    if ids.is_empty() {
-        return Ok(());
-    }
-    Season::filter(Season::fields().id().in_list(ids))
-        .delete()
-        .exec(db)
-        .await
-        .map_err(Error::caused_by)
 }

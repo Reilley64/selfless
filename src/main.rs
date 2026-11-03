@@ -1,6 +1,5 @@
 mod telemetry;
 
-use infrastructure::email;
 use ohno::AppError;
 use ohno::IntoAppError;
 use settings::AppSettings;
@@ -19,7 +18,7 @@ async fn main() -> Result<(), AppError> {
             settings,
             infrastructure::system_clock(),
             send_email,
-            infrastructure::ffmpeg::probe_media_file(),
+            ffmpeg::probe_media_file(),
         )
         .await?
         .serve(async move {

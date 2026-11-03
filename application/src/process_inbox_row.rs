@@ -1,4 +1,3 @@
-use crate::DbContext;
 use crate::MediaFolder;
 use crate::SourceHealth;
 use crate::attributes::SELFLESS_WEBHOOK_EVENT_TYPE;
@@ -7,6 +6,8 @@ use crate::attributes::SELFLESS_WEBHOOK_SOURCE;
 use crate::ports::Clock;
 use crate::ports::GetRadarrMovie;
 use crate::ports::GetSonarrShow;
+use crate::ports::persistence::DbContext;
+use crate::ports::persistence::DbScope;
 use crate::sync_movie;
 use crate::sync_show;
 use crate::unsampled;
@@ -51,7 +52,7 @@ const RETRY_DELAYS: [SignedDuration; 4] = [
 
 #[derive(Deserialize)]
 #[serde(tag = "eventType")]
-enum RadarrEvent {
+pub(crate) enum RadarrEvent {
     Download {
         movie: RadarrMovieRef,
     },
@@ -79,7 +80,7 @@ enum RadarrEvent {
 
 #[derive(Deserialize)]
 #[serde(tag = "eventType")]
-enum SonarrEvent {
+pub(crate) enum SonarrEvent {
     Download {
         series: SonarrSeriesRef,
     },
@@ -106,18 +107,22 @@ enum SonarrEvent {
 }
 
 #[derive(Deserialize)]
-struct RadarrMovieRef {
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RadarrMovieRef {
     id: i64,
+    tmdb_id: i64,
 }
 
 #[derive(Deserialize)]
-struct SonarrSeriesRef {
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SonarrSeriesRef {
     id: i64,
+    tvdb_id: i64,
 }
 
 enum Target {
-    Movie(i64),
-    Show(i64),
+    Movie { radarr_id: i64, tmdb_id: i64 },
+    Show { sonarr_id: i64, tvdb_id: i64 },
     Nothing,
 }
 
@@ -179,11 +184,11 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<bool, Error> 
         span.record(SELFLESS_WEBHOOK_EVENT_TYPE, row.event_type.as_deref());
         let target = target(row.source, &row.body);
         let source_item_id = match target {
-            Ok(Target::Movie(id) | Target::Show(id)) => Some(id),
+            Ok(Target::Movie { tmdb_id: id, .. } | Target::Show { tvdb_id: id, .. }) => Some(id),
             Ok(Target::Nothing) | Err(_) => None,
         };
         let processed: Result<_, Box<dyn std::error::Error + Send + Sync>> = match target {
-            Ok(Target::Movie(radarr_id)) => sync_movie::call(
+            Ok(Target::Movie { radarr_id, .. }) => sync_movie::call(
                 sync_movie::Dependencies {
                     db_context: db_context.clone(),
                     get_radarr_movie,
@@ -195,7 +200,7 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<bool, Error> 
             .await
             .map(|()| InboxRowStatus::Processed)
             .map_err(Into::into),
-            Ok(Target::Show(sonarr_id)) => sync_show::call(
+            Ok(Target::Show { sonarr_id, .. }) => sync_show::call(
                 sync_show::Dependencies {
                     db_context: db_context.clone(),
                     get_sonarr_show,
@@ -259,13 +264,6 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<bool, Error> 
     .await
 }
 
-pub(crate) fn is_removal(source: Source, event_type: Option<&str>) -> bool {
-    matches!(
-        (source, event_type),
-        (Source::Radarr, Some("MovieDelete")) | (Source::Sonarr, Some("SeriesDelete"))
-    )
-}
-
 fn target(source: Source, body: &[u8]) -> Result<Target, serde_json::Error> {
     Ok(match source {
         Source::Radarr => match serde_json::from_slice(body)? {
@@ -273,7 +271,10 @@ fn target(source: Source, body: &[u8]) -> Result<Target, serde_json::Error> {
             | RadarrEvent::Rename { movie }
             | RadarrEvent::MovieAdded { movie }
             | RadarrEvent::MovieDelete { movie }
-            | RadarrEvent::MovieFileDelete { movie } => Target::Movie(movie.id),
+            | RadarrEvent::MovieFileDelete { movie } => Target::Movie {
+                radarr_id: movie.id,
+                tmdb_id: movie.tmdb_id,
+            },
             RadarrEvent::Test
             | RadarrEvent::Grab
             | RadarrEvent::Health
@@ -287,7 +288,10 @@ fn target(source: Source, body: &[u8]) -> Result<Target, serde_json::Error> {
             | SonarrEvent::Rename { series }
             | SonarrEvent::SeriesAdd { series }
             | SonarrEvent::SeriesDelete { series }
-            | SonarrEvent::EpisodeFileDelete { series } => Target::Show(series.id),
+            | SonarrEvent::EpisodeFileDelete { series } => Target::Show {
+                sonarr_id: series.id,
+                tvdb_id: series.tvdb_id,
+            },
             SonarrEvent::Test
             | SonarrEvent::Grab
             | SonarrEvent::Health

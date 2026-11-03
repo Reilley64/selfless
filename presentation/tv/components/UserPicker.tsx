@@ -1,10 +1,8 @@
 import type { UserColour } from "@selfless/api-client";
-import { FocusGuide, type PickerUser } from "@selfless/ui";
-import symbols from "@selfless/ui/theme/symbols.json";
+import { FocusGuide, initials, type PickerUser, serverUnreachable } from "@selfless/ui";
 import type { ReactNode } from "react";
 import { useEffect, useSyncExternalStore } from "react";
 import { Alert } from "react-native";
-import { SvgXml } from "react-native-svg";
 import { Pressable, Text, View } from "react-native-css/components";
 import { session } from "../session";
 
@@ -18,18 +16,24 @@ const colours: Record<UserColour, string> = {
 function PickerButton({
   label,
   className,
+  dimmed = false,
   onPress,
   onLongPress,
   children,
 }: {
   label: string;
   className: string;
+  dimmed?: boolean;
   onPress: () => void;
   onLongPress?: () => void;
   children: ReactNode;
 }) {
   return (
-    <Pressable className="items-center gap-6" onPress={onPress} onLongPress={onLongPress}>
+    <Pressable
+      className={`items-center gap-6 ${dimmed ? "opacity-40" : ""}`}
+      onPress={onPress}
+      onLongPress={onLongPress}
+    >
       {({ focused }) => (
         <>
           <View
@@ -46,11 +50,10 @@ function PickerButton({
   );
 }
 
-function confirmRemove(user: PickerUser) {
-  Alert.alert(user.name, undefined, [
-    { text: "Remove from this TV", style: "destructive", onPress: () => void session.remove(user.id) },
-    { text: "Cancel", style: "cancel" },
-  ]);
+async function remove(user: PickerUser) {
+  if (!(await session.remove(user.id))) {
+    Alert.alert(`${user.name} wasn't removed`, serverUnreachable);
+  }
 }
 
 export function UserPicker({ onSignIn }: { onSignIn: (name: string) => void }) {
@@ -68,15 +71,17 @@ export function UserPicker({ onSignIn }: { onSignIn: (name: string) => void }) {
           <PickerButton
             key={user.id}
             label={user.name}
-            className={`${colours[user.colour]} ${user.dimmed ? "opacity-40" : ""}`}
-            onPress={() => (user.dimmed ? onSignIn(user.name) : session.pick(user.id))}
-            onLongPress={() => confirmRemove(user)}
+            className={colours[user.colour]}
+            dimmed={user.signedOut}
+            onPress={() => (user.signedOut ? onSignIn(user.name) : session.pick(user.id))}
+            onLongPress={() =>
+              Alert.alert(user.name, undefined, [
+                { text: "Remove from this TV", style: "destructive", onPress: () => void remove(user) },
+                { text: "Cancel", style: "cancel" },
+              ])
+            }
           >
-            <SvgXml
-              xml={`<svg viewBox="0 0 200 200">${symbols.symbol[user.symbol]}</svg>`}
-              width="100%"
-              height="100%"
-            />
+            <Text className="font-sans font-bold text-tv-display text-text-primary">{initials(user.name)}</Text>
           </PickerButton>
         ))}
         <PickerButton label="Add user" className="bg-surface-raised" onPress={() => onSignIn("")}>

@@ -24,7 +24,12 @@ sha2 = { workspace = true }
 toasty = { workspace = true }
 toasty-core = { workspace = true }
 tokio = { workspace = true }
-tokio-postgres = { workspace = true }
 tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 uuid = { workspace = true }
+
+[dev-dependencies]
+opentelemetry-appender-tracing = { workspace = true }
+opentelemetry_sdk = { workspace = true, features = ["testing"] }
+test-fixtures = { workspace = true }
+tracing-subscriber = { workspace = true }

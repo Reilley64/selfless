@@ -1,43 +1,19 @@
-mod admins;
+mod atoms;
 pub mod components;
-pub mod local_time;
-mod sync;
-mod users;
+mod pages;
+mod templates;
+
+#[cfg(test)]
+#[path = "../../../test/admin.rs"]
+mod test;
 
 use application::attributes::SELFLESS_ADMIN_ACTION;
 use application::attributes::SELFLESS_ADMIN_ID;
 use application::attributes::SELFLESS_ADMIN_TARGET_ID;
-use components::button::ButtonSize;
-use components::button::ButtonVariant;
-use components::button::button;
-use components::dropdown_menu::ITEM;
-use components::dropdown_menu::dropdown_menu;
-use components::dropdown_menu::dropdown_menu_content;
-use components::dropdown_menu::dropdown_menu_item;
-use components::dropdown_menu::dropdown_menu_trigger;
-use components::floating::FloatingAlign;
-use components::floating::FloatingSide;
-use components::icons::X;
-use components::sidebar::SidebarMenuButtonSize;
-use components::sidebar::SidebarMenuButtonVariant;
-use components::sidebar::sidebar;
-use components::sidebar::sidebar_content;
-use components::sidebar::sidebar_footer;
-use components::sidebar::sidebar_group;
-use components::sidebar::sidebar_header;
-use components::sidebar::sidebar_inset;
-use components::sidebar::sidebar_menu;
-use components::sidebar::sidebar_menu_button;
-use components::sidebar::sidebar_menu_button_variants;
-use components::sidebar::sidebar_menu_item;
-use components::sidebar::sidebar_provider;
-use components::sidebar::sidebar_trigger;
+use application::sessions::get_current_admin;
 use infrastructure::AppState;
-use serde::Deserialize;
-use topcoat::asset::Asset;
 use topcoat::asset::AssetBundle;
 use topcoat::asset::RouterBuilderAssetExt;
-use topcoat::asset::asset;
 use topcoat::context::Cx;
 use topcoat::context::app_context;
 use topcoat::cookie::Cookie;
@@ -45,63 +21,58 @@ use topcoat::cookie::Cookies;
 use topcoat::cookie::RouterBuilderCookieExt;
 use topcoat::cookie::SameSite;
 use topcoat::cookie::cookies;
-use topcoat::icon::icon;
+use topcoat::router::Body;
+use topcoat::router::HeaderValue;
+use topcoat::router::LayerFn;
+use topcoat::router::LayerFuture;
+use topcoat::router::Next;
 use topcoat::router::RouterBuilder;
-use topcoat::router::content::Form;
-use topcoat::router::error::SeeOther;
 use topcoat::router::error::forbidden;
 use topcoat::router::error::see_other;
-use topcoat::router::page;
+use topcoat::router::header::CONTENT_SECURITY_POLICY;
 use topcoat::router::request::headers;
-use topcoat::router::route;
-use topcoat::session::Token;
-use topcoat::view::Child;
-use topcoat::view::View;
-use topcoat::view::attributes;
-use topcoat::view::component;
-use topcoat::view::view;
+use topcoat::router::response::response_headers;
 use tracing::Span;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 use uuid::Uuid;
 
-const HOME_PATH: &str = "/admin";
-const SYNC_PATH: &str = "/admin/sync";
-const ADMINS_PATH: &str = "/admin/admins";
-const ACCOUNT_PASSWORD_PATH: &str = "/admin/account/password";
-const SIGN_IN_PATH: &str = "/admin/sign-in";
-const SIGN_OUT_PATH: &str = "/admin/sign-out";
-const SESSION_COOKIE: &str = "session";
-const CSRF_COOKIE: &str = "csrf";
+pub(crate) const HOME_PATH: &str = "/admin";
+pub(crate) const SYNC_PATH: &str = "/admin/sync";
+pub(crate) const USERS_PATH: &str = "/admin/users";
+pub(crate) const ADMINS_PATH: &str = "/admin/admins";
+pub(crate) const ACCOUNT_PASSWORD_PATH: &str = "/admin/account/password";
+pub(crate) const SIGN_IN_PATH: &str = "/admin/sign-in";
+pub(crate) const SIGN_OUT_PATH: &str = "/admin/sign-out";
+pub(crate) const SESSION_COOKIE: &str = "session";
+pub(crate) const CSRF_COOKIE: &str = "csrf";
 const CSRF_HEADER: &str = "x-csrf-token";
-const SIDEBAR_ID: &str = "sidebar";
-const ACCOUNT_MENU_ID: &str = "account-menu";
-const PAGE_TITLE_ID: &str = "page-title";
-const SECTIONS: [(&str, &str); 3] = [
-    (SYNC_PATH, "Sync status"),
-    (users::USERS_PATH, "Users"),
-    (ADMINS_PATH, "Admins"),
-];
-const STYLES: Asset = asset!("../dist/styles.css");
-const HTMX: Asset = asset!(
-    "https://cdn.jsdelivr.net/npm/htmx.org@2.0.11/dist/htmx.min.js",
-    checksum: "sha256:d6fdc75f204e6bdefa99b69bf1e6d4ac69b8a364f77929f45c13476b4000f717"
-);
-const LOCAL_TIME_SCRIPT: Asset = asset!("../assets/time.js");
-const HTMX_CONFIG: &str =
-    r#"{"includeIndicatorStyles":false,"allowEval":false,"allowScriptTags":false}"#;
+const X_FORWARDED_PROTO: &str = "x-forwarded-proto";
+const STRICT_CONTENT_SECURITY_POLICY: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-hashes' 'sha256-4AXVd4Ue0A6d/wfNkdhs1EwnaIBGk3lC7Q5dkpfGJEA='; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 
 pub fn register(router: RouterBuilder, assets: AssetBundle) -> RouterBuilder {
-    users::register(sync::register(admins::register(router)))
-        .route(home)
-        .page(sign_in_form)
-        .page(sign_in)
-        .route(sign_out)
+    pages::users::register(pages::sync::register(pages::admins::register(router)))
+        .route(pages::home::home)
+        .page(pages::sign_in::sign_in_form)
+        .page(pages::sign_in::sign_in)
+        .route(pages::sign_out::sign_out)
         .assets(assets)
         .cookies()
+        .layer(LayerFn::new(
+            Some(HOME_PATH),
+            strict_content_security_policy,
+        ))
+}
+
+fn strict_content_security_policy<'a>(cx: &'a Cx, body: Body, next: Next<'a>) -> LayerFuture<'a> {
+    response_headers(cx).append(
+        CONTENT_SECURITY_POLICY,
+        HeaderValue::from_static(STRICT_CONTENT_SECURITY_POLICY),
+    );
+    next.run(cx, body)
 }
 
 #[derive(Clone, Copy, Debug)]
-pub enum AdminAction {
+pub(crate) enum AdminAction {
     InviteCreate,
     InviteResend,
     InviteCancel,
@@ -141,7 +112,7 @@ impl AdminAction {
     }
 }
 
-pub fn log_admin_action(action: AdminAction, target_id: Uuid) {
+pub(crate) fn log_admin_action(action: AdminAction, target_id: Uuid) {
     tracing::info!(
         { SELFLESS_ADMIN_ACTION } = action.name(),
         { SELFLESS_ADMIN_TARGET_ID } = %target_id,
@@ -149,220 +120,7 @@ pub fn log_admin_action(action: AdminAction, target_id: Uuid) {
     );
 }
 
-#[route(GET "/admin")]
-async fn home() -> topcoat::Result<SeeOther> {
-    Ok(see_other(SYNC_PATH))
-}
-
-#[page("/admin/sign-in")]
-async fn sign_in_form() -> topcoat::Result<impl View> {
-    Ok(view! { sign_in_page(failed: false) })
-}
-
-#[derive(Deserialize)]
-struct SignIn {
-    #[serde(default)]
-    csrf: String,
-    name: String,
-    password: String,
-}
-
-#[page(POST "/admin/sign-in")]
-async fn sign_in(cx: &Cx, Form(form): Form<SignIn>) -> topcoat::Result<impl View> {
-    verify_csrf(cx, &form.csrf)?;
-    let token =
-        application::admin_sign_in::call(app_context::<AppState>(cx), form.name, form.password)
-            .await?;
-    let Some(token) = token else {
-        return Ok(view! { sign_in_page(failed: true) });
-    };
-    cookies(cx).add(admin_cookie(SESSION_COOKIE, token));
-    Err(see_other(HOME_PATH).into())
-}
-
-#[derive(Deserialize)]
-struct SignOut {
-    #[serde(default)]
-    csrf: String,
-}
-
-#[route(POST "/admin/sign-out")]
-async fn sign_out(cx: &Cx, Form(form): Form<SignOut>) -> topcoat::Result<SeeOther> {
-    verify_csrf(cx, &form.csrf)?;
-    if let Some(session) = cookies(cx).get(SESSION_COOKIE) {
-        application::admin_sign_out::call(app_context::<AppState>(cx), session.value()).await?;
-        cookies(cx).remove(admin_cookie(SESSION_COOKIE, String::new()));
-    }
-    Ok(see_other(SIGN_IN_PATH))
-}
-
-#[component]
-async fn sign_in_page(failed: bool) -> topcoat::Result<impl View> {
-    Ok(view! {
-        document(
-            <main class="flex min-h-svh items-center justify-center p-4">
-                <form method="post" action="/admin/sign-in" class="flex w-full max-w-sm flex-col gap-4">
-                    <h1 class="text-lg font-semibold">"selfless admin"</h1>
-                    csrf_field()
-                    if failed {
-                        <p class="text-sm text-destructive">"Wrong name or password."</p>
-                    }
-                    <label class="flex flex-col gap-2 text-sm font-medium">
-                        "Name"
-                        <input
-                            type="text"
-                            name="name"
-                            autocomplete="username"
-                            required=(true)
-                            class="h-9 rounded-lg border border-border bg-transparent px-3 font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        />
-                    </label>
-                    <label class="flex flex-col gap-2 text-sm font-medium">
-                        "Password"
-                        <input
-                            type="password"
-                            name="password"
-                            autocomplete="current-password"
-                            required=(true)
-                            class="h-9 rounded-lg border border-border bg-transparent px-3 font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        />
-                    </label>
-                    button(attrs: attributes! { type="submit" }, "Sign in")
-                </form>
-            </main>
-        )
-    })
-}
-
-#[component]
-async fn admin_page(
-    cx: &Cx,
-    path: &str,
-    title: &str,
-    #[default] child: Child<'_>,
-) -> topcoat::Result<impl View> {
-    let build_info = &app_context::<AppState>(cx).build_info;
-    Ok(view! {
-        document(
-            sidebar_provider(
-                sidebar(
-                    sheet_attrs: attributes! { id=(SIDEBAR_ID) },
-                    sidebar_header(
-                        <div class="flex items-center justify-between">
-                            <span class="px-2 text-sm font-semibold">"selfless admin"</span>
-                            button(
-                                variant: ButtonVariant::Ghost,
-                                size: ButtonSize::Icon,
-                                attrs: attributes! {
-                                    type="button"
-                                    class="md:hidden"
-                                    commandfor=(SIDEBAR_ID)
-                                    command="close"
-                                    aria-label="Close sidebar"
-                                },
-                                icon(data: X)
-                            )
-                        </div>
-                    )
-                    sidebar_content(
-                        sidebar_group(
-                            sidebar_menu(
-                                for (section_path, label) in SECTIONS {
-                                    sidebar_menu_item(
-                                        sidebar_menu_button(
-                                            href: Some(section_path),
-                                            active: section_path == path,
-                                            <span>(label)</span>
-                                        )
-                                    )
-                                }
-                            )
-                        )
-                    )
-                    sidebar_footer(
-                        dropdown_menu(
-                            dropdown_menu_trigger(
-                                target: ACCOUNT_MENU_ID,
-                                attrs: attributes! {
-                                    class=(sidebar_menu_button_variants(
-                                        SidebarMenuButtonVariant::Default,
-                                        SidebarMenuButtonSize::Md,
-                                    ))
-                                },
-                                <span>"Account"</span>
-                            )
-                            dropdown_menu_content(
-                                id: ACCOUNT_MENU_ID,
-                                side: FloatingSide::Top,
-                                align: FloatingAlign::Start,
-                                <a href=(ACCOUNT_PASSWORD_PATH) class=(ITEM)>"Change my password"</a>
-                                <form method="post" action=(SIGN_OUT_PATH)>
-                                    csrf_field()
-                                    dropdown_menu_item(attrs: attributes! { type="submit" }, "Sign out")
-                                </form>
-                            )
-                        )
-                        <div class="px-2 text-xs text-muted-foreground">
-                            <p>(build_info.name)</p>
-                            <p>(build_info.version)</p>
-                        </div>
-                    )
-                )
-                sidebar_inset(
-                    sidebar_header(
-                        sidebar_trigger(
-                            attrs: attributes! {
-                                class="md:hidden"
-                                commandfor=(SIDEBAR_ID)
-                                command="show-modal"
-                            }
-                        )
-                        <h1 id=(PAGE_TITLE_ID) class="text-base font-semibold">(title)</h1>
-                    )
-                    <div class="flex flex-col gap-6 p-6">(child)</div>
-                )
-            )
-        )
-    })
-}
-
-#[component]
-async fn document(cx: &Cx, #[default] child: Child<'_>) -> topcoat::Result<impl View> {
-    let htmx_headers = format!(r#"{{"X-CSRF-Token":"{}"}}"#, csrf_token(cx));
-    Ok(view! {
-        <!DOCTYPE html>
-        <html lang="en" class="dark">
-            <head>
-                <meta charset="utf-8" />
-                <meta name="viewport" content="width=device-width, initial-scale=1" />
-                <meta name="htmx-config" content=(HTMX_CONFIG) />
-                <title>"selfless admin"</title>
-                <link rel="stylesheet" href=(STYLES) />
-                <script src=(HTMX) defer=(true)></script>
-                <script src=(LOCAL_TIME_SCRIPT) defer=(true)></script>
-            </head>
-            <body class="bg-background font-sans text-foreground antialiased" hx-headers=(htmx_headers)>
-                (child)
-            </body>
-        </html>
-    })
-}
-
-#[component]
-async fn csrf_field(cx: &Cx) -> topcoat::Result<impl View> {
-    Ok(view! { <input type="hidden" name="csrf" value=(csrf_token(cx)) /> })
-}
-
-fn csrf_token(cx: &Cx) -> String {
-    if let Some(cookie) = cookies(cx).get(CSRF_COOKIE) {
-        return cookie.value().to_owned();
-    }
-    let token = Token::random().encode();
-    cookies(cx).add(admin_cookie(CSRF_COOKIE, token.clone()));
-    token
-}
-
-fn verify_csrf(cx: &Cx, form_token: &str) -> topcoat::Result<()> {
+pub(crate) fn verify_csrf(cx: &Cx, form_token: &str) -> topcoat::Result<()> {
     let submitted = headers(cx)
         .get(CSRF_HEADER)
         .and_then(|x| x.to_str().ok())
@@ -377,26 +135,288 @@ fn verify_csrf(cx: &Cx, form_token: &str) -> topcoat::Result<()> {
     }
 }
 
-async fn require_admin(cx: &Cx) -> topcoat::Result<Uuid> {
-    let admin_id = match cookies(cx).get(SESSION_COOKIE) {
+pub(crate) async fn require_admin(cx: &Cx) -> topcoat::Result<Uuid> {
+    let current_admin = match cookies(cx).get(SESSION_COOKIE) {
         Some(session) => {
-            application::get_current_admin::call(app_context::<AppState>(cx), session.value())
-                .await?
+            get_current_admin::call(app_context::<AppState>(cx), session.value()).await?
         }
-        None => None,
+        None => get_current_admin::Output::NotSignedIn,
     };
-    let Some(admin_id) = admin_id else {
+    let get_current_admin::Output::SignedIn { admin_id } = current_admin else {
         return Err(see_other(SIGN_IN_PATH).into());
     };
     Span::current().set_attribute(SELFLESS_ADMIN_ID, admin_id.to_string());
     Ok(admin_id)
 }
 
-fn admin_cookie(name: &'static str, value: String) -> Cookie<'static> {
+pub(crate) fn admin_cookie(cx: &Cx, name: &'static str, value: String) -> Cookie<'static> {
     Cookie::build((name, value))
         .path(HOME_PATH)
         .http_only(true)
-        .secure(true)
+        .secure(reached_traefik_over_https(cx))
         .same_site(SameSite::Strict)
         .build()
+}
+
+fn reached_traefik_over_https(cx: &Cx) -> bool {
+    headers(cx)
+        .get(X_FORWARDED_PROTO)
+        .is_some_and(|x| x == "https")
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::test::assets;
+    use crate::test::serve;
+    use application::admins::create_admin;
+    use application::sessions::sign_in;
+    use application::users::create_user;
+    use domain::ClientKind;
+    use domain::EmailAddress;
+    use domain::Password;
+    use http::StatusCode;
+    use jiff::SignedDuration;
+    use opentelemetry::Value;
+    use opentelemetry::trace::TracerProvider;
+    use opentelemetry_sdk::trace::InMemorySpanExporter;
+    use opentelemetry_sdk::trace::SdkTracerProvider;
+    use test_app::TestApp;
+    use test_fixtures::Page;
+    use test_fixtures::TestServer;
+    use topcoat::context::Cx;
+    use topcoat::router::Body;
+    use topcoat::router::Layer;
+    use topcoat::router::LayerFuture;
+    use topcoat::router::Next;
+    use topcoat::router::Path;
+    use topcoat::router::Router;
+    use topcoat::router::request::method;
+    use topcoat::router::request::uri;
+    use tracing::Instrument;
+    use tracing_subscriber::layer::SubscriberExt;
+    use uuid::Uuid;
+
+    const NAME: &str = "Maya";
+    const PASSWORD: &str = "correct horse battery staple";
+
+    async fn create_admin(app: &TestApp) -> Uuid {
+        create_admin::call(
+            &app.state,
+            NAME.to_owned(),
+            Password::new(PASSWORD.to_owned()).unwrap(),
+        )
+        .await
+        .unwrap()
+        .id
+    }
+
+    fn cookie_attributes(page: &Page, name: &str) -> Vec<String> {
+        let cookie = page
+            .set_cookies
+            .iter()
+            .find(|x| x.starts_with(&format!("{name}=")))
+            .unwrap_or_else(|| panic!("no {name} cookie in {:?}", page.set_cookies));
+        cookie.split("; ").skip(1).map(str::to_owned).collect()
+    }
+
+    #[tokio::test]
+    async fn admin_pages_redirect_to_sign_in_without_an_admin_session() {
+        let app = TestApp::new().await;
+        let server = serve(&app).await;
+        let mut browser = server.browser();
+
+        let without_cookie = browser.get("/admin/sync").await;
+        browser.set_cookie("session", "not-a-session");
+        let with_unknown_cookie = browser.get("/admin/sync").await;
+
+        for page in [without_cookie, with_unknown_cookie] {
+            assert_eq!(page.status, StatusCode::SEE_OTHER);
+            assert_eq!(page.location.as_deref(), Some("/admin/sign-in"));
+        }
+    }
+
+    #[tokio::test]
+    async fn the_admin_session_cookie_is_http_only_strict_scoped_to_admin_and_secure_only_over_https()
+     {
+        let app = TestApp::new().await;
+        create_admin(&app).await;
+        let server = serve(&app).await;
+        let over_http = server.browser();
+        let mut over_https = server.browser();
+        over_https.set_header("x-forwarded-proto", "https");
+
+        for (mut browser, secure) in [(over_http, false), (over_https, true)] {
+            let form = browser.get("/admin/sign-in").await;
+            let signed_in = browser.sign_in(NAME, PASSWORD).await;
+
+            for attributes in [
+                cookie_attributes(&form, "csrf"),
+                cookie_attributes(&signed_in, "session"),
+            ] {
+                for attribute in ["HttpOnly", "SameSite=Strict", "Path=/admin"] {
+                    assert!(attributes.contains(&attribute.to_owned()), "{attributes:?}");
+                }
+                assert_eq!(
+                    attributes.contains(&"Secure".to_owned()),
+                    secure,
+                    "{attributes:?}"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn admin_forms_without_the_csrf_token_are_rejected() {
+        let app = TestApp::new().await;
+        create_admin(&app).await;
+        let server = serve(&app).await;
+        let mut browser = server.browser();
+        browser.get("/admin/sign-in").await;
+
+        let sign_in_without_token = browser
+            .post_form("/admin/sign-in", &[("name", NAME), ("password", PASSWORD)])
+            .await;
+        let sign_in_with_wrong_token = browser
+            .post_form(
+                "/admin/sign-in",
+                &[("csrf", "wrong"), ("name", NAME), ("password", PASSWORD)],
+            )
+            .await;
+        browser.sign_in(NAME, PASSWORD).await;
+        let sign_out_without_token = browser.post_form("/admin/sign-out", &[]).await;
+        let home = browser.get("/admin/sync").await;
+
+        for page in [
+            sign_in_without_token,
+            sign_in_with_wrong_token,
+            sign_out_without_token,
+        ] {
+            assert_eq!(page.status, StatusCode::FORBIDDEN);
+        }
+        assert_eq!(home.status, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn an_admin_session_ends_after_12_hours_without_use() {
+        let app = TestApp::new().await;
+        create_admin(&app).await;
+        let server = serve(&app).await;
+        let mut browser = server.browser();
+        browser.sign_in(NAME, PASSWORD).await;
+
+        app.clock.advance(SignedDuration::from_hours(12));
+        let home = browser.get("/admin/sync").await;
+
+        assert_eq!(home.status, StatusCode::SEE_OTHER);
+        assert_eq!(home.location.as_deref(), Some("/admin/sign-in"));
+    }
+
+    #[tokio::test]
+    async fn a_user_token_is_rejected_on_admin() {
+        let app = TestApp::new().await;
+        create_user::call(
+            &app.state,
+            "Noor".to_owned(),
+            Password::new("a long passphrase".to_owned()).unwrap(),
+            EmailAddress::new("noor@example.com".to_owned()).unwrap(),
+        )
+        .await
+        .unwrap();
+        let sign_in::Output::SignedIn { token, .. } = sign_in::call(
+            &app.state,
+            "Noor".to_owned(),
+            "a long passphrase".to_owned(),
+            ClientKind::Web,
+            "Firefox on macOS".to_owned(),
+            Uuid::new_v4(),
+        )
+        .await
+        .unwrap() else {
+            panic!("Noor signs in");
+        };
+        let server = serve(&app).await;
+        let mut browser = server.browser();
+
+        browser.set_cookie("session", &token);
+        let home = browser.get("/admin/sync").await;
+
+        assert_eq!(home.status, StatusCode::SEE_OTHER);
+        assert_eq!(home.location.as_deref(), Some("/admin/sign-in"));
+    }
+
+    struct RequestSpanLayer;
+
+    impl Layer for RequestSpanLayer {
+        fn path(&self) -> Option<&Path> {
+            None
+        }
+
+        fn handle<'a>(&'a self, cx: &'a Cx, body: Body, next: Next<'a>) -> LayerFuture<'a> {
+            let span = tracing::info_span!(
+                "request",
+                otel.name = format!("{} {}", method(cx), uri(cx).path())
+            );
+            Box::pin(next.run(cx, body).instrument(span))
+        }
+    }
+
+    #[tokio::test]
+    async fn admin_request_spans_carry_the_admin_id() {
+        let app = TestApp::new().await;
+        let admin_id = create_admin(&app).await;
+        let exporter = InMemorySpanExporter::default();
+        let provider = SdkTracerProvider::builder()
+            .with_simple_exporter(exporter.clone())
+            .build();
+        let _tracing = test_fixtures::set_default_subscriber(
+            tracing_subscriber::registry()
+                .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("selfless"))),
+        );
+        let server = TestServer::serve(
+            crate::register(Router::builder(), assets())
+                .layer(RequestSpanLayer)
+                .app_context(app.state.clone())
+                .build(),
+        )
+        .await;
+        let mut browser = server.browser();
+        browser.sign_in(NAME, PASSWORD).await;
+
+        browser.get("/admin/sync").await;
+
+        let spans = exporter.get_finished_spans().unwrap();
+        let sync = spans
+            .iter()
+            .find(|x| x.name == "GET /admin/sync")
+            .expect("a span for the sync status page");
+        let attribute = sync
+            .attributes
+            .iter()
+            .find(|x| x.key.as_str() == "selfless.admin.id")
+            .expect("the selfless.admin.id attribute");
+        assert_eq!(attribute.value, Value::from(admin_id.to_string()));
+    }
+
+    #[tokio::test]
+    async fn htmx_requests_without_the_csrf_token_are_rejected() {
+        let app = TestApp::new().await;
+        create_admin(&app).await;
+        let server = serve(&app).await;
+        let mut browser = server.browser();
+        browser.sign_in(NAME, PASSWORD).await;
+        let sync = browser.get("/admin/sync").await;
+
+        let without_token = browser.htmx_post("/admin/sign-out", None).await;
+        let with_wrong_token = browser.htmx_post("/admin/sign-out", Some("wrong")).await;
+        let still_signed_in = browser.get("/admin/sync").await;
+        let with_token = browser
+            .htmx_post("/admin/sign-out", Some(&sync.htmx_csrf_token()))
+            .await;
+
+        assert_eq!(without_token.status, StatusCode::FORBIDDEN);
+        assert_eq!(with_wrong_token.status, StatusCode::FORBIDDEN);
+        assert_eq!(still_signed_in.status, StatusCode::OK);
+        assert_eq!(with_token.status, StatusCode::SEE_OTHER);
+        assert_eq!(with_token.location.as_deref(), Some("/admin/sign-in"));
+    }
 }

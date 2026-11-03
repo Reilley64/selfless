@@ -1,6 +1,17 @@
-mod support;
+#[path = "../test/library.rs"]
+mod library_test;
 
 use jiff::SignedDuration;
+use library_test::LibraryServer;
+use library_test::MediaFolder;
+use library_test::StubRadarr;
+use library_test::StubSonarr;
+use library_test::eventually;
+use library_test::fixture;
+use library_test::selfless_test::ADMIN_NAME;
+use library_test::selfless_test::ADMIN_PASSWORD;
+use library_test::selfless_test::RADARR_WEBHOOK_PASSWORD;
+use library_test::selfless_test::settings;
 use opentelemetry::logs::AnyValue;
 use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
 use opentelemetry_sdk::logs::InMemoryLogExporter;
@@ -10,20 +21,10 @@ use reqwest::StatusCode;
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::time::Duration;
-use support::ADMIN_NAME;
-use support::ADMIN_PASSWORD;
-use support::Browser;
-use support::FakeClock;
-use support::MediaFolder;
-use support::Page;
-use support::RADARR_WEBHOOK_PASSWORD;
-use support::StubRadarr;
-use support::StubSonarr;
-use support::TestDatabase;
-use support::TestServer;
-use support::eventually;
-use support::fixture;
-use support::settings;
+use test_fixtures::Browser;
+use test_fixtures::FakeClock;
+use test_fixtures::Page;
+use test_fixtures::TestDatabase;
 use tracing::level_filters::LevelFilter;
 use tracing::subscriber::DefaultGuard;
 use tracing_subscriber::layer::SubscriberExt;
@@ -49,7 +50,7 @@ const POLLING: &str = r#"hx-trigger="every 5s""#;
 
 struct Fixture {
     database: TestDatabase,
-    server: TestServer,
+    server: LibraryServer,
     radarr: StubRadarr,
     sonarr: StubSonarr,
     media: MediaFolder,
@@ -76,7 +77,7 @@ impl Fixture {
         let mut settings = settings(database.url());
         settings.radarr.url = Some(radarr.url());
         settings.sonarr.url = Some(sonarr.url());
-        let server = TestServer::start_with(settings, FakeClock::new()).await;
+        let server = LibraryServer::start_with(settings, FakeClock::new()).await;
         let mut browser = server.browser();
         browser.sign_in(ADMIN_NAME, ADMIN_PASSWORD).await;
         let fixture = Self {
@@ -210,7 +211,7 @@ fn capture_logs() -> (InMemoryLogExporter, DefaultGuard) {
     let provider = SdkLoggerProvider::builder()
         .with_simple_exporter(exporter.clone())
         .build();
-    let guard = tracing::subscriber::set_default(
+    let guard = test_fixtures::set_default_subscriber(
         tracing_subscriber::registry()
             .with(LevelFilter::INFO)
             .with(OpenTelemetryTracingBridge::new(&provider)),
@@ -346,7 +347,7 @@ async fn a_webhook_replaces_the_no_webhook_warning_and_rejected_webhooks_are_cou
         .now()
         .strftime("%Y-%m-%d %H:%M UTC")
         .to_string();
-    let webhook = support::fixture("radarr/webhooks/test.json");
+    let webhook = library_test::fixture("radarr/webhooks/test.json");
     for credentials in [
         Some(("radarr", RADARR_WEBHOOK_PASSWORD)),
         Some(("radarr", "wrong")),
@@ -428,7 +429,7 @@ async fn retry_on_a_failed_delivery_processes_it_again() {
         .send_radarr_webhook(
             Method::POST,
             Some(("radarr", RADARR_WEBHOOK_PASSWORD)),
-            &support::fixture("radarr/webhooks/download.json"),
+            &library_test::fixture("radarr/webhooks/download.json"),
         )
         .await;
     let failed = eventually(async || {
@@ -502,7 +503,7 @@ async fn retry_on_a_failed_delivery_processes_it_again() {
 async fn a_failed_delivery_opens_a_dialog_with_each_attempt_and_the_body_as_formatted_json() {
     let mut fixture = Fixture::start().await;
     fixture.radarr.fail_movie(ARRIVAL).await;
-    let body = support::fixture("radarr/webhooks/download.json");
+    let body = library_test::fixture("radarr/webhooks/download.json");
     let mut attempted_at = vec![fixture.server.clock.now()];
     fixture
         .server

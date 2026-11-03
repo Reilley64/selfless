@@ -1,8 +1,9 @@
-use crate::DbContext;
 use crate::Reconciles;
 use crate::SourceHealth;
 use crate::ports::ListRadarrMovies;
 use crate::ports::ListSonarrSeries;
+use crate::ports::persistence::DbContext;
+use crate::ports::persistence::DbScope;
 use crate::reconcile;
 use domain::HeldRemoval;
 use domain::Source;

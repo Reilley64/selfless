@@ -1,4 +1,5 @@
-mod support;
+#[path = "../test/library.rs"]
+mod library_test;
 
 use application::ports::Probe;
 use application::sync_status::ApiCall;
@@ -8,20 +9,20 @@ use application::sync_status::SourceStatus;
 use application::sync_status::SyncStatus;
 use domain::SyncProblemKind;
 use jiff::SignedDuration;
+use library_test::LibraryServer;
+use library_test::MediaFolder;
+use library_test::StubRadarr;
+use library_test::StubSonarr;
+use library_test::eventually;
+use library_test::fixture;
+use library_test::selfless_test::RADARR_WEBHOOK_PASSWORD;
+use library_test::selfless_test::settings;
 use reqwest::Method;
 use reqwest::StatusCode;
 use serde_json::Value;
 use std::time::Duration;
-use support::FakeClock;
-use support::MediaFolder;
-use support::RADARR_WEBHOOK_PASSWORD;
-use support::StubRadarr;
-use support::StubSonarr;
-use support::TestDatabase;
-use support::TestServer;
-use support::eventually;
-use support::fixture;
-use support::settings;
+use test_fixtures::FakeClock;
+use test_fixtures::TestDatabase;
 
 const ARRIVAL: i64 = 42;
 const SEVERANCE: i64 = 7;
@@ -36,7 +37,7 @@ const SEVERANCE_TWO_EPISODE_FILE: &str =
 
 struct Fixture {
     database: TestDatabase,
-    server: TestServer,
+    server: LibraryServer,
     radarr: StubRadarr,
     sonarr: StubSonarr,
     media: MediaFolder,
@@ -51,7 +52,7 @@ impl Fixture {
         let mut settings = settings(database.url());
         settings.radarr.url = Some(radarr.url());
         settings.sonarr.url = Some(sonarr.url());
-        let server = TestServer::start_with(settings, FakeClock::new()).await;
+        let server = LibraryServer::start_with(settings, FakeClock::new()).await;
         let fixture = Self {
             database,
             server,
@@ -236,7 +237,7 @@ async fn a_failed_call_from_a_webhook_re_sync_shows_in_the_sync_status() {
         .send_radarr_webhook(
             Method::POST,
             Some(("radarr", RADARR_WEBHOOK_PASSWORD)),
-            &support::fixture("radarr/webhooks/download.json"),
+            &library_test::fixture("radarr/webhooks/download.json"),
         )
         .await;
     assert_eq!(status, StatusCode::OK);

@@ -75,12 +75,18 @@ pub(crate) fn warn_unreadable(error: &UnreadableNfo, path: &str) {
     );
 }
 
-pub(crate) async fn replace_actors(
+pub(crate) async fn save_actors<T>(
     db: &mut dyn toasty::Executor,
     owner: Owner,
     had_nfo: bool,
-    actors: &[NfoActor],
+    nfo: &Nfo<T>,
+    actors_of: impl FnOnce(&T) -> &[NfoActor],
 ) -> toasty::Result<()> {
+    let actors = match nfo {
+        Nfo::Unchanged => return Ok(()),
+        Nfo::Read(nfo, _) => actors_of(nfo),
+        Nfo::Missing | Nfo::Unreadable(_) => &[],
+    };
     if had_nfo {
         Actor::filter(actor_owner(owner)).delete().exec(db).await?;
     }
@@ -104,6 +110,28 @@ pub(crate) struct FoundArtwork {
     pub(crate) episode_id: Option<Uuid>,
     pub(crate) kind: ArtworkKind,
     pub(crate) file: FoundFile,
+}
+
+pub(crate) fn item_artwork(
+    poster: Option<FoundFile>,
+    fanart: Option<FoundFile>,
+    clearlogo: Option<FoundFile>,
+) -> Vec<FoundArtwork> {
+    [
+        (ArtworkKind::Poster, poster),
+        (ArtworkKind::Fanart, fanart),
+        (ArtworkKind::Clearlogo, clearlogo),
+    ]
+    .into_iter()
+    .filter_map(|(kind, file)| {
+        Some(FoundArtwork {
+            season_id: None,
+            episode_id: None,
+            kind,
+            file: file?,
+        })
+    })
+    .collect()
 }
 
 pub(crate) async fn save_artwork(

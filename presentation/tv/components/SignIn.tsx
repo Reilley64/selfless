@@ -1,10 +1,10 @@
-import { FocusGuide } from "@selfless/ui";
+import { FocusGuide, serverUnreachable } from "@selfless/ui";
 import { useMutation } from "@tanstack/react-query";
 import { deviceName } from "expo-device";
 import { useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native-css/components";
 import { session } from "../session";
-import { buttonText } from "./buttonText";
+import { button, buttonText, input, useFirstFieldFocus } from "./form";
 
 export function SignIn({
   name: filledIn = "",
@@ -17,20 +17,17 @@ export function SignIn({
 }) {
   const [name, setName] = useState(filledIn);
   const [password, setPassword] = useState("");
+  const guide = useFirstFieldFocus();
   const signIn = useMutation({
     mutationFn: () => session.signIn(name, password, deviceName ?? "TV"),
     onSuccess: (response) => response.status === 201 && onDone?.(),
   });
   const canSignIn = name !== "" && password !== "" && !signIn.isPending;
   const submit = () => canSignIn && signIn.mutate();
-  const input =
-    "h-button-tv-height rounded-small bg-surface-raised px-6 font-sans text-tv-body text-text-primary focus:bg-button-primary";
-  const button =
-    "h-button-tv-height items-center justify-center rounded-small bg-button-background focus:bg-button-focus";
 
   return (
-    <FocusGuide autoFocus className="flex-1 justify-center bg-background p-tv-inset">
-      <View className="w-[760px] gap-6">
+    <FocusGuide autoFocus ref={guide} className="flex-1 items-center justify-center bg-background">
+      <View className="w-4/5 gap-6">
         <Text className="font-sans font-bold text-tv-title text-text-primary">Sign in</Text>
         <TextInput
           className={input}
@@ -41,6 +38,7 @@ export function SignIn({
           autoCorrect={false}
           value={name}
           onChangeText={setName}
+          onEndEditing={(event) => setName(event.nativeEvent.text)}
         />
         <TextInput
           className={input}
@@ -50,13 +48,14 @@ export function SignIn({
           secureTextEntry
           value={password}
           onChangeText={setPassword}
+          onEndEditing={(event) => setPassword(event.nativeEvent.text)}
           onSubmitEditing={submit}
         />
         {signIn.data?.status === 401 && (
           <Text className="font-sans text-tv-body text-accent">Wrong name or password.</Text>
         )}
         {signIn.isError && (
-          <Text className="font-sans text-tv-body text-accent">The server can&apos;t be reached. Try again.</Text>
+          <Text className="font-sans text-tv-body text-accent">{serverUnreachable}</Text>
         )}
         <Pressable className={button} disabled={!canSignIn} onPress={submit}>
           {({ focused }) => <Text className={buttonText(focused)}>Sign in</Text>}

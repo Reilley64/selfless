@@ -1,4 +1,5 @@
-mod support;
+#[path = "../test/library.rs"]
+mod library_test;
 
 use application::sync_status::HeldRemoval;
 use application::sync_status::ReconcileProgress;
@@ -8,18 +9,18 @@ use application::sync_status::VisibleCounts;
 use domain::ReconcileResult;
 use domain::Source;
 use jiff::SignedDuration;
+use library_test::LibraryServer;
+use library_test::MediaFolder;
+use library_test::StubRadarr;
+use library_test::StubSonarr;
+use library_test::eventually;
+use library_test::selfless_test::settings;
 use reqwest::StatusCode;
 use serde_json::Value;
 use std::path::Path;
 use std::time::Duration;
-use support::FakeClock;
-use support::MediaFolder;
-use support::StubRadarr;
-use support::StubSonarr;
-use support::TestDatabase;
-use support::TestServer;
-use support::eventually;
-use support::settings;
+use test_fixtures::FakeClock;
+use test_fixtures::TestDatabase;
 
 const ALL_MOVIES: [i64; 4] = [42, 43, 44, 45];
 const SEVERANCE: i64 = 7;
@@ -27,7 +28,7 @@ const ANDOR: i64 = 8;
 
 struct Fixture {
     database: TestDatabase,
-    server: TestServer,
+    server: LibraryServer,
     arrs: Arrs,
 }
 
@@ -56,7 +57,7 @@ impl Fixture {
         settings.sonarr.url = Some(arrs.sonarr.url());
         settings.library_sync.reconcile_interval = interval;
         Self {
-            server: TestServer::start_with(settings, FakeClock::new()).await,
+            server: LibraryServer::start_with(settings, FakeClock::new()).await,
             database,
             arrs,
         }

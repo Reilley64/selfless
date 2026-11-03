@@ -1,5 +1,7 @@
+mod outbox;
 mod session_cleanup;
 
+use application::sessions::delete_expired_sessions;
 use domain::Source;
 use infrastructure::AppState;
 use jiff::Timestamp;
@@ -11,9 +13,14 @@ use tokio_util::sync::CancellationToken;
 const AFTER_AN_INBOX_ERROR: Duration = Duration::from_secs(60);
 const INBOX_CLEANUP_INTERVAL: Duration = Duration::from_secs(3600);
 
+pub async fn start(state: &AppState) -> Result<(), delete_expired_sessions::Error> {
+    session_cleanup::start(state).await
+}
+
 pub async fn serve(state: AppState, reconcile_interval: Duration, cancellation: CancellationToken) {
     tokio::join!(
         session_cleanup::serve(state.clone(), cancellation.clone()),
+        outbox::serve(state.clone(), cancellation.clone()),
         cancellation.run_until_cancelled(inbox(state.clone())),
         cancellation.run_until_cancelled(inbox_cleanup(state.clone())),
         cancellation.run_until_cancelled(reconcile(state, reconcile_interval)),

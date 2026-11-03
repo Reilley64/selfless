@@ -1,18 +1,16 @@
 use api::Availability;
 use application::BuildInfo;
-use application::DbContext;
 use application::InboxWakeup;
 use application::Reconciles;
 use application::SourceHealth;
 use application::WebhookPasswords;
-use application::bootstrap_first_admin::MissingFirstAdmin;
+use application::admins::bootstrap_first_admin::MissingFirstAdmin;
 use application::ports::Clock;
 use application::ports::ProbeMediaFile;
 use application::ports::SendEmail;
+use application::ports::persistence::DbContext;
+use domain::Password;
 use infrastructure::AppState;
-use infrastructure::media_folder;
-use infrastructure::persistence;
-use infrastructure::telemetry;
 use ohno::AppError;
 use ohno::ErrorExt;
 use ohno::IntoAppError;
@@ -57,6 +55,7 @@ pub async fn start(
     let db = persistence::connect(&settings.database).await?;
     persistence::migrate(&db).await?;
     let state = AppState::builder()
+        .acquire_lock(|_| locking::acquire_lock())
         .build_info(|_| BuildInfo {
             name: env!("CARGO_PKG_NAME"),
             version: env!("CARGO_PKG_VERSION"),
@@ -81,11 +80,14 @@ pub async fn start(
         .source_health(|_| SourceHealth::default())
         .webhook_passwords(|_| webhook_passwords.clone())
         .build();
-    application::bootstrap_first_admin::call(
-        &state,
-        settings.admin.username,
-        settings.admin.password,
-    )
+    let first_admin = match (
+        settings.admin.username.filter(|x| !x.is_empty()),
+        settings.admin.password.map(Password::new),
+    ) {
+        (Some(name), Some(Ok(password))) => Some((name, password)),
+        _ => None,
+    };
+    application::admins::bootstrap_first_admin::call(&state, first_admin)
     .await
     .map_err(|error| {
         if error.find_source::<MissingFirstAdmin>().is_some() {
@@ -99,7 +101,7 @@ pub async fn start(
         None => AssetBundle::load(),
     }
     .into_app_err("failed to load the asset bundle, which `topcoat asset bundle` writes")?;
-    application::delete_expired_sessions::call(&state).await?;
+    workers::start(&state).await?;
     let availability = Availability::default();
     let router = api::router(
         webhooks::register(admin::register(Router::builder(), assets)),

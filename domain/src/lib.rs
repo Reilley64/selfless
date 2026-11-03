@@ -1,147 +1,38 @@
-use jiff::SignedDuration;
+mod admin;
+mod admin_session;
+mod client_kind;
+mod colour;
+mod email_address;
+mod empty_password;
+mod invalid_email_address;
+mod invite;
+mod invite_email_status;
+mod last_admin;
+mod outbox;
+mod outbox_data;
+mod password;
+mod session;
+mod user;
+
+pub use admin::Admin;
+pub use admin_session::AdminSession;
+pub use client_kind::ClientKind;
+pub use colour::Colour;
+pub use email_address::EmailAddress;
+pub use empty_password::EmptyPassword;
+pub use invalid_email_address::InvalidEmailAddress;
+pub use invite::Invite;
+pub use invite_email_status::InviteEmailStatus;
+pub use last_admin::LastAdmin;
+pub use outbox::Outbox;
+pub use outbox_data::OutboxData;
+pub use password::Password;
+pub use session::Session;
+pub use user::User;
+
 use jiff::Timestamp;
 use jiff::civil::Date;
-use toasty::Deferred;
 use uuid::Uuid;
-
-pub const LAST_USED_PRECISION: SignedDuration = SignedDuration::from_hours(1);
-
-#[derive(Debug, toasty::Model)]
-pub struct Admin {
-    #[key]
-    #[auto]
-    pub id: Uuid,
-    #[unique]
-    pub name: String,
-    pub password_hash: String,
-    pub created_at: Timestamp,
-    pub last_signed_in_at: Option<Timestamp>,
-}
-
-#[derive(Debug, toasty::Model)]
-pub struct AdminSession {
-    #[key]
-    #[auto]
-    pub id: Uuid,
-    #[index]
-    pub admin_id: Uuid,
-    #[belongs_to]
-    pub admin: Deferred<Admin>,
-    #[unique]
-    pub token_hash: Vec<u8>,
-    pub signed_in_at: Timestamp,
-    pub last_used_at: Timestamp,
-}
-
-impl AdminSession {
-    pub const IDLE_TIMEOUT: SignedDuration = SignedDuration::from_hours(12);
-}
-
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, toasty::Embed, serde::Serialize, serde::Deserialize,
-)]
-#[column(rename_all = "camelCase")]
-#[serde(rename_all = "camelCase")]
-pub enum Colour {
-    Amber,
-    Blue,
-    Pink,
-    Emerald,
-}
-
-impl Colour {
-    pub const ALL: [Self; 4] = [Self::Amber, Self::Blue, Self::Pink, Self::Emerald];
-}
-
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, toasty::Embed, serde::Serialize, serde::Deserialize,
-)]
-#[column(rename_all = "camelCase")]
-#[serde(rename_all = "camelCase")]
-pub enum Symbol {
-    Ring,
-    Triangle,
-    Star,
-    Waves,
-}
-
-impl Symbol {
-    pub const ALL: [Self; 4] = [Self::Ring, Self::Triangle, Self::Star, Self::Waves];
-}
-
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, toasty::Embed, serde::Serialize, serde::Deserialize,
-)]
-#[column(rename_all = "camelCase")]
-#[serde(rename_all = "camelCase")]
-pub enum ClientKind {
-    Web,
-    AppleTv,
-    GoogleTv,
-}
-
-#[derive(Debug, toasty::Model)]
-pub struct User {
-    #[key]
-    #[auto]
-    pub id: Uuid,
-    #[unique]
-    pub name: String,
-    #[unique]
-    pub email: String,
-    pub password_hash: String,
-    pub colour: Colour,
-    pub symbol: Symbol,
-    pub created_at: Timestamp,
-}
-
-#[derive(Debug, toasty::Model)]
-pub struct Session {
-    #[key]
-    #[auto]
-    pub id: Uuid,
-    #[index]
-    pub user_id: Uuid,
-    #[belongs_to]
-    pub user: Deferred<User>,
-    pub client_kind: ClientKind,
-    pub device_name: String,
-    #[unique]
-    pub token_hash: Vec<u8>,
-    pub signed_in_at: Timestamp,
-    pub last_used_at: Timestamp,
-}
-
-impl Session {
-    pub const WEB_IDLE_TIMEOUT: SignedDuration = SignedDuration::from_hours(30 * 24);
-
-    pub fn expired(&self, now: Timestamp) -> bool {
-        self.client_kind == ClientKind::Web
-            && now.duration_since(self.last_used_at) >= Self::WEB_IDLE_TIMEOUT
-    }
-}
-
-#[derive(Debug, toasty::Model)]
-pub struct Invite {
-    #[key]
-    #[auto]
-    pub id: Uuid,
-    #[unique]
-    pub email: String,
-    #[unique]
-    pub token_hash: Vec<u8>,
-    pub admin_id: Uuid,
-    pub sent_at: Timestamp,
-    pub expires_at: Timestamp,
-}
-
-impl Invite {
-    pub const VALID_FOR: SignedDuration = SignedDuration::from_hours(7 * 24);
-
-    pub fn expired(&self, now: Timestamp) -> bool {
-        now >= self.expires_at
-    }
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, toasty::Embed)]
 #[column(type = text)]
@@ -187,7 +78,7 @@ pub struct InboxRow {
     pub error: Option<String>,
     pub source_item_id: Option<i64>,
     #[has_many]
-    pub attempt_log: Deferred<Vec<InboxAttempt>>,
+    pub attempt_log: toasty::Deferred<Vec<InboxAttempt>>,
 }
 
 #[derive(Debug, toasty::Model)]
@@ -198,7 +89,7 @@ pub struct InboxAttempt {
     #[index]
     pub inbox_row_id: Uuid,
     #[belongs_to(key = inbox_row_id, references = id)]
-    pub inbox_row: Deferred<InboxRow>,
+    pub inbox_row: toasty::Deferred<InboxRow>,
     pub attempted_at: Timestamp,
     pub error: Option<String>,
 }
@@ -254,7 +145,7 @@ pub struct Movie {
     #[index]
     pub media_file_id: Option<Uuid>,
     #[belongs_to(key = media_file_id, references = id)]
-    pub media_file: Deferred<Option<MediaFile>>,
+    pub media_file: toasty::Deferred<Option<MediaFile>>,
     pub visible: bool,
     pub sort_title: Option<String>,
     pub original_title: Option<String>,
@@ -266,11 +157,11 @@ pub struct Movie {
     pub directors: Vec<String>,
     pub nfo_modified_at: Option<Timestamp>,
     #[has_many]
-    pub actors: Deferred<Vec<Actor>>,
+    pub actors: toasty::Deferred<Vec<Actor>>,
     #[has_many]
-    pub artwork: Deferred<Vec<Artwork>>,
+    pub artwork: toasty::Deferred<Vec<Artwork>>,
     #[has_many]
-    pub sync_problems: Deferred<Vec<SyncProblem>>,
+    pub sync_problems: toasty::Deferred<Vec<SyncProblem>>,
 }
 
 #[derive(Debug, toasty::Model)]
@@ -281,11 +172,11 @@ pub struct Actor {
     #[index]
     pub movie_id: Option<Uuid>,
     #[belongs_to(key = movie_id, references = id)]
-    pub movie: Deferred<Option<Movie>>,
+    pub movie: toasty::Deferred<Option<Movie>>,
     #[index]
     pub show_id: Option<Uuid>,
     #[belongs_to(key = show_id, references = id)]
-    pub show: Deferred<Option<Show>>,
+    pub show: toasty::Deferred<Option<Show>>,
     pub name: String,
     pub role: Option<String>,
     pub order: Option<i64>,
@@ -308,19 +199,19 @@ pub struct Artwork {
     #[index]
     pub movie_id: Option<Uuid>,
     #[belongs_to(key = movie_id, references = id)]
-    pub movie: Deferred<Option<Movie>>,
+    pub movie: toasty::Deferred<Option<Movie>>,
     #[index]
     pub show_id: Option<Uuid>,
     #[belongs_to(key = show_id, references = id)]
-    pub show: Deferred<Option<Show>>,
+    pub show: toasty::Deferred<Option<Show>>,
     #[index]
     pub season_id: Option<Uuid>,
     #[belongs_to(key = season_id, references = id)]
-    pub season: Deferred<Option<Season>>,
+    pub season: toasty::Deferred<Option<Season>>,
     #[index]
     pub episode_id: Option<Uuid>,
     #[belongs_to(key = episode_id, references = id)]
-    pub episode: Deferred<Option<Episode>>,
+    pub episode: toasty::Deferred<Option<Episode>>,
     pub kind: ArtworkKind,
     pub path: String,
     pub modified_at: Timestamp,
@@ -342,15 +233,15 @@ pub struct SyncProblem {
     #[index]
     pub movie_id: Option<Uuid>,
     #[belongs_to(key = movie_id, references = id)]
-    pub movie: Deferred<Option<Movie>>,
+    pub movie: toasty::Deferred<Option<Movie>>,
     #[index]
     pub media_file_id: Option<Uuid>,
     #[belongs_to(key = media_file_id, references = id)]
-    pub media_file: Deferred<Option<MediaFile>>,
+    pub media_file: toasty::Deferred<Option<MediaFile>>,
     #[index]
     pub show_id: Option<Uuid>,
     #[belongs_to(key = show_id, references = id)]
-    pub show: Deferred<Option<Show>>,
+    pub show: toasty::Deferred<Option<Show>>,
     pub kind: SyncProblemKind,
     pub path: String,
 }
@@ -377,13 +268,13 @@ pub struct Show {
     pub rating: Option<f64>,
     pub nfo_modified_at: Option<Timestamp>,
     #[has_many]
-    pub seasons: Deferred<Vec<Season>>,
+    pub seasons: toasty::Deferred<Vec<Season>>,
     #[has_many]
-    pub actors: Deferred<Vec<Actor>>,
+    pub actors: toasty::Deferred<Vec<Actor>>,
     #[has_many]
-    pub artwork: Deferred<Vec<Artwork>>,
+    pub artwork: toasty::Deferred<Vec<Artwork>>,
     #[has_many]
-    pub sync_problems: Deferred<Vec<SyncProblem>>,
+    pub sync_problems: toasty::Deferred<Vec<SyncProblem>>,
 }
 
 #[derive(Debug, toasty::Model)]
@@ -394,12 +285,12 @@ pub struct Season {
     #[index]
     pub show_id: Uuid,
     #[belongs_to(key = show_id, references = id)]
-    pub show: Deferred<Show>,
+    pub show: toasty::Deferred<Show>,
     pub number: i64,
     #[has_many]
-    pub episodes: Deferred<Vec<Episode>>,
+    pub episodes: toasty::Deferred<Vec<Episode>>,
     #[has_many]
-    pub artwork: Deferred<Vec<Artwork>>,
+    pub artwork: toasty::Deferred<Vec<Artwork>>,
 }
 
 #[derive(Debug, toasty::Model)]
@@ -410,7 +301,7 @@ pub struct Episode {
     #[index]
     pub season_id: Uuid,
     #[belongs_to(key = season_id, references = id)]
-    pub season: Deferred<Season>,
+    pub season: toasty::Deferred<Season>,
     #[unique]
     pub tvdb_id: i64,
     pub number: i64,
@@ -421,12 +312,12 @@ pub struct Episode {
     #[index]
     pub media_file_id: Option<Uuid>,
     #[belongs_to(key = media_file_id, references = id)]
-    pub media_file: Deferred<Option<MediaFile>>,
+    pub media_file: toasty::Deferred<Option<MediaFile>>,
     pub visible: bool,
     pub rating: Option<f64>,
     pub nfo_modified_at: Option<Timestamp>,
     #[has_many]
-    pub artwork: Deferred<Vec<Artwork>>,
+    pub artwork: toasty::Deferred<Vec<Artwork>>,
 }
 
 #[derive(Debug, toasty::Model)]
@@ -441,19 +332,19 @@ pub struct MediaFile {
     pub container: Option<String>,
     pub duration_ms: Option<i64>,
     #[has_many]
-    pub movies: Deferred<Vec<Movie>>,
+    pub movies: toasty::Deferred<Vec<Movie>>,
     #[has_many]
-    pub episodes: Deferred<Vec<Episode>>,
+    pub episodes: toasty::Deferred<Vec<Episode>>,
     #[has_many]
-    pub video_streams: Deferred<Vec<VideoStream>>,
+    pub video_streams: toasty::Deferred<Vec<VideoStream>>,
     #[has_many]
-    pub audio_streams: Deferred<Vec<AudioStream>>,
+    pub audio_streams: toasty::Deferred<Vec<AudioStream>>,
     #[has_many]
-    pub subtitle_streams: Deferred<Vec<SubtitleStream>>,
+    pub subtitle_streams: toasty::Deferred<Vec<SubtitleStream>>,
     #[has_many]
-    pub subtitle_files: Deferred<Vec<SubtitleFile>>,
+    pub subtitle_files: toasty::Deferred<Vec<SubtitleFile>>,
     #[has_many]
-    pub sync_problems: Deferred<Vec<SyncProblem>>,
+    pub sync_problems: toasty::Deferred<Vec<SyncProblem>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, toasty::Embed)]
@@ -473,7 +364,7 @@ pub struct VideoStream {
     #[index]
     pub media_file_id: Uuid,
     #[belongs_to(key = media_file_id, references = id)]
-    pub media_file: Deferred<MediaFile>,
+    pub media_file: toasty::Deferred<MediaFile>,
     pub index: i64,
     pub codec: String,
     pub profile: Option<String>,
@@ -491,7 +382,7 @@ pub struct AudioStream {
     #[index]
     pub media_file_id: Uuid,
     #[belongs_to(key = media_file_id, references = id)]
-    pub media_file: Deferred<MediaFile>,
+    pub media_file: toasty::Deferred<MediaFile>,
     pub index: i64,
     pub codec: String,
     pub language: Option<String>,
@@ -508,7 +399,7 @@ pub struct SubtitleStream {
     #[index]
     pub media_file_id: Uuid,
     #[belongs_to(key = media_file_id, references = id)]
-    pub media_file: Deferred<MediaFile>,
+    pub media_file: toasty::Deferred<MediaFile>,
     pub index: i64,
     pub codec: String,
     pub language: Option<String>,
@@ -527,7 +418,7 @@ pub struct SubtitleFile {
     #[index]
     pub media_file_id: Uuid,
     #[belongs_to(key = media_file_id, references = id)]
-    pub media_file: Deferred<MediaFile>,
+    pub media_file: toasty::Deferred<MediaFile>,
     pub path: String,
     pub language: Option<String>,
     pub hearing_impaired: bool,

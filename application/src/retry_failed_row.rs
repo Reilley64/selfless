@@ -1,6 +1,7 @@
-use crate::DbContext;
 use crate::InboxWakeup;
 use crate::ports::Clock;
+use crate::ports::persistence::DbContext;
+use crate::ports::persistence::DbScope;
 use domain::InboxRow;
 use domain::InboxRowStatus;
 use uuid::Uuid;

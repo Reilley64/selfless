@@ -19,3 +19,13 @@ topcoat = { workspace = true, features = ["fs"] }
 tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 uuid = { workspace = true, features = ["serde"] }
+
+[dev-dependencies]
+jiff = { workspace = true }
+opentelemetry-appender-tracing = { workspace = true }
+opentelemetry_sdk = { workspace = true, features = ["testing"] }
+test-app = { workspace = true }
+test-fixtures = { workspace = true }
+toasty = { workspace = true }
+tokio = { workspace = true }
+tracing-subscriber = { workspace = true }

@@ -6,6 +6,7 @@ members = [
     "infrastructure/dependencies",
     "infrastructure/email",
     "infrastructure/ffmpeg",
+    "infrastructure/locking",
     "infrastructure/media-folder",
     "infrastructure/persistence",
     "infrastructure/radarr",
@@ -17,6 +18,8 @@ members = [
     "presentation/api",
     "presentation/webhooks",
     "presentation/workers",
+    "test/app",
+    "test/fixtures",
 ]
 
 [workspace.package]
@@ -30,6 +33,7 @@ async-trait = "0.1.92"
 base64 = "0.22.1"
 bytes = "1.12.1"
 config = { version = "0.15.27", default-features = false }
+email_address = { version = "0.2.9", default-features = false }
 fundle = "0.4.1"
 futures-util = "0.3.34"
 getrandom = "0.4.3"
@@ -71,8 +75,9 @@ wiremock = "0.6.5"
 application = { path = "application" }
 domain = { path = "domain" }
 email = { path = "infrastructure/email" }
-infrastructure = { path = "infrastructure/dependencies" }
 ffmpeg = { path = "infrastructure/ffmpeg" }
+infrastructure = { path = "infrastructure/dependencies" }
+locking = { path = "infrastructure/locking" }
 media-folder = { path = "infrastructure/media-folder" }
 persistence = { path = "infrastructure/persistence" }
 radarr = { path = "infrastructure/radarr" }
@@ -84,6 +89,8 @@ admin = { path = "presentation/admin" }
 api = { path = "presentation/api" }
 webhooks = { path = "presentation/webhooks" }
 workers = { path = "presentation/workers" }
+test-app = { path = "test/app" }
+test-fixtures = { path = "test/fixtures" }
 
 [package]
 name = "selfless"
@@ -97,14 +104,23 @@ default-run = "selfless"
 admin = { workspace = true }
 api = { workspace = true }
 application = { workspace = true }
+domain = { workspace = true }
+email = { workspace = true }
+ffmpeg = { workspace = true }
 infrastructure = { workspace = true }
+locking = { workspace = true }
+media-folder = { workspace = true }
 ohno = { workspace = true, features = ["app-err"] }
 opentelemetry = { workspace = true }
 opentelemetry-appender-tracing = { workspace = true }
 opentelemetry-instrumentation-process = { workspace = true }
 opentelemetry-otlp = { workspace = true }
 opentelemetry_sdk = { workspace = true }
+persistence = { workspace = true }
+radarr = { workspace = true }
 settings = { workspace = true }
+sonarr = { workspace = true }
+telemetry = { workspace = true }
 toasty-cli = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
@@ -117,24 +133,18 @@ webhooks = { workspace = true }
 workers = { workspace = true }
 
 [dev-dependencies]
-base64 = { workspace = true }
-domain = { workspace = true }
 jiff = { workspace = true }
-jsonschema = { workspace = true }
-opentelemetry = { workspace = true }
 opentelemetry-proto = { workspace = true }
 opentelemetry_sdk = { workspace = true, features = ["testing"] }
 prost = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
-serde-saphyr = { workspace = true }
 serde_json = { workspace = true }
-sha2 = { workspace = true }
 tempfile = { workspace = true }
-tokio-postgres = { workspace = true }
-tokio-util = { workspace = true }
+test-fixtures = { workspace = true }
 tonic = { workspace = true, features = ["codegen", "router", "server"] }
-tracing = { workspace = true }
-tracing-opentelemetry = { workspace = true }
-tracing-subscriber = { workspace = true }
 url = { workspace = true }
 wiremock = { workspace = true }
+
+# Dependencies build without debug info to keep dev target dirs small. Workspace crates keep theirs.
+[profile.dev.package."*"]
+debug = false

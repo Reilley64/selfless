@@ -1,19 +1,20 @@
-mod support;
+#[path = "../test/library.rs"]
+mod library_test;
 
 use application::list_episodes::Episode;
 use application::list_shows::Show;
 use jiff::Timestamp;
 use jiff::civil::date;
+use library_test::LibraryServer;
+use library_test::MediaFolder;
+use library_test::StubSonarr;
+use library_test::eventually;
+use library_test::fixture;
+use library_test::selfless_test::SONARR_WEBHOOK_PASSWORD;
 use reqwest::Method;
 use reqwest::StatusCode;
 use serde_json::Value;
-use support::MediaFolder;
-use support::SONARR_WEBHOOK_PASSWORD;
-use support::StubSonarr;
-use support::TestDatabase;
-use support::TestServer;
-use support::eventually;
-use support::fixture;
+use test_fixtures::TestDatabase;
 use uuid::Uuid;
 
 const SONARR_ID: i64 = 7;
@@ -23,7 +24,7 @@ const S02E01: &str = "TV/Severance/Season 02/Severance - S02E01 - Hello, Ms. Cob
 
 struct Fixture {
     database: TestDatabase,
-    server: TestServer,
+    server: LibraryServer,
     sonarr: StubSonarr,
     media: MediaFolder,
 }
@@ -32,7 +33,7 @@ impl Fixture {
     async fn start() -> Self {
         let database = TestDatabase::create().await;
         let sonarr = StubSonarr::start().await;
-        let server = TestServer::start_with_sonarr(database.url(), &sonarr).await;
+        let server = LibraryServer::start_with_sonarr(database.url(), &sonarr).await;
         Self {
             database,
             server,

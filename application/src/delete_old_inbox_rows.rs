@@ -1,5 +1,6 @@
-use crate::DbContext;
 use crate::ports::Clock;
+use crate::ports::persistence::DbContext;
+use crate::ports::persistence::DbScope;
 use crate::unsampled;
 use jiff::SignedDuration;
 use tracing::Instrument;

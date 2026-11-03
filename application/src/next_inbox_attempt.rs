@@ -1,4 +1,5 @@
-use crate::DbContext;
+use crate::ports::persistence::DbContext;
+use crate::ports::persistence::DbScope;
 use crate::unsampled;
 use domain::InboxRow;
 use domain::InboxRowStatus;

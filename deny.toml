@@ -1,20 +1,24 @@
+[graph]
+exclude-dev = true
+
 [bans]
 multiple-versions = "allow"
 wildcards = "allow"
 deny = [
     { name = "native-tls" },
 
-    { name = "domain", wrappers = ["selfless", "application", "api", "admin", "webhooks", "workers"] },
-    { name = "application", wrappers = ["selfless", "infrastructure", "email", "ffmpeg", "media-folder", "persistence", "radarr", "sonarr", "telemetry", "api", "admin", "webhooks", "workers"] },
+    { name = "domain", wrappers = ["selfless", "application", "api", "admin", "persistence", "webhooks", "workers"] },
+    { name = "application", wrappers = ["selfless", "infrastructure", "email", "ffmpeg", "locking", "media-folder", "persistence", "radarr", "sonarr", "telemetry", "api", "admin", "webhooks", "workers"] },
 
-    { name = "email", wrappers = ["infrastructure", "settings"] },
-    { name = "ffmpeg", wrappers = ["infrastructure"] },
-    { name = "media-folder", wrappers = ["infrastructure"] },
-    { name = "persistence", wrappers = ["infrastructure", "settings"] },
-    { name = "radarr", wrappers = ["infrastructure", "settings"] },
-    { name = "sonarr", wrappers = ["infrastructure", "settings"] },
+    { name = "email", wrappers = ["selfless", "settings"] },
+    { name = "ffmpeg", wrappers = ["selfless"] },
+    { name = "locking", wrappers = ["selfless"] },
+    { name = "media-folder", wrappers = ["selfless"] },
+    { name = "persistence", wrappers = ["selfless", "settings", "workers"] },
+    { name = "radarr", wrappers = ["selfless", "settings"] },
+    { name = "sonarr", wrappers = ["selfless", "settings"] },
     { name = "servarr", wrappers = ["radarr", "sonarr"] },
-    { name = "telemetry", wrappers = ["infrastructure", "settings"] },
+    { name = "telemetry", wrappers = ["selfless", "settings"] },
     { name = "settings", wrappers = ["selfless"] },
     { name = "infrastructure", wrappers = ["selfless", "api", "admin", "webhooks", "workers"] },
 
@@ -22,4 +26,7 @@ deny = [
     { name = "api", wrappers = ["selfless"] },
     { name = "webhooks", wrappers = ["selfless"] },
     { name = "workers", wrappers = ["selfless"] },
+
+    { name = "test-fixtures" },
+    { name = "test-app" },
 ]

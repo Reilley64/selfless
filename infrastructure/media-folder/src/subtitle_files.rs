@@ -1,6 +1,6 @@
+use application::ports::FoundSubtitleFile;
 use application::ports::ListSubtitleFiles;
 use application::ports::ListSubtitleFilesError;
-use application::ports::SubtitleFile;
 use std::path::Path;
 
 const EXTENSIONS: [&str; 2] = ["srt", "ass"];
@@ -9,7 +9,7 @@ pub(crate) fn list_subtitle_files() -> ListSubtitleFiles {
     ListSubtitleFiles::new(|media_file_path| Box::pin(list(media_file_path)))
 }
 
-async fn list(media_file_path: String) -> Result<Vec<SubtitleFile>, ListSubtitleFilesError> {
+async fn list(media_file_path: String) -> Result<Vec<FoundSubtitleFile>, ListSubtitleFilesError> {
     let media_file_path = Path::new(&media_file_path);
     let (Some(folder), Some(stem)) = (
         media_file_path.parent(),
@@ -36,7 +36,7 @@ async fn list(media_file_path: String) -> Result<Vec<SubtitleFile>, ListSubtitle
     Ok(subtitle_files)
 }
 
-fn subtitle_file(folder: &Path, stem: &str, name: &str) -> Option<SubtitleFile> {
+fn subtitle_file(folder: &Path, stem: &str, name: &str) -> Option<FoundSubtitleFile> {
     let mut parts = name
         .strip_prefix(stem)?
         .strip_prefix('.')?
@@ -46,7 +46,7 @@ fn subtitle_file(folder: &Path, stem: &str, name: &str) -> Option<SubtitleFile> 
     if !EXTENSIONS.contains(&extension.as_str()) {
         return None;
     }
-    let mut subtitle_file = SubtitleFile {
+    let mut subtitle_file = FoundSubtitleFile {
         path: folder.join(name).to_str()?.to_owned(),
         language: None,
         hearing_impaired: false,
@@ -54,16 +54,31 @@ fn subtitle_file(folder: &Path, stem: &str, name: &str) -> Option<SubtitleFile> 
     };
     for part in parts {
         match part.to_ascii_lowercase().as_str() {
-            "hi" => subtitle_file.hearing_impaired = true,
+            "hi" | "sdh" => subtitle_file.hearing_impaired = true,
             "forced" => subtitle_file.forced = true,
-            code if subtitle_file.language.is_none()
-                && (2..=3).contains(&code.len())
-                && code.bytes().all(|x| x.is_ascii_lowercase()) =>
-            {
-                subtitle_file.language = Some(code.to_owned());
+            tag if subtitle_file.language.is_none() => {
+                subtitle_file.language = Some(language(tag)?);
             }
             _ => return None,
         }
     }
     Some(subtitle_file)
+}
+
+fn language(tag: &str) -> Option<String> {
+    let (code, region) = match tag.split_once('-') {
+        Some((code, region)) => (code, Some(region)),
+        None => (tag, None),
+    };
+    let letters = |x: &str| x.bytes().all(|x| x.is_ascii_lowercase());
+    if !(2..=3).contains(&code.len()) || !letters(code) {
+        return None;
+    }
+    match region {
+        None => Some(code.to_owned()),
+        Some(region) if region.len() == 2 && letters(region) => {
+            Some(format!("{code}-{}", region.to_ascii_uppercase()))
+        }
+        Some(_) => None,
+    }
 }

@@ -7,12 +7,5 @@ publish.workspace = true
 
 [dependencies]
 application = { workspace = true }
-email = { workspace = true }
-ffmpeg = { workspace = true }
 fundle = { workspace = true }
 jiff = { workspace = true }
-media-folder = { workspace = true }
-persistence = { workspace = true }
-radarr = { workspace = true }
-sonarr = { workspace = true }
-telemetry = { workspace = true }

@@ -1,4 +1,5 @@
-mod support;
+#[path = "../test/library.rs"]
+mod library_test;
 
 use application::list_episodes::Episode;
 use application::list_movies::Actor;
@@ -10,14 +11,14 @@ use domain::SyncProblemKind;
 use jiff::SignedDuration;
 use jiff::Timestamp;
 use jiff::civil::date;
+use library_test::LibraryServer;
+use library_test::MediaFolder;
+use library_test::StubSonarr;
+use library_test::eventually;
+use library_test::fixture;
 use serde_json::Value;
 use std::time::Duration;
-use support::MediaFolder;
-use support::StubSonarr;
-use support::TestDatabase;
-use support::TestServer;
-use support::eventually;
-use support::fixture;
+use test_fixtures::TestDatabase;
 use uuid::Uuid;
 
 struct SonarrSeries {
@@ -51,7 +52,7 @@ const IMAGE_MODIFIED_AT: &str = "2026-10-28T12:30:00Z";
 
 struct Fixture {
     database: TestDatabase,
-    server: TestServer,
+    server: LibraryServer,
     sonarr: StubSonarr,
     media: MediaFolder,
 }
@@ -60,7 +61,7 @@ impl Fixture {
     async fn start() -> Self {
         let database = TestDatabase::create().await;
         let sonarr = StubSonarr::start().await;
-        let server = TestServer::start_with_sonarr(database.url(), &sonarr).await;
+        let server = LibraryServer::start_with_sonarr(database.url(), &sonarr).await;
         eventually(async || {
             application::sync_status::call(&server.state, None, 1)
                 .await
@@ -95,6 +96,16 @@ impl Fixture {
     }
 
     async fn reconcile(&self, series: &SonarrSeries) -> Show {
+        self.reconcile_with_episodes(
+            series,
+            &self
+                .media
+                .fixture(&format!("sonarr/api/{}.json", series.episodes)),
+        )
+        .await
+    }
+
+    async fn reconcile_with_episodes(&self, series: &SonarrSeries, episodes: &str) -> Show {
         self.sonarr
             .serve_series_list(&format!(
                 "[{}]",
@@ -105,9 +116,7 @@ impl Fixture {
         self.sonarr
             .serve_episodes(
                 series.sonarr_id,
-                &self
-                    .media
-                    .fixture(&format!("sonarr/api/{}.json", series.episodes)),
+                episodes,
                 &self
                     .media
                     .fixture(&format!("sonarr/api/{}.json", series.episode_files)),
@@ -348,6 +357,99 @@ async fn an_episode_nfo_matches_by_sonarr_uniqueid_then_by_season_and_episode_nu
 }
 
 #[tokio::test]
+async fn an_unchanged_episode_nfo_takes_sonarrs_new_episode_number() {
+    let fixture = Fixture::start().await;
+    fixture.create_files(&ANDOR);
+    fixture.write_nfo(&format!("{KASSA}.nfo"), "episode");
+    fixture.reconcile(&ANDOR).await;
+
+    let show = fixture
+        .reconcile_with_episodes(
+            &ANDOR,
+            &fixture
+                .media
+                .fixture("sonarr/api/episodes-andor.json")
+                .replacen("\"episodeNumber\": 1,", "\"episodeNumber\": 3,", 1),
+        )
+        .await;
+
+    let episodes = fixture.episodes(show.id, 1).await;
+    assert_eq!(
+        episodes
+            .iter()
+            .map(|x| (x.number, x.title.as_str(), x.rating))
+            .collect::<Vec<_>>(),
+        [(2, "That Would Be Me", None), (3, "Kassa", Some(7.5))]
+    );
+    fixture.stop().await;
+}
+
+#[tokio::test]
+async fn an_episode_nfo_of_a_re_added_show_matches_by_season_and_episode_number() {
+    let fixture = Fixture::start().await;
+    fixture.create_files(&SEVERANCE);
+    fixture.write_nfo(&format!("{S01E02_E03}.nfo"), "two-episodes");
+
+    let show = fixture
+        .reconcile_with_episodes(
+            &SEVERANCE,
+            &fixture
+                .media
+                .fixture("sonarr/api/episodes.json")
+                .replace("\"id\": 10", "\"id\": 20"),
+        )
+        .await;
+
+    let episodes = fixture.episodes(show.id, 1).await;
+    assert_eq!(
+        episodes
+            .iter()
+            .map(|x| (x.number, x.title.as_str(), x.rating))
+            .collect::<Vec<_>>(),
+        [
+            (1, "Good News About Hell", None),
+            (2, "Half Loop", Some(8.1)),
+            (3, "In Perpetuity", Some(8.3)),
+        ]
+    );
+    fixture.stop().await;
+}
+
+#[tokio::test]
+async fn an_episode_nfo_entry_whose_sonarr_uniqueid_belongs_to_another_episode_is_not_matched_by_number()
+ {
+    let fixture = Fixture::start().await;
+    fixture.create_files(&SEVERANCE);
+    fixture.write_nfo(&format!("{S01E02_E03}.nfo"), "two-episodes");
+
+    let show = fixture
+        .reconcile_with_episodes(
+            &SEVERANCE,
+            &fixture
+                .media
+                .fixture("sonarr/api/episodes.json")
+                .replace("\"episodeNumber\": 2,", "\"episodeNumber\": 4,")
+                .replace("\"episodeNumber\": 3,", "\"episodeNumber\": 2,")
+                .replace("\"id\": 1013", "\"id\": 1014"),
+        )
+        .await;
+
+    let episodes = fixture.episodes(show.id, 1).await;
+    assert_eq!(
+        episodes
+            .iter()
+            .map(|x| (x.number, x.title.as_str(), x.rating))
+            .collect::<Vec<_>>(),
+        [
+            (1, "Good News About Hell", None),
+            (2, "In Perpetuity", None),
+            (4, "Half Loop", Some(8.1)),
+        ]
+    );
+    fixture.stop().await;
+}
+
+#[tokio::test]
 async fn show_artwork_season_and_specials_posters_and_episode_thumbs_are_kept() {
     let fixture = Fixture::start().await;
     fixture.create_files(&SEVERANCE);
@@ -488,7 +590,7 @@ async fn a_reconcile_picks_up_changed_nfos_and_images() {
 
     fixture.media.write(
         &format!("{ANDOR_FOLDER}/tvshow.nfo"),
-        &support::fixture("sonarr/nfo/tvshow.nfo")
+        &library_test::fixture("sonarr/nfo/tvshow.nfo")
             .replace("<status>Ended</status>", "<status>Continuing</status>"),
     );
     fixture.media.set_modified(
@@ -497,7 +599,7 @@ async fn a_reconcile_picks_up_changed_nfos_and_images() {
     );
     fixture.media.write(
         &format!("{KASSA}.nfo"),
-        &support::fixture("sonarr/nfo/episode.nfo")
+        &library_test::fixture("sonarr/nfo/episode.nfo")
             .replace("<rating>7.5</rating>", "<rating>7.7</rating>"),
     );
     fixture

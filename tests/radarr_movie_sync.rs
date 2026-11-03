@@ -1,16 +1,17 @@
-mod support;
+#[path = "../test/library.rs"]
+mod library_test;
 
 use application::list_movies::Movie;
 use jiff::Timestamp;
+use library_test::LibraryServer;
+use library_test::MediaFolder;
+use library_test::StubRadarr;
+use library_test::eventually;
+use library_test::fixture;
+use library_test::selfless_test::RADARR_WEBHOOK_PASSWORD;
 use reqwest::Method;
 use reqwest::StatusCode;
-use support::MediaFolder;
-use support::RADARR_WEBHOOK_PASSWORD;
-use support::StubRadarr;
-use support::TestDatabase;
-use support::TestServer;
-use support::eventually;
-use support::fixture;
+use test_fixtures::TestDatabase;
 
 const RADARR_ID: i64 = 42;
 const FILE: &str = "Movies/Arrival (2016)/Arrival (2016) Bluray-1080p.mkv";
@@ -18,7 +19,7 @@ const UPGRADED_FILE: &str = "Movies/Arrival (2016)/Arrival (2016) Remux-2160p.mk
 
 struct Fixture {
     database: TestDatabase,
-    server: TestServer,
+    server: LibraryServer,
     radarr: StubRadarr,
     media: MediaFolder,
 }
@@ -27,7 +28,7 @@ impl Fixture {
     async fn start() -> Self {
         let database = TestDatabase::create().await;
         let radarr = StubRadarr::start().await;
-        let server = TestServer::start_with_radarr(database.url(), &radarr).await;
+        let server = LibraryServer::start_with_radarr(database.url(), &radarr).await;
         Self {
             database,
             server,

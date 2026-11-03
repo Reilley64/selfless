@@ -12,3 +12,7 @@ opentelemetry-proto = { workspace = true }
 prost = { workspace = true }
 serde = { workspace = true }
 tonic = { workspace = true, features = ["channel"] }
+
+[dev-dependencies]
+tokio = { workspace = true }
+tonic = { workspace = true, features = ["codegen", "router", "server"] }

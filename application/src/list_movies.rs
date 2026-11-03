@@ -1,4 +1,5 @@
-use crate::DbContext;
+use crate::ports::persistence::DbContext;
+use crate::ports::persistence::DbScope;
 use domain::ArtworkKind;
 use jiff::Timestamp;
 use jiff::civil::Date;

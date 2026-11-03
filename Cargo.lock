@@ -14,14 +14,22 @@ version = "0.1.0"
 dependencies = [
  "application",
  "domain",
+ "http",
  "infrastructure",
  "jiff",
  "ohno",
+ "opentelemetry",
+ "opentelemetry-appender-tracing",
+ "opentelemetry_sdk",
  "serde",
  "serde_json",
+ "test-app",
+ "test-fixtures",
+ "tokio",
  "topcoat",
  "tracing",
  "tracing-opentelemetry",
+ "tracing-subscriber",
  "uuid",
 ]
 
@@ -226,14 +234,21 @@ dependencies = [
  "domain",
  "http",
  "infrastructure",
+ "jiff",
  "ohno",
  "opentelemetry",
+ "opentelemetry-appender-tracing",
  "opentelemetry_sdk",
  "serde",
  "serde_json",
+ "test-app",
+ "test-fixtures",
+ "toasty",
+ "tokio",
  "topcoat",
  "tracing",
  "tracing-opentelemetry",
+ "tracing-subscriber",
  "uuid",
 ]
 
@@ -252,16 +267,18 @@ dependencies = [
  "jiff",
  "ohno",
  "opentelemetry",
+ "opentelemetry-appender-tracing",
  "opentelemetry_sdk",
  "serde",
  "serde_json",
  "sha2 0.11.1",
+ "test-fixtures",
  "toasty",
  "toasty-core",
  "tokio",
- "tokio-postgres",
  "tracing",
  "tracing-opentelemetry",
+ "tracing-subscriber",
  "uuid",
 ]
 
@@ -1249,8 +1266,9 @@ dependencies = [
 name = "domain"
 version = "0.1.0"
 dependencies = [
+ "email_address",
  "jiff",
- "serde",
+ "ohno",
  "toasty",
  "uuid",
 ]
@@ -1287,11 +1305,13 @@ name = "email"
 version = "0.1.0"
 dependencies = [
  "application",
+ "domain",
  "lettre",
  "ohno",
  "opentelemetry",
  "opentelemetry_sdk",
  "serde",
+ "test-fixtures",
  "tokio",
  "tracing",
  "tracing-opentelemetry",
@@ -2234,15 +2254,8 @@ name = "infrastructure"
 version = "0.1.0"
 dependencies = [
  "application",
- "email",
- "ffmpeg",
  "fundle",
  "jiff",
- "media-folder",
- "persistence",
- "radarr",
- "sonarr",
- "telemetry",
 ]
 
 [[package]]
@@ -2625,6 +2638,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "224399e74b87b5f3557511d98dff8b14089b3dadafcab6bb93eab67d3aace965"
 dependencies = [
  "scopeguard",
+]
+
+[[package]]
+name = "locking"
+version = "0.1.0"
+dependencies = [
+ "application",
+ "tokio",
 ]
 
 [[package]]
@@ -3177,11 +3198,25 @@ name = "persistence"
 version = "0.1.0"
 dependencies = [
  "application",
+ "domain",
+ "email",
+ "jiff",
+ "lettre",
+ "locking",
  "ohno",
+ "opentelemetry",
+ "opentelemetry_sdk",
  "serde",
+ "test-fixtures",
  "toasty",
  "toasty-driver-postgresql",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
  "url",
+ "uuid",
 ]
 
 [[package]]
@@ -4065,11 +4100,13 @@ dependencies = [
  "admin",
  "api",
  "application",
- "base64 0.22.1",
  "domain",
+ "email",
+ "ffmpeg",
  "infrastructure",
  "jiff",
- "jsonschema",
+ "locking",
+ "media-folder",
  "ohno",
  "opentelemetry",
  "opentelemetry-appender-tracing",
@@ -4077,16 +4114,18 @@ dependencies = [
  "opentelemetry-otlp",
  "opentelemetry-proto",
  "opentelemetry_sdk",
+ "persistence",
  "prost",
+ "radarr",
  "reqwest",
- "serde-saphyr",
  "serde_json",
  "settings",
- "sha2 0.11.1",
+ "sonarr",
+ "telemetry",
  "tempfile",
+ "test-fixtures",
  "toasty-cli",
  "tokio",
- "tokio-postgres",
  "tokio-util",
  "tonic",
  "topcoat",
@@ -4656,6 +4695,7 @@ dependencies = [
  "opentelemetry-proto",
  "prost",
  "serde",
+ "tokio",
  "tonic",
 ]
 
@@ -4670,6 +4710,34 @@ dependencies = [
  "once_cell",
  "rustix 1.1.6",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "test-app"
+version = "0.1.0"
+dependencies = [
+ "application",
+ "infrastructure",
+ "test-fixtures",
+]
+
+[[package]]
+name = "test-fixtures"
+version = "0.1.0"
+dependencies = [
+ "jiff",
+ "jsonschema",
+ "reqwest",
+ "serde-saphyr",
+ "serde_json",
+ "toasty",
+ "tokio",
+ "tokio-postgres",
+ "tokio-util",
+ "topcoat",
+ "tracing",
+ "tracing-subscriber",
+ "url",
 ]
 
 [[package]]
@@ -6465,9 +6533,12 @@ dependencies = [
  "domain",
  "infrastructure",
  "jiff",
+ "persistence",
+ "test-app",
  "tokio",
  "tokio-util",
  "tracing",
+ "uuid",
 ]
 
 [[package]]

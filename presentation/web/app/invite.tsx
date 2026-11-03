@@ -1,4 +1,5 @@
 import { acceptInvite } from "@selfless/api-client";
+import { forgetInviteIdempotencyKey, inviteIdempotencyKey } from "@selfless/ui";
 import { useMutation } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useState } from "react";
@@ -10,13 +11,17 @@ import { session } from "../session";
 export default function Invite() {
   const router = useRouter();
   const [token] = useState(() => window.location.hash.slice(1));
+  const [idempotencyKey] = useState(() => inviteIdempotencyKey(localStorage, token));
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const accept = useMutation({
     mutationFn: async () => {
-      const accepted = await acceptInvite({ token, name, password });
+      const accepted = await acceptInvite({ token, name, password }, { "Idempotency-Key": idempotencyKey });
       if (accepted.status === 201) {
-        await session.signIn(name, password, deviceName());
+        const signedIn = await session.signIn(name, password, deviceName());
+        if (signedIn.status === 201) {
+          forgetInviteIdempotencyKey(localStorage);
+        }
         router.replace("/");
       }
       return accepted;

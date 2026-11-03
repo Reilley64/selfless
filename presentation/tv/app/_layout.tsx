@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Slot } from "expo-router";
 import { useState, useSyncExternalStore } from "react";
+import { Appearance } from "react-native";
 import { ServerAddress } from "../components/ServerAddress";
 import { SignIn } from "../components/SignIn";
 import { UserPicker } from "../components/UserPicker";
@@ -8,6 +9,7 @@ import { session } from "../session";
 
 import "../global.css";
 
+Appearance.setColorScheme("dark");
 const queryClient = new QueryClient();
 session.subscribe(() => queryClient.clear());
 

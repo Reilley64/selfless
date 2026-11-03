@@ -1,5 +1,4 @@
 use crate::CONCURRENT_PROBES;
-use crate::DbContext;
 use crate::MediaFolder;
 use crate::Reconciles;
 use crate::SourceHealth;
@@ -13,7 +12,10 @@ use crate::ports::GetSonarrEpisodes;
 use crate::ports::ListRadarrMovies;
 use crate::ports::ListSonarrSeries;
 use crate::ports::SonarrShow;
-use crate::process_inbox_row;
+use crate::ports::persistence::DbContext;
+use crate::ports::persistence::DbScope;
+use crate::process_inbox_row::RadarrEvent;
+use crate::process_inbox_row::SonarrEvent;
 use crate::source_states;
 use crate::sync_movie;
 use crate::sync_show;
@@ -223,10 +225,7 @@ async fn sync_movies(
         .map(|x| x.tmdb_id)
         .collect::<HashSet<_>>();
     set_total(progress, radarr_movies.len());
-    let synced = radarr_movies
-        .iter()
-        .map(|x| x.radarr_id)
-        .collect::<HashSet<_>>();
+    let synced = listed.clone();
     let stored_movies = Movie::all()
         .exec(db_context.executor_mut())
         .await
@@ -309,7 +308,7 @@ async fn sync_shows(
             .await;
         match source_health.api_call(Source::Sonarr, episodes) {
             Ok(episodes) => {
-                synced.insert(series.sonarr_id);
+                synced.insert(series.tvdb_id);
                 sync_show::save(db_context, media_folder, SonarrShow { series, episodes })
                     .instrument(span)
                     .await
@@ -356,22 +355,31 @@ async fn resolve_failed_rows(
             .await
             .map_err(Error::caused_by)?
             .into_iter()
-            .map(|x| x.radarr_id)
+            .map(|x| x.tmdb_id)
             .collect::<HashSet<_>>(),
         Source::Sonarr => Show::all()
             .exec(db_context.executor_mut())
             .await
             .map_err(Error::caused_by)?
             .into_iter()
-            .map(|x| x.sonarr_id)
+            .map(|x| x.tvdb_id)
             .collect(),
     };
     for mut row in failed_rows {
         let Some(item_id) = row.source_item_id else {
             continue;
         };
-        let gone = process_inbox_row::is_removal(source, row.event_type.as_deref())
-            && !stored.contains(&item_id);
+        let removal = match source {
+            Source::Radarr => matches!(
+                serde_json::from_slice(&row.body),
+                Ok(RadarrEvent::MovieDelete { .. })
+            ),
+            Source::Sonarr => matches!(
+                serde_json::from_slice(&row.body),
+                Ok(SonarrEvent::SeriesDelete { .. })
+            ),
+        };
+        let gone = removal && !stored.contains(&item_id);
         if synced.contains(&item_id) || gone {
             row.update()
                 .status(InboxRowStatus::Resolved)

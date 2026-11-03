@@ -1,10 +1,10 @@
 use application::BuildInfo;
-use application::DbContext;
 use application::InboxWakeup;
 use application::MediaFolder;
 use application::Reconciles;
 use application::SourceHealth;
 use application::WebhookPasswords;
+use application::ports::AcquireLock;
 use application::ports::CheckRadarrKodiMetadata;
 use application::ports::CheckSonarrKodiMetadata;
 use application::ports::Clock;
@@ -15,19 +15,13 @@ use application::ports::GetSonarrShow;
 use application::ports::ListRadarrMovies;
 use application::ports::ListSonarrSeries;
 use application::ports::SendEmail;
+use application::ports::persistence::DbContext;
 use jiff::Timestamp;
-
-pub use email;
-pub use ffmpeg;
-pub use media_folder;
-pub use persistence;
-pub use radarr;
-pub use sonarr;
-pub use telemetry;
 
 #[fundle::bundle]
 #[derive(Clone)]
 pub struct AppState {
+    pub acquire_lock: AcquireLock,
     pub build_info: BuildInfo,
     pub check_radarr_kodi_metadata: CheckRadarrKodiMetadata,
     pub check_sonarr_kodi_metadata: CheckSonarrKodiMetadata,

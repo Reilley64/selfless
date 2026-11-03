@@ -102,7 +102,7 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/SignInRequest"
-            example: {"name":"Noor","password":"a long passphrase about tea","clientKind":"web","deviceName":"Firefox on macOS"}
+            example: {"name":"Noor","password":"a long passphrase about tea","clientKind":"web","deviceName":"Firefox on macOS","clientId":"0f8e3c2a-5b7d-4e19-9a64-2c1d8b7f6e30"}
       responses:
         "201":
           description: The user is signed in.
@@ -110,11 +110,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SignedIn"
-              example: {"token":"q2Xz8kQ0mJ3Hc1yF5bR7tVw9nL4pA6sD0eG2iK8uO1M","user":{"id":"01890a5d-ac96-774b-bcce-b302099a8057","name":"Noor","colour":"amber","symbol":"ring"}}
+              example: {"token":"q2Xz8kQ0mJ3Hc1yF5bR7tVw9nL4pA6sD0eG2iK8uO1M","user":{"id":"01890a5d-ac96-774b-bcce-b302099a8057","name":"Noor","colour":"amber"}}
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/WrongNameOrPassword"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /api/sessions/current/v1:
     delete:
       operationId: signOut
@@ -125,6 +127,8 @@ paths:
           description: The session has ended, and its token no longer works.
         "401":
           $ref: "#/components/responses/Unauthenticated"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /api/me/v1:
     get:
       operationId: getMe
@@ -137,9 +141,11 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/User"
-              example: {"id":"01890a5d-ac96-774b-bcce-b302099a8057","name":"Noor","colour":"amber","symbol":"ring"}
+              example: {"id":"01890a5d-ac96-774b-bcce-b302099a8057","name":"Noor","colour":"amber"}
         "401":
           $ref: "#/components/responses/Unauthenticated"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /api/me/password/v1:
     put:
       operationId: changePassword
@@ -165,6 +171,8 @@ paths:
           $ref: "#/components/responses/WrongCurrentPassword"
         "422":
           $ref: "#/components/responses/EmptyPassword"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /api/invites/accept/v1:
     post:
       operationId: acceptInvite
@@ -172,6 +180,15 @@ paths:
       description: The invite token authorizes the call, so it needs no session token. It creates the user with the invite's email address and ends the invite. Sign the new user in with POST /api/sessions/v1.
       tags: [invites]
       security: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: A UUID the web app keeps per invite token until sign-in succeeds and sends with every accept from it. A repeat with the same key and name returns the user the first accept created.
+          schema:
+            type: string
+            format: uuid
+          example: 0f8e2c4a-6b1d-4e3f-9a7c-5d2b8e1f4a6c
       requestBody:
         description: The token from the invite link, and the name and password the person chose.
         required: true
@@ -187,15 +204,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/User"
-              example: {"id":"01890a5d-ac96-774b-bcce-b302099a8057","name":"Noor","colour":"amber","symbol":"ring"}
+              example: {"id":"01890a5d-ac96-774b-bcce-b302099a8057","name":"Noor","colour":"amber"}
         "400":
-          $ref: "#/components/responses/BadRequest"
+          $ref: "#/components/responses/BadRequestOrInvalidIdempotencyKey"
         "404":
           $ref: "#/components/responses/InviteNotFound"
         "409":
           $ref: "#/components/responses/NameTaken"
         "422":
           $ref: "#/components/responses/EmptyPassword"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /api/telemetry/traces/v1:
     post:
       operationId: relayTraces
@@ -224,6 +243,8 @@ paths:
           $ref: "#/components/responses/MalformedTelemetry"
         "401":
           $ref: "#/components/responses/Unauthenticated"
+        "500":
+          $ref: "#/components/responses/InternalError"
         "502":
           $ref: "#/components/responses/CollectorFailed"
   /api/telemetry/metrics/v1:
@@ -254,6 +275,8 @@ paths:
           $ref: "#/components/responses/MalformedTelemetry"
         "401":
           $ref: "#/components/responses/Unauthenticated"
+        "500":
+          $ref: "#/components/responses/InternalError"
         "502":
           $ref: "#/components/responses/CollectorFailed"
   /api/telemetry/logs/v1:
@@ -284,6 +307,8 @@ paths:
           $ref: "#/components/responses/MalformedTelemetry"
         "401":
           $ref: "#/components/responses/Unauthenticated"
+        "500":
+          $ref: "#/components/responses/InternalError"
         "502":
           $ref: "#/components/responses/CollectorFailed"
 tags:
@@ -321,6 +346,23 @@ components:
                   status:
                     const: 400
           example: {"type":"urn:selfless:problem:bad-request","title":"The request body is not valid.","status":400}
+    BadRequestOrInvalidIdempotencyKey:
+      description: The body is not JSON, or it lacks a field or has one of the wrong type, or the Idempotency-Key header is missing or not a UUID. Each has its own problem type. Nothing changes.
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Problem"
+              - properties:
+                  type:
+                    enum: [urn:selfless:problem:bad-request, urn:selfless:problem:invalid-idempotency-key]
+                  status:
+                    const: 400
+          examples:
+            badRequest:
+              value: {"type":"urn:selfless:problem:bad-request","title":"The request body is not valid.","status":400}
+            invalidIdempotencyKey:
+              value: {"type":"urn:selfless:problem:invalid-idempotency-key","title":"The Idempotency-Key header is not valid.","status":400}
     Unauthenticated:
       description: The request has no Authorization header with a Bearer token, or the token is unknown or its session has ended.
       content:
@@ -399,6 +441,19 @@ components:
                   status:
                     const: 404
           example: {"type":"urn:selfless:problem:invite-not-found","title":"The invite link no longer works.","status":404}
+    InternalError:
+      description: The server failed. The body holds no error details, and the server logs the error.
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Problem"
+              - properties:
+                  type:
+                    const: urn:selfless:problem:internal-error
+                  status:
+                    const: 500
+          example: {"type":"urn:selfless:problem:internal-error","title":"Something went wrong on the server.","status":500}
   schemas:
     Problem:
       description: An RFC 9457 problem details object. The type is stable and identifies the problem.
@@ -428,15 +483,10 @@ components:
       type: string
       enum: [amber, blue, pink, emerald]
       examples: [amber]
-    UserSymbol:
-      description: The user's symbol, a design token name from the user picker.
-      type: string
-      enum: [ring, triangle, star, waves]
-      examples: [ring]
     User:
       description: A household member who watches.
       type: object
-      required: [id, name, colour, symbol]
+      required: [id, name, colour]
       properties:
         id:
           description: The user's ID, a UUID v7.
@@ -449,13 +499,11 @@ components:
           examples: [Noor]
         colour:
           $ref: "#/components/schemas/UserColour"
-        symbol:
-          $ref: "#/components/schemas/UserSymbol"
       additionalProperties: false
     SignInRequest:
       description: A user's name and password, and the client they sign in on.
       type: object
-      required: [name, password, clientKind, deviceName]
+      required: [name, password, clientKind, deviceName, clientId]
       properties:
         name:
           description: The user's name, in any capitals.
@@ -471,7 +519,11 @@ components:
           description: A name for the device, shown to admins in the user's sessions.
           type: string
           examples: [Firefox on macOS]
-      additionalProperties: false
+        clientId:
+          description: A random id the app makes once per install or browser and sends with every sign-in. Signing in again as the same user with the same id replaces that user's earlier session from it.
+          type: string
+          format: uuid
+          examples: [0f8e3c2a-5b7d-4e19-9a64-2c1d8b7f6e30]
     SignedIn:
       description: A new session's token and the user it belongs to.
       type: object
@@ -499,7 +551,6 @@ components:
           type: string
           minLength: 1
           examples: [a longer passphrase about coffee]
-      additionalProperties: false
     AcceptInviteRequest:
       description: The token from an invite link, and the name and password the invited person chose.
       type: object
@@ -518,7 +569,6 @@ components:
           type: string
           minLength: 1
           examples: [a long passphrase about tea]
-      additionalProperties: false
     HealthStatus:
       description: The status of a health group or component, as in Spring Boot Actuator.
       type: string

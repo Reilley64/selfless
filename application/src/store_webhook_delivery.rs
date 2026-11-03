@@ -1,7 +1,8 @@
-use crate::DbContext;
 use crate::InboxWakeup;
 use crate::WebhookPasswords;
 use crate::ports::Clock;
+use crate::ports::persistence::DbContext;
+use crate::ports::persistence::DbScope;
 use crate::source_states;
 use crate::webhook_deliveries;
 use crate::webhook_deliveries::Outcome;
