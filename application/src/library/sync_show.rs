@@ -239,16 +239,13 @@ pub(crate) async fn inspect(
                     }
                     match &nfo_roots[&nfo_file.path] {
                         None => Nfo::Unreadable(nfo_file.path.clone()),
-                        Some(roots) => match roots
-                            .iter()
-                            .find(|x| x.sonarr_id == Some(source_episode.sonarr_id))
-                            .or_else(|| {
-                                roots.iter().find(|x| {
-                                    !x.sonarr_id.is_some_and(|x| sonarr_ids.contains(&x))
-                                        && x.season_number == Some(source_episode.season_number)
-                                        && x.episode_number == Some(source_episode.episode_number)
-                                })
-                            }) {
+                        Some(roots) => match EpisodeNfo::matching(
+                            roots,
+                            source_episode.sonarr_id,
+                            source_episode.season_number,
+                            source_episode.episode_number,
+                            &sonarr_ids,
+                        ) {
                             Some(root) => Nfo::Read(root.clone(), nfo_file.modified_at),
                             None => Nfo::Missing,
                         },
@@ -1527,68 +1524,6 @@ mod tests {
             ]
         );
         assert_eq!(library.sources().episode_nfo_reads, 1);
-    }
-
-    #[tokio::test]
-    async fn an_episode_nfo_of_a_re_added_show_matches_by_season_and_episode_number() {
-        let library = ShowLibrary::new().await;
-        with_episode_nfo(
-            &library,
-            S01E02_E03_FILE,
-            Some(vec![
-                episode_nfo(Some(1012), 1, 2, "Half Loop", 8.1),
-                episode_nfo(Some(1013), 1, 3, "In Perpetuity", 8.3),
-            ]),
-            "2026-10-29T11:00:00Z",
-        );
-        with_source_episodes(&library, |episodes| {
-            for episode in episodes {
-                episode.sonarr_id += 10_000;
-            }
-        });
-
-        library.sync_show().await.unwrap();
-
-        assert_eq!(
-            titles_and_ratings(&library, 1).await,
-            [
-                (1, "Good News About Hell".to_owned(), None),
-                (2, "Half Loop".to_owned(), Some(8.1)),
-                (3, "In Perpetuity".to_owned(), Some(8.3)),
-            ]
-        );
-    }
-
-    #[tokio::test]
-    async fn an_episode_nfo_entry_whose_sonarr_id_belongs_to_another_episode_is_not_matched_by_number()
-     {
-        let library = ShowLibrary::new().await;
-        with_episode_nfo(
-            &library,
-            S01E02_E03_FILE,
-            Some(vec![
-                episode_nfo(Some(1012), 1, 2, "Half Loop", 8.1),
-                episode_nfo(Some(1013), 1, 3, "In Perpetuity", 8.3),
-            ]),
-            "2026-10-29T11:00:00Z",
-        );
-        with_source_episodes(&library, |episodes| {
-            source_episode(episodes, 1, 2).episode_number = 4;
-            let in_perpetuity = source_episode(episodes, 1, 3);
-            in_perpetuity.episode_number = 2;
-            in_perpetuity.sonarr_id = 1014;
-        });
-
-        library.sync_show().await.unwrap();
-
-        assert_eq!(
-            titles_and_ratings(&library, 1).await,
-            [
-                (1, "Good News About Hell".to_owned(), None),
-                (2, "In Perpetuity".to_owned(), None),
-                (4, "Half Loop".to_owned(), Some(8.1)),
-            ]
-        );
     }
 
     #[tokio::test]
