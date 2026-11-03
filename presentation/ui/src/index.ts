@@ -14,6 +14,7 @@ export { forgetInviteIdempotencyKey, inviteIdempotencyKey } from "./inviteIdempo
 export { serverUnreachable } from "./messages";
 export { MovieHeader } from "./MovieHeader";
 export { playHref } from "./playHref";
+export { createPlayerLogic, type PlayerEvent, type ProgressReport } from "./playerLogic";
 export { randomUuid } from "./randomUuid";
 export { runtimeLabel } from "./runtimeLabel";
 export { ServerInfo } from "./ServerInfo";
