@@ -64,6 +64,12 @@ function Playing({ mediaFileId, startPosition, autoplayed, stillWatching, backHr
     stillWatching,
     profile: capabilityProfile,
   });
+  const started = start !== undefined && start !== "unreachable" && start.response.status === 201;
+  useEffect(() => {
+    if (started) {
+      forgetStartParams();
+    }
+  }, [started]);
   const retry = () => restart({ ...resume });
   if (start === "unreachable") {
     return <Failure backHref={backHref} message={serverUnreachable} onRetry={retry} />;
@@ -405,6 +411,13 @@ function TrackMenus({
       ))}
     </View>
   );
+}
+
+function forgetStartParams() {
+  const url = new URL(window.location.href);
+  url.searchParams.delete("position");
+  url.searchParams.delete("stillWatching");
+  window.history.replaceState(window.history.state, "", url);
 }
 
 function Failure({ backHref, message, onRetry }: { backHref: Href; message: string; onRetry?: () => void }) {
