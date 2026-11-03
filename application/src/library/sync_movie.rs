@@ -20,6 +20,7 @@ use crate::ports::ListSubtitleFiles;
 use crate::ports::RadarrMovie;
 use crate::ports::ReadMovieFolder;
 use crate::ports::ReadMovieNfo;
+use crate::ports::UnreadableFile;
 use crate::ports::persistence::DbContext;
 use crate::ports::persistence::DbScope;
 use domain::MediaFile;
@@ -112,10 +113,15 @@ pub(crate) fn span() -> Span {
     tracing::info_span!("sync_movie", otel.name = "sync radarr movie")
 }
 
-pub(crate) struct InspectedMovie {
+pub(crate) struct MovieOnDisk {
     media_file: Option<Inspected>,
     artwork: Vec<FoundArtwork>,
     nfo: Nfo<MovieNfo>,
+}
+
+pub(crate) enum InspectedMovie {
+    Read(Box<MovieOnDisk>),
+    Unreadable(UnreadableFile),
 }
 
 pub(crate) async fn inspect(
@@ -125,49 +131,84 @@ pub(crate) async fn inspect(
     radarr_movie: &RadarrMovie,
 ) -> Result<InspectedMovie, Error> {
     let Some(file) = &radarr_movie.movie_file else {
-        return Ok(InspectedMovie {
+        return Ok(InspectedMovie::Read(Box::new(MovieOnDisk {
             media_file: None,
             artwork: Vec::new(),
             nfo: Nfo::Missing,
-        });
+        })));
     };
-    let media_file = media_files::inspect(
-        &files.find_media_file,
-        &files.list_subtitle_files,
-        &files.prober,
-        stored_file,
-        &file.path,
-    )
-    .await
-    .map_err(Error::caused_by)?;
-    let folder = files.read_movie_folder.call(&file.path).await;
+    let read = async {
+        Ok::<_, UnreadableFile>((
+            files.find_media_file.call(&file.path).await?,
+            files.read_movie_folder.call(&file.path).await?,
+        ))
+    };
+    let (found, folder) = match read.await {
+        Ok(read) => read,
+        Err(error) => {
+            metadata::warn_unreadable_file(&error);
+            return Ok(InspectedMovie::Unreadable(error));
+        }
+    };
     let nfo = Nfo::read(folder.nfo, stored_nfo_modified_at, |path| {
         files.read_movie_nfo.call(path)
     })
     .await;
-    Ok(InspectedMovie {
+    let media_file = media_files::inspect(
+        &files.list_subtitle_files,
+        &files.prober,
+        stored_file,
+        &file.path,
+        found,
+    )
+    .await
+    .map_err(Error::caused_by)?;
+    Ok(InspectedMovie::Read(Box::new(MovieOnDisk {
         media_file: Some(media_file),
         artwork: metadata::item_artwork(folder.poster, folder.fanart, folder.clearlogo),
         nfo,
-    })
+    })))
 }
 
 pub(crate) async fn save(
     db_context: &mut DbContext,
-    radarr_movie: RadarrMovie,
+    mut radarr_movie: RadarrMovie,
     inspected: InspectedMovie,
 ) -> Result<(), Error> {
-    let InspectedMovie {
-        media_file,
-        artwork,
-        nfo,
-    } = inspected;
+    let mut transaction = db_context.transaction().await.map_err(Error::caused_by)?;
+    let stored = transaction
+        .movies()
+        .filter(Movie::fields().tmdb_id().eq(radarr_movie.tmdb_id))
+        .first()
+        .exec(transaction.executor_mut())
+        .await
+        .map_err(Error::caused_by)?;
+    let (media_file, artwork, nfo, unreadable) = match inspected {
+        InspectedMovie::Read(on_disk) => {
+            let MovieOnDisk {
+                media_file,
+                artwork,
+                nfo,
+            } = *on_disk;
+            (media_file, artwork, nfo, None)
+        }
+        InspectedMovie::Unreadable(error) => (None, Vec::new(), Nfo::Missing, Some(error.path)),
+    };
+    if unreadable.is_some() {
+        if let Some(movie) = &stored {
+            metadata::save_unreadable_file(&mut transaction, Owner::Movie(movie.id), unreadable)
+                .await
+                .map_err(Error::caused_by)?;
+            transaction.commit().await.map_err(Error::caused_by)?;
+            return Ok(());
+        }
+        radarr_movie.movie_file = None;
+    }
     let visible = Movie::in_library(
         radarr_movie.movie_file.is_some(),
         media_file.as_ref().is_some_and(Inspected::on_disk),
     );
     let date_added = radarr_movie.movie_file.as_ref().map(|x| x.date_added);
-    let mut transaction = db_context.transaction().await.map_err(Error::caused_by)?;
     let (media_file_id, media_file_changed) = match (&radarr_movie.movie_file, media_file) {
         (Some(file), Some(inspected)) => {
             let saved = media_files::save(&mut transaction, &file.path, inspected)
@@ -177,13 +218,6 @@ pub(crate) async fn save(
         }
         _ => (None, false),
     };
-    let stored = transaction
-        .movies()
-        .filter(Movie::fields().tmdb_id().eq(radarr_movie.tmdb_id))
-        .first()
-        .exec(transaction.executor_mut())
-        .await
-        .map_err(Error::caused_by)?;
     let radarr_metadata = MovieMetadata::from_radarr(
         radarr_movie.title,
         radarr_movie.year,
@@ -281,6 +315,9 @@ pub(crate) async fn save(
         .into_iter()
         .collect::<HashSet<_>>();
     metadata::save_unreadable_nfos(&mut transaction, owner, Vec::new(), unreadable_nfos)
+        .await
+        .map_err(Error::caused_by)?;
+    metadata::save_unreadable_file(&mut transaction, owner, unreadable)
         .await
         .map_err(Error::caused_by)?;
     transaction.commit().await.map_err(Error::caused_by)?;
@@ -740,6 +777,105 @@ mod tests {
                     at("2026-10-30T08:00:00Z")
                 ),
             ]
+        );
+    }
+
+    async fn unreadable_file_problems(library: &MovieLibrary) -> Vec<(Option<Uuid>, String)> {
+        problems(library)
+            .await
+            .into_iter()
+            .filter(|x| x.kind == SyncProblemKind::UnreadableFile)
+            .map(|x| (x.movie_id, x.path))
+            .collect()
+    }
+
+    fn arrival_extended() -> RadarrMovie {
+        RadarrMovie {
+            title: "Arrival (Extended)".to_owned(),
+            ..arrival(Some(MOVIE_FILE))
+        }
+    }
+
+    #[tokio::test]
+    async fn an_unreadable_media_file_keeps_the_stored_movie_and_records_an_unreadable_file_until_it_is_read()
+     {
+        let library = MovieLibrary::new().await;
+        library.sources().folder.poster =
+            found(&format!("{FOLDER}/poster.jpg"), "2026-10-29T11:00:00Z");
+        library.sync_movie().await.unwrap();
+        let before = movie(&library).await;
+
+        {
+            let mut sources = library.sources();
+            sources.unreadable_files.insert(MOVIE_FILE.to_owned());
+            sources.folder.poster = None;
+            sources.radarr_movie = Some(arrival_extended());
+        }
+        library.sync_movie().await.unwrap();
+        let kept = movie(&library).await;
+        let kept_artwork = artwork(&library).await.len();
+        let recorded = unreadable_file_problems(&library).await;
+        library.sources().unreadable_files.clear();
+        library.sync_movie().await.unwrap();
+
+        assert_eq!(kept.id, before.id);
+        assert!(kept.visible);
+        assert_eq!(kept.title, "Arrival");
+        assert_eq!(kept.media_file_id, before.media_file_id);
+        assert_eq!(kept_artwork, 1);
+        assert_eq!(recorded, [(Some(before.id), MOVIE_FILE.to_owned())]);
+        assert_eq!(movie(&library).await.title, "Arrival (Extended)");
+        assert!(unreadable_file_problems(&library).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn an_unreadable_file_in_the_movie_folder_keeps_the_stored_artwork_and_metadata() {
+        let library = MovieLibrary::new().await;
+        let poster = format!("{FOLDER}/poster.jpg");
+        library.sources().folder.poster = found(&poster, "2026-10-29T11:00:00Z");
+        library.sync_movie().await.unwrap();
+
+        {
+            let mut sources = library.sources();
+            sources.unreadable_files.insert(poster.clone());
+            sources.folder.poster = found(&poster, "2026-10-30T08:00:00Z");
+            sources.radarr_movie = Some(arrival_extended());
+        }
+        library.sync_movie().await.unwrap();
+
+        let movie = movie(&library).await;
+        assert!(movie.visible);
+        assert_eq!(movie.title, "Arrival");
+        assert_eq!(
+            artwork(&library).await,
+            [(
+                ArtworkKind::Poster,
+                poster.clone(),
+                at("2026-10-29T11:00:00Z")
+            )]
+        );
+        assert_eq!(
+            unreadable_file_problems(&library).await,
+            [(Some(movie.id), poster)]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_new_movie_whose_media_file_is_unreadable_is_stored_hidden_with_an_unreadable_file() {
+        let library = MovieLibrary::new().await;
+        library
+            .sources()
+            .unreadable_files
+            .insert(MOVIE_FILE.to_owned());
+
+        library.sync_movie().await.unwrap();
+
+        let movie = movie(&library).await;
+        assert!(!movie.visible);
+        assert_eq!(movie.media_file_id, None);
+        assert_eq!(
+            unreadable_file_problems(&library).await,
+            [(Some(movie.id), MOVIE_FILE.to_owned())]
         );
     }
 

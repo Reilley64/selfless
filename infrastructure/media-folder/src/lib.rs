@@ -18,20 +18,24 @@ use application::ports::ReadShowFolder;
 use application::ports::ReadShowNfo;
 use application::ports::ShowFolder;
 use application::ports::ShowNfo;
+use application::ports::UnreadableFile;
 use application::ports::UnreadableNfo;
 use jiff::Timestamp;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
+use std::io::ErrorKind;
 use std::path::Path;
 
 pub fn find_media_file() -> FindMediaFile {
     FindMediaFile::new(|path| {
         Box::pin(async move {
-            let (size, modified_at) = stat(Path::new(&path)).await?;
-            Some(FoundMediaFile {
-                size: i64::try_from(size).ok()?,
+            let Some((size, modified_at)) = stat(Path::new(&path)).await? else {
+                return Ok(None);
+            };
+            Ok(Some(FoundMediaFile {
+                size: i64::try_from(size).map_err(|x| UnreadableFile::caused_by(path, x))?,
                 modified_at,
-            })
+            }))
         })
     })
 }
@@ -41,34 +45,42 @@ pub fn read_movie_folder() -> ReadMovieFolder {
         Box::pin(async move {
             let media_file = Path::new(&media_file_path);
             let folder = media_file.parent().unwrap_or(Path::new(""));
-            MovieFolder {
-                nfo: found(&media_file.with_extension("nfo")).await,
-                poster: found(&folder.join("poster.jpg")).await,
-                fanart: found(&folder.join("fanart.jpg")).await,
-                clearlogo: found(&folder.join("clearlogo.png")).await,
-            }
+            Ok(MovieFolder {
+                nfo: found(&media_file.with_extension("nfo")).await?,
+                poster: found(&folder.join("poster.jpg")).await?,
+                fanart: found(&folder.join("fanart.jpg")).await?,
+                clearlogo: found(&folder.join("clearlogo.png")).await?,
+            })
         })
     })
 }
 
-async fn found(path: &Path) -> Option<FoundFile> {
-    let (_, modified_at) = stat(path).await?;
-    Some(FoundFile {
-        path: path.to_str()?.to_owned(),
+async fn found(path: &Path) -> Result<Option<FoundFile>, UnreadableFile> {
+    Ok(stat(path).await?.map(|(_, modified_at)| FoundFile {
+        path: path.to_string_lossy().into_owned(),
         modified_at,
-    })
+    }))
 }
 
-async fn stat(path: &Path) -> Option<(u64, Timestamp)> {
-    let metadata = tokio::fs::metadata(path)
-        .await
-        .ok()
-        .filter(|x| x.is_file())?;
-    let modified_at = Timestamp::try_from(metadata.modified().ok()?).ok()?;
-    Some((
-        metadata.len(),
-        Timestamp::from_microsecond(modified_at.as_microsecond()).ok()?,
-    ))
+async fn stat(path: &Path) -> Result<Option<(u64, Timestamp)>, UnreadableFile> {
+    let unreadable = |error: Box<dyn std::error::Error + Send + Sync>| {
+        UnreadableFile::caused_by(path.to_string_lossy().into_owned(), error)
+    };
+    let metadata = match tokio::fs::metadata(path).await {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(unreadable(error.into())),
+    };
+    if !metadata.is_file() {
+        return Ok(None);
+    }
+    let modified_at = metadata
+        .modified()
+        .map_err(|x| unreadable(x.into()))
+        .and_then(|x| Timestamp::try_from(x).map_err(|x| unreadable(x.into())))?;
+    let modified_at = Timestamp::from_microsecond(modified_at.as_microsecond())
+        .map_err(|x| unreadable(x.into()))?;
+    Ok(Some((metadata.len(), modified_at)))
 }
 
 pub fn read_show_folder() -> ReadShowFolder {
@@ -81,17 +93,17 @@ pub fn read_show_folder() -> ReadShowFolder {
                     0 => "season-specials-poster.jpg".to_owned(),
                     number => format!("season{number:02}-poster.jpg"),
                 };
-                if let Some(file) = found(&folder.join(name)).await {
+                if let Some(file) = found(&folder.join(name)).await? {
                     season_posters.push((number, file));
                 }
             }
-            ShowFolder {
-                nfo: found(&folder.join("tvshow.nfo")).await,
-                poster: found(&folder.join("poster.jpg")).await,
-                fanart: found(&folder.join("fanart.jpg")).await,
-                clearlogo: found(&folder.join("clearlogo.png")).await,
+            Ok(ShowFolder {
+                nfo: found(&folder.join("tvshow.nfo")).await?,
+                poster: found(&folder.join("poster.jpg")).await?,
+                fanart: found(&folder.join("fanart.jpg")).await?,
+                clearlogo: found(&folder.join("clearlogo.png")).await?,
                 season_posters,
-            }
+            })
         })
     })
 }
@@ -101,10 +113,10 @@ pub fn read_episode_folder() -> ReadEpisodeFolder {
         Box::pin(async move {
             let media_file = Path::new(&media_file_path);
             let stem = media_file.file_stem().unwrap_or_default().to_string_lossy();
-            EpisodeFolder {
-                nfo: found(&media_file.with_extension("nfo")).await,
-                thumb: found(&media_file.with_file_name(format!("{stem}-thumb.jpg"))).await,
-            }
+            Ok(EpisodeFolder {
+                nfo: found(&media_file.with_extension("nfo")).await?,
+                thumb: found(&media_file.with_file_name(format!("{stem}-thumb.jpg"))).await?,
+            })
         })
     })
 }
@@ -611,7 +623,7 @@ mod tests {
             folder.write(&format!("Arrival (2016)/{name}"), "");
         }
 
-        let movie_folder = read_movie_folder().call(&media_file).await;
+        let movie_folder = read_movie_folder().call(&media_file).await.unwrap();
 
         assert_eq!(
             movie_folder.nfo,
@@ -648,7 +660,8 @@ mod tests {
 
         let show_folder = read_show_folder()
             .call(&folder.path("Severance"), vec![0, 1, 2])
-            .await;
+            .await
+            .unwrap();
 
         assert_eq!(show_folder.nfo, folder.found("Severance/tvshow.nfo"));
         assert_eq!(show_folder.poster, folder.found("Severance/poster.jpg"));
@@ -678,7 +691,7 @@ mod tests {
         folder.write("Andor/Season 01/Andor - S01E01 - Kassa.nfo", "");
         folder.write("Andor/Season 01/Andor - S01E01 - Kassa-thumb.jpg", "");
 
-        let episode_folder = read_episode_folder().call(&media_file).await;
+        let episode_folder = read_episode_folder().call(&media_file).await.unwrap();
 
         assert_eq!(
             episode_folder.nfo,
@@ -696,7 +709,7 @@ mod tests {
         let media_file = folder.write("Arrival (2016)/Arrival (2016) Bluray-1080p.mkv", "video");
 
         assert_eq!(
-            find_media_file().call(&media_file).await,
+            find_media_file().call(&media_file).await.unwrap(),
             Some(FoundMediaFile {
                 size: 5,
                 modified_at: modified_at(),
@@ -711,8 +724,36 @@ mod tests {
         assert_eq!(
             find_media_file()
                 .call(&folder.path("Arrival (2016)/Arrival (2016) Bluray-1080p.mkv"))
-                .await,
+                .await
+                .unwrap(),
             None
+        );
+    }
+
+    #[tokio::test]
+    async fn find_media_file_gives_a_read_error_for_a_path_it_cannot_read() {
+        let folder = Folder::new();
+        let not_a_folder = folder.write("Arrival (2016)", "");
+        let media_file = format!("{not_a_folder}/Arrival (2016) Bluray-1080p.mkv");
+
+        let error = find_media_file().call(&media_file).await.unwrap_err();
+
+        assert_eq!(error.path, media_file);
+    }
+
+    #[tokio::test]
+    async fn read_movie_folder_gives_a_read_error_for_a_file_it_cannot_read() {
+        let folder = Folder::new();
+        let not_a_folder = folder.write("Arrival (2016)", "");
+
+        let error = read_movie_folder()
+            .call(&format!("{not_a_folder}/Arrival (2016) Bluray-1080p.mkv"))
+            .await
+            .unwrap_err();
+
+        assert_eq!(
+            error.path,
+            format!("{not_a_folder}/Arrival (2016) Bluray-1080p.nfo")
         );
     }
 }

@@ -128,16 +128,13 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
             ),
         };
         let failed_calls = failed_metadata_calls + listing.failed_calls;
-        if failed_calls == 0 {
-            remove_or_hold(&mut db_context, source, &listing).await?;
-        }
         if failed_calls > 0 {
             return Err(Error::caused_by(format!(
                 "{failed_calls} calls to {} failed, so nothing was removed",
                 source.name()
             )));
         }
-        Ok(())
+        remove_or_hold(&mut db_context, source, &listing).await
     }
     .instrument(span.clone())
     .await;
@@ -323,7 +320,12 @@ async fn sync_shows(
             .await;
         match source_health.api_call(Source::Sonarr, episodes) {
             Ok(episodes) => {
-                sync_show::save(db_context, files, SonarrShow { listing, episodes })
+                let sonarr_show = SonarrShow { listing, episodes };
+                let inspected = sync_show::inspect(db_context, files, &sonarr_show)
+                    .instrument(span.clone())
+                    .await
+                    .map_err(Error::caused_by)?;
+                        sync_show::save(db_context, sonarr_show, inspected)
                     .instrument(span)
                     .await
                     .map_err(Error::caused_by)?;
@@ -460,6 +462,7 @@ mod tests {
     use crate::ports::SonarrEpisodeFile;
     use crate::ports::SonarrError;
     use crate::ports::SonarrShowListing;
+    use crate::ports::UnreadableFile;
     use crate::test::empty_episode_folder;
     use crate::test::empty_movie_folder;
     use crate::test::empty_show_folder;
@@ -546,6 +549,7 @@ mod tests {
         radarr: Arc<Mutex<Result<Vec<RadarrMovie>, &'static str>>>,
         sonarr: Arc<Mutex<Result<Vec<i64>, &'static str>>>,
         failing_episodes: Arc<Mutex<HashSet<i64>>>,
+        unreadable_files: Arc<Mutex<HashSet<String>>>,
         held_episodes: Arc<Mutex<Option<HeldEpisodes>>>,
         radarr_kodi: Arc<Mutex<Result<bool, &'static str>>>,
         sonarr_kodi: Arc<Mutex<Result<bool, &'static str>>>,
@@ -568,6 +572,7 @@ mod tests {
                 radarr: Arc::new(Mutex::new(Ok(Vec::new()))),
                 sonarr: Arc::new(Mutex::new(Ok(Vec::new()))),
                 failing_episodes: Arc::default(),
+                unreadable_files: Arc::default(),
                 held_episodes: Arc::default(),
                 radarr_kodi: Arc::new(Mutex::new(Ok(true))),
                 sonarr_kodi: Arc::new(Mutex::new(Ok(true))),
@@ -593,6 +598,7 @@ mod tests {
             let held_episodes = self.held_episodes.clone();
             let radarr_kodi = self.radarr_kodi.clone();
             let sonarr_kodi = self.sonarr_kodi.clone();
+            let unreadable_files = self.unreadable_files.clone();
             Dependencies {
                 check_radarr_kodi_metadata: CheckRadarrKodiMetadata::new(move || {
                     let enabled = *radarr_kodi.lock().unwrap();
@@ -604,13 +610,16 @@ mod tests {
                 }),
                 clock: Clock::new(self.clock.reader()),
                 db_context: self.db_context.clone(),
-                find_media_file: FindMediaFile::new(|_| {
-                    Box::pin(async {
-                        Some(FoundMediaFile {
+                find_media_file: FindMediaFile::new(move |path| {
+                    let found = if unreadable_files.lock().unwrap().contains(&path) {
+                        Err(UnreadableFile::new(path))
+                    } else {
+                        Ok(Some(FoundMediaFile {
                             size: 1,
                             modified_at: Timestamp::UNIX_EPOCH,
-                        })
-                    })
+                        }))
+                    };
+                    Box::pin(async move { found })
                 }),
                 get_sonarr_episodes: GetSonarrEpisodes::new(move |sonarr_id| {
                     let failing = failing_episodes.lock().unwrap().contains(&sonarr_id);

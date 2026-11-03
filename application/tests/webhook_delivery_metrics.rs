@@ -82,7 +82,7 @@ async fn process_radarr(
     process_radarr_delivery::call(
         process_radarr_delivery::Dependencies {
             db_context: db_context.clone(),
-            find_media_file: FindMediaFile::new(|_| Box::pin(async { None })),
+            find_media_file: FindMediaFile::new(|_| Box::pin(async { Ok(None) })),
             get_radarr_movie: GetRadarrMovie::new(|radarr_id| {
                 Box::pin(async move {
                     match radarr_id {
@@ -95,7 +95,7 @@ async fn process_radarr(
             prober: Prober::new(ProbeMediaFile::new(|_| {
                 Box::pin(async { Err(ProbeError::default()) })
             })),
-            read_movie_folder: ReadMovieFolder::new(|_| Box::pin(async { Default::default() })),
+            read_movie_folder: ReadMovieFolder::new(|_| Box::pin(async { Ok(Default::default()) })),
             read_movie_nfo: ReadMovieNfo::new(|_| {
                 Box::pin(async { Err(UnreadableNfo::default()) })
             }),
@@ -117,17 +117,21 @@ async fn process_sonarr(
     process_sonarr_delivery::call(
         process_sonarr_delivery::Dependencies {
             db_context: db_context.clone(),
-            find_media_file: FindMediaFile::new(|_| Box::pin(async { None })),
+            find_media_file: FindMediaFile::new(|_| Box::pin(async { Ok(None) })),
             get_sonarr_show: GetSonarrShow::new(|_| Box::pin(async { Ok(None) })),
             list_subtitle_files: ListSubtitleFiles::new(|_| Box::pin(async { Ok(Vec::new()) })),
             prober: Prober::new(ProbeMediaFile::new(|_| {
                 Box::pin(async { Err(ProbeError::default()) })
             })),
-            read_episode_folder: ReadEpisodeFolder::new(|_| Box::pin(async { Default::default() })),
+            read_episode_folder: ReadEpisodeFolder::new(|_| {
+                Box::pin(async { Ok(Default::default()) })
+            }),
             read_episode_nfo: ReadEpisodeNfo::new(|_| {
                 Box::pin(async { Err(UnreadableNfo::default()) })
             }),
-            read_show_folder: ReadShowFolder::new(|_, _| Box::pin(async { Default::default() })),
+            read_show_folder: ReadShowFolder::new(|_, _| {
+                Box::pin(async { Ok(Default::default()) })
+            }),
             read_show_nfo: ReadShowNfo::new(|_| Box::pin(async { Err(UnreadableNfo::default()) })),
             read_sonarr_webhook,
             read_webhook_event_type: event_type(event),

@@ -7,6 +7,7 @@ use crate::ports::EmailRefused;
 use crate::ports::EpisodeFolder;
 use crate::ports::EpisodeNfo;
 use crate::ports::FindMediaFile;
+use crate::ports::FoundFile;
 use crate::ports::FoundMediaFile;
 use crate::ports::FoundSubtitleFile;
 use crate::ports::GetRadarrMovie;
@@ -35,6 +36,7 @@ use crate::ports::SonarrEpisode;
 use crate::ports::SonarrEpisodeFile;
 use crate::ports::SonarrShow;
 use crate::ports::SonarrShowListing;
+use crate::ports::UnreadableFile;
 use crate::ports::UnreadableNfo;
 use crate::ports::persistence;
 use crate::ports::persistence::DbContext;
@@ -106,7 +108,7 @@ pub(crate) fn refusing_mailer() -> SendEmail {
 }
 
 pub(crate) fn missing_media_file() -> FindMediaFile {
-    FindMediaFile::new(|_| Box::pin(async { None }))
+    FindMediaFile::new(|_| Box::pin(async { Ok(None) }))
 }
 
 pub(crate) fn no_subtitle_files() -> ListSubtitleFiles {
@@ -134,7 +136,7 @@ pub(crate) fn readable_prober() -> Prober {
 }
 
 pub(crate) fn empty_episode_folder() -> ReadEpisodeFolder {
-    ReadEpisodeFolder::new(|_| Box::pin(async { Default::default() }))
+    ReadEpisodeFolder::new(|_| Box::pin(async { Ok(Default::default()) }))
 }
 
 pub(crate) fn unreadable_episode_nfo() -> ReadEpisodeNfo {
@@ -142,7 +144,7 @@ pub(crate) fn unreadable_episode_nfo() -> ReadEpisodeNfo {
 }
 
 pub(crate) fn empty_movie_folder() -> ReadMovieFolder {
-    ReadMovieFolder::new(|_| Box::pin(async { Default::default() }))
+    ReadMovieFolder::new(|_| Box::pin(async { Ok(Default::default()) }))
 }
 
 pub(crate) fn unreadable_movie_nfo() -> ReadMovieNfo {
@@ -150,11 +152,24 @@ pub(crate) fn unreadable_movie_nfo() -> ReadMovieNfo {
 }
 
 pub(crate) fn empty_show_folder() -> ReadShowFolder {
-    ReadShowFolder::new(|_, _| Box::pin(async { Default::default() }))
+    ReadShowFolder::new(|_, _| Box::pin(async { Ok(Default::default()) }))
 }
 
 pub(crate) fn unreadable_show_nfo() -> ReadShowNfo {
     ReadShowNfo::new(|_| Box::pin(async { Err(UnreadableNfo::default()) }))
+}
+
+fn readable<'a>(
+    unreadable_files: &HashSet<String>,
+    files: impl IntoIterator<Item = &'a FoundFile>,
+) -> Result<(), UnreadableFile> {
+    match files
+        .into_iter()
+        .find(|x| unreadable_files.contains(&x.path))
+    {
+        Some(file) => Err(UnreadableFile::new(file.path.clone())),
+        None => Ok(()),
+    }
 }
 
 pub(crate) const MOVIE_FILE: &str = "/media/Movies/Arrival (2016)/Arrival (2016) Bluray-1080p.mkv";
@@ -183,6 +198,7 @@ pub(crate) struct MovieSources {
     pub(crate) radarr_movie: Option<RadarrMovie>,
     pub(crate) radarr_is_down: bool,
     pub(crate) files_on_disk: HashMap<String, FoundMediaFile>,
+    pub(crate) unreadable_files: HashSet<String>,
     pub(crate) subtitle_files: Vec<FoundSubtitleFile>,
     pub(crate) folder: MovieFolder,
     pub(crate) nfo: Option<MovieNfo>,
@@ -228,7 +244,12 @@ impl MovieLibrary {
     pub(crate) fn find_media_file(&self) -> FindMediaFile {
         let sources = self.sources.clone();
         FindMediaFile::new(move |path| {
-            let found = sources.lock().unwrap().files_on_disk.get(&path).copied();
+            let sources = sources.lock().unwrap();
+            let found = if sources.unreadable_files.contains(&path) {
+                Err(UnreadableFile::new(path))
+            } else {
+                Ok(sources.files_on_disk.get(&path).copied())
+            };
             Box::pin(async move { found })
         })
     }
@@ -280,7 +301,20 @@ impl MovieLibrary {
             list_subtitle_files: self.list_subtitle_files(),
             prober: self.prober(),
             read_movie_folder: ReadMovieFolder::new(move |_| {
-                let folder = folder.lock().unwrap().folder.clone();
+                let sources = folder.lock().unwrap();
+                let folder = &sources.folder;
+                let folder = readable(
+                    &sources.unreadable_files,
+                    [
+                        &folder.nfo,
+                        &folder.poster,
+                        &folder.fanart,
+                        &folder.clearlogo,
+                    ]
+                    .into_iter()
+                    .flatten(),
+                )
+                .map(|()| folder.clone());
                 Box::pin(async move { folder })
             }),
             read_movie_nfo: ReadMovieNfo::new(move |_| {
@@ -398,6 +432,7 @@ pub(crate) fn severance() -> SonarrShow {
 pub(crate) struct ShowSources {
     pub(crate) sonarr_show: Option<SonarrShow>,
     pub(crate) files_on_disk: HashSet<String>,
+    pub(crate) unreadable_files: HashSet<String>,
     pub(crate) folder: ShowFolder,
     pub(crate) nfo: Option<ShowNfo>,
     pub(crate) nfo_reads: usize,
@@ -442,15 +477,18 @@ impl ShowLibrary {
         sync_show::Dependencies {
             db_context: self.db_context.clone(),
             find_media_file: FindMediaFile::new(move |path| {
-                let found =
-                    disk.lock()
-                        .unwrap()
+                let sources = disk.lock().unwrap();
+                let found = if sources.unreadable_files.contains(&path) {
+                    Err(UnreadableFile::new(path))
+                } else {
+                    Ok(sources
                         .files_on_disk
                         .contains(&path)
                         .then(|| FoundMediaFile {
                             size: 1_000,
                             modified_at: at("2026-10-29T09:00:00Z"),
-                        });
+                        }))
+                };
                 Box::pin(async move { found })
             }),
             get_sonarr_show: GetSonarrShow::new(move |_| {
@@ -460,13 +498,17 @@ impl ShowLibrary {
             list_subtitle_files: no_subtitle_files(),
             prober: readable_prober(),
             read_episode_folder: ReadEpisodeFolder::new(move |path| {
-                let folder = episode_folders
-                    .lock()
-                    .unwrap()
+                let sources = episode_folders.lock().unwrap();
+                let folder = sources
                     .episode_folders
                     .get(&path)
                     .cloned()
                     .unwrap_or_default();
+                let folder = readable(
+                    &sources.unreadable_files,
+                    [&folder.nfo, &folder.thumb].into_iter().flatten(),
+                )
+                .map(|()| folder);
                 Box::pin(async move { folder })
             }),
             read_episode_nfo: ReadEpisodeNfo::new(move |path| {
@@ -480,7 +522,21 @@ impl ShowLibrary {
                 Box::pin(async move { roots })
             }),
             read_show_folder: ReadShowFolder::new(move |_, _| {
-                let folder = folder.lock().unwrap().folder.clone();
+                let sources = folder.lock().unwrap();
+                let folder = &sources.folder;
+                let folder = readable(
+                    &sources.unreadable_files,
+                    [
+                        &folder.nfo,
+                        &folder.poster,
+                        &folder.fanart,
+                        &folder.clearlogo,
+                    ]
+                    .into_iter()
+                    .flatten()
+                    .chain(folder.season_posters.iter().map(|(_, x)| x)),
+                )
+                .map(|()| folder.clone());
                 Box::pin(async move { folder })
             }),
             read_show_nfo: ReadShowNfo::new(move |_| {
