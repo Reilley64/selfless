@@ -1,13 +1,15 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Slot } from "expo-router";
+import { Stack } from "expo-router";
 import { useState, useSyncExternalStore } from "react";
-import { Appearance } from "react-native";
+import { Appearance, useWindowDimensions, View } from "react-native";
 import { ServerAddress } from "../components/ServerAddress";
 import { SignIn } from "../components/SignIn";
 import { UserPicker } from "../components/UserPicker";
 import { session } from "../session";
 
 import "../global.css";
+
+const DESIGN_WIDTH = 1920;
 
 Appearance.setColorScheme("dark");
 const queryClient = new QueryClient();
@@ -28,13 +30,17 @@ function Screen() {
   if (!currentUserId) {
     return <UserPicker onSignIn={(name) => setSignInScreen({ open: true, name })} />;
   }
-  return <Slot />;
+  return <Stack screenOptions={{ headerShown: false }} />;
 }
 
 export default function Layout() {
+  const { width, height } = useWindowDimensions();
+  const scale = width / DESIGN_WIDTH;
   return (
     <QueryClientProvider client={queryClient}>
-      <Screen />
+      <View style={{ width: DESIGN_WIDTH, height: height / scale, transform: [{ scale }], transformOrigin: "top left" }}>
+        <Screen />
+      </View>
     </QueryClientProvider>
   );
 }

@@ -27,28 +27,44 @@ export function ArtworkImage({
   );
 }
 
-export function Tile({ tile, onPress }: { tile: TileData; onPress?: () => void }) {
+export function Tile({
+  tile,
+  onPress,
+  onFocus,
+}: {
+  tile: TileData;
+  onPress?: () => void;
+  onFocus?: () => void;
+}) {
   const { fanart, logo } = tile.images;
   return (
     <Pressable
-      className="aspect-video w-full justify-end overflow-hidden rounded-medium bg-surface p-3"
+      className={`aspect-video w-full justify-end overflow-hidden rounded-medium bg-surface p-3 ${Platform.isTV ? "transition-transform focus:scale-107" : ""}`}
       aria-label={tile.title}
       onPress={onPress}
+      onFocus={onFocus}
     >
-      {fanart && (
-        <ArtworkImage artwork={fanart} testID="tile-fanart" className="absolute inset-0" resizeMode="cover" />
-      )}
-      {fanart && logo ? (
-        <View className="h-2/5 w-3/5">
-          <ArtworkImage artwork={logo} testID="tile-logo" className="h-full w-full" resizeMode="contain" />
-        </View>
-      ) : (
-        <Text
-          className={`self-start font-sans font-extrabold text-text-primary ${fanart ? "rounded-medium bg-scrim px-2 py-1" : ""} ${Platform.isTV ? "text-tv-row" : "text-web-row"}`}
-          numberOfLines={2}
-        >
-          {tile.title}
-        </Text>
+      {({ focused }) => (
+        <>
+          {fanart && (
+            <ArtworkImage artwork={fanart} testID="tile-fanart" className="absolute inset-0" resizeMode="cover" />
+          )}
+          {fanart && logo ? (
+            <View className="h-2/5 w-3/5">
+              <ArtworkImage artwork={logo} testID="tile-logo" className="h-full w-full" resizeMode="contain" />
+            </View>
+          ) : (
+            <Text
+              className={`self-start font-sans font-extrabold text-text-primary ${fanart ? "rounded-medium bg-scrim px-2 py-1" : ""} ${Platform.isTV ? "text-tv-row" : "text-web-row"}`}
+              numberOfLines={2}
+            >
+              {tile.title}
+            </Text>
+          )}
+          {Platform.isTV && focused && (
+            <View className="absolute inset-0 rounded-medium border-(length:--spacing-focus-ring-tv-width) border-focus-ring" />
+          )}
+        </>
       )}
     </Pressable>
   );

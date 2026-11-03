@@ -48,10 +48,14 @@ function RowTile({
   tile,
   onPress,
   onOpen,
+  onFocus,
+  onPlaced,
 }: {
   tile: TileData;
   onPress?: () => void;
   onOpen: (left: number) => void;
+  onFocus: (left: number) => void;
+  onPlaced?: (left: number) => void;
 }) {
   const [open, setOpen] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -74,11 +78,16 @@ function RowTile({
       className={`transition-[width] duration-300 ${width} ${open ? "z-10" : ""}`}
       onLayout={(event) => {
         left.current = event.nativeEvent.layout.x;
+        onPlaced?.(left.current);
       }}
       onPointerEnter={later}
       onPointerLeave={close}
     >
-      {open ? <TileCard tile={tile} onPress={onPress} /> : <Tile tile={tile} onPress={onPress} />}
+      {open ? (
+        <TileCard tile={tile} onPress={onPress} />
+      ) : (
+        <Tile tile={tile} onPress={onPress} onFocus={() => onFocus(left.current)} />
+      )}
     </View>
   );
 }
@@ -99,12 +108,15 @@ export function TileRow({
   title,
   tiles,
   onPressTile,
+  onFocusTile,
 }: {
   title: string;
   tiles: TileData[];
   onPressTile?: (tile: TileData) => void;
+  onFocusTile?: (tile: TileData) => void;
 }) {
   const scroll = useRef<ScrollViewInstance>(null);
+  const firstLeft = useRef(0);
   const [offset, setOffset] = useState(0);
   const [viewport, setViewport] = useState(0);
   const [content, setContent] = useState(0);
@@ -118,7 +130,7 @@ export function TileRow({
       >
         {title}
       </Text>
-      <View className="relative">
+      <View className={Platform.isTV ? "pl-tv-inset" : "relative"}>
         <ScrollView
           ref={scroll}
           horizontal
@@ -127,13 +139,27 @@ export function TileRow({
           onScroll={(event) => setOffset(event.nativeEvent.contentOffset.x)}
           onLayout={(event) => setViewport(event.nativeEvent.layout.width)}
           onContentSizeChange={(width) => setContent(width)}
-          contentContainerClassName={`items-start py-2 ${Platform.isTV ? "gap-tile-tv-gap px-tv-inset" : "gap-tile-web-gap px-web-inset"}`}
+          className={Platform.isTV ? "-ml-4" : ""}
+          contentContainerClassName={`items-start py-2 ${Platform.isTV ? "gap-tile-tv-gap pr-tv-inset pl-4" : "gap-tile-web-gap px-web-inset"}`}
         >
-          {tiles.map((tile) => (
+          {tiles.map((tile, index) => (
             <RowTile
               key={tile.id}
               tile={tile}
               onPress={onPressTile && (() => onPressTile(tile))}
+              onPlaced={
+                index === 0
+                  ? (left) => {
+                      firstLeft.current = left;
+                    }
+                  : undefined
+              }
+              onFocus={(left) => {
+                if (Platform.isTV) {
+                  scrollTo(left - firstLeft.current);
+                }
+                onFocusTile?.(tile);
+              }}
               onOpen={(left) => {
                 const overflow = left - offset + EXPANDED_WIDTH - (viewport - INSET);
                 if (overflow > 0) {

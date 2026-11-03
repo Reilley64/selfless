@@ -6,7 +6,7 @@ import { Alert } from "react-native";
 import { Pressable, Text, View } from "react-native-css/components";
 import { session } from "../session";
 
-const colours: Record<UserColour, string> = {
+export const userColours: Record<UserColour, string> = {
   amber: "bg-user-amber",
   blue: "bg-user-blue",
   pink: "bg-user-pink",
@@ -71,7 +71,7 @@ export function UserPicker({ onSignIn }: { onSignIn: (name: string) => void }) {
           <PickerButton
             key={user.id}
             label={user.name}
-            className={colours[user.colour]}
+            className={userColours[user.colour]}
             dimmed={user.signedOut}
             onPress={() => (user.signedOut ? onSignIn(user.name) : session.pick(user.id))}
             onLongPress={() =>
