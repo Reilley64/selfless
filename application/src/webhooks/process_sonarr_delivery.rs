@@ -6,16 +6,11 @@ pub use dependencies::Dependencies;
 pub use error::Error;
 pub use output::Output;
 
-use crate::attributes::SELFLESS_WEBHOOK_EVENT_TYPE;
-use crate::attributes::SELFLESS_WEBHOOK_OUTCOME;
-use crate::attributes::SELFLESS_WEBHOOK_SOURCE;
 use crate::library::sync_show;
 use crate::ports::ShowWebhookDelivery;
 use crate::webhooks::webhook_deliveries;
 use crate::webhooks::webhook_deliveries::Outcome;
 use domain::Source;
-use tracing::Span;
-use tracing_opentelemetry::OpenTelemetrySpanExt;
 use uuid::Uuid;
 
 pub async fn call(
@@ -37,45 +32,35 @@ pub async fn call(
         read_webhook_event_type,
         source_health,
     } = dependencies.into();
-    let span = Span::current();
-    let event_type = read_webhook_event_type.call(&body);
-    span.set_attribute(SELFLESS_WEBHOOK_SOURCE, Source::Sonarr.name());
-    if let Some(event_type) = &event_type {
-        span.set_attribute(SELFLESS_WEBHOOK_EVENT_TYPE, event_type.clone());
-    }
-    let synced = match read_sonarr_webhook.call(&body) {
-        Ok(ShowWebhookDelivery::Show { sonarr_id }) => sync_show::call(
-            sync_show::Dependencies {
-                db_context,
-                find_media_file,
-                get_sonarr_show,
-                list_subtitle_files,
-                prober,
-                read_episode_folder,
-                read_episode_nfo,
-                read_show_folder,
-                read_show_nfo,
-                source_health,
-            },
-            sonarr_id,
-        )
-        .await
-        .map(|_| Outcome::Processed),
-        Ok(ShowWebhookDelivery::Ignored) => Ok(Outcome::Ignored),
-        Err(error) => {
-            tracing::warn!(
-                messaging.message.id = %id,
-                selfless.webhook.source = Source::Sonarr.name(),
-                error = &error as &dyn std::error::Error,
-                "skipped a webhook delivery selfless cannot read"
-            );
-            Ok(Outcome::Skipped)
-        }
-    };
-    let outcome = synced.as_ref().map_or(Outcome::Failed, |x| *x);
-    span.set_attribute(SELFLESS_WEBHOOK_OUTCOME, outcome.name());
-    webhook_deliveries::count(Source::Sonarr, event_type, outcome);
-    synced.map(|_| Output).map_err(Error::caused_by)
+    webhook_deliveries::process(
+        Source::Sonarr,
+        id,
+        read_webhook_event_type.call(&body),
+        read_sonarr_webhook.call(&body),
+        async |delivery| match delivery {
+            ShowWebhookDelivery::Show { sonarr_id } => sync_show::call(
+                sync_show::Dependencies {
+                    db_context,
+                    find_media_file,
+                    get_sonarr_show,
+                    list_subtitle_files,
+                    prober,
+                    read_episode_folder,
+                    read_episode_nfo,
+                    read_show_folder,
+                    read_show_nfo,
+                    source_health,
+                },
+                sonarr_id,
+            )
+            .await
+            .map(|_| Outcome::Processed),
+            ShowWebhookDelivery::Ignored => Ok(Outcome::Ignored),
+        },
+    )
+    .await
+    .map(|()| Output)
+    .map_err(Error::caused_by)
 }
 
 #[cfg(test)]
