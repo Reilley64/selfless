@@ -16,7 +16,7 @@ pub struct Movie {
     pub id: Uuid,
     #[unique]
     pub tmdb_id: TmdbId,
-    #[index]
+    #[unique]
     pub radarr_id: RadarrId,
     pub title: String,
     pub year: i64,
