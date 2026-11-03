@@ -8,15 +8,11 @@ pub use output::Output;
 
 use crate::library::source_states;
 use crate::ports::persistence::DbScope;
+use crate::trace_context;
 use crate::webhooks::webhook_deliveries;
 use crate::webhooks::webhook_deliveries::Outcome;
 use bytes::Bytes;
 use domain::Source;
-use opentelemetry::propagation::TextMapPropagator;
-use opentelemetry_sdk::propagation::TraceContextPropagator;
-use std::collections::HashMap;
-use tracing::Span;
-use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 pub async fn call(
     dependencies: impl Into<Dependencies>,
@@ -50,15 +46,13 @@ pub async fn call(
     }
     let event_type = read_webhook_event_type.call(&body);
     let received_at = clock.call();
-    let mut carrier = HashMap::new();
-    TraceContextPropagator::new().inject_context(&Span::current().context(), &mut carrier);
     db_context
         .inboxes()
         .create()
         .source(source)
         .body(body.to_vec())
         .received_at(received_at)
-        .traceparent(carrier.remove("traceparent"))
+        .traceparent(trace_context::current_traceparent())
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?;
