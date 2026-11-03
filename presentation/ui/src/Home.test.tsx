@@ -1,6 +1,6 @@
 import type { Home as HomeData, Tile } from "@selfless/api-client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, renderRouter, screen } from "expo-router/testing-library";
+import { act, fireEvent, renderRouter, screen, waitFor } from "expo-router/testing-library";
 import { Platform } from "react-native";
 import { Home } from "./Home";
 
@@ -46,7 +46,7 @@ async function renderHome(response: HomeData = home) {
     .mockImplementation(async (input) =>
       input === "/api/home/v1" ? Response.json(response) : new Response(null, { status: 404 }),
     );
-  const client = new QueryClient({ defaultOptions: { queries: { gcTime: Infinity } } });
+  const client = new QueryClient({ defaultOptions: { queries: { gcTime: Infinity }, mutations: { gcTime: Infinity } } });
   await renderRouter(
     {
       index: () => (
@@ -166,4 +166,81 @@ test("a movie tile opens the movie page", async () => {
   await fireEvent.press(screen.getAllByLabelText("Arrival")[0]);
 
   expect(screen).toHavePathname(`/movies/${arrival.id}`);
+});
+
+describe("the Continue watching tile menu", () => {
+  const halfLoop: Tile = {
+    ...tile("0190f3c4-7d8e-7f9a-8b0c-1d2e3f4a5b6c", "episode", "Half Loop"),
+    episode: { show: { id: severance.id, title: "Severance", logo: null }, seasonNumber: 1, episodeNumber: 2 },
+  };
+  const dune = tile("0190f3c4-8e9f-7a0b-9c1d-2e3f4a5b6c7d", "movie", "Dune");
+  const withContinueWatching: HomeData = {
+    featured: null,
+    rows: [
+      { kind: "continueWatching", genre: null, tiles: [arrival, halfLoop] },
+      { kind: "recentlyAdded", genre: null, tiles: [dune] },
+    ],
+  };
+
+  async function renderWithPendingRemovals() {
+    await renderHome(withContinueWatching);
+    jest
+      .mocked(globalThis.fetch)
+      .mockImplementation(async (_, init) =>
+        init?.method === "DELETE" ? new Promise<Response>(() => {}) : Response.json(withContinueWatching),
+      );
+  }
+
+  const deletes = () =>
+    jest
+      .mocked(globalThis.fetch)
+      .mock.calls.filter(([, init]) => init?.method === "DELETE")
+      .map(([input]) => input);
+
+  test("a right click opens the menu, and Remove from Continue watching drops the tile at once", async () => {
+    await renderWithPendingRemovals();
+    const preventDefault = jest.fn();
+
+    await fireEvent(screen.getByLabelText("Arrival"), "contextMenu", { preventDefault });
+    await fireEvent.press(screen.getByText("Remove from Continue watching"));
+
+    expect(preventDefault).toHaveBeenCalled();
+    await waitFor(() => expect(screen.queryByLabelText("Arrival")).not.toBeOnTheScreen());
+    expect(screen.queryByText("Remove from Continue watching")).not.toBeOnTheScreen();
+    expect(deletes()).toEqual([`/api/continue-watching/movies/${arrival.id}/v1`]);
+  });
+
+  test("the ⋯ button on a hovered episode tile opens the same menu, which removes the episode's show", async () => {
+    await renderWithPendingRemovals();
+    jest.useFakeTimers();
+    await fireEvent(screen.getByLabelText("Half Loop"), "pointerEnter");
+    await act(() => jest.advanceTimersByTime(400));
+    jest.useRealTimers();
+
+    await fireEvent.press(screen.getByLabelText("More actions"));
+    await fireEvent.press(screen.getByText("Remove from Continue watching"));
+
+    await waitFor(() => expect(screen.queryByLabelText("Half Loop")).not.toBeOnTheScreen());
+    expect(screen.getByLabelText("Arrival")).toBeOnTheScreen();
+    expect(deletes()).toEqual([`/api/continue-watching/shows/${severance.id}/v1`]);
+  });
+
+  test("tiles in other rows have no menu", async () => {
+    await renderWithPendingRemovals();
+
+    await fireEvent(screen.getByLabelText("Dune"), "contextMenu", { preventDefault: () => {} });
+
+    expect(screen.queryByText("Remove from Continue watching")).not.toBeOnTheScreen();
+  });
+
+  test("on TV a long press opens the menu", async () => {
+    jest.spyOn(Platform, "isTV", "get").mockReturnValue(true);
+    await renderWithPendingRemovals();
+
+    await fireEvent(screen.getByLabelText("Arrival"), "longPress");
+    await fireEvent.press(screen.getByText("Remove from Continue watching"));
+
+    await waitFor(() => expect(screen.queryByLabelText("Arrival")).not.toBeOnTheScreen());
+    expect(deletes()).toEqual([`/api/continue-watching/movies/${arrival.id}/v1`]);
+  });
 });

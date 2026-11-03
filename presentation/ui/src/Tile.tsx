@@ -37,11 +37,13 @@ export function Tile({
   ref,
   tile,
   onPress,
+  onLongPress,
   onFocus,
 }: {
   ref?: Ref<HostView>;
   tile: TileData;
   onPress?: () => void;
+  onLongPress?: () => void;
   onFocus?: () => void;
 }) {
   const { episode } = tile;
@@ -54,6 +56,7 @@ export function Tile({
       className={`aspect-video w-full justify-end overflow-hidden rounded-medium bg-surface p-3 ${Platform.isTV ? "transition-transform focus:scale-107" : ""}`}
       aria-label={tile.title}
       onPress={onPress}
+      onLongPress={onLongPress}
       onFocus={onFocus}
     >
       {({ focused }) => (

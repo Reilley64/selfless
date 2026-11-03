@@ -7,13 +7,14 @@ import { ActionButton } from "./ActionButton";
 import { episodeLabel } from "./episodeLabel";
 import { playHref } from "./playHref";
 import { ArtworkImage, Tile } from "./Tile";
+import { TileMenu, type TileMenuItem } from "./TileMenu";
 import { TitleMeta } from "./TitleMeta";
 
 const HOVER_DELAY = 400;
 const INSET = 48;
 const EXPANDED_WIDTH = 520;
 
-function TileCard({ tile, onPress }: { tile: TileData; onPress?: () => void }) {
+function TileCard({ tile, onPress, onMenu }: { tile: TileData; onPress?: () => void; onMenu?: () => void }) {
   const router = useRouter();
   const { episode } = tile;
   return (
@@ -52,6 +53,15 @@ function TileCard({ tile, onPress }: { tile: TileData; onPress?: () => void }) {
           />
         )}
         {onPress && <ActionButton label="More info" small onPress={onPress} />}
+        {onMenu && (
+          <Pressable
+            className="ml-auto h-[34px] w-[34px] items-center justify-center rounded-full bg-button-background hover:bg-button-focus"
+            aria-label="More actions"
+            onPress={onMenu}
+          >
+            <Text className="font-bold font-sans text-text-primary text-web-meta">⋯</Text>
+          </Pressable>
+        )}
       </View>
     </Pressable>
   );
@@ -60,12 +70,14 @@ function TileCard({ tile, onPress }: { tile: TileData; onPress?: () => void }) {
 function RowTile({
   tile,
   onPress,
+  onMenu,
   onOpen,
   onFocus,
   onPlaced,
 }: {
   tile: TileData;
   onPress?: () => void;
+  onMenu?: () => void;
   onOpen: (left: number) => void;
   onFocus: (left: number) => void;
   onPlaced?: (left: number) => void;
@@ -86,8 +98,15 @@ function RowTile({
     setOpen(false);
   };
   const width = Platform.isTV ? "w-tile-tv-width" : open ? "w-tile-web-expanded-width" : "w-tile-web-width";
+  const contextMenu = onMenu && {
+    onContextMenu: (event: { preventDefault: () => void }) => {
+      event.preventDefault();
+      onMenu();
+    },
+  };
   return (
     <View
+      {...contextMenu}
       className={`transition-[width] duration-300 ${width} ${open ? "z-10" : ""}`}
       onLayout={(event) => {
         left.current = event.nativeEvent.layout.x;
@@ -97,9 +116,9 @@ function RowTile({
       onPointerLeave={close}
     >
       {open ? (
-        <TileCard tile={tile} onPress={onPress} />
+        <TileCard tile={tile} onPress={onPress} onMenu={onMenu} />
       ) : (
-        <Tile tile={tile} onPress={onPress} onFocus={() => onFocus(left.current)} />
+        <Tile tile={tile} onPress={onPress} onLongPress={onMenu} onFocus={() => onFocus(left.current)} />
       )}
     </View>
   );
@@ -122,13 +141,16 @@ export function TileRow({
   tiles,
   onPressTile,
   onFocusTile,
+  menu,
 }: {
   title: string;
   tiles: TileData[];
   onPressTile?: (tile: TileData) => void;
   onFocusTile?: (tile: TileData) => void;
+  menu?: (tile: TileData) => TileMenuItem[];
 }) {
   const scroll = useRef<ScrollViewInstance>(null);
+  const [menuTile, setMenuTile] = useState<TileData | null>(null);
   const firstLeft = useRef(0);
   const [offset, setOffset] = useState(0);
   const [viewport, setViewport] = useState(0);
@@ -160,6 +182,7 @@ export function TileRow({
               key={tile.id}
               tile={tile}
               onPress={onPressTile && (() => onPressTile(tile))}
+              onMenu={menu && (() => setMenuTile(tile))}
               onPlaced={
                 index === 0
                   ? (left) => {
@@ -187,6 +210,13 @@ export function TileRow({
           <Arrow side="right" onPress={() => scrollTo(offset + page)} />
         )}
       </View>
+      {menu && menuTile && (
+        <TileMenu
+          title={menuTile.episode ? menuTile.episode.show.title : menuTile.title}
+          items={menu(menuTile)}
+          onClose={() => setMenuTile(null)}
+        />
+      )}
     </View>
   );
 }
