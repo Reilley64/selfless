@@ -34,7 +34,6 @@ use domain::ClientKind;
 use domain::KeyframeIndex;
 use domain::MediaFile;
 use domain::PlayDecision;
-use domain::PlayMethod;
 use domain::PlayReason;
 use domain::PlaybackSettings;
 use domain::ShowEpisode;
@@ -294,7 +293,7 @@ pub async fn call(
     for id in ended {
         end_hls_output.call(id).await;
     }
-    if decision.method != PlayMethod::DirectPlay {
+    if decision.method.uses_hls() {
         let selected_subtitle = subtitle_streams
             .iter()
             .filter(|x| x.text)
@@ -588,6 +587,7 @@ mod tests {
     use domain::AudioTranscode;
     use domain::AudioTranscodeCodec;
     use domain::HdrType;
+    use domain::PlayMethod;
     use domain::PlayReasonKind;
     use domain::PlaybackReason;
     use domain::VideoCodecSupport;

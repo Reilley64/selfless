@@ -275,9 +275,10 @@ impl From<start_playback::Playback> for PlaybackBody {
                 "/api/playbacks/{}/media/{}/v1/{}",
                 playback.id,
                 playback.signature,
-                match playback.method {
-                    PlayMethod::DirectPlay => "file",
-                    PlayMethod::Remux | PlayMethod::Transcode => "main.m3u8",
+                if playback.method.uses_hls() {
+                    "main.m3u8"
+                } else {
+                    "file"
                 }
             ),
             duration: playback.duration.as_secs_f64(),
