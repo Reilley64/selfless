@@ -6,8 +6,8 @@ pub use dependencies::Dependencies;
 pub use error::Error;
 pub use output::Output;
 
-use crate::playback::resource;
-use crate::ports::persistence::DbScope;
+use crate::playback::SignedPlayback;
+use crate::playback::signed_playback;
 use uuid::Uuid;
 
 pub async fn call(
@@ -21,18 +21,13 @@ pub async fn call(
         url_signer,
         get_hls_file,
     } = dependencies.into();
-    if !url_signer.verify_signature(&resource(playback_id), signature) {
-        return Ok(Output::InvalidSignature);
-    }
-    let open = db_context
-        .playbacks()
-        .find(playback_id)
-        .exec(db_context.executor_mut())
+    match signed_playback(&mut db_context, &url_signer, playback_id, signature)
         .await
         .map_err(Error::caused_by)?
-        .is_some_and(|x| !x.ended());
-    if !open {
-        return Ok(Output::NotFound);
+    {
+        SignedPlayback::Open(_) => {}
+        SignedPlayback::NotFound => return Ok(Output::NotFound),
+        SignedPlayback::InvalidSignature => return Ok(Output::InvalidSignature),
     }
     let path = get_hls_file
         .call(playback_id, name)
@@ -44,8 +39,10 @@ pub async fn call(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::playback::resource;
     use crate::ports::GetHlsFile;
     use crate::ports::persistence::DbContext;
+    use crate::ports::persistence::DbScope;
     use crate::test::at;
     use crate::test::mock_db_context;
     use crate::test::playback;

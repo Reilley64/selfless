@@ -6,7 +6,8 @@ pub use dependencies::Dependencies;
 pub use error::Error;
 pub use output::Output;
 
-use crate::playback::resource;
+use crate::playback::SignedPlayback;
+use crate::playback::signed_playback;
 use crate::ports::persistence::DbScope;
 use uuid::Uuid;
 
@@ -19,18 +20,13 @@ pub async fn call(
         mut db_context,
         url_signer,
     } = dependencies.into();
-    if !url_signer.verify_signature(&resource(playback_id), signature) {
-        return Ok(Output::InvalidSignature);
-    }
-    let Some(playback) = db_context
-        .playbacks()
-        .find(playback_id)
-        .exec(db_context.executor_mut())
+    let playback = match signed_playback(&mut db_context, &url_signer, playback_id, signature)
         .await
         .map_err(Error::caused_by)?
-        .filter(|x| !x.ended())
-    else {
-        return Ok(Output::NotFound);
+    {
+        SignedPlayback::Open(playback) => playback,
+        SignedPlayback::NotFound => return Ok(Output::NotFound),
+        SignedPlayback::InvalidSignature => return Ok(Output::InvalidSignature),
     };
     let media_file = db_context
         .media_files()
@@ -44,6 +40,7 @@ pub async fn call(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::playback::resource;
     use crate::ports::persistence::DbContext;
     use crate::test::at;
     use crate::test::mock_db_context;
