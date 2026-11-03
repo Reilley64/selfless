@@ -4,6 +4,7 @@ use domain::EmailAddress;
 use domain::EpisodeNfo;
 use domain::HdrType;
 use domain::MovieNfo;
+use domain::PlayMethod;
 use domain::RadarrId;
 use domain::ShowNfo;
 use domain::SonarrId;
@@ -171,6 +172,7 @@ impl DeleteCachedImage {
 #[derive(Clone, Debug)]
 pub struct HlsOutput {
     pub playback_id: Uuid,
+    pub method: PlayMethod,
     pub path: String,
     pub duration: Duration,
     pub keyframes: Vec<Duration>,

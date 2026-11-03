@@ -20,6 +20,7 @@ use application::ports::StartHlsOutput;
 use application::ports::SubtitleStream;
 use application::ports::VideoStream;
 use application::spans::SELFLESS_FFMPEG;
+use domain::PlayMethod;
 use domain::VideoTranscode;
 use std::collections::HashMap;
 use std::io;
@@ -48,6 +49,7 @@ pub struct HlsOutputs {
 }
 
 struct Output {
+    method: PlayMethod,
     folder: PathBuf,
     input: PathBuf,
     video: VideoStream,
@@ -293,6 +295,7 @@ impl HlsOutputs {
         }
         let start = segments.segment_at(output.start_position);
         let mut started = Output {
+            method: output.method,
             folder,
             input: PathBuf::from(output.path),
             video: output.video,
@@ -426,12 +429,10 @@ impl HlsOutputs {
 impl Output {
     fn restart(&mut self, start: usize) {
         self.run = None;
-        let purpose =
-            if self.video_transcode.is_some() || self.audio.iter().any(|x| x.transcode.is_some()) {
-                selfless_ffmpeg_purpose::TRANSCODE
-            } else {
-                selfless_ffmpeg_purpose::REMUX
-            };
+        let purpose = match self.method {
+            PlayMethod::Transcode => selfless_ffmpeg_purpose::TRANSCODE,
+            PlayMethod::DirectPlay | PlayMethod::Remux => selfless_ffmpeg_purpose::REMUX,
+        };
         let (sender, written) = watch::channel(start);
         let input = self.input.clone();
         let video = self.video.clone();
@@ -511,6 +512,7 @@ mod tests {
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test/fixtures/media/keyframes.mkv");
         HlsOutput {
             playback_id: PLAYBACK_ID,
+            method: PlayMethod::Remux,
             keyframes: read_keyframes(&path).await.unwrap(),
             video_transcode: None,
             path: path.to_string_lossy().into_owned(),
@@ -722,6 +724,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let outputs = HlsOutputs::new(dir.path().join("segments")).await.unwrap();
         let mut transcode = output(Duration::ZERO).await;
+        transcode.method = PlayMethod::Transcode;
         transcode.keyframes = Vec::new();
         transcode.video.frame_rate = Some(24000.0 / 1001.0);
         transcode.video_transcode = Some(VideoTranscode {

@@ -33,11 +33,12 @@ use domain::CapabilityProfile;
 use domain::ClientKind;
 use domain::KeyframeIndex;
 use domain::MediaFile;
+use domain::PlayDecision;
 use domain::PlayMethod;
 use domain::PlayReason;
 use domain::PlaybackSettings;
 use domain::ShowEpisode;
-use domain::usable_keyframe_index;
+use domain::TrackSelection;
 use jiff::Timestamp;
 use opentelemetry::KeyValue;
 use opentelemetry::global;
@@ -121,14 +122,9 @@ pub async fn call(
         .duration_ms
         .and_then(|x| u64::try_from(x).ok())
         .map(Duration::from_millis);
-    let video = media_file
-        .video_streams
-        .get()
-        .iter()
-        .min_by_key(|x| x.index);
     let (Some(container), Some(video), Some(duration)) = (
         media_file.container_name().map(str::to_owned),
-        video,
+        media_file.video_stream(),
         duration,
     ) else {
         return Ok(Output::UnreadableMediaFile);
@@ -177,74 +173,58 @@ pub async fn call(
     let default_subtitle_track_id = default_subtitle(default_audio).map(|x| x.id());
     let audio_track_id = audio.map(|x| x.id);
     let subtitle_track_id = subtitle.map(|x| x.id());
-    let mut reasons = profile.direct_play_reasons(&container, Some(video), audio, subtitle);
-    for reason in profile.tv_subtitle_reasons(
+    let reasons = profile.play_reasons(
         session_client_kind,
-        media_file.subtitle_streams.get(),
-        media_file.subtitle_files.get(),
-    ) {
-        if !reasons.contains(&reason) {
-            reasons.push(reason);
-        }
-    }
-    if force_hls && reasons.is_empty() {
-        reasons.push(PlayReason::ForcedHls);
-    }
-    let hls = if reasons.is_empty() {
-        None
+        &media_file,
+        &container,
+        TrackSelection { audio, subtitle },
+        force_hls,
+    );
+    let keyframes = if reasons.is_empty() || reasons.iter().any(PlayReason::transcodes_video) {
+        Vec::new()
     } else {
-        {
-            let keyframes = if reasons.iter().any(PlayReason::transcodes_video) {
-                Vec::new()
-            } else {
-                let keyframes = keyframes(&mut db_context, &read_keyframes, &media_file).await?;
-                if usable_keyframe_index(&keyframes) {
-                    keyframes
-                } else {
-                    reasons.push(PlayReason::NoKeyframeIndex);
-                    Vec::new()
-                }
-            };
-            let video_transcode = reasons
-                .iter()
-                .any(PlayReason::transcodes_video)
-                .then(|| video.transcode());
-            Some((keyframes, video_transcode))
-        }
+        keyframes(&mut db_context, &read_keyframes, &media_file).await?
     };
-    let mut audio_tracks = Vec::new();
-    if hls.is_some() {
-        let mut streams = media_file.audio_streams.get().iter().collect::<Vec<_>>();
-        streams.sort_by_key(|x| x.index);
-        for stream in streams {
-            let transcode = profile.audio_reason(stream).map(|reason| {
-                if !reasons.contains(&reason) {
-                    reasons.push(reason);
-                }
-                profile.audio_transcode(stream)
-            });
-            audio_tracks.push(HlsAudioTrack {
-                stream: ports::AudioStream {
-                    index: stream.index,
-                    codec: stream.codec.clone(),
-                    language: stream.language.clone(),
-                    channels: stream.channels,
-                    title: stream.title.clone(),
-                    default: stream.is_default,
-                },
-                transcode,
-                selected: audio_track_id == Some(stream.id),
-            });
-        }
+    let mut sorted_audio_streams = audio_streams.iter().collect::<Vec<_>>();
+    sorted_audio_streams.sort_by_key(|x| x.index);
+    let decision = PlayDecision::new(profile, reasons, video, &keyframes, &sorted_audio_streams);
+    if !decision.reasons.is_empty() {
+        Span::current().set_attribute(
+            SELFLESS_PLAYBACK_REASON_KINDS,
+            reason_kinds(&decision.reasons),
+        );
     }
-    if !reasons.is_empty() {
-        Span::current().set_attribute(SELFLESS_PLAYBACK_REASON_KINDS, reason_kinds(&reasons));
-    }
-    let method = match &hls {
-        None => PlayMethod::DirectPlay,
-        Some((_, None)) if audio_tracks.iter().all(|x| x.transcode.is_none()) => PlayMethod::Remux,
-        Some(_) => PlayMethod::Transcode,
+    let video = ports::VideoStream {
+        index: video.index,
+        codec: video.codec.clone(),
+        profile: video.profile.clone(),
+        width: video.width,
+        height: video.height,
+        frame_rate: video.frame_rate,
+        hdr_type: video.hdr_type,
+        interlaced: video.interlaced,
+        bit_rate: video.bit_rate,
     };
+    let audio = sorted_audio_streams
+        .iter()
+        .zip(&decision.audio_transcodes)
+        .map(|(stream, transcode)| HlsAudioTrack {
+            stream: ports::AudioStream {
+                index: stream.index,
+                codec: stream.codec.clone(),
+                language: stream.language.clone(),
+                channels: stream.channels,
+                title: stream.title.clone(),
+                default: stream.is_default,
+            },
+            transcode: *transcode,
+            selected: audio_track_id == Some(stream.id),
+        })
+        .collect::<Vec<_>>();
+    let in_stream = subtitle_tracks
+        .iter()
+        .map(|x| (x.id(), x.in_stream(decision.method, profile)))
+        .collect::<HashMap<_, _>>();
     let now = clock.call();
     let next_episode = next_episode(&mut db_context, &episodes, &url_signer, now)
         .await
@@ -283,7 +263,7 @@ pub async fn call(
         .user_id(user_id)
         .session_id(session_id)
         .media_file_id(media_file_id)
-        .method(method)
+        .method(decision.method)
         .position(start_position)
         .paused(false)
         .audio_track_id(default_audio_track_id)
@@ -297,7 +277,7 @@ pub async fn call(
     for id in ended {
         end_hls_output.call(id).await;
     }
-    if let Some((keyframes, video_transcode)) = hls {
+    if decision.method != PlayMethod::DirectPlay {
         let selected_subtitle = subtitle_streams
             .iter()
             .filter(|x| x.text)
@@ -307,22 +287,13 @@ pub async fn call(
         start_hls_output
             .call(HlsOutput {
                 playback_id: playback.id,
+                method: decision.method,
                 path: media_file.path.clone(),
                 duration,
                 keyframes,
-                video_transcode,
-                video: ports::VideoStream {
-                    index: video.index,
-                    codec: video.codec.clone(),
-                    profile: video.profile.clone(),
-                    width: video.width,
-                    height: video.height,
-                    frame_rate: video.frame_rate,
-                    hdr_type: video.hdr_type,
-                    interlaced: video.interlaced,
-                    bit_rate: video.bit_rate,
-                },
-                audio: audio_tracks,
+                video_transcode: decision.video_transcode,
+                video,
+                audio,
                 subtitle_streams: subtitle_streams
                     .iter()
                     .filter(|x| x.text)
@@ -352,25 +323,24 @@ pub async fn call(
             .await
             .map_err(Error::caused_by)?;
     }
-    Span::current().set_attribute(SELFLESS_PLAYBACK_METHOD, play_method(playback.method));
-    let mut decision = vec![
-        KeyValue::new(SELFLESS_PLAYBACK_METHOD, play_method(playback.method)),
+    Span::current().set_attribute(SELFLESS_PLAYBACK_METHOD, play_method(decision.method));
+    let mut attributes = vec![
+        KeyValue::new(SELFLESS_PLAYBACK_METHOD, play_method(decision.method)),
         KeyValue::new(SELFLESS_AUTH_CLIENT_KIND, client_kind(session_client_kind)),
     ];
-    if !reasons.is_empty() {
-        decision.push(KeyValue::new(
+    if !decision.reasons.is_empty() {
+        attributes.push(KeyValue::new(
             SELFLESS_PLAYBACK_REASON_KINDS,
-            reason_kinds(&reasons),
+            reason_kinds(&decision.reasons),
         ));
     }
-    DECISIONS.add(1, &decision);
+    DECISIONS.add(1, &attributes);
     let mut audio_streams = media_file.audio_streams.into_inner();
     audio_streams.sort_by_key(|x| x.index);
-    let hls = playback.method != PlayMethod::DirectPlay;
     Ok(Output::Playback(Box::new(Playback {
         id: playback.id,
-        method: playback.method,
-        reasons,
+        method: decision.method,
+        reasons: decision.reasons,
         signature: url_signer.signature(&resource(playback.id)),
         duration,
         movie: movie.map(|x| Movie {
@@ -395,11 +365,7 @@ pub async fn call(
         subtitle_tracks: subtitle_streams
             .into_iter()
             .map(|x| SubtitleTrack {
-                in_stream: if hls {
-                    x.text
-                } else {
-                    profile.subtitle_codecs.contains(&x.codec)
-                },
+                in_stream: in_stream[&x.id],
                 id: x.id,
                 language: x.language,
                 label: x.title,
@@ -411,6 +377,7 @@ pub async fn call(
                 text: x.text,
             })
             .chain(subtitle_files.into_iter().map(|x| SubtitleTrack {
+                in_stream: in_stream[&x.id],
                 codec: x.codec(),
                 id: x.id,
                 language: x.language,
@@ -420,7 +387,6 @@ pub async fn call(
                 hearing_impaired: x.hearing_impaired,
                 external: true,
                 text: true,
-                in_stream: hls,
             }))
             .collect(),
         next_episode,
@@ -1222,28 +1188,6 @@ mod tests {
         );
         assert!(output.video_transcode.is_some());
         assert_eq!(fixture.keyframe_reads.load(Ordering::SeqCst), 0);
-    }
-
-    #[tokio::test]
-    async fn a_file_without_a_usable_keyframe_index_transcodes_the_video_with_a_no_keyframe_index_reason()
-     {
-        let fixture = Fixture::new().await;
-        *fixture.keyframes.lock().unwrap() = vec![Duration::ZERO, Duration::from_secs(30)];
-        let media_file = fixture.add_movie(Some(MKV)).await;
-
-        let playback = fixture.start(media_file.id).await;
-
-        assert_eq!(
-            (playback.method, playback.reasons),
-            (
-                PlayMethod::Transcode,
-                vec![
-                    PlayReason::Container("mkv".to_owned()),
-                    PlayReason::NoKeyframeIndex,
-                ]
-            )
-        );
-        assert!(fixture.started.last().video_transcode.is_some());
     }
 
     #[tokio::test]
