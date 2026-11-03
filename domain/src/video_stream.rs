@@ -19,15 +19,26 @@ pub struct VideoStream {
     pub index: i64,
     pub codec: String,
     pub profile: Option<String>,
+    pub level: Option<i64>,
+    pub bit_depth: Option<i64>,
     pub width: i64,
     pub height: i64,
     pub frame_rate: Option<f64>,
     pub hdr_type: HdrType,
+    pub dolby_vision_profile: Option<i64>,
+    pub dolby_vision_compatibility_id: Option<i64>,
     pub interlaced: bool,
     pub bit_rate: Option<i64>,
 }
 
+const HDR10_COMPATIBILITY_IDS: [i64; 2] = [1, 6];
+
 impl VideoStream {
+    pub fn has_hdr10_base_layer(&self) -> bool {
+        self.dolby_vision_compatibility_id
+            .is_some_and(|x| HDR10_COMPATIBILITY_IDS.contains(&x))
+    }
+
     pub fn transcode(&self) -> VideoTranscode {
         let scale = (MAX_TRANSCODE_WIDTH as f64 / self.width as f64)
             .min(MAX_TRANSCODE_HEIGHT as f64 / self.height as f64)
@@ -58,10 +69,14 @@ mod tests {
             index: 0,
             codec: "hevc".to_owned(),
             profile: Some("Main 10".to_owned()),
+            level: None,
+            bit_depth: None,
             width,
             height,
             frame_rate: Some(24000.0 / 1001.0),
             hdr_type: HdrType::Sdr,
+            dolby_vision_profile: None,
+            dolby_vision_compatibility_id: None,
             interlaced: false,
             bit_rate,
         }

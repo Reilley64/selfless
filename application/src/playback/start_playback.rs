@@ -198,10 +198,14 @@ pub async fn call(
         index: video.index,
         codec: video.codec.clone(),
         profile: video.profile.clone(),
+        level: video.level,
+        bit_depth: video.bit_depth,
         width: video.width,
         height: video.height,
         frame_rate: video.frame_rate,
         hdr_type: video.hdr_type,
+        dolby_vision_profile: video.dolby_vision_profile,
+        dolby_vision_compatibility_id: video.dolby_vision_compatibility_id,
         interlaced: video.interlaced,
         bit_rate: video.bit_rate,
     };
@@ -856,9 +860,12 @@ mod tests {
             video_codecs: vec![VideoCodecSupport {
                 codec: "h264".to_owned(),
                 profiles: vec!["main".to_owned(), "high".to_owned()],
+                max_level: 51,
                 max_width: 3840,
                 max_height: 2160,
+                bit_depths: vec![8],
                 hdr_types: vec![HdrType::Sdr],
+                dolby_vision_profiles: Vec::new(),
             }],
             audio_codecs: vec![AudioCodecSupport {
                 codec: "aac".to_owned(),

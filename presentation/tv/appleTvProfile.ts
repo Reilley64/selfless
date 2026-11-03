@@ -6,16 +6,22 @@ export const appleTvProfile: CapabilityProfile = {
     {
       codec: "h264",
       profiles: ["constrainedbaseline", "baseline", "main", "high"],
+      maxLevel: 52,
       maxWidth: 3840,
       maxHeight: 2160,
+      bitDepths: [8],
       hdrTypes: ["sdr"],
+      dolbyVisionProfiles: [],
     },
     {
       codec: "hevc",
       profiles: ["main", "main10"],
+      maxLevel: 153,
       maxWidth: 3840,
       maxHeight: 2160,
+      bitDepths: [8, 10],
       hdrTypes: ["sdr", "hdr10", "hlg", "dolbyVision"],
+      dolbyVisionProfiles: [8],
     },
   ],
   audioCodecs: [

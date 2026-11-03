@@ -5,7 +5,9 @@ pub enum PlayReason {
     Container(String),
     VideoCodec(String),
     VideoProfile(String),
+    VideoLevel(i64),
     VideoSize { width: i64, height: i64 },
+    VideoBitDepth(i64),
     VideoRange(HdrType),
     AudioCodec(String),
     AudioChannels(i64),
@@ -20,7 +22,9 @@ impl PlayReason {
             self,
             Self::VideoCodec(_)
                 | Self::VideoProfile(_)
+                | Self::VideoLevel(_)
                 | Self::VideoSize { .. }
+                | Self::VideoBitDepth(_)
                 | Self::VideoRange(_)
                 | Self::NoKeyframeIndex
         )
@@ -38,10 +42,12 @@ mod tests {
             PlayReason::Container("mkv".to_owned()),
             PlayReason::VideoCodec("hevc".to_owned()),
             PlayReason::VideoProfile("main10".to_owned()),
+            PlayReason::VideoLevel(156),
             PlayReason::VideoSize {
                 width: 3840,
                 height: 2160,
             },
+            PlayReason::VideoBitDepth(12),
             PlayReason::VideoRange(HdrType::Hdr10),
             PlayReason::AudioCodec("dts".to_owned()),
             PlayReason::AudioChannels(6),
@@ -54,7 +60,7 @@ mod tests {
         assert_eq!(
             transcodes,
             [
-                false, true, true, true, true, false, false, false, true, false
+                false, true, true, true, true, true, true, false, false, false, true, false
             ]
         );
     }

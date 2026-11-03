@@ -111,9 +111,12 @@ async fn play_requests_are_counted_by_play_method_client_kind_and_reason_kinds()
         video_codecs: vec![domain::VideoCodecSupport {
             codec: "h264".to_owned(),
             profiles: vec!["high".to_owned()],
+            max_level: 51,
             max_width: 1920,
             max_height: 1080,
+            bit_depths: vec![8],
             hdr_types: vec![HdrType::Sdr],
+            dolby_vision_profiles: Vec::new(),
         }],
         ..CapabilityProfile::default()
     };

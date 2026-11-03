@@ -150,9 +150,12 @@ mod tests {
             video_codecs: vec![VideoCodecSupport {
                 codec: "h264".to_owned(),
                 profiles: vec!["main".to_owned(), "high".to_owned()],
+                max_level: 51,
                 max_width: 1920,
                 max_height: 1080,
+                bit_depths: vec![8],
                 hdr_types: vec![HdrType::Sdr],
+                dolby_vision_profiles: Vec::new(),
             }],
             audio_codecs: vec![AudioCodecSupport {
                 codec: "aac".to_owned(),
@@ -176,10 +179,14 @@ mod tests {
             index: 0,
             codec: codec.to_owned(),
             profile: Some(profile.to_owned()),
+            level: None,
+            bit_depth: None,
             width,
             height,
             frame_rate: None,
             hdr_type,
+            dolby_vision_profile: None,
+            dolby_vision_compatibility_id: None,
             interlaced: false,
             bit_rate: None,
         }
@@ -430,21 +437,6 @@ mod tests {
                 vec![PlayReason::Subtitle("srt".to_owned())],
             ]
         );
-    }
-
-    #[test]
-    fn dolby_vision_plays_as_its_hdr10_base_layer_where_hdr10_plays() {
-        let mut profile = browser();
-        profile.video_codecs[0].hdr_types = vec![HdrType::Sdr, HdrType::Hdr10];
-
-        let reasons = profile.direct_play_reasons(
-            "mp4",
-            Some(&video("h264", "High", 1920, 1080, HdrType::DolbyVision)),
-            None,
-            None,
-        );
-
-        assert_eq!(reasons, []);
     }
 
     #[test]

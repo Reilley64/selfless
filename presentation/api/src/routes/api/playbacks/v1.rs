@@ -68,9 +68,12 @@ struct ProfileBody {
 struct VideoCodecBody {
     codec: String,
     profiles: Vec<String>,
+    max_level: i64,
     max_width: i64,
     max_height: i64,
+    bit_depths: Vec<i64>,
     hdr_types: Vec<HdrTypeBody>,
+    dolby_vision_profiles: Vec<i64>,
 }
 
 #[derive(Deserialize)]
@@ -110,9 +113,12 @@ impl From<ProfileBody> for CapabilityProfile {
                 .map(|x| VideoCodecSupport {
                     codec: x.codec,
                     profiles: x.profiles,
+                    max_level: x.max_level,
                     max_width: x.max_width,
                     max_height: x.max_height,
+                    bit_depths: x.bit_depths,
                     hdr_types: x.hdr_types.into_iter().map(HdrType::from).collect(),
+                    dolby_vision_profiles: x.dolby_vision_profiles,
                 })
                 .collect(),
             audio_codecs: profile
@@ -221,9 +227,11 @@ impl From<PlayReason> for ReasonBody {
             PlayReason::Container(x) => ("container", Some(x)),
             PlayReason::VideoCodec(x) => ("videoCodec", Some(x)),
             PlayReason::VideoProfile(x) => ("videoProfile", Some(x)),
+            PlayReason::VideoLevel(x) => ("videoLevel", Some(x.to_string())),
             PlayReason::VideoSize { width, height } => {
                 ("videoSize", Some(format!("{width}x{height}")))
             }
+            PlayReason::VideoBitDepth(x) => ("videoBitDepth", Some(x.to_string())),
             PlayReason::VideoRange(x) => (
                 "videoRange",
                 Some(
@@ -565,9 +573,12 @@ mod tests {
             "videoCodecs": [{
                 "codec": "h264",
                 "profiles": ["main", "high"],
+                "maxLevel": 51,
                 "maxWidth": 3840,
                 "maxHeight": 2160,
+                "bitDepths": [8],
                 "hdrTypes": ["sdr"],
+                "dolbyVisionProfiles": [],
             }],
             "audioCodecs": [{ "codec": "aac", "maxChannels": 2 }],
             "subtitleCodecs": [],

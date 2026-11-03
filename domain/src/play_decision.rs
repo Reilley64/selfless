@@ -79,9 +79,12 @@ mod tests {
             video_codecs: vec![VideoCodecSupport {
                 codec: "h264".to_owned(),
                 profiles: vec!["high".to_owned()],
+                max_level: 51,
                 max_width: 1920,
                 max_height: 1080,
+                bit_depths: vec![8],
                 hdr_types: vec![HdrType::Sdr],
+                dolby_vision_profiles: Vec::new(),
             }],
             audio_codecs: vec![AudioCodecSupport {
                 codec: "aac".to_owned(),
@@ -99,10 +102,14 @@ mod tests {
             index: 0,
             codec: "h264".to_owned(),
             profile: Some("High".to_owned()),
+            level: None,
+            bit_depth: None,
             width: 1920,
             height: 800,
             frame_rate: None,
             hdr_type: HdrType::Sdr,
+            dolby_vision_profile: None,
+            dolby_vision_compatibility_id: None,
             interlaced: false,
             bit_rate: None,
         }
