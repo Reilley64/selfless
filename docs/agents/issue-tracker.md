@@ -34,8 +34,9 @@ A work item is **open** while its state group is `backlog`, `unstarted` or `star
 - **Make an issue a sub-issue of a parent**: pass `parent: <parent id>` to `workitem create`, or set it later with `workitem update`.
 - **Blocking**: Plane's native dependencies. `workitem_relation create` with `workitem_id: <blocked id>`, `workitem_ids: [<blocker id>, ...]` and `relation_type: "blocked_by"`. A work item is unblocked when every item in its `blocked_by` list is closed.
 - **Count open blockers**: `workitem_relation list` on the work item returns `dependencies.blocked_by` with each blocker's `state_id`. Count the blockers whose state is in an open group.
-- **Comment on an issue**: `workitem_comment create` with `comment_html`.
+- **Comment on an issue**: `workitem_comment create` with `workitem_id`, `project_id` and `comment_html`.
 - **Apply / remove labels**: `workitem manage_label` with `add_label_id` or `remove_label_id`. Create a missing label first with `label create`.
+- **Update an issue**: `workitem update` with `workitem_id`, `project_id` and the fields to change, such as `state` or `description_html`. `workitem_identifier` works only with `retrieve_by_identifier`; the other actions need the UUID it returns.
 - **Close**: post the explanation with `workitem_comment create`, then `workitem update` with the Done state. Use the Won't fix state instead when the issue will not be done.
 
 ## Specs and tickets
