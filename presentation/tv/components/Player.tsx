@@ -129,8 +129,6 @@ function Playing({ mediaFileId, startPosition, autoplayed, stillWatching, titleH
       return <NotFound />;
     case 422:
       return <Failure message="selfless can't read this file." />;
-    case 501:
-      return <Failure message="This TV can't play this file yet." />;
     default:
       return <Failure message={serverUnreachable} onRetry={retry} />;
   }

@@ -105,12 +105,6 @@ pub(crate) const UNREADABLE_MEDIA_FILE: Problem = Problem {
     status: StatusCode::UNPROCESSABLE_ENTITY,
 };
 
-pub(crate) const NEEDS_TRANSCODE: Problem = Problem {
-    problem_type: "urn:selfless:problem:needs-transcode",
-    title: "The media file needs a transcode the server can't do yet.",
-    status: StatusCode::NOT_IMPLEMENTED,
-};
-
 pub(crate) const INVALID_SIGNATURE: Problem = Problem {
     problem_type: "urn:selfless:problem:invalid-signature",
     title: "The signed URL is not valid or has expired.",

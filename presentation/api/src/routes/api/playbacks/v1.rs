@@ -1,5 +1,4 @@
 use crate::problem::INVALID_SIGNATURE;
-use crate::problem::NEEDS_TRANSCODE;
 use crate::problem::NOT_FOUND;
 use crate::problem::PLAYBACK_ENDED;
 use crate::problem::UNREADABLE_MEDIA_FILE;
@@ -136,7 +135,7 @@ struct PlaybackBody {
     method: MethodBody,
     reasons: Vec<ReasonBody>,
     url: String,
-    duration: Option<f64>,
+    duration: f64,
     movie: Option<MovieBody>,
     episodes: Vec<EpisodeBody>,
     audio_track_id: Option<Uuid>,
@@ -266,7 +265,7 @@ impl From<start_playback::Playback> for PlaybackBody {
                     PlayMethod::Remux | PlayMethod::Transcode => "main.m3u8",
                 }
             ),
-            duration: playback.duration.map(|x| x.as_secs_f64()),
+            duration: playback.duration.as_secs_f64(),
             movie: playback.movie.map(|x| MovieBody {
                 id: x.id,
                 title: x.title,
@@ -352,7 +351,6 @@ pub(crate) async fn start(
         }
         start_playback::Output::NotFound => NOT_FOUND.into_response(cx),
         start_playback::Output::UnreadableMediaFile => UNREADABLE_MEDIA_FILE.into_response(cx),
-        start_playback::Output::NeedsTranscode => NEEDS_TRANSCODE.into_response(cx),
     }
 }
 

@@ -144,8 +144,6 @@ function Playing({ mediaFileId, startPosition, autoplayed, stillWatching, backHr
       return <NotFound />;
     case 422:
       return <Message backHref={backHref}>selfless can&apos;t read this file.</Message>;
-    case 501:
-      return <Message backHref={backHref}>This browser can&apos;t play this file yet.</Message>;
     default:
       return (
         <Screen backHref={backHref}>

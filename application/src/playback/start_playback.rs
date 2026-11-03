@@ -117,9 +117,6 @@ pub async fn call(
     if movie.is_none() && episodes.is_empty() {
         return Ok(Output::NotFound);
     }
-    let Some(container) = media_file.container_name().map(str::to_owned) else {
-        return Ok(Output::UnreadableMediaFile);
-    };
     let duration = media_file
         .duration_ms
         .and_then(|x| u64::try_from(x).ok())
@@ -129,6 +126,13 @@ pub async fn call(
         .get()
         .iter()
         .min_by_key(|x| x.index);
+    let (Some(container), Some(video), Some(duration)) = (
+        media_file.container_name().map(str::to_owned),
+        video,
+        duration,
+    ) else {
+        return Ok(Output::UnreadableMediaFile);
+    };
     PlaybackSettings::upsert_by_user_id(user_id)
         .or_ignore()
         .exec(db_context.executor_mut())
@@ -173,7 +177,7 @@ pub async fn call(
     let default_subtitle_track_id = default_subtitle(default_audio).map(|x| x.id());
     let audio_track_id = audio.map(|x| x.id);
     let subtitle_track_id = subtitle.map(|x| x.id());
-    let mut reasons = profile.direct_play_reasons(&container, video, audio, subtitle);
+    let mut reasons = profile.direct_play_reasons(&container, Some(video), audio, subtitle);
     for reason in profile.tv_subtitle_reasons(
         session_client_kind,
         media_file.subtitle_streams.get(),
@@ -186,8 +190,10 @@ pub async fn call(
     if force_hls && reasons.is_empty() {
         reasons.push(PlayReason::ForcedHls);
     }
-    let hls = match (video, duration) {
-        (Some(video), Some(duration)) if !reasons.is_empty() => {
+    let hls = if reasons.is_empty() {
+        None
+    } else {
+        {
             let keyframes = if reasons.iter().any(PlayReason::transcodes_video) {
                 Vec::new()
             } else {
@@ -203,9 +209,8 @@ pub async fn call(
                 .iter()
                 .any(PlayReason::transcodes_video)
                 .then(|| video.transcode());
-            Some((video, duration, keyframes, video_transcode))
+            Some((keyframes, video_transcode))
         }
-        _ => None,
     };
     let mut audio_tracks = Vec::new();
     if hls.is_some() {
@@ -234,15 +239,10 @@ pub async fn call(
     }
     if !reasons.is_empty() {
         Span::current().set_attribute(SELFLESS_PLAYBACK_REASON_KINDS, reason_kinds(&reasons));
-        if hls.is_none() {
-            return Ok(Output::NeedsTranscode);
-        }
     }
     let method = match &hls {
         None => PlayMethod::DirectPlay,
-        Some((_, _, _, None)) if audio_tracks.iter().all(|x| x.transcode.is_none()) => {
-            PlayMethod::Remux
-        }
+        Some((_, None)) if audio_tracks.iter().all(|x| x.transcode.is_none()) => PlayMethod::Remux,
         Some(_) => PlayMethod::Transcode,
     };
     let now = clock.call();
@@ -297,7 +297,7 @@ pub async fn call(
     for id in ended {
         end_hls_output.call(id).await;
     }
-    if let Some((video, duration, keyframes, video_transcode)) = hls {
+    if let Some((keyframes, video_transcode)) = hls {
         let selected_subtitle = subtitle_streams
             .iter()
             .filter(|x| x.text)
@@ -933,11 +933,7 @@ mod tests {
         let english = playback.audio_tracks[0].id;
         assert_eq!(
             (playback.method, &playback.reasons, playback.duration),
-            (
-                PlayMethod::DirectPlay,
-                &vec![],
-                Some(Duration::from_secs(6981))
-            )
+            (PlayMethod::DirectPlay, &vec![], Duration::from_secs(6981))
         );
         assert_eq!(
             playback.movie.as_ref().map(|x| (x.id, x.title.as_str())),
@@ -1533,14 +1529,31 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_media_file_whose_container_sync_could_not_read_is_unreadable() {
+    async fn a_media_file_without_a_known_container_video_stream_or_duration_is_unreadable() {
         let fixture = Fixture::new().await;
-        let media_file = fixture.add_movie(None).await;
+        let mut db_context = fixture.db_context.clone();
+        let without_container = fixture.add_movie(None).await;
+        let without_video = fixture.add_movie(Some(MKV)).await;
+        VideoStream::filter_by_media_file_id(without_video.id)
+            .delete()
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap();
+        let without_duration = fixture.add_movie(Some(MKV)).await;
+        MediaFile::filter_by_id(without_duration.id)
+            .update()
+            .duration_ms(None)
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap();
 
-        let output = fixture
-            .start_with(media_file.id, fixture.request(browser()))
-            .await;
+        for media_file in [without_container, without_video, without_duration] {
+            let output = fixture
+                .start_with(media_file.id, fixture.request(browser()))
+                .await;
 
-        assert!(matches!(output, Output::UnreadableMediaFile), "{output:?}");
+            assert!(matches!(output, Output::UnreadableMediaFile), "{output:?}");
+        }
+        assert_eq!(fixture.started.count(), 0);
     }
 }

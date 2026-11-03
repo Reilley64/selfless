@@ -144,7 +144,7 @@ export function createPlayerLogic({
   let timer: ReturnType<typeof setInterval> | undefined;
   let button: NextEpisodeButtonState | null = null;
   const updateButton = () => {
-    const left = duration === null ? Infinity : duration - position;
+    const left = duration - position;
     const next =
       nextEpisode === null || stopped || left > nextEpisodeLead
         ? null
