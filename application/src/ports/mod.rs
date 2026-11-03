@@ -271,6 +271,7 @@ impl GetSonarrEpisodes {
     }
 }
 
+#[derive(Clone)]
 pub struct SonarrShowListing {
     pub sonarr_id: i64,
     pub tvdb_id: i64,
@@ -281,11 +282,13 @@ pub struct SonarrShowListing {
     pub overview: Option<String>,
 }
 
+#[derive(Clone)]
 pub struct SonarrShow {
     pub listing: SonarrShowListing,
     pub episodes: Vec<SonarrEpisode>,
 }
 
+#[derive(Clone)]
 pub struct SonarrEpisode {
     pub sonarr_id: i64,
     pub tvdb_id: i64,
@@ -297,6 +300,7 @@ pub struct SonarrEpisode {
     pub episode_file: Option<SonarrEpisodeFile>,
 }
 
+#[derive(Clone)]
 pub struct SonarrEpisodeFile {
     pub path: String,
     pub date_added: Timestamp,
