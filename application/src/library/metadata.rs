@@ -9,33 +9,12 @@ use domain::Artwork;
 use domain::ArtworkKind;
 use domain::Nfo;
 use domain::NfoActor;
+use domain::Owner;
 use domain::SyncProblem;
 use domain::SyncProblemKind;
 use jiff::Timestamp;
 use std::collections::HashSet;
 use uuid::Uuid;
-
-#[derive(Clone, Copy)]
-pub(crate) enum Owner {
-    Movie(Uuid),
-    Show(Uuid),
-}
-
-impl Owner {
-    fn movie_id(self) -> Option<Uuid> {
-        match self {
-            Owner::Movie(id) => Some(id),
-            Owner::Show(_) => None,
-        }
-    }
-
-    fn show_id(self) -> Option<Uuid> {
-        match self {
-            Owner::Movie(_) => None,
-            Owner::Show(id) => Some(id),
-        }
-    }
-}
 
 pub(crate) async fn read_nfo<T>(
     found: Option<FoundFile>,
@@ -82,7 +61,7 @@ pub(crate) async fn save_unreadable_file(
     let stored = scope
         .sync_problems()
         .filter(
-            problem_owner(owner).and(
+            SyncProblem::owner_filter(owner).and(
                 SyncProblem::fields()
                     .kind()
                     .eq(SyncProblemKind::UnreadableFile),
@@ -125,7 +104,7 @@ pub(crate) async fn save_actors<T>(
     if had_nfo {
         scope
             .actors()
-            .filter(actor_owner(owner))
+            .filter(Actor::owner_filter(owner))
             .delete()
             .exec(scope.executor_mut())
             .await?;
@@ -181,7 +160,7 @@ pub(crate) async fn save_artwork(
 ) -> toasty::Result<bool> {
     let stored = scope
         .artwork()
-        .filter(artwork_owner(owner))
+        .filter(Artwork::owner_filter(owner))
         .exec(scope.executor_mut())
         .await?;
     let unchanged = stored.len() == found.len()
@@ -199,7 +178,7 @@ pub(crate) async fn save_artwork(
     }
     scope
         .artwork()
-        .filter(artwork_owner(owner))
+        .filter(Artwork::owner_filter(owner))
         .delete()
         .exec(scope.executor_mut())
         .await?;
@@ -231,7 +210,7 @@ pub(crate) async fn save_unreadable_nfos(
         .eq(SyncProblemKind::UnreadableNfo);
     let mut stored = scope
         .sync_problems()
-        .filter(problem_owner(owner).and(unreadable_nfo.clone()))
+        .filter(SyncProblem::owner_filter(owner).and(unreadable_nfo.clone()))
         .exec(scope.executor_mut())
         .await?;
     if !media_file_ids.is_empty() {
@@ -278,40 +257,20 @@ pub(crate) async fn save_unreadable_nfos(
 pub(crate) async fn delete(scope: &mut impl DbScope, owner: Owner) -> toasty::Result<()> {
     scope
         .actors()
-        .filter(actor_owner(owner))
+        .filter(Actor::owner_filter(owner))
         .delete()
         .exec(scope.executor_mut())
         .await?;
     scope
         .artwork()
-        .filter(artwork_owner(owner))
+        .filter(Artwork::owner_filter(owner))
         .delete()
         .exec(scope.executor_mut())
         .await?;
     scope
         .sync_problems()
-        .filter(problem_owner(owner))
+        .filter(SyncProblem::owner_filter(owner))
         .delete()
         .exec(scope.executor_mut())
         .await
-}
-fn actor_owner(owner: Owner) -> toasty::stmt::Expr<bool> {
-    match owner {
-        Owner::Movie(id) => Actor::fields().movie_id().eq(id),
-        Owner::Show(id) => Actor::fields().show_id().eq(id),
-    }
-}
-
-fn artwork_owner(owner: Owner) -> toasty::stmt::Expr<bool> {
-    match owner {
-        Owner::Movie(id) => Artwork::fields().movie_id().eq(id),
-        Owner::Show(id) => Artwork::fields().show_id().eq(id),
-    }
-}
-
-fn problem_owner(owner: Owner) -> toasty::stmt::Expr<bool> {
-    match owner {
-        Owner::Movie(id) => SyncProblem::fields().movie_id().eq(id),
-        Owner::Show(id) => SyncProblem::fields().show_id().eq(id),
-    }
 }

@@ -1,6 +1,7 @@
 use crate::ArtworkKind;
 use crate::Episode;
 use crate::Movie;
+use crate::Owner;
 use crate::Season;
 use crate::Show;
 use jiff::Timestamp;
@@ -33,6 +34,13 @@ pub struct Artwork {
 }
 
 impl Artwork {
+    pub fn owner_filter(owner: Owner) -> toasty::stmt::Expr<bool> {
+        match owner {
+            Owner::Movie(id) => Self::fields().movie_id().eq(id),
+            Owner::Show(id) => Self::fields().show_id().eq(id),
+        }
+    }
+
     pub fn listing_order(&self) -> String {
         self.path.clone()
     }

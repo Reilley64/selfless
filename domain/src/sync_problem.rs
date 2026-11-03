@@ -1,5 +1,6 @@
 use crate::MediaFile;
 use crate::Movie;
+use crate::Owner;
 use crate::Show;
 use crate::SyncProblemKind;
 use uuid::Uuid;
@@ -23,4 +24,13 @@ pub struct SyncProblem {
     pub show: toasty::Deferred<Option<Show>>,
     pub kind: SyncProblemKind,
     pub path: String,
+}
+
+impl SyncProblem {
+    pub fn owner_filter(owner: Owner) -> toasty::stmt::Expr<bool> {
+        match owner {
+            Owner::Movie(id) => Self::fields().movie_id().eq(id),
+            Owner::Show(id) => Self::fields().show_id().eq(id),
+        }
+    }
 }
