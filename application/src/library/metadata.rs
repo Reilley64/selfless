@@ -7,6 +7,7 @@ use crate::ports::persistence::DbScope;
 use domain::Actor;
 use domain::Artwork;
 use domain::ArtworkKind;
+use domain::Nfo;
 use domain::NfoActor;
 use domain::SyncProblem;
 use domain::SyncProblemKind;
@@ -36,40 +37,24 @@ impl Owner {
     }
 }
 
-pub(crate) enum Nfo<T> {
-    Missing,
-    Unchanged,
-    Read(T, Timestamp),
-    Unreadable(String),
-}
-
-impl<T> Nfo<T> {
-    pub(crate) async fn read(
-        found: Option<FoundFile>,
-        stored_modified_at: Option<Timestamp>,
-        read: impl FnOnce(&str) -> PortFuture<Result<T, ReadNfoError>>,
-    ) -> Result<Self, UnreadableFile> {
-        match found {
-            None => Ok(Nfo::Missing),
-            Some(file) if !domain::needs_reread(stored_modified_at, file.modified_at) => {
-                Ok(Nfo::Unchanged)
+pub(crate) async fn read_nfo<T>(
+    found: Option<FoundFile>,
+    stored_modified_at: Option<Timestamp>,
+    read: impl FnOnce(&str) -> PortFuture<Result<T, ReadNfoError>>,
+) -> Result<Nfo<T>, UnreadableFile> {
+    match found {
+        None => Ok(Nfo::Missing),
+        Some(file) if !domain::needs_reread(stored_modified_at, file.modified_at) => {
+            Ok(Nfo::Unchanged)
+        }
+        Some(file) => match read(&file.path).await {
+            Ok(nfo) => Ok(Nfo::Read(nfo, file.modified_at)),
+            Err(ReadNfoError::UnreadableNfo(error)) => {
+                warn_unreadable(&error, &file.path);
+                Ok(Nfo::Unreadable(file.path))
             }
-            Some(file) => match read(&file.path).await {
-                Ok(nfo) => Ok(Nfo::Read(nfo, file.modified_at)),
-                Err(ReadNfoError::UnreadableNfo(error)) => {
-                    warn_unreadable(&error, &file.path);
-                    Ok(Nfo::Unreadable(file.path))
-                }
-                Err(ReadNfoError::UnreadableFile(error)) => Err(error),
-            },
-        }
-    }
-
-    pub(crate) fn unreadable_path(&self) -> Option<&str> {
-        match self {
-            Nfo::Unreadable(path) => Some(path),
-            _ => None,
-        }
+            Err(ReadNfoError::UnreadableFile(error)) => Err(error),
+        },
     }
 }
 

@@ -13,7 +13,6 @@ use crate::library::media_files;
 use crate::library::media_files::Inspected;
 use crate::library::metadata;
 use crate::library::metadata::FoundArtwork;
-use crate::library::metadata::Nfo;
 use crate::library::metadata::Owner;
 use crate::ports::FindMediaFile;
 use crate::ports::ListSubtitleFiles;
@@ -27,6 +26,7 @@ use domain::MediaFile;
 use domain::Movie;
 use domain::MovieMetadata;
 use domain::MovieNfo;
+use domain::Nfo;
 use domain::Source;
 use jiff::Timestamp;
 use std::collections::HashSet;
@@ -146,7 +146,7 @@ pub(crate) async fn inspect(
     let read = async {
         let found = files.find_media_file.call(&file.path).await?;
         let mut folder = files.read_movie_folder.call(&file.path).await?;
-        let nfo = Nfo::read(folder.nfo.take(), stored_nfo_modified_at, |path| {
+        let nfo = metadata::read_nfo(folder.nfo.take(), stored_nfo_modified_at, |path| {
             files.read_movie_nfo.call(path)
         })
         .await?;
@@ -229,11 +229,11 @@ pub(crate) async fn save(
         source_movie.overview,
         source_movie.genres,
     );
-    let (metadata, nfo_modified_at) = match (&nfo, &stored) {
-        (Nfo::Unchanged, Some(movie)) => (movie.metadata(), movie.nfo_modified_at),
-        (Nfo::Read(nfo, modified_at), _) => (source_metadata.with_nfo(nfo), Some(*modified_at)),
-        _ => (source_metadata, None),
-    };
+    let (metadata, nfo_modified_at) = nfo.metadata(
+        stored.as_ref().map(|x| (x.metadata(), x.nfo_modified_at)),
+        source_metadata,
+        MovieMetadata::with_nfo,
+    );
     let had_nfo = stored.as_ref().is_some_and(|x| x.nfo_modified_at.is_some());
     let (movie_id, change) = match stored {
         Some(mut movie) => {

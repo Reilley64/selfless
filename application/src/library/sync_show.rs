@@ -13,7 +13,6 @@ use crate::library::media_files;
 use crate::library::media_files::Inspected;
 use crate::library::metadata;
 use crate::library::metadata::FoundArtwork;
-use crate::library::metadata::Nfo;
 use crate::library::metadata::Owner;
 use crate::ports::EpisodeFolder;
 use crate::ports::FindMediaFile;
@@ -34,6 +33,7 @@ use domain::Episode;
 use domain::EpisodeMetadata;
 use domain::EpisodeNfo;
 use domain::MediaFile;
+use domain::Nfo;
 use domain::Season;
 use domain::Show;
 use domain::ShowMetadata;
@@ -203,7 +203,7 @@ pub(crate) async fn inspect(
                 season_numbers.into_iter().collect(),
             )
             .await?;
-        let nfo = Nfo::read(
+        let nfo = metadata::read_nfo(
             folder.nfo.take(),
             stored_show.as_ref().and_then(|x| x.nfo_modified_at),
             |path| files.read_show_nfo.call(path),
@@ -400,11 +400,11 @@ async fn write(
     let had_nfo = stored.as_ref().is_some_and(|x| x.nfo_modified_at.is_some());
     let source_metadata =
         ShowMetadata::from_source(listing.title, listing.overview, listing.genres);
-    let (metadata, nfo_modified_at) = match (&nfo, &stored) {
-        (Nfo::Unchanged, Some(show)) => (show.metadata(), show.nfo_modified_at),
-        (Nfo::Read(nfo, modified_at), _) => (source_metadata.with_nfo(nfo), Some(*modified_at)),
-        _ => (source_metadata, None),
-    };
+    let (metadata, nfo_modified_at) = nfo.metadata(
+        stored.as_ref().map(|x| (x.metadata(), x.nfo_modified_at)),
+        source_metadata,
+        ShowMetadata::with_nfo,
+    );
     let (show, show_change) = match stored {
         Some(mut show) => {
             let changed = show.sonarr_id != listing.sonarr_id
@@ -499,11 +499,11 @@ async fn write(
             source_episode.air_date,
             source_episode.overview,
         );
-        let (metadata, nfo_modified_at) = match (&nfo, &stored) {
-            (Nfo::Unchanged, Some(episode)) => (episode.metadata(), episode.nfo_modified_at),
-            (Nfo::Read(nfo, modified_at), _) => (source_metadata.with_nfo(nfo), Some(*modified_at)),
-            _ => (source_metadata, None),
-        };
+        let (metadata, nfo_modified_at) = nfo.metadata(
+            stored.as_ref().map(|x| (x.metadata(), x.nfo_modified_at)),
+            source_metadata,
+            EpisodeMetadata::with_nfo,
+        );
         let season_number = source_episode.season_number;
         let season_id = match seasons.get(&season_number) {
             Some(id) => *id,
