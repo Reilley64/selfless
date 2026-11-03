@@ -7,6 +7,7 @@ use opentelemetry::propagation::Extractor;
 use opentelemetry::propagation::TextMapPropagator;
 use opentelemetry::trace::TraceContextExt;
 use opentelemetry_sdk::propagation::TraceContextPropagator;
+use std::iter;
 use std::time::Instant;
 use topcoat::context::Cx;
 use topcoat::context::try_request_context;
@@ -32,6 +33,8 @@ use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 const OTHER_METHOD: &str = "_OTHER";
 const SIGNATURE: &str = "signature";
+const SIGNATURE_PARAM: &str = "{signature}";
+const REDACTED: &str = "REDACTED";
 
 pub(crate) struct HttpServerLayer {
     duration: Histogram<f64>,
@@ -109,7 +112,7 @@ impl Layer for HttpServerLayer {
                 http.request.method_original = (request_method == OTHER_METHOD).then(|| method(cx).as_str()),
                 http.route = route,
                 http.response.status_code = field::Empty,
-                url.path = uri(cx).path(),
+                url.path = redacted_path(uri(cx).path(), route.as_deref()),
                 url.query = uri(cx).query().map(redacted),
                 url.scheme = scheme,
                 network.protocol.version = protocol_version,
@@ -165,11 +168,28 @@ impl Layer for HttpServerLayer {
     }
 }
 
+fn redacted_path(path: &str, route: Option<&str>) -> String {
+    let Some(route) = route else {
+        return path.to_owned();
+    };
+    path.split('/')
+        .zip(route.split('/').chain(iter::repeat("")))
+        .map(|(segment, template)| {
+            if template == SIGNATURE_PARAM {
+                REDACTED
+            } else {
+                segment
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
 fn redacted(query: &str) -> String {
     query
         .split('&')
         .map(|pair| match pair.split_once('=') {
-            Some((SIGNATURE, _)) => format!("{SIGNATURE}=REDACTED"),
+            Some((SIGNATURE, _)) => format!("{SIGNATURE}={REDACTED}"),
             _ => pair.to_owned(),
         })
         .collect::<Vec<_>>()
@@ -310,6 +330,35 @@ mod tests {
             )),
             "{:?}",
             http.attributes
+        );
+        assert!(!format!("{spans:?}").contains("a-secret-signature"));
+    }
+
+    #[tokio::test]
+    async fn the_http_span_redacts_the_signature_in_the_path_of_every_playback_media_url() {
+        let app = TestApp::new().await;
+        let server = serve(&app).await;
+        let exporter = InMemorySpanExporter::default();
+        let _tracing = trace_into(&exporter);
+        let prefix = "/api/playbacks/0190f3c4-d3e4-7f5a-8b6c-7d8e9f0a1b2c/media";
+
+        for file_name in ["file", "main.m3u8", "video.m3u8", "init.mp4", "12.m4s"] {
+            server
+                .get_bytes(&format!("{prefix}/a-secret-signature/v1/{file_name}"))
+                .await;
+        }
+
+        let spans = exporter.get_finished_spans().unwrap();
+        let paths = spans
+            .iter()
+            .filter(|x| x.span_kind == SpanKind::Server)
+            .flat_map(|x| x.attributes.iter().filter(|x| x.key.as_str() == "url.path"))
+            .map(|x| x.value.to_string())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            paths,
+            ["file", "main.m3u8", "video.m3u8", "init.mp4", "12.m4s"]
+                .map(|x| format!("{prefix}/REDACTED/v1/{x}"))
         );
         assert!(!format!("{spans:?}").contains("a-secret-signature"));
     }

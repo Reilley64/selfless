@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 pub use email::SmtpSettings;
+pub use ffmpeg::PlaybackSettings;
 pub use images::ImagesSettings;
 pub use persistence::DatabaseSettings;
 pub use radarr::RadarrSettings;
@@ -35,6 +36,8 @@ pub struct AppSettings {
     pub images: ImagesSettings,
     #[serde(default)]
     pub signed_urls: SignedUrlsSettings,
+    #[serde(default)]
+    pub playback: PlaybackSettings,
 }
 
 impl AppSettings {

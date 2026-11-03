@@ -166,6 +166,47 @@ impl DeleteCachedImage {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct HlsSession {
+    pub playback_id: Uuid,
+    pub path: String,
+    pub duration: Duration,
+    pub keyframes: Vec<Duration>,
+    pub video: VideoStream,
+    pub audio: Option<AudioStream>,
+    pub start_position: Duration,
+}
+
+#[derive(ohno::Error, Default)]
+#[no_constructors]
+#[display("failed to run an HLS session")]
+pub struct HlsError {
+    core: ohno::OhnoCore,
+}
+
+impl HlsError {
+    pub fn caused_by(source: impl Into<Box<dyn Error + Send + Sync>>) -> Self {
+        Self {
+            core: ohno::OhnoCore::from(source),
+        }
+    }
+}
+
+type EndHlsSessionFn = dyn Fn(Uuid) -> PortFuture<()> + Send + Sync;
+
+#[derive(Clone)]
+pub struct EndHlsSession(Arc<EndHlsSessionFn>);
+
+impl EndHlsSession {
+    pub fn new(f: impl Fn(Uuid) -> PortFuture<()> + Send + Sync + 'static) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self, playback_id: Uuid) -> PortFuture<()> {
+        (self.0)(playback_id)
+    }
+}
+
 type ExportTelemetryFn =
     dyn Fn(TelemetrySignal, Bytes) -> PortFuture<Result<Bytes, ExportTelemetryError>> + Send + Sync;
 
@@ -248,6 +289,28 @@ impl FindMediaFile {
 
     pub fn call(&self, path: &str) -> PortFuture<Result<Option<FoundMediaFile>, UnreadableFile>> {
         (self.0)(path.to_owned())
+    }
+}
+
+type GetHlsFileFn =
+    dyn Fn(Uuid, String) -> PortFuture<Result<Option<String>, HlsError>> + Send + Sync;
+
+#[derive(Clone)]
+pub struct GetHlsFile(Arc<GetHlsFileFn>);
+
+impl GetHlsFile {
+    pub fn new(
+        f: impl Fn(Uuid, String) -> PortFuture<Result<Option<String>, HlsError>> + Send + Sync + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(
+        &self,
+        playback_id: Uuid,
+        name: &str,
+    ) -> PortFuture<Result<Option<String>, HlsError>> {
+        (self.0)(playback_id, name.to_owned())
     }
 }
 
@@ -647,6 +710,42 @@ impl ReadEpisodeNfo {
     }
 }
 
+#[derive(ohno::Error, Default)]
+#[no_constructors]
+#[display("failed to read the keyframes of a media file")]
+pub struct ReadKeyframesError {
+    core: ohno::OhnoCore,
+}
+
+impl ReadKeyframesError {
+    pub fn caused_by(source: impl Into<Box<dyn Error + Send + Sync>>) -> Self {
+        Self {
+            core: ohno::OhnoCore::from(source),
+        }
+    }
+}
+
+type ReadKeyframesFn =
+    dyn Fn(String) -> PortFuture<Result<Vec<Duration>, ReadKeyframesError>> + Send + Sync;
+
+#[derive(Clone)]
+pub struct ReadKeyframes(Arc<ReadKeyframesFn>);
+
+impl ReadKeyframes {
+    pub fn new(
+        f: impl Fn(String) -> PortFuture<Result<Vec<Duration>, ReadKeyframesError>>
+        + Send
+        + Sync
+        + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self, path: &str) -> PortFuture<Result<Vec<Duration>, ReadKeyframesError>> {
+        (self.0)(path.to_owned())
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FoundFile {
     pub path: String,
@@ -1000,6 +1099,23 @@ impl EmailRefused {
         Self {
             core: ohno::OhnoCore::from(source),
         }
+    }
+}
+
+type StartHlsSessionFn = dyn Fn(HlsSession) -> PortFuture<Result<(), HlsError>> + Send + Sync;
+
+#[derive(Clone)]
+pub struct StartHlsSession(Arc<StartHlsSessionFn>);
+
+impl StartHlsSession {
+    pub fn new(
+        f: impl Fn(HlsSession) -> PortFuture<Result<(), HlsError>> + Send + Sync + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self, session: HlsSession) -> PortFuture<Result<(), HlsError>> {
+        (self.0)(session)
     }
 }
 

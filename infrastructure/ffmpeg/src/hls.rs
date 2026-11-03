@@ -8,9 +8,11 @@ use tokio::fs;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::BufReader;
 use tokio::process::Command;
+use tokio::sync::watch;
+use tracing::Span;
 
 const SEGMENT_MARK: Duration = Duration::from_secs(6);
-const INIT: &str = "init.mp4";
+pub(crate) const INIT: &str = "init.mp4";
 const SEGMENT_FORMAT_OPTIONS: &str = "movflags=+frag_custom+empty_moov+delay_moov+default_base_moof+frag_discont+negative_cts_offsets+skip_trailer:strict=unofficial";
 
 pub struct Segments {
@@ -31,6 +33,18 @@ impl Segments {
             }
         }
         Self { starts, duration }
+    }
+
+    pub fn len(&self) -> usize {
+        self.starts.len()
+    }
+
+    pub fn segment_at(&self, position: Duration) -> usize {
+        self.starts
+            .iter()
+            .skip(1)
+            .take_while(|x| **x <= position)
+            .count()
     }
 
     pub fn media_playlist(&self) -> String {
@@ -72,6 +86,7 @@ pub async fn remux(
     segments: &Segments,
     segment: usize,
     folder: &Path,
+    written: &watch::Sender<usize>,
 ) -> io::Result<()> {
     let first = segments.starts[segment];
     let start = if segment == 0 { Duration::ZERO } else { first };
@@ -105,27 +120,40 @@ pub async fn remux(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true)
-        .spawn()?;
+        .spawn()
+        .inspect_err(|_| {
+            Span::current().record("otel.status_code", "ERROR");
+            Span::current().record("error.type", "spawn");
+        })?;
     let mut finished = BufReader::new(child.stdout.take().expect("stdout is piped")).lines();
-    let mut written = None;
+    let mut last = None;
     while let Some(next) = finished.next_line().await? {
-        if let Some(name) = written.replace(next) {
-            split_segment(folder, &name).await?;
+        if let Some(name) = last.replace(next) {
+            written.send_replace(split_segment(folder, &name).await? + 1);
         }
     }
     let output = child.wait_with_output().await?;
+    if let Some(code) = output.status.code() {
+        Span::current().record("process.exit.code", code);
+    }
     if !output.status.success() {
+        Span::current().record("otel.status_code", "ERROR");
+        Span::current().record("error.type", "exit");
         return Err(io::Error::other(
             String::from_utf8_lossy(&output.stderr).trim().to_owned(),
         ));
     }
-    if let Some(name) = written {
-        split_segment(folder, &name).await?;
+    if let Some(name) = last {
+        written.send_replace(split_segment(folder, &name).await? + 1);
     }
     Ok(())
 }
 
-async fn split_segment(folder: &Path, name: &str) -> io::Result<()> {
+async fn split_segment(folder: &Path, name: &str) -> io::Result<usize> {
+    let index = name
+        .strip_suffix(".mp4")
+        .and_then(|x| x.parse().ok())
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "unexpected segment name"))?;
     let path = folder.join(name);
     let bytes = fs::read(&path).await?;
     let header = header_length(&bytes)
@@ -135,7 +163,8 @@ async fn split_segment(folder: &Path, name: &str) -> io::Result<()> {
         write_atomically(&init, &bytes[..header]).await?;
     }
     write_atomically(&path.with_extension("m4s"), &bytes[header..]).await?;
-    fs::remove_file(path).await
+    fs::remove_file(path).await?;
+    Ok(index)
 }
 
 fn header_length(segment: &[u8]) -> Option<usize> {
@@ -164,7 +193,7 @@ fn seconds(duration: Duration) -> String {
 mod tests {
     use super::Segments;
     use super::remux;
-    use crate::read_keyframes;
+    use crate::keyframes::read_keyframes;
     use application::ports::AudioStream;
     use application::ports::VideoStream;
     use domain::HdrType;
@@ -204,6 +233,18 @@ mod tests {
              #EXTINF:6.000000,\n4.m4s\n\
              #EXTINF:4.000000,\n5.m4s\n\
              #EXT-X-ENDLIST\n"
+        );
+    }
+
+    #[test]
+    fn a_position_falls_in_the_last_segment_that_starts_at_or_before_it() {
+        let segments = Segments::new(&seconds(&[0.0, 6.0, 13.0, 21.6]), Duration::from_secs(30));
+
+        let at = |x| segments.segment_at(Duration::from_secs_f64(x));
+
+        assert_eq!(
+            [at(0.0), at(5.9), at(6.0), at(21.5), at(29.0)],
+            [0, 0, 1, 2, 3]
         );
     }
 
@@ -310,6 +351,7 @@ mod tests {
             &segments,
             segment,
             folder.path(),
+            &tokio::sync::watch::channel(segment).0,
         )
         .await
         .unwrap();

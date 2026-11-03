@@ -8,12 +8,15 @@ use application::ports::CheckRadarrKodiMetadata;
 use application::ports::CheckSonarrKodiMetadata;
 use application::ports::Clock;
 use application::ports::DeleteCachedImage;
+use application::ports::EndHlsSession;
 use application::ports::ExportTelemetry;
 use application::ports::ExportTelemetryError;
 use application::ports::FindMediaFile;
+use application::ports::GetHlsFile;
 use application::ports::GetRadarrMovie;
 use application::ports::GetSonarrEpisodes;
 use application::ports::GetSonarrShow;
+use application::ports::HlsError;
 use application::ports::ListCachedImages;
 use application::ports::ListRadarrMovies;
 use application::ports::ListSonarrShows;
@@ -25,6 +28,7 @@ use application::ports::RadarrError;
 use application::ports::ReadCachedImage;
 use application::ports::ReadEpisodeFolder;
 use application::ports::ReadEpisodeNfo;
+use application::ports::ReadKeyframes;
 use application::ports::ReadMovieFolder;
 use application::ports::ReadMovieNfo;
 use application::ports::ReadRadarrWebhook;
@@ -37,6 +41,7 @@ use application::ports::ResizeImageError;
 use application::ports::SaveCachedImage;
 use application::ports::SendEmail;
 use application::ports::SonarrError;
+use application::ports::StartHlsSession;
 use application::ports::TryAcquireLock;
 use application::ports::UnreadableNfo;
 use application::ports::UnreadableWebhook;
@@ -46,19 +51,72 @@ use application::ports::persistence::DbLocation;
 use application::url_signer::UrlSigner;
 use application::webhooks::WebhookPasswords;
 use infrastructure::AppState;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
+use tempfile::TempDir;
 use test_fixtures::FakeClock;
 use test_fixtures::FakeMailer;
+use uuid::Uuid;
+
+pub const MAIN_PLAYLIST: &str =
+    "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x800\nvideo.m3u8\n";
+pub const SEGMENT: &[u8] = b"a ready-made segment";
 
 pub struct TestApp {
     pub state: AppState,
     pub clock: FakeClock,
     pub mailer: FakeMailer,
+    pub hls: FakeHls,
+}
+
+#[derive(Clone)]
+pub struct FakeHls {
+    segments_dir: Arc<TempDir>,
+}
+
+impl FakeHls {
+    pub fn folder(&self, playback_id: Uuid) -> PathBuf {
+        self.segments_dir.path().join(playback_id.to_string())
+    }
+
+    fn start_hls_session(&self) -> StartHlsSession {
+        let hls = self.clone();
+        StartHlsSession::new(move |session| {
+            let folder = hls.folder(session.playback_id);
+            Box::pin(async move {
+                std::fs::create_dir_all(&folder).map_err(HlsError::caused_by)?;
+                std::fs::write(folder.join("main.m3u8"), MAIN_PLAYLIST)
+                    .map_err(HlsError::caused_by)?;
+                std::fs::write(folder.join("0.m4s"), SEGMENT).map_err(HlsError::caused_by)
+            })
+        })
+    }
+
+    fn get_hls_file(&self) -> GetHlsFile {
+        let hls = self.clone();
+        GetHlsFile::new(move |playback_id, name| {
+            let path = hls.folder(playback_id).join(name);
+            Box::pin(async move { Ok(path.exists().then(|| path.to_string_lossy().into_owned())) })
+        })
+    }
+
+    fn end_hls_session(&self) -> EndHlsSession {
+        let hls = self.clone();
+        EndHlsSession::new(move |playback_id| {
+            let _ = std::fs::remove_dir_all(hls.folder(playback_id));
+            Box::pin(async {})
+        })
+    }
 }
 
 impl TestApp {
     pub async fn new() -> Self {
         let clock = FakeClock::new();
         let mailer = FakeMailer::default();
+        let hls = FakeHls {
+            segments_dir: Arc::new(TempDir::new().unwrap()),
+        };
         let state = AppState {
             acquire_lock: AcquireLock::new(|_| Box::pin(async { LockGuard::new(()) })),
             build_info: BuildInfo {
@@ -84,10 +142,12 @@ impl TestApp {
                 },
             ),
             delete_cached_image: DeleteCachedImage::new(|_| Box::pin(async { Ok(()) })),
+            end_hls_session: hls.end_hls_session(),
             export_telemetry: ExportTelemetry::new(|_, _| {
                 Box::pin(async { Err(ExportTelemetryError::default()) })
             }),
             find_media_file: FindMediaFile::new(|_| Box::pin(async { Ok(None) })),
+            get_hls_file: hls.get_hls_file(),
             get_radarr_movie: GetRadarrMovie::new(|_| {
                 Box::pin(async { Err(RadarrError::default()) })
             }),
@@ -115,6 +175,9 @@ impl TestApp {
             read_episode_nfo: ReadEpisodeNfo::new(|_| {
                 Box::pin(async { Err(UnreadableNfo::default().into()) })
             }),
+            read_keyframes: ReadKeyframes::new(|_| {
+                Box::pin(async { Ok((0..2000).map(|x| Duration::from_secs(x * 6)).collect()) })
+            }),
             read_movie_folder: ReadMovieFolder::new(|_| Box::pin(async { Ok(Default::default()) })),
             read_movie_nfo: ReadMovieNfo::new(|_| {
                 Box::pin(async { Err(UnreadableNfo::default().into()) })
@@ -135,6 +198,7 @@ impl TestApp {
             save_cached_image: SaveCachedImage::new(|_, _| Box::pin(async { Ok(()) })),
             send_email: SendEmail::new(mailer.sender()),
             source_health: SourceHealth::default(),
+            start_hls_session: hls.start_hls_session(),
             try_acquire_lock: TryAcquireLock::new(|_| Box::pin(async { Some(LockGuard::new(())) })),
             url_signer: UrlSigner::new(b"a household secret"),
             webhook_passwords: WebhookPasswords::default(),
@@ -143,6 +207,7 @@ impl TestApp {
             state,
             clock,
             mailer,
+            hls,
         }
     }
 }

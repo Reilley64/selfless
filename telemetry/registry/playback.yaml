@@ -39,6 +39,33 @@ groups:
         stability: development
         brief: The ID of the media file.
         examples: ["01890a5d-ac96-774b-bcce-b302099a8057"]
+  - id: registry.selfless.ffmpeg
+    type: attribute_group
+    display_name: ffmpeg attributes
+    brief: Attributes of the ffmpeg processes that make the HLS segments of a playback.
+    attributes:
+      - id: selfless.ffmpeg.purpose
+        type:
+          members:
+            - id: remux
+              value: remux
+              brief: ffmpeg copies the video and audio into HLS segments.
+              stability: development
+            - id: transcode
+              value: transcode
+              brief: ffmpeg converts the video or audio into HLS segments.
+              stability: development
+            - id: subtitle
+              value: subtitle
+              brief: ffmpeg converts a subtitle file beside the media file into WebVTT.
+              stability: development
+        stability: development
+        brief: What an ffmpeg process makes.
+      - id: selfless.ffmpeg.start_segment
+        type: int
+        stability: development
+        brief: The index of the first HLS segment an ffmpeg process writes. A seek restarts ffmpeg at a later one.
+        examples: [0, 240]
   - id: metric.selfless.playback.active
     type: metric
     metric_name: selfless.playback.active
@@ -74,6 +101,16 @@ groups:
     attributes:
       - ref: selfless.media_file.id
         requirement_level: required
+  - id: span.selfless.ffmpeg
+    type: span
+    span_kind: internal
+    brief: One ffmpeg process making the HLS segments of a playback, from its start until it exits or is stopped.
+    stability: development
+    attributes:
+      - ref: selfless.ffmpeg.purpose
+        requirement_level: required
+      - ref: selfless.ffmpeg.start_segment
+        requirement_level: required
   - id: event.selfless.playback.started
     type: event
     name: selfless.playback.started
@@ -98,4 +135,9 @@ groups:
     type: event
     name: selfless.playback.failed
     brief: The play request failed or the player could not play the media file.
+    stability: development
+  - id: event.selfless.playback.switched
+    type: event
+    name: selfless.playback.switched
+    brief: The player could not play the media file directly and started it again through HLS at the same position.
     stability: development

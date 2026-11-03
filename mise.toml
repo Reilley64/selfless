@@ -24,6 +24,7 @@ SMTP__USERNAME = "selfless"
 SMTP__PASSWORD = "selfless"
 SMTP__FROM = "selfless <selfless@localhost>"
 IMAGES__CACHE_DIR = "{{ config_root }}/target/images"
+PLAYBACK__SEGMENTS_DIR = "{{ config_root }}/target/segments"
 SIGNED_URLS__KEY = "selfless"
 
 [tasks.services]

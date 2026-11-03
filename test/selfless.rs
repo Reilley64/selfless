@@ -15,6 +15,7 @@ use settings::HttpSettings;
 use settings::ImagesSettings;
 use settings::LibrarySyncSettings;
 use settings::OtlpSettings;
+use settings::PlaybackSettings;
 use settings::RadarrSettings;
 use settings::SignedUrlsSettings;
 use settings::SmtpSettings;
@@ -73,6 +74,11 @@ pub fn settings(database_url: Url) -> AppSettings {
         },
         signed_urls: SignedUrlsSettings {
             key: Some("a household secret".to_owned()),
+        },
+        playback: PlaybackSettings {
+            segments_dir: Some(
+                std::env::temp_dir().join(format!("selfless-segments-{}", uuid::Uuid::new_v4())),
+            ),
         },
     }
 }

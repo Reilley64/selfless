@@ -698,7 +698,7 @@ paths:
     post:
       operationId: startPlayback
       summary: Start a playback of a media file
-      description: The server compares the capability profile with the media file and picks the play method. It plays the file directly when the profile covers its container, its video stream and the selected audio track, which is the file's default audio track, else its first. A file that needs HLS fails with the needs-hls problem for now. Starting a playback ends any playback the same session has not ended. A media file is hidden when no visible movie or episode plays from it.
+      description: The server compares the capability profile with the media file and picks the play method. It plays the file directly when the profile covers its container, its video stream and the selected audio track, which is the file's default audio track, else its first. When only the container is wrong and the server can read the file's keyframes, or when the request forces HLS, it remuxes the file to HLS and the URL is the HLS master playlist. A file that needs a transcode fails with the needs-transcode problem for now. Starting a playback ends any playback the same session has not ended. A media file is hidden when no visible movie or episode plays from it.
       tags: [playback]
       requestBody:
         description: The media file, the start position and the device's capability profile.
@@ -727,7 +727,7 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
         "501":
-          $ref: "#/components/responses/NeedsHls"
+          $ref: "#/components/responses/NeedsTranscode"
   /api/playbacks/{playbackId}/progress/v1:
     put:
       operationId: reportPlaybackProgress
@@ -764,13 +764,7 @@ paths:
       security: []
       parameters:
         - $ref: "#/components/parameters/PlaybackId"
-        - name: signature
-          in: path
-          required: true
-          description: The server's signature of the playback ID.
-          schema:
-            type: string
-          example: Jm2vX8kQ0rH3c1yF5bR7tVw9nL4pA6sD0eG2iK8uO1M
+        - $ref: "#/components/parameters/PlaybackSignature"
         - name: Range
           in: header
           required: false
@@ -841,6 +835,42 @@ paths:
               example: bytes */5242880
         "500":
           $ref: "#/components/responses/InternalError"
+  /api/playbacks/{playbackId}/media/{signature}/v1/{fileName}:
+    get:
+      operationId: getPlaybackHlsFile
+      summary: A playlist or segment of an HLS playback
+      description: The signature in the path authorizes the call, so it needs no session token. The player reaches these files from the playback's main.m3u8, whose URLs are relative. They work until the playback ends, and are not found after that. A segment that exists is sent at once. One just ahead of the running ffmpeg is sent when ffmpeg has written it. Any other segment restarts ffmpeg at that segment.
+      tags: [media]
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/PlaybackId"
+        - $ref: "#/components/parameters/PlaybackSignature"
+        - name: fileName
+          in: path
+          required: true
+          description: main.m3u8, video.m3u8, init.mp4, or a segment named by its index, such as 12.m4s.
+          schema:
+            type: string
+          example: main.m3u8
+      responses:
+        "200":
+          description: The playlist or segment.
+          content:
+            application/vnd.apple.mpegurl:
+              schema:
+                $ref: "#/components/schemas/HlsPlaylist"
+            video/mp4:
+              schema:
+                $ref: "#/components/schemas/HlsSegmentBytes"
+            video/iso.segment:
+              schema:
+                $ref: "#/components/schemas/HlsSegmentBytes"
+        "403":
+          $ref: "#/components/responses/InvalidSignature"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
 tags:
   - name: actuator
     description: Health and info endpoints in the shape of Spring Boot Actuator.
@@ -890,6 +920,14 @@ components:
             type: object
           example: {"eventType":"Test"}
   parameters:
+    PlaybackSignature:
+      name: signature
+      in: path
+      required: true
+      description: The server's signature of the playback ID.
+      schema:
+        type: string
+      example: Jm2vX8kQ0rH3c1yF5bR7tVw9nL4pA6sD0eG2iK8uO1M
     PlaybackId:
       name: playbackId
       in: path
@@ -1132,8 +1170,8 @@ components:
                   status:
                     const: 422
           example: {"type":"urn:selfless:problem:unreadable-media-file","title":"selfless can't read this media file.","status":422}
-    NeedsHls:
-      description: The profile doesn't cover the media file, so it needs a remux or transcode to HLS, which the server can't serve yet.
+    NeedsTranscode:
+      description: The profile doesn't cover a stream of the media file, or the server can't read its keyframes, so it needs a transcode, which the server can't do yet.
       content:
         application/problem+json:
           schema:
@@ -1141,10 +1179,10 @@ components:
               - $ref: "#/components/schemas/Problem"
               - properties:
                   type:
-                    const: urn:selfless:problem:needs-hls
+                    const: urn:selfless:problem:needs-transcode
                   status:
                     const: 501
-          example: {"type":"urn:selfless:problem:needs-hls","title":"The media file needs HLS, which the server can't serve yet.","status":501}
+          example: {"type":"urn:selfless:problem:needs-transcode","title":"The media file needs a transcode, which the server can't do yet.","status":501}
     InternalError:
       description: The server failed. The body holds no error details, and the server logs the error.
       content:
@@ -2115,6 +2153,11 @@ components:
           examples: [1534.2]
         profile:
           $ref: "#/components/schemas/CapabilityProfile"
+        forceHls:
+          description: Play through HLS even when the device could play the file directly. The player sets it to retry after a direct play fails.
+          type: boolean
+          default: false
+          examples: [false]
     CapabilityProfile:
       description: What the device plays without server work. Names are ffprobe's, in lower case.
       type: object
@@ -2223,7 +2266,7 @@ components:
             $ref: "#/components/schemas/PlayReason"
           examples: [[]]
         url:
-          description: The signed URL the player plays. It needs no Authorization header.
+          description: The signed URL the player plays, the media file for a direct play and the HLS master playlist main.m3u8 otherwise. It needs no Authorization header.
           type: string
           format: uri-reference
           examples: ["/api/playbacks/0190f3c4-d3e4-7f5a-8b6c-7d8e9f0a1b2c/media/Jm2vX8kQ0rH3c1yF5bR7tVw9nL4pA6sD0eG2iK8uO1M/v1/file"]
@@ -2269,11 +2312,11 @@ components:
       properties:
         kind:
           type: string
-          enum: [container, videoCodec, videoProfile, videoSize, videoRange, audioCodec, audioChannels]
+          enum: [container, videoCodec, videoProfile, videoSize, videoRange, audioCodec, audioChannels, noKeyframeIndex, forcedHls]
           examples: [audioCodec]
         value:
-          description: The media file's value the profile doesn't cover, such as dts, 3840x2160, hdr10 or 6.
-          type: string
+          description: The media file's value the profile doesn't cover, such as dts, 3840x2160, hdr10 or 6. It is null for noKeyframeIndex and forcedHls.
+          type: [string, "null"]
           examples: [dts]
       additionalProperties: false
     PlaybackMovie:
@@ -2395,3 +2438,11 @@ components:
       description: The bytes of the media file, or of the requested range.
       type: string
       contentMediaType: application/octet-stream
+    HlsPlaylist:
+      description: An HLS playlist with relative URLs.
+      type: string
+      contentMediaType: application/vnd.apple.mpegurl
+    HlsSegmentBytes:
+      description: The fMP4 init segment or a media segment.
+      type: string
+      contentMediaType: video/mp4

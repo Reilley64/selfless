@@ -2,28 +2,60 @@ use application::ports::AudioStream;
 use application::ports::Probe;
 use application::ports::ProbeError;
 use application::ports::ProbeMediaFile;
+use application::ports::ReadKeyframes;
+use application::ports::ReadKeyframesError;
 use application::ports::SubtitleStream;
 use application::ports::VideoStream;
 use domain::HdrType;
 use serde::Deserialize;
+use std::path::Path;
+use std::path::PathBuf;
 use std::time::Duration;
 use tokio::process::Command;
 use tracing::Instrument;
 use tracing::field;
 
 mod hls;
+mod hls_sessions;
 mod keyframes;
 mod matroska;
 mod mp4;
 
-pub use hls::Segments;
-pub use hls::remux;
-pub use keyframes::read_keyframes;
+pub use hls_sessions::HlsSessions;
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(120);
 
 const IMAGE_SUBTITLE_CODECS: [&str; 4] =
     ["hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle", "xsub"];
+
+#[derive(Clone, Default, Deserialize)]
+pub struct PlaybackSettings {
+    pub segments_dir: Option<PathBuf>,
+}
+
+impl PlaybackSettings {
+    pub fn segments_dir(&self) -> Result<PathBuf, MissingSetting> {
+        self.segments_dir
+            .clone()
+            .ok_or_else(|| MissingSetting::new("PLAYBACK__SEGMENTS_DIR"))
+    }
+}
+
+#[ohno::error]
+#[display("missing setting: {name}")]
+pub struct MissingSetting {
+    name: &'static str,
+}
+
+pub fn read_keyframes() -> ReadKeyframes {
+    ReadKeyframes::new(|path| {
+        Box::pin(async move {
+            keyframes::read_keyframes(Path::new(&path))
+                .await
+                .map_err(ReadKeyframesError::caused_by)
+        })
+    })
+}
 
 pub fn probe_media_file() -> ProbeMediaFile {
     ProbeMediaFile::new(|path| {

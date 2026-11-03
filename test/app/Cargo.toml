@@ -9,3 +9,5 @@ publish.workspace = true
 application = { workspace = true }
 infrastructure = { workspace = true }
 test-fixtures = { workspace = true }
+tempfile = { workspace = true }
+uuid = { workspace = true }

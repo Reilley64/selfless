@@ -118,7 +118,8 @@ fn the_server_exits_naming_a_missing_sonarr_setting() {
 }
 
 #[tokio::test]
-async fn the_server_refuses_to_start_naming_a_missing_image_cache_dir_or_signed_url_key() {
+async fn the_server_refuses_to_start_naming_a_missing_image_cache_dir_segments_dir_or_signed_url_key()
+ {
     let unreachable = || {
         settings(
             "postgres://selfless:selfless@127.0.0.1:1/selfless"
@@ -128,6 +129,8 @@ async fn the_server_refuses_to_start_naming_a_missing_image_cache_dir_or_signed_
     };
     let mut without_cache_dir = unreachable();
     without_cache_dir.images.cache_dir = None;
+    let mut without_segments_dir = unreachable();
+    without_segments_dir.playback.segments_dir = None;
     let mut without_key = unreachable();
     without_key.signed_urls.key = None;
     let mut empty_key = unreachable();
@@ -135,6 +138,7 @@ async fn the_server_refuses_to_start_naming_a_missing_image_cache_dir_or_signed_
 
     for (settings, missing) in [
         (without_cache_dir, "IMAGES__CACHE_DIR"),
+        (without_segments_dir, "PLAYBACK__SEGMENTS_DIR"),
         (without_key, "SIGNED_URLS__KEY"),
         (empty_key, "SIGNED_URLS__KEY"),
     ] {

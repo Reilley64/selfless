@@ -119,3 +119,8 @@ snapshot_name = "20261103_122936_snapshot.toml"
 id = 1151223592592182149
 name = "20261103_125050_playbacks.sql"
 snapshot_name = "20261103_125050_snapshot.toml"
+
+[[migrations]]
+id = 5056176825632414047
+name = "20261103_135025_keyframe_indexes.sql"
+snapshot_name = "20261103_135025_snapshot.toml"
