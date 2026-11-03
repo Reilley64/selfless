@@ -12,12 +12,12 @@ use crate::library::SourceHealth;
 use crate::library::prober::CONCURRENT_PROBES;
 use crate::library::reconciles::Progress;
 use crate::library::source_states;
-use crate::library::sync_movie;
-use crate::library::sync_movie::MovieFiles;
-use crate::library::sync_show;
-use crate::library::sync_show::ShowFiles;
+use crate::library::sync;
+use crate::library::sync::movies;
+use crate::library::sync::movies::MovieFiles;
+use crate::library::sync::shows;
+use crate::library::sync::shows::ShowFiles;
 use crate::metrics::SELFLESS_RECONCILE_DURATION;
-use crate::ports::AcquireLock;
 use crate::ports::GetSonarrEpisodes;
 use crate::ports::ListRadarrMovies;
 use crate::ports::ListSonarrShows;
@@ -27,9 +27,7 @@ use crate::ports::persistence::DbScope;
 use domain::HeldRemoval;
 use domain::HeldRemovalItem;
 use domain::LastReconcile;
-use domain::Movie;
 use domain::ReconcileResult;
-use domain::Show;
 use domain::Source;
 use futures_util::FutureExt;
 use futures_util::StreamExt;
@@ -45,10 +43,6 @@ use std::time::Instant;
 use tracing::Instrument;
 use tracing::field;
 use uuid::Uuid;
-
-pub(crate) fn lock_key(source: Source) -> String {
-    AcquireLock::key("library", "reconcile", 1, [source.name().to_owned()])
-}
 
 pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Result<Output, Error> {
     let Dependencies {
@@ -72,7 +66,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
         source_health,
         try_acquire_lock,
     } = dependencies.into();
-    let Some(_running) = try_acquire_lock.call(lock_key(source)).await else {
+    let Some(_running) = try_acquire_lock.call(sync::lock_key(source)).await else {
         return Ok(Output);
     };
     let progress = &reconciles.source(source).progress;
@@ -271,7 +265,7 @@ async fn sync_movies(
         .collect::<HashMap<_, _>>();
     let mut inspections = stream::iter(source_movies)
         .map(|source_movie| {
-            let span = sync_movie::span();
+            let span = movies::span();
             let stored_file = source_movie
                 .media_file
                 .as_ref()
@@ -282,7 +276,7 @@ async fn sync_movies(
                 .flatten();
             async move {
                 let inspected =
-                    sync_movie::inspect(files, stored_file, stored_nfo_modified_at, &source_movie)
+                    movies::inspect(files, stored_file, stored_nfo_modified_at, &source_movie)
                         .instrument(span.clone())
                         .await;
                 (source_movie, inspected, span)
@@ -293,7 +287,7 @@ async fn sync_movies(
     while let Some((source_movie, inspected, span)) = inspections.next().await {
         let inspected = inspected.map_err(Error::caused_by)?;
         unreadable_items += usize::from(inspected.unreadable());
-        sync_movie::save(db_context, source_movie, inspected)
+        movies::save(db_context, source_movie, inspected)
             .instrument(span)
             .await
             .map_err(Error::caused_by)?;
@@ -336,7 +330,7 @@ async fn sync_shows(
     let mut failed_calls = 0;
     let mut unreadable_items = 0;
     for listing in listings {
-        let span = sync_show::span();
+        let span = shows::span();
         let episodes = get_sonarr_episodes
             .call(listing.sonarr_id)
             .instrument(span.clone())
@@ -344,12 +338,12 @@ async fn sync_shows(
         match source_health.api_call(Source::Sonarr, episodes) {
             Ok(episodes) => {
                 let source_show = SourceShow { listing, episodes };
-                let inspected = sync_show::inspect(db_context, files, &source_show)
+                let inspected = shows::inspect(db_context, files, &source_show)
                     .instrument(span.clone())
                     .await
                     .map_err(Error::caused_by)?;
                 unreadable_items += usize::from(inspected.unreadable());
-                sync_show::save(db_context, source_show, inspected)
+                shows::save(db_context, source_show, inspected)
                     .instrument(span)
                     .await
                     .map_err(Error::caused_by)?;
@@ -403,7 +397,9 @@ async fn remove_or_hold(
         .map_err(Error::caused_by)?;
     if !HeldRemoval::holds(listing.absent.len(), listing.total) {
         transaction.commit().await.map_err(Error::caused_by)?;
-        return remove(db_context, source, listing.absent.clone(), &listing.listed).await;
+        return sync::remove(db_context, source, listing.absent.clone(), &listing.listed)
+            .await
+            .map_err(Error::caused_by);
     }
     tracing::warn!(
         selfless.library.source = source.name(),
@@ -425,47 +421,6 @@ async fn remove_or_hold(
         .map_err(Error::caused_by)?;
     transaction.commit().await.map_err(Error::caused_by)?;
     Ok(())
-}
-
-pub(crate) async fn remove(
-    db_context: &mut DbContext,
-    source: Source,
-    ids: Vec<Uuid>,
-    listed: &HashSet<i64>,
-) -> Result<(), Error> {
-    if ids.is_empty() {
-        return Ok(());
-    }
-    match source {
-        Source::Radarr => {
-            let movies = db_context
-                .movies()
-                .filter(Movie::fields().id().in_list(ids))
-                .exec(db_context.executor_mut())
-                .await
-                .map_err(Error::caused_by)?
-                .into_iter()
-                .filter(|x| !listed.contains(&x.tmdb_id))
-                .collect();
-            sync_movie::remove(db_context, movies)
-                .await
-                .map_err(Error::caused_by)
-        }
-        Source::Sonarr => {
-            let shows = db_context
-                .shows()
-                .filter(Show::fields().id().in_list(ids))
-                .exec(db_context.executor_mut())
-                .await
-                .map_err(Error::caused_by)?;
-            for show in shows.into_iter().filter(|x| !listed.contains(&x.tvdb_id)) {
-                sync_show::remove(db_context, show)
-                    .await
-                    .map_err(Error::caused_by)?;
-            }
-            Ok(())
-        }
-    }
 }
 
 #[cfg(test)]
@@ -499,6 +454,7 @@ mod tests {
     use crate::test::unreadable_episode_nfo;
     use crate::test::unreadable_movie_nfo;
     use crate::test::unreadable_show_nfo;
+    use domain::Movie;
     use jiff::Timestamp;
     use std::sync::Arc;
     use test_fixtures::FakeClock;
@@ -793,7 +749,7 @@ mod tests {
     async fn a_reconcile_does_nothing_while_its_source_is_locked_by_another_reconcile() {
         let library = Library::new().await;
         library.radarr_lists(&[ARRIVAL]);
-        let locked = lock_key(Source::Radarr);
+        let locked = sync::lock_key(Source::Radarr);
 
         call(
             Dependencies {

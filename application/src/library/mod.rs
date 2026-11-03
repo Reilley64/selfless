@@ -5,6 +5,7 @@ mod prober;
 mod reconciles;
 mod source_health;
 pub(crate) mod source_states;
+mod sync;
 
 pub mod confirm_held_removal;
 pub mod get_media_file;
