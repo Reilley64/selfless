@@ -1,0 +1,411 @@
+mod dependencies;
+mod error;
+mod output;
+
+pub use dependencies::Dependencies;
+pub use error::Error;
+pub use output::Output;
+
+use crate::attributes::SELFLESS_LIBRARY_SOURCE;
+use crate::attributes::SELFLESS_RECONCILE_RESULT;
+use crate::library::SourceHealth;
+use crate::library::prober::CONCURRENT_PROBES;
+use crate::library::source_states;
+use crate::library::sync_movie;
+use crate::library::sync_movie::MovieFiles;
+use crate::library::sync_show;
+use crate::library::sync_show::ShowFiles;
+use crate::library::sync_status::ReconcileProgress;
+use crate::metrics::SELFLESS_RECONCILE_DURATION;
+use crate::ports::GetSonarrEpisodes;
+use crate::ports::ListRadarrMovies;
+use crate::ports::ListSonarrShows;
+use crate::ports::SonarrShow;
+use crate::ports::persistence::DbContext;
+use crate::ports::persistence::DbScope;
+use domain::HeldRemoval;
+use domain::MediaFile;
+use domain::Movie;
+use domain::ReconcileResult;
+use domain::Show;
+use domain::Source;
+use futures_util::StreamExt;
+use futures_util::stream;
+use opentelemetry::KeyValue;
+use opentelemetry::global;
+use std::collections::HashMap;
+use std::collections::HashSet;
+use std::sync::Mutex;
+use std::time::Instant;
+use tracing::Instrument;
+use tracing::field;
+use uuid::Uuid;
+
+pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Result<Output, Error> {
+    let Dependencies {
+        check_radarr_kodi_metadata,
+        check_sonarr_kodi_metadata,
+        clock,
+        mut db_context,
+        find_media_file,
+        get_sonarr_episodes,
+        list_radarr_movies,
+        list_sonarr_shows,
+        list_subtitle_files,
+        prober,
+        read_episode_folder,
+        read_episode_nfo,
+        read_movie_folder,
+        read_movie_nfo,
+        read_show_folder,
+        read_show_nfo,
+        reconciles,
+        source_health,
+    } = dependencies.into();
+    let reconcile = reconciles.source(source);
+    let Ok(_running) = reconcile.running.clone().try_lock_owned() else {
+        return Ok(Output);
+    };
+    let progress = &reconcile.progress;
+    *progress.lock().unwrap() = Some(ReconcileProgress {
+        imported: 0,
+        total: None,
+    });
+    let started_at = clock.call();
+    let start = Instant::now();
+    let span = tracing::info_span!(
+        "reconcile",
+        otel.name = format!("reconcile {}", source.name()),
+        selfless.library.source = source.name(),
+        selfless.reconcile.result = field::Empty,
+    );
+    let reconciled = async {
+        let (failed_metadata_calls, listing) = match source {
+            Source::Radarr => (
+                record_kodi_metadata(
+                    &source_health,
+                    source,
+                    check_radarr_kodi_metadata.call().await,
+                ),
+                sync_movies(
+                    &mut db_context,
+                    &MovieFiles {
+                        find_media_file,
+                        list_subtitle_files,
+                        prober,
+                        read_movie_folder,
+                        read_movie_nfo,
+                    },
+                    &list_radarr_movies,
+                    &source_health,
+                    progress,
+                )
+                .await?,
+            ),
+            Source::Sonarr => (
+                record_kodi_metadata(
+                    &source_health,
+                    source,
+                    check_sonarr_kodi_metadata.call().await,
+                ),
+                sync_shows(
+                    &mut db_context,
+                    &ShowFiles {
+                        find_media_file,
+                        list_subtitle_files,
+                        prober,
+                        read_episode_folder,
+                        read_episode_nfo,
+                        read_show_folder,
+                        read_show_nfo,
+                    },
+                    &list_sonarr_shows,
+                    &get_sonarr_episodes,
+                    &source_health,
+                    progress,
+                )
+                .await?,
+            ),
+        };
+        let failed_calls = failed_metadata_calls + listing.failed_calls;
+        if failed_calls == 0 {
+            remove_or_hold(&mut db_context, source, &listing).await?;
+        }
+        if failed_calls > 0 {
+            return Err(Error::caused_by(format!(
+                "{failed_calls} calls to {} failed, so nothing was removed",
+                source.name()
+            )));
+        }
+        Ok(())
+    }
+    .instrument(span.clone())
+    .await;
+    *progress.lock().unwrap() = None;
+    let duration = start.elapsed();
+    let result = match reconciled {
+        Ok(()) => ReconcileResult::Succeeded,
+        Err(error) => {
+            span.in_scope(|| {
+                tracing::warn!(
+                    error = &error as &dyn std::error::Error,
+                    selfless.library.source = source.name(),
+                    "failed to reconcile the library"
+                );
+            });
+            ReconcileResult::Failed
+        }
+    };
+    span.record(SELFLESS_RECONCILE_RESULT, result.name());
+    global::meter("selfless")
+        .f64_histogram(SELFLESS_RECONCILE_DURATION)
+        .with_unit("s")
+        .build()
+        .record(
+            duration.as_secs_f64(),
+            &[
+                KeyValue::new(SELFLESS_LIBRARY_SOURCE, source.name()),
+                KeyValue::new(SELFLESS_RECONCILE_RESULT, result.name()),
+            ],
+        );
+    source_states::upsert(&mut db_context, source)
+        .instrument(span.clone())
+        .await
+        .map_err(Error::caused_by)?
+        .update()
+        .last_reconcile_started_at(Some(started_at))
+        .last_reconcile_duration_ms(Some(
+            i64::try_from(duration.as_millis()).unwrap_or(i64::MAX),
+        ))
+        .last_reconcile_result(Some(result))
+        .exec(db_context.executor_mut())
+        .instrument(span)
+        .await
+        .map_err(Error::caused_by)?;
+    Ok(Output)
+}
+
+fn record_kodi_metadata(
+    source_health: &SourceHealth,
+    source: Source,
+    kodi_metadata: Result<bool, impl std::error::Error + 'static>,
+) -> usize {
+    match source_health.api_call(source, kodi_metadata) {
+        Ok(enabled) => {
+            source_health.set_kodi_metadata(source, enabled);
+            0
+        }
+        Err(error) => {
+            tracing::warn!(
+                error = &error as &dyn std::error::Error,
+                selfless.library.source = source.name(),
+                "failed to read the metadata settings"
+            );
+            1
+        }
+    }
+}
+
+struct Listing {
+    listed: HashSet<i64>,
+    total: usize,
+    absent: Vec<Uuid>,
+    failed_calls: usize,
+}
+
+async fn sync_movies(
+    db_context: &mut DbContext,
+    files: &MovieFiles,
+    list_radarr_movies: &ListRadarrMovies,
+    source_health: &SourceHealth,
+    progress: &Mutex<Option<ReconcileProgress>>,
+) -> Result<Listing, Error> {
+    let radarr_movies = source_health
+        .api_call(Source::Radarr, list_radarr_movies.call().await)
+        .map_err(Error::caused_by)?;
+    let listed = radarr_movies
+        .iter()
+        .map(|x| x.tmdb_id)
+        .collect::<HashSet<_>>();
+    set_total(progress, radarr_movies.len());
+    let stored_movies = Movie::all()
+        .exec(db_context.executor_mut())
+        .await
+        .map_err(Error::caused_by)?;
+    let total = stored_movies.len();
+    let absent = stored_movies
+        .into_iter()
+        .filter(|x| !listed.contains(&x.tmdb_id))
+        .map(|x| x.id)
+        .collect();
+    let stored = MediaFile::all()
+        .exec(db_context.executor_mut())
+        .await
+        .map_err(Error::caused_by)?
+        .into_iter()
+        .map(|x| (x.path.clone(), x))
+        .collect::<HashMap<_, _>>();
+    let mut inspections = stream::iter(radarr_movies)
+        .map(|radarr_movie| {
+            let span = sync_movie::span();
+            let stored = radarr_movie
+                .movie_file
+                .as_ref()
+                .and_then(|x| stored.get(&x.path));
+            async move {
+                let inspected = sync_movie::inspect(files, stored, &radarr_movie)
+                    .instrument(span.clone())
+                    .await;
+                (radarr_movie, inspected, span)
+            }
+        })
+        .buffered(CONCURRENT_PROBES);
+    while let Some((radarr_movie, inspected, span)) = inspections.next().await {
+        let inspected = inspected.map_err(Error::caused_by)?;
+        sync_movie::save(db_context, files, radarr_movie, inspected)
+            .instrument(span)
+            .await
+            .map_err(Error::caused_by)?;
+        imported(progress);
+    }
+    Ok(Listing {
+        listed,
+        total,
+        absent,
+        failed_calls: 0,
+    })
+}
+
+async fn sync_shows(
+    db_context: &mut DbContext,
+    files: &ShowFiles,
+    list_sonarr_shows: &ListSonarrShows,
+    get_sonarr_episodes: &GetSonarrEpisodes,
+    source_health: &SourceHealth,
+    progress: &Mutex<Option<ReconcileProgress>>,
+) -> Result<Listing, Error> {
+    let listings = source_health
+        .api_call(Source::Sonarr, list_sonarr_shows.call().await)
+        .map_err(Error::caused_by)?;
+    let listed = listings.iter().map(|x| x.tvdb_id).collect::<HashSet<_>>();
+    set_total(progress, listings.len());
+    let stored_shows = Show::all()
+        .exec(db_context.executor_mut())
+        .await
+        .map_err(Error::caused_by)?;
+    let total = stored_shows.len();
+    let absent = stored_shows
+        .into_iter()
+        .filter(|x| !listed.contains(&x.tvdb_id))
+        .map(|x| x.id)
+        .collect();
+    let mut failed_calls = 0;
+    for listing in listings {
+        let span = sync_show::span();
+        let episodes = get_sonarr_episodes
+            .call(listing.sonarr_id)
+            .instrument(span.clone())
+            .await;
+        match source_health.api_call(Source::Sonarr, episodes) {
+            Ok(episodes) => {
+                sync_show::save(db_context, files, SonarrShow { listing, episodes })
+                    .instrument(span)
+                    .await
+                    .map_err(Error::caused_by)?;
+            }
+            Err(error) => {
+                span.in_scope(|| {
+                    tracing::warn!(
+                        error = &error as &dyn std::error::Error,
+                        "failed to read a show's episodes from Sonarr"
+                    );
+                });
+                failed_calls += 1;
+            }
+        }
+        imported(progress);
+    }
+    Ok(Listing {
+        listed,
+        total,
+        absent,
+        failed_calls,
+    })
+}
+
+fn set_total(progress: &Mutex<Option<ReconcileProgress>>, total: usize) {
+    *progress.lock().unwrap() = Some(ReconcileProgress {
+        imported: 0,
+        total: Some(total),
+    });
+}
+
+fn imported(progress: &Mutex<Option<ReconcileProgress>>) {
+    if let Some(progress) = progress.lock().unwrap().as_mut() {
+        progress.imported += 1;
+    }
+}
+
+async fn remove_or_hold(
+    db_context: &mut DbContext,
+    source: Source,
+    listing: &Listing,
+) -> Result<(), Error> {
+    HeldRemoval::filter_by_source(source)
+        .delete()
+        .exec(db_context.executor_mut())
+        .await
+        .map_err(Error::caused_by)?;
+    if listing.absent.len() * 2 > listing.total {
+        tracing::warn!(
+            selfless.library.source = source.name(),
+            "held a removal of more than half of a source's items"
+        );
+        toasty::create!(HeldRemoval {
+            source,
+            item_ids: listing.absent.clone(),
+        })
+        .exec(db_context.executor_mut())
+        .await
+        .map_err(Error::caused_by)?;
+        return Ok(());
+    }
+    remove(db_context, source, listing.absent.clone(), &listing.listed).await
+}
+
+pub(crate) async fn remove(
+    db_context: &mut DbContext,
+    source: Source,
+    ids: Vec<Uuid>,
+    listed: &HashSet<i64>,
+) -> Result<(), Error> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    match source {
+        Source::Radarr => {
+            let movies = Movie::filter(Movie::fields().id().in_list(ids))
+                .exec(db_context.executor_mut())
+                .await
+                .map_err(Error::caused_by)?
+                .into_iter()
+                .filter(|x| !listed.contains(&x.tmdb_id))
+                .collect();
+            sync_movie::remove(db_context, movies)
+                .await
+                .map_err(Error::caused_by)
+        }
+        Source::Sonarr => {
+            let shows = Show::filter(Show::fields().id().in_list(ids))
+                .exec(db_context.executor_mut())
+                .await
+                .map_err(Error::caused_by)?;
+            for show in shows.into_iter().filter(|x| !listed.contains(&x.tvdb_id)) {
+                sync_show::remove(db_context, show)
+                    .await
+                    .map_err(Error::caused_by)?;
+            }
+            Ok(())
+        }
+    }
+}

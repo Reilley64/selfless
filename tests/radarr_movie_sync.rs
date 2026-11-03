@@ -1,7 +1,7 @@
 #[path = "../test/library.rs"]
 mod library_test;
 
-use application::list_movies::Movie;
+use application::library::list_movies::Movie;
 use jiff::Timestamp;
 use library_test::LibraryServer;
 use library_test::MediaFolder;
@@ -70,9 +70,10 @@ impl Fixture {
     }
 
     async fn movies(&self) -> Vec<Movie> {
-        application::list_movies::call(&self.server.state)
+        application::library::list_movies::call(&self.server.state)
             .await
             .unwrap()
+            .movies
     }
 
     async fn visible_movie(&self) -> Movie {

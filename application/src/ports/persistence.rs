@@ -1,11 +1,25 @@
 use async_trait::async_trait;
+use domain::Actor;
 use domain::Admin;
 use domain::AdminSession;
+use domain::Artwork;
+use domain::AudioStream;
+use domain::Episode;
+use domain::HeldRemoval;
 use domain::Inbox;
 use domain::Invite;
+use domain::MediaFile;
+use domain::Movie;
 use domain::Outbox;
+use domain::Season;
 use domain::Session;
+use domain::Show;
+use domain::SourceState;
+use domain::SubtitleFile;
+use domain::SubtitleStream;
+use domain::SyncProblem;
 use domain::User;
+use domain::VideoStream;
 use opentelemetry::KeyValue;
 use opentelemetry::global;
 use opentelemetry::metrics::Histogram;
@@ -66,11 +80,31 @@ impl<T: Model> DbSet<T> {
 }
 
 pub trait DbScope {
+    fn actors(&self) -> DbSet<Actor> {
+        DbSet::new()
+    }
+
     fn admins(&self) -> DbSet<Admin> {
         DbSet::new()
     }
 
     fn admin_sessions(&self) -> DbSet<AdminSession> {
+        DbSet::new()
+    }
+
+    fn artwork(&self) -> DbSet<Artwork> {
+        DbSet::new()
+    }
+
+    fn audio_streams(&self) -> DbSet<AudioStream> {
+        DbSet::new()
+    }
+
+    fn episodes(&self) -> DbSet<Episode> {
+        DbSet::new()
+    }
+
+    fn held_removals(&self) -> DbSet<HeldRemoval> {
         DbSet::new()
     }
 
@@ -82,7 +116,19 @@ pub trait DbScope {
         DbSet::new()
     }
 
+    fn media_files(&self) -> DbSet<MediaFile> {
+        DbSet::new()
+    }
+
+    fn movies(&self) -> DbSet<Movie> {
+        DbSet::new()
+    }
+
     fn outboxes(&self) -> DbSet<Outbox> {
+        DbSet::new()
+    }
+
+    fn seasons(&self) -> DbSet<Season> {
         DbSet::new()
     }
 
@@ -90,7 +136,31 @@ pub trait DbScope {
         DbSet::new()
     }
 
+    fn shows(&self) -> DbSet<Show> {
+        DbSet::new()
+    }
+
+    fn source_states(&self) -> DbSet<SourceState> {
+        DbSet::new()
+    }
+
+    fn subtitle_files(&self) -> DbSet<SubtitleFile> {
+        DbSet::new()
+    }
+
+    fn subtitle_streams(&self) -> DbSet<SubtitleStream> {
+        DbSet::new()
+    }
+
+    fn sync_problems(&self) -> DbSet<SyncProblem> {
+        DbSet::new()
+    }
+
     fn users(&self) -> DbSet<User> {
+        DbSet::new()
+    }
+
+    fn video_streams(&self) -> DbSet<VideoStream> {
         DbSet::new()
     }
 

@@ -1,11 +1,11 @@
 #[path = "../test/library.rs"]
 mod library_test;
 
-use application::list_episodes::Episode;
-use application::list_movies::Actor;
-use application::list_shows::Show;
-use application::sync_status::Problem;
-use application::sync_status::ProblemItem;
+use application::library::list_episodes::Episode;
+use application::library::list_shows::Actor;
+use application::library::list_shows::Show;
+use application::library::sync_status::Problem;
+use application::library::sync_status::ProblemItem;
 use domain::ArtworkKind;
 use domain::SyncProblemKind;
 use jiff::SignedDuration;
@@ -63,7 +63,7 @@ impl Fixture {
         let sonarr = StubSonarr::start().await;
         let server = LibraryServer::start_with_sonarr(database.url(), &sonarr).await;
         eventually(async || {
-            application::sync_status::call(&server.state)
+            application::library::sync_status::call(&server.state)
                 .await
                 .unwrap()
                 .sonarr
@@ -125,9 +125,9 @@ impl Fixture {
             .await;
         self.server.clock.advance(SignedDuration::from_mins(1));
         let started_at = self.server.clock.now();
-        application::sync_now::call(&self.server.state);
+        application::library::sync_now::call(&self.server.state).unwrap();
         eventually(async || {
-            application::sync_status::call(&self.server.state)
+            application::library::sync_status::call(&self.server.state)
                 .await
                 .unwrap()
                 .sonarr
@@ -135,23 +135,26 @@ impl Fixture {
                 .filter(|x| x.started_at == started_at)
         })
         .await;
-        application::list_shows::call(&self.server.state)
+        application::library::list_shows::call(&self.server.state)
             .await
             .unwrap()
+            .shows
             .pop()
             .unwrap()
     }
 
     async fn episodes(&self, show_id: Uuid, season_number: i64) -> Vec<Episode> {
-        let season = application::list_seasons::call(&self.server.state, show_id)
+        let season = application::library::list_seasons::call(&self.server.state, show_id)
             .await
             .unwrap()
+            .seasons
             .into_iter()
             .find(|x| x.number == season_number)
             .unwrap();
-        application::list_episodes::call(&self.server.state, season.id)
+        application::library::list_episodes::call(&self.server.state, season.id)
             .await
             .unwrap()
+            .episodes
     }
 
     fn write_nfo(&self, path: &str, name: &str) {
@@ -160,7 +163,7 @@ impl Fixture {
     }
 
     async fn problems(&self) -> Vec<Problem> {
-        application::sync_status::call(&self.server.state)
+        application::library::sync_status::call(&self.server.state)
             .await
             .unwrap()
             .problems
@@ -479,7 +482,10 @@ async fn show_artwork_season_and_specials_posters_and_episode_thumbs_are_kept() 
     let show = fixture.reconcile(&SEVERANCE).await;
 
     assert_eq!(
-        artwork(&show.artwork),
+        show.artwork
+            .iter()
+            .map(|x| (x.kind, x.path.clone()))
+            .collect::<Vec<_>>(),
         [
             (
                 ArtworkKind::Clearlogo,
@@ -501,13 +507,20 @@ async fn show_artwork_season_and_specials_posters_and_episode_thumbs_are_kept() 
             ),
         ]
     );
-    let seasons = application::list_seasons::call(&fixture.server.state, show.id)
+    let seasons = application::library::list_seasons::call(&fixture.server.state, show.id)
         .await
-        .unwrap();
+        .unwrap()
+        .seasons;
     assert_eq!(
         seasons
             .iter()
-            .map(|x| (x.number, artwork(&x.artwork)))
+            .map(|x| (
+                x.number,
+                x.artwork
+                    .iter()
+                    .map(|x| (x.kind, x.path.clone()))
+                    .collect::<Vec<_>>()
+            ))
             .collect::<Vec<_>>(),
         [
             (
@@ -547,7 +560,13 @@ async fn show_artwork_season_and_specials_posters_and_episode_thumbs_are_kept() 
     assert_eq!(
         episodes
             .iter()
-            .map(|x| (x.number, artwork(&x.artwork)))
+            .map(|x| (
+                x.number,
+                x.artwork
+                    .iter()
+                    .map(|x| (x.kind, x.path.clone()))
+                    .collect::<Vec<_>>()
+            ))
             .collect::<Vec<_>>(),
         [
             (
@@ -627,18 +646,15 @@ async fn a_reconcile_picks_up_changed_nfos_and_images() {
             IMAGE_MODIFIED_AT.parse::<Timestamp>().unwrap()
         )]
     );
-    let seasons = application::list_seasons::call(&fixture.server.state, show.id)
+    let seasons = application::library::list_seasons::call(&fixture.server.state, show.id)
         .await
-        .unwrap();
+        .unwrap()
+        .seasons;
     assert_eq!(seasons[0].artwork.len(), 1);
     let episodes = fixture.episodes(show.id, 1).await;
     assert_eq!(episodes[0].rating, Some(7.7));
     assert_eq!(episodes[0].artwork.len(), 1);
     fixture.stop().await;
-}
-
-fn artwork(artwork: &[application::list_movies::Artwork]) -> Vec<(ArtworkKind, String)> {
-    artwork.iter().map(|x| (x.kind, x.path.clone())).collect()
 }
 
 fn actor(name: &str, role: &str, order: i64) -> Actor {

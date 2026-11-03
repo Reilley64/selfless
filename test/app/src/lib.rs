@@ -1,9 +1,7 @@
 use application::BuildInfo;
-use application::MediaFolder;
-use application::Prober;
-use application::Reconciles;
-use application::SourceHealth;
-use application::WebhookPasswords;
+use application::library::Prober;
+use application::library::Reconciles;
+use application::library::SourceHealth;
 use application::ports::AcquireLock;
 use application::ports::CheckRadarrKodiMetadata;
 use application::ports::CheckSonarrKodiMetadata;
@@ -15,7 +13,7 @@ use application::ports::GetRadarrMovie;
 use application::ports::GetSonarrEpisodes;
 use application::ports::GetSonarrShow;
 use application::ports::ListRadarrMovies;
-use application::ports::ListSonarrSeries;
+use application::ports::ListSonarrShows;
 use application::ports::ListSubtitleFiles;
 use application::ports::LockGuard;
 use application::ports::ProbeError;
@@ -36,6 +34,7 @@ use application::ports::UnreadableWebhook;
 use application::ports::persistence;
 use application::ports::persistence::DbContext;
 use application::ports::persistence::DbLocation;
+use application::webhooks::WebhookPasswords;
 use infrastructure::AppState;
 use test_fixtures::FakeClock;
 use test_fixtures::FakeMailer;
@@ -77,6 +76,7 @@ impl TestApp {
             export_telemetry: ExportTelemetry::new(|_, _| {
                 Box::pin(async { Err(ExportTelemetryError::default()) })
             }),
+            find_media_file: FindMediaFile::new(|_| Box::pin(async { None })),
             get_radarr_movie: GetRadarrMovie::new(|_| {
                 Box::pin(async { Err(RadarrError::default()) })
             }),
@@ -89,33 +89,24 @@ impl TestApp {
             list_radarr_movies: ListRadarrMovies::new(|| {
                 Box::pin(async { Err(RadarrError::default()) })
             }),
-            list_sonarr_series: ListSonarrSeries::new(|| {
+            list_sonarr_shows: ListSonarrShows::new(|| {
                 Box::pin(async { Err(SonarrError::default()) })
             }),
-            media_folder: MediaFolder {
-                find_media_file: FindMediaFile::new(|_| Box::pin(async { None })),
-                list_subtitle_files: ListSubtitleFiles::new(|_| Box::pin(async { Ok(Vec::new()) })),
-                prober: Prober::new(ProbeMediaFile::new(|_| {
-                    Box::pin(async { Err(ProbeError::default()) })
-                })),
-                read_episode_folder: ReadEpisodeFolder::new(|_| {
-                    Box::pin(async { Default::default() })
-                }),
-                read_episode_nfo: ReadEpisodeNfo::new(|_| {
-                    Box::pin(async { Err(UnreadableNfo::default()) })
-                }),
-                read_movie_folder: ReadMovieFolder::new(|_| Box::pin(async { Default::default() })),
-                read_movie_nfo: ReadMovieNfo::new(|_| {
-                    Box::pin(async { Err(UnreadableNfo::default()) })
-                }),
-                read_show_folder: ReadShowFolder::new(|_, _| {
-                    Box::pin(async { Default::default() })
-                }),
-                read_show_nfo: ReadShowNfo::new(|_| {
-                    Box::pin(async { Err(UnreadableNfo::default()) })
-                }),
-            },
+            list_subtitle_files: ListSubtitleFiles::new(|_| Box::pin(async { Ok(Vec::new()) })),
+            prober: Prober::new(ProbeMediaFile::new(|_| {
+                Box::pin(async { Err(ProbeError::default()) })
+            })),
+            read_episode_folder: ReadEpisodeFolder::new(|_| Box::pin(async { Default::default() })),
+            read_episode_nfo: ReadEpisodeNfo::new(|_| {
+                Box::pin(async { Err(UnreadableNfo::default()) })
+            }),
+            read_movie_folder: ReadMovieFolder::new(|_| Box::pin(async { Default::default() })),
+            read_movie_nfo: ReadMovieNfo::new(|_| {
+                Box::pin(async { Err(UnreadableNfo::default()) })
+            }),
             read_radarr_webhook: ReadRadarrWebhook::new(|_| Err(UnreadableWebhook::default())),
+            read_show_folder: ReadShowFolder::new(|_, _| Box::pin(async { Default::default() })),
+            read_show_nfo: ReadShowNfo::new(|_| Box::pin(async { Err(UnreadableNfo::default()) })),
             read_sonarr_webhook: ReadSonarrWebhook::new(|_| Err(UnreadableWebhook::default())),
             reconciles: Reconciles::default(),
             send_email: SendEmail::new(mailer.sender()),

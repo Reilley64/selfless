@@ -1,8 +1,8 @@
 #[path = "../test/library.rs"]
 mod library_test;
 
-use application::list_episodes::Episode;
-use application::list_shows::Show;
+use application::library::list_episodes::Episode;
+use application::library::list_shows::Show;
 use jiff::Timestamp;
 use jiff::civil::date;
 use library_test::LibraryServer;
@@ -82,9 +82,10 @@ impl Fixture {
     }
 
     async fn shows(&self) -> Vec<Show> {
-        application::list_shows::call(&self.server.state)
+        application::library::list_shows::call(&self.server.state)
             .await
             .unwrap()
+            .shows
     }
 
     async fn visible_show(&self) -> Show {
@@ -96,24 +97,27 @@ impl Fixture {
     }
 
     async fn season_numbers(&self, show_id: Uuid) -> Vec<i64> {
-        application::list_seasons::call(&self.server.state, show_id)
+        application::library::list_seasons::call(&self.server.state, show_id)
             .await
             .unwrap()
+            .seasons
             .into_iter()
             .map(|x| x.number)
             .collect()
     }
 
     async fn episodes(&self, show_id: Uuid, season_number: i64) -> Vec<Episode> {
-        let seasons = application::list_seasons::call(&self.server.state, show_id)
+        let seasons = application::library::list_seasons::call(&self.server.state, show_id)
             .await
-            .unwrap();
+            .unwrap()
+            .seasons;
         let Some(season) = seasons.into_iter().find(|x| x.number == season_number) else {
             return Vec::new();
         };
-        application::list_episodes::call(&self.server.state, season.id)
+        application::library::list_episodes::call(&self.server.state, season.id)
             .await
             .unwrap()
+            .episodes
     }
 
     async fn stop(self) {

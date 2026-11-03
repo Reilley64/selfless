@@ -1,4 +1,4 @@
-use application::library::delete_old_deliveries;
+use application::webhooks::delete_old_deliveries;
 use infrastructure::AppState;
 use std::error::Error;
 use std::time::Duration;

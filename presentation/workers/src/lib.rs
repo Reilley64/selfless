@@ -39,7 +39,7 @@ async fn reconcile(state: AppState, interval: Duration) {
         for source in [Source::Radarr, Source::Sonarr] {
             let state = state.clone();
             running.spawn(async move {
-                if let Err(error) = application::reconcile::call(&state, source).await {
+                if let Err(error) = application::library::reconcile::call(&state, source).await {
                     tracing::error!(error = &error as &dyn Error, "failed to record a reconcile");
                 }
             });

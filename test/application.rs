@@ -1,5 +1,4 @@
-use crate::MediaFolder;
-use crate::Prober;
+use crate::library::Prober;
 use crate::ports::AcquireLock;
 use crate::ports::EmailRefused;
 use crate::ports::FindMediaFile;
@@ -64,20 +63,40 @@ pub(crate) fn refusing_mailer() -> SendEmail {
     })
 }
 
-pub(crate) fn empty_media_folder() -> MediaFolder {
-    MediaFolder {
-        find_media_file: FindMediaFile::new(|_| Box::pin(async { None })),
-        list_subtitle_files: ListSubtitleFiles::new(|_| Box::pin(async { Ok(Vec::new()) })),
-        prober: Prober::new(ProbeMediaFile::new(|_| {
-            Box::pin(async { Err(ProbeError::default()) })
-        })),
-        read_episode_folder: ReadEpisodeFolder::new(|_| Box::pin(async { Default::default() })),
-        read_episode_nfo: ReadEpisodeNfo::new(|_| {
-            Box::pin(async { Err(UnreadableNfo::default()) })
-        }),
-        read_movie_folder: ReadMovieFolder::new(|_| Box::pin(async { Default::default() })),
-        read_movie_nfo: ReadMovieNfo::new(|_| Box::pin(async { Err(UnreadableNfo::default()) })),
-        read_show_folder: ReadShowFolder::new(|_, _| Box::pin(async { Default::default() })),
-        read_show_nfo: ReadShowNfo::new(|_| Box::pin(async { Err(UnreadableNfo::default()) })),
-    }
+pub(crate) fn missing_media_file() -> FindMediaFile {
+    FindMediaFile::new(|_| Box::pin(async { None }))
+}
+
+pub(crate) fn no_subtitle_files() -> ListSubtitleFiles {
+    ListSubtitleFiles::new(|_| Box::pin(async { Ok(Vec::new()) }))
+}
+
+pub(crate) fn failing_prober() -> Prober {
+    Prober::new(ProbeMediaFile::new(|_| {
+        Box::pin(async { Err(ProbeError::default()) })
+    }))
+}
+
+pub(crate) fn empty_episode_folder() -> ReadEpisodeFolder {
+    ReadEpisodeFolder::new(|_| Box::pin(async { Default::default() }))
+}
+
+pub(crate) fn unreadable_episode_nfo() -> ReadEpisodeNfo {
+    ReadEpisodeNfo::new(|_| Box::pin(async { Err(UnreadableNfo::default()) }))
+}
+
+pub(crate) fn empty_movie_folder() -> ReadMovieFolder {
+    ReadMovieFolder::new(|_| Box::pin(async { Default::default() }))
+}
+
+pub(crate) fn unreadable_movie_nfo() -> ReadMovieNfo {
+    ReadMovieNfo::new(|_| Box::pin(async { Err(UnreadableNfo::default()) }))
+}
+
+pub(crate) fn empty_show_folder() -> ReadShowFolder {
+    ReadShowFolder::new(|_, _| Box::pin(async { Default::default() }))
+}
+
+pub(crate) fn unreadable_show_nfo() -> ReadShowNfo {
+    ReadShowNfo::new(|_| Box::pin(async { Err(UnreadableNfo::default()) }))
 }
