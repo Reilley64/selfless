@@ -356,7 +356,7 @@ async fn remove_or_hold(
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?;
-    if listing.absent.len() * 2 > listing.total {
+    if HeldRemoval::holds(listing.absent.len(), listing.total) {
         tracing::warn!(
             selfless.library.source = source.name(),
             "held a removal of more than half of a source's items"
