@@ -1,17 +1,14 @@
 use crate::library::Prober;
-use crate::ports::FindMediaFile;
+use crate::library::sync_problems;
+use crate::library::sync_problems::ProblemOwner;
 use crate::ports::FoundMediaFile;
 use crate::ports::FoundSubtitleFile;
 use crate::ports::ListSubtitleFiles;
 use crate::ports::Probe;
 use crate::ports::persistence::DbScope;
-use domain::AudioStream;
 use domain::MediaFile;
-use domain::SubtitleFile;
-use domain::SubtitleStream;
 use domain::SyncProblem;
 use domain::SyncProblemKind;
-use domain::VideoStream;
 use uuid::Uuid;
 
 pub(crate) struct Inspected {
@@ -42,13 +39,13 @@ pub(crate) struct Saved {
 pub(crate) struct Error;
 
 pub(crate) async fn inspect(
-    find_media_file: &FindMediaFile,
     list_subtitle_files: &ListSubtitleFiles,
     prober: &Prober,
     stored: Option<&MediaFile>,
     path: &str,
+    found: Option<FoundMediaFile>,
 ) -> Result<Inspected, Error> {
-    let Some(found) = find_media_file.call(path).await else {
+    let Some(found) = found else {
         return Ok(Inspected {
             found: None,
             probed: Probed::Unchanged,
@@ -97,7 +94,7 @@ pub(crate) async fn save(
                 .and_then(|x| i64::try_from(x.as_millis()).ok()),
         )),
     };
-    let (id, mut changed) = match scope
+    let (media_file, mut changed) = match scope
         .media_files()
         .filter(MediaFile::fields().path().eq(path))
         .first()
@@ -118,7 +115,7 @@ pub(crate) async fn save(
                     .exec(scope.executor_mut())
                     .await?;
             }
-            (media_file.id, changed)
+            (media_file, changed)
         }
         None => {
             let (container, duration_ms) = probed.unwrap_or_default();
@@ -132,73 +129,65 @@ pub(crate) async fn save(
                 .duration_ms(duration_ms)
                 .exec(scope.executor_mut())
                 .await?;
-            (media_file.id, true)
+            (media_file, true)
         }
     };
     if changed {
-        save_file_not_found(scope, id, path, inspected.found.is_some()).await?;
+        sync_problems::replace(
+            scope,
+            ProblemOwner::MediaFile(media_file.id),
+            SyncProblemKind::MissingMediaFile,
+            inspected.found.is_none().then_some(path),
+        )
+        .await?;
     }
     match inspected.probed {
         Probed::Unchanged => {}
-        Probed::Failed => save_probe(scope, id, path, None).await?,
-        Probed::Read(probe) => save_probe(scope, id, path, Some(probe)).await?,
+        Probed::Failed => save_probe(scope, &media_file, path, None).await?,
+        Probed::Read(probe) => save_probe(scope, &media_file, path, Some(probe)).await?,
     }
-    changed |= save_subtitle_files(scope, id, inspected.subtitle_files).await?;
-    Ok(Saved { id, changed })
+    changed |= save_subtitle_files(scope, &media_file, inspected.subtitle_files).await?;
+    Ok(Saved {
+        id: media_file.id,
+        changed,
+    })
 }
 
 async fn save_probe(
     scope: &mut impl DbScope,
-    media_file_id: Uuid,
+    media_file: &MediaFile,
     path: &str,
     probe: Option<Probe>,
 ) -> toasty::Result<()> {
-    scope
+    media_file
         .video_streams()
-        .filter(VideoStream::fields().media_file_id().eq(media_file_id))
         .delete()
         .exec(scope.executor_mut())
         .await?;
-    scope
+    media_file
         .audio_streams()
-        .filter(AudioStream::fields().media_file_id().eq(media_file_id))
         .delete()
         .exec(scope.executor_mut())
         .await?;
-    scope
+    media_file
         .subtitle_streams()
-        .filter(SubtitleStream::fields().media_file_id().eq(media_file_id))
         .delete()
         .exec(scope.executor_mut())
         .await?;
-    scope
-        .sync_problems()
-        .filter(
-            SyncProblem::fields().media_file_id().eq(media_file_id).and(
-                SyncProblem::fields()
-                    .kind()
-                    .eq(SyncProblemKind::FfprobeFailed),
-            ),
-        )
-        .delete()
-        .exec(scope.executor_mut())
-        .await?;
+    sync_problems::replace(
+        scope,
+        ProblemOwner::MediaFile(media_file.id),
+        SyncProblemKind::UnrecognisedMediaFile,
+        probe.is_none().then_some(path),
+    )
+    .await?;
     let Some(probe) = probe else {
-        scope
-            .sync_problems()
-            .create()
-            .media_file_id(Some(media_file_id))
-            .kind(SyncProblemKind::FfprobeFailed)
-            .path(path)
-            .exec(scope.executor_mut())
-            .await?;
         return Ok(());
     };
     for stream in probe.video_streams {
-        scope
+        media_file
             .video_streams()
             .create()
-            .media_file_id(media_file_id)
             .index(stream.index)
             .codec(stream.codec)
             .profile(stream.profile)
@@ -210,10 +199,9 @@ async fn save_probe(
             .await?;
     }
     for stream in probe.audio_streams {
-        scope
+        media_file
             .audio_streams()
             .create()
-            .media_file_id(media_file_id)
             .index(stream.index)
             .codec(stream.codec)
             .language(stream.language)
@@ -224,10 +212,9 @@ async fn save_probe(
             .await?;
     }
     for stream in probe.subtitle_streams {
-        scope
+        media_file
             .subtitle_streams()
             .create()
-            .media_file_id(media_file_id)
             .index(stream.index)
             .codec(stream.codec)
             .language(stream.language)
@@ -244,13 +231,12 @@ async fn save_probe(
 
 async fn save_subtitle_files(
     scope: &mut impl DbScope,
-    media_file_id: Uuid,
+    media_file: &MediaFile,
     mut subtitle_files: Vec<FoundSubtitleFile>,
 ) -> toasty::Result<bool> {
     subtitle_files.sort();
-    let mut stored = scope
+    let mut stored = media_file
         .subtitle_files()
-        .filter(SubtitleFile::fields().media_file_id().eq(media_file_id))
         .exec(scope.executor_mut())
         .await?
         .into_iter()
@@ -265,17 +251,15 @@ async fn save_subtitle_files(
     if stored == subtitle_files {
         return Ok(false);
     }
-    scope
+    media_file
         .subtitle_files()
-        .filter(SubtitleFile::fields().media_file_id().eq(media_file_id))
         .delete()
         .exec(scope.executor_mut())
         .await?;
     for file in subtitle_files {
-        scope
+        media_file
             .subtitle_files()
             .create()
-            .media_file_id(media_file_id)
             .path(file.path)
             .language(file.language)
             .hearing_impaired(file.hearing_impaired)
@@ -284,37 +268,6 @@ async fn save_subtitle_files(
             .await?;
     }
     Ok(true)
-}
-
-async fn save_file_not_found(
-    scope: &mut impl DbScope,
-    media_file_id: Uuid,
-    path: &str,
-    found: bool,
-) -> toasty::Result<()> {
-    scope
-        .sync_problems()
-        .filter(
-            SyncProblem::fields().media_file_id().eq(media_file_id).and(
-                SyncProblem::fields()
-                    .kind()
-                    .eq(SyncProblemKind::FileNotFound),
-            ),
-        )
-        .delete()
-        .exec(scope.executor_mut())
-        .await?;
-    if !found {
-        scope
-            .sync_problems()
-            .create()
-            .media_file_id(Some(media_file_id))
-            .kind(SyncProblemKind::FileNotFound)
-            .path(path)
-            .exec(scope.executor_mut())
-            .await?;
-    }
-    Ok(())
 }
 
 pub(crate) async fn delete(scope: &mut impl DbScope, ids: Vec<Uuid>) -> toasty::Result<()> {
@@ -339,12 +292,12 @@ pub(crate) async fn delete(scope: &mut impl DbScope, ids: Vec<Uuid>) -> toasty::
 mod tests {
     use super::*;
     use crate::ports::AudioStream as ProbedAudioStream;
-    use crate::ports::HdrType;
     use crate::ports::SubtitleStream as ProbedSubtitleStream;
     use crate::ports::VideoStream as ProbedVideoStream;
     use crate::ports::persistence::DbContext;
     use crate::test::MOVIE_FILE;
     use crate::test::MovieLibrary;
+    use domain::HdrType;
     use domain::Movie;
     use std::time::Duration;
 
@@ -424,23 +377,20 @@ mod tests {
     async fn streams(library: &MovieLibrary) -> Probe {
         let mut db_context = library.db_context.clone();
         let media_file = media_file(library).await;
-        let mut video_streams = db_context
+        let mut video_streams = media_file
             .video_streams()
-            .all()
             .exec(db_context.executor_mut())
             .await
             .unwrap();
         video_streams.sort_by_key(|x| x.index);
-        let mut audio_streams = db_context
+        let mut audio_streams = media_file
             .audio_streams()
-            .all()
             .exec(db_context.executor_mut())
             .await
             .unwrap();
         audio_streams.sort_by_key(|x| x.index);
-        let mut subtitle_streams = db_context
+        let mut subtitle_streams = media_file
             .subtitle_streams()
-            .all()
             .exec(db_context.executor_mut())
             .await
             .unwrap();
@@ -504,9 +454,9 @@ mod tests {
 
     async fn subtitle_files(library: &MovieLibrary) -> Vec<FoundSubtitleFile> {
         let mut db_context = library.db_context.clone();
-        let mut subtitle_files = db_context
+        let mut subtitle_files = media_file(library)
+            .await
             .subtitle_files()
-            .all()
             .exec(db_context.executor_mut())
             .await
             .unwrap()
@@ -522,7 +472,7 @@ mod tests {
         subtitle_files
     }
 
-    async fn movie_is_visible(library: &MovieLibrary) -> bool {
+    async fn movie_is_in_library(library: &MovieLibrary) -> bool {
         let mut db_context = library.db_context.clone();
         let [movie]: [Movie; 1] = db_context
             .movies()
@@ -532,7 +482,7 @@ mod tests {
             .unwrap()
             .try_into()
             .unwrap();
-        movie.visible
+        movie.in_library
     }
 
     async fn inspect_and_save(library: &MovieLibrary) -> bool {
@@ -544,12 +494,13 @@ mod tests {
             .exec(db_context.executor_mut())
             .await
             .unwrap();
+        let found = library.find_media_file().call(MOVIE_FILE).await.unwrap();
         let inspected = inspect(
-            &library.find_media_file(),
             &library.list_subtitle_files(),
             &library.prober(),
             stored.as_ref(),
             MOVIE_FILE,
+            found,
         )
         .await
         .unwrap();
@@ -625,7 +576,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_file_ffprobe_cannot_read_stays_visible_without_streams_until_a_probe_succeeds() {
+    async fn an_unrecognised_media_file_stays_in_the_library_without_streams_until_a_probe_succeeds()
+     {
         let library = MovieLibrary::new().await;
         library.sources().unprobeable.insert(MOVIE_FILE.to_owned());
 
@@ -635,11 +587,11 @@ mod tests {
         let media_file = media_file(&library).await;
         assert_eq!(media_file.container, None);
         assert!(streams(&library).await.video_streams.is_empty());
-        assert!(movie_is_visible(&library).await);
+        assert!(movie_is_in_library(&library).await);
         assert_eq!(
             problems(&library).await,
             [(
-                SyncProblemKind::FfprobeFailed,
+                SyncProblemKind::UnrecognisedMediaFile,
                 Some(media_file.id),
                 MOVIE_FILE.to_owned()
             )]
@@ -657,7 +609,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_missing_file_records_file_not_found_until_it_appears() {
+    async fn a_missing_file_records_a_missing_media_file_until_it_appears() {
         let library = MovieLibrary::new().await;
         library.sources().files_on_disk.clear();
 
@@ -667,7 +619,7 @@ mod tests {
         assert_eq!(
             problems(&library).await,
             [(
-                SyncProblemKind::FileNotFound,
+                SyncProblemKind::MissingMediaFile,
                 Some(media_file.id),
                 MOVIE_FILE.to_owned()
             )]

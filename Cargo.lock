@@ -1475,6 +1475,7 @@ name = "ffmpeg"
 version = "0.1.0"
 dependencies = [
  "application",
+ "domain",
  "serde",
  "serde_json",
  "tokio",
@@ -2765,6 +2766,7 @@ name = "media-folder"
 version = "0.1.0"
 dependencies = [
  "application",
+ "domain",
  "jiff",
  "quick-xml",
  "serde",
@@ -3266,7 +3268,6 @@ name = "persistence"
 version = "0.1.0"
 dependencies = [
  "application",
- "bytes",
  "domain",
  "email",
  "jiff",
@@ -3678,6 +3679,7 @@ name = "radarr"
 version = "0.1.0"
 dependencies = [
  "application",
+ "domain",
  "jiff",
  "reqwest",
  "serde",
@@ -4559,6 +4561,7 @@ name = "sonarr"
 version = "0.1.0"
 dependencies = [
  "application",
+ "domain",
  "jiff",
  "reqwest",
  "serde",
@@ -6641,9 +6644,11 @@ dependencies = [
  "jiff",
  "persistence",
  "test-app",
+ "test-fixtures",
  "tokio",
  "tokio-util",
  "tracing",
+ "tracing-subscriber",
  "uuid",
 ]
 

@@ -1,6 +1,7 @@
 use application::ports::ReadSonarrWebhook;
-use application::ports::SonarrWebhook;
+use application::ports::ShowWebhookDelivery;
 use application::ports::UnreadableWebhook;
+use domain::SonarrId;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -44,8 +45,8 @@ pub fn read_webhook() -> ReadSonarrWebhook {
                 | SonarrEvent::Rename { series }
                 | SonarrEvent::SeriesAdd { series }
                 | SonarrEvent::SeriesDelete { series }
-                | SonarrEvent::EpisodeFileDelete { series } => SonarrWebhook::Show {
-                    sonarr_id: series.id,
+                | SonarrEvent::EpisodeFileDelete { series } => ShowWebhookDelivery::Show {
+                    sonarr_id: SonarrId(series.id),
                 },
                 SonarrEvent::Test
                 | SonarrEvent::Grab
@@ -53,7 +54,7 @@ pub fn read_webhook() -> ReadSonarrWebhook {
                 | SonarrEvent::HealthRestored
                 | SonarrEvent::ApplicationUpdate
                 | SonarrEvent::ManualInteractionRequired
-                | SonarrEvent::Other => SonarrWebhook::Ignored,
+                | SonarrEvent::Other => ShowWebhookDelivery::Ignored,
             },
         )
     })
@@ -63,7 +64,7 @@ pub fn read_webhook() -> ReadSonarrWebhook {
 mod tests {
     use super::*;
 
-    fn read(name: &str) -> Result<SonarrWebhook, UnreadableWebhook> {
+    fn read(name: &str) -> Result<ShowWebhookDelivery, UnreadableWebhook> {
         let body = std::fs::read(format!(
             "{}/../../test/fixtures/sonarr/webhooks/{name}.json",
             env!("CARGO_MANIFEST_DIR")
@@ -85,7 +86,9 @@ mod tests {
         ] {
             assert_eq!(
                 read(name).unwrap(),
-                SonarrWebhook::Show { sonarr_id: 7 },
+                ShowWebhookDelivery::Show {
+                    sonarr_id: SonarrId(7)
+                },
                 "{name}"
             );
         }
@@ -101,7 +104,7 @@ mod tests {
             "application-update",
             "manual-interaction-required",
         ] {
-            assert_eq!(read(name).unwrap(), SonarrWebhook::Ignored, "{name}");
+            assert_eq!(read(name).unwrap(), ShowWebhookDelivery::Ignored, "{name}");
         }
     }
 

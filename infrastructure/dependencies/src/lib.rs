@@ -29,6 +29,7 @@ use application::ports::ReadSonarrWebhook;
 use application::ports::ReadWebhookEventType;
 use application::ports::SaveCachedImage;
 use application::ports::SendEmail;
+use application::ports::TryAcquireLock;
 use application::ports::persistence::DbContext;
 use application::url_signer::UrlSigner;
 use application::webhooks::WebhookPasswords;
@@ -69,6 +70,7 @@ pub struct AppState {
     pub save_cached_image: SaveCachedImage,
     pub send_email: SendEmail,
     pub source_health: SourceHealth,
+    pub try_acquire_lock: TryAcquireLock,
     pub url_signer: UrlSigner,
     pub webhook_passwords: WebhookPasswords,
 }

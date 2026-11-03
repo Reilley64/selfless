@@ -266,7 +266,7 @@ mod tests {
         let (_, token) = signed_in_user(&app, "Noor", "a long passphrase about tea").await;
         let mut db_context = app.state.db_context.clone();
         let hidden = movie(&app, "Arrival")
-            .visible(false)
+            .in_library(false)
             .exec(db_context.executor_mut())
             .await
             .unwrap();

@@ -24,8 +24,12 @@ impl Season {
         Self::fields().episodes().any(Episode::in_library_filter())
     }
 
+    pub fn is_specials(number: i64) -> bool {
+        number == 0
+    }
+
     pub fn listing_order(&self) -> (bool, i64) {
-        (self.number == 0, self.number)
+        (Self::is_specials(self.number), self.number)
     }
 
     pub fn name(&self) -> String {

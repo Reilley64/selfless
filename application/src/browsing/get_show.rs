@@ -208,7 +208,7 @@ mod tests {
             };
             let episode = episode(db_context, season_id)
                 .number(number)
-                .visible(visible)
+                .in_library(visible)
                 .exec(db_context.executor_mut())
                 .await
                 .unwrap();

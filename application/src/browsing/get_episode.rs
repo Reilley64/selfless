@@ -12,10 +12,7 @@ pub use output::SubtitleLanguage;
 use crate::browsing::Image;
 use crate::ports::persistence::DbScope;
 use domain::Artwork;
-use domain::AudioStream;
 use domain::MediaFile;
-use domain::SubtitleFile;
-use domain::SubtitleStream;
 use uuid::Uuid;
 
 pub async fn call(
@@ -58,44 +55,32 @@ pub async fn call(
     let mut audio_languages = Vec::new();
     let mut subtitle_languages = Vec::new();
     if let Some(media_file_id) = episode.media_file_id {
-        runtime_minutes = db_context
+        let media_file = db_context
             .media_files()
-            .filter(MediaFile::fields().id().eq(media_file_id))
-            .first()
-            .exec(db_context.executor_mut())
-            .await
-            .map_err(Error::caused_by)?
-            .and_then(|x| x.runtime_minutes());
-        let mut audio_streams = db_context
-            .audio_streams()
-            .filter(AudioStream::fields().media_file_id().eq(media_file_id))
+            .find(media_file_id)
+            .include(MediaFile::fields().audio_streams())
+            .include(MediaFile::fields().subtitle_streams())
+            .include(MediaFile::fields().subtitle_files())
             .exec(db_context.executor_mut())
             .await
             .map_err(Error::caused_by)?;
+        runtime_minutes = media_file.as_ref().and_then(MediaFile::runtime_minutes);
+        let (mut audio_streams, mut subtitle_streams, mut subtitle_files) = match media_file {
+            Some(x) => (
+                x.audio_streams.into_inner(),
+                x.subtitle_streams.into_inner(),
+                x.subtitle_files.into_inner(),
+            ),
+            None => Default::default(),
+        };
         audio_streams.sort_by_key(|x| x.index);
         for language in audio_streams.into_iter().filter_map(|x| x.language) {
             if !audio_languages.contains(&language) {
                 audio_languages.push(language);
             }
         }
-        let mut subtitle_streams = db_context
-            .subtitle_streams()
-            .filter(
-                SubtitleStream::fields()
-                    .media_file_id()
-                    .eq(media_file_id)
-                    .and(SubtitleStream::fields().text().eq(true)),
-            )
-            .exec(db_context.executor_mut())
-            .await
-            .map_err(Error::caused_by)?;
+        subtitle_streams.retain(|x| x.text);
         subtitle_streams.sort_by_key(|x| x.index);
-        let mut subtitle_files = db_context
-            .subtitle_files()
-            .filter(SubtitleFile::fields().media_file_id().eq(media_file_id))
-            .exec(db_context.executor_mut())
-            .await
-            .map_err(Error::caused_by)?;
         subtitle_files.sort_by(|a, b| a.path.cmp(&b.path));
         let subtitles = subtitle_streams
             .into_iter()
@@ -261,10 +246,16 @@ mod tests {
         index: i64,
         language: Option<&str>,
     ) {
-        db_context
+        let media_file = db_context
+            .media_files()
+            .find(media_file_id)
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap()
+            .unwrap();
+        media_file
             .audio_streams()
             .create()
-            .media_file_id(media_file_id)
             .index(index)
             .codec("eac3")
             .language(language.map(str::to_owned))
@@ -282,10 +273,16 @@ mod tests {
         language: &str,
         (text, hearing_impaired, forced): (bool, bool, bool),
     ) {
-        db_context
+        let media_file = db_context
+            .media_files()
+            .find(media_file_id)
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap()
+            .unwrap();
+        media_file
             .subtitle_streams()
             .create()
-            .media_file_id(media_file_id)
             .index(index)
             .codec(if text { "subrip" } else { "hdmv_pgs_subtitle" })
             .language(Some(language.to_owned()))
@@ -305,10 +302,16 @@ mod tests {
         language: &str,
         hearing_impaired: bool,
     ) {
-        db_context
+        let media_file = db_context
+            .media_files()
+            .find(media_file_id)
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap()
+            .unwrap();
+        media_file
             .subtitle_files()
             .create()
-            .media_file_id(media_file_id)
             .path(format!("/media/TV/Severance/Season 01/{name}"))
             .language(Some(language.to_owned()))
             .hearing_impaired(hearing_impaired)
@@ -407,7 +410,7 @@ mod tests {
             .unwrap();
         let season_id = add_season(&mut db_context, severance.id, 1).await;
         let hidden = episode(&db_context, season_id)
-            .visible(false)
+            .in_library(false)
             .exec(db_context.executor_mut())
             .await
             .unwrap();

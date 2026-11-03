@@ -46,7 +46,7 @@ pub struct SourceStatus {
     pub reconcile_progress: Option<ReconcileProgress>,
     pub last_reconcile: Option<LastReconcile>,
     pub held_removal: Option<HeldRemoval>,
-    pub visible: VisibleCounts,
+    pub in_library: InLibraryCounts,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -74,7 +74,7 @@ pub struct HeldRemoval {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum VisibleCounts {
+pub enum InLibraryCounts {
     Movies(u64),
     Shows { shows: u64, episodes: u64 },
 }

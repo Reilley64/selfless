@@ -8,8 +8,8 @@ use crate::ports::CachedImage;
 use crate::ports::DeleteCachedImage;
 use crate::ports::EmailRefused;
 use crate::ports::EpisodeFolder;
-use crate::ports::EpisodeNfo;
 use crate::ports::FindMediaFile;
+use crate::ports::FoundFile;
 use crate::ports::FoundMediaFile;
 use crate::ports::FoundSubtitleFile;
 use crate::ports::GetRadarrMovie;
@@ -20,13 +20,10 @@ use crate::ports::ListCachedImages;
 use crate::ports::ListSubtitleFiles;
 use crate::ports::LockGuard;
 use crate::ports::MovieFolder;
-use crate::ports::MovieNfo;
 use crate::ports::Probe;
 use crate::ports::ProbeError;
 use crate::ports::ProbeMediaFile;
 use crate::ports::RadarrError;
-use crate::ports::RadarrMovie;
-use crate::ports::RadarrMovieFile;
 use crate::ports::ReadCachedImage;
 use crate::ports::ReadEpisodeFolder;
 use crate::ports::ReadEpisodeNfo;
@@ -39,11 +36,12 @@ use crate::ports::SaveCachedImage;
 use crate::ports::SendEmail;
 use crate::ports::SendEmailError;
 use crate::ports::ShowFolder;
-use crate::ports::ShowNfo;
-use crate::ports::SonarrEpisode;
-use crate::ports::SonarrEpisodeFile;
-use crate::ports::SonarrShow;
-use crate::ports::SonarrShowListing;
+use crate::ports::SourceEpisode;
+use crate::ports::SourceMediaFile;
+use crate::ports::SourceMovie;
+use crate::ports::SourceShow;
+use crate::ports::SourceShowListing;
+use crate::ports::UnreadableFile;
 use crate::ports::UnreadableNfo;
 use crate::ports::persistence;
 use crate::ports::persistence::DbContext;
@@ -51,8 +49,15 @@ use crate::ports::persistence::DbLocation;
 use crate::ports::persistence::DbScope;
 use crate::url_signer::UrlSigner;
 use domain::Episode;
+use domain::EpisodeNfo;
 use domain::Movie;
+use domain::MovieNfo;
+use domain::RadarrId;
 use domain::Show;
+use domain::ShowNfo;
+use domain::SonarrId;
+use domain::TmdbId;
+use domain::TvdbId;
 use jiff::Timestamp;
 use jiff::civil::date;
 use std::collections::HashMap;
@@ -77,6 +82,21 @@ pub(crate) async fn mock_db_context() -> DbContext {
 
 pub(crate) fn url_signer() -> UrlSigner {
     UrlSigner::new(b"a household secret")
+}
+
+pub(crate) async fn movie_titles(db_context: &DbContext) -> Vec<String> {
+    let mut db_context = db_context.clone();
+    let mut titles = db_context
+        .movies()
+        .all()
+        .exec(db_context.executor_mut())
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|x| x.title)
+        .collect::<Vec<_>>();
+    titles.sort();
+    titles
 }
 
 #[derive(Clone, Default)]
@@ -111,7 +131,7 @@ pub(crate) fn refusing_mailer() -> SendEmail {
 }
 
 pub(crate) fn missing_media_file() -> FindMediaFile {
-    FindMediaFile::new(|_| Box::pin(async { None }))
+    FindMediaFile::new(|_| Box::pin(async { Ok(None) }))
 }
 
 pub(crate) fn no_subtitle_files() -> ListSubtitleFiles {
@@ -139,49 +159,65 @@ pub(crate) fn readable_prober() -> Prober {
 }
 
 pub(crate) fn empty_episode_folder() -> ReadEpisodeFolder {
-    ReadEpisodeFolder::new(|_| Box::pin(async { Default::default() }))
+    ReadEpisodeFolder::new(|_| Box::pin(async { Ok(Default::default()) }))
 }
 
 pub(crate) fn unreadable_episode_nfo() -> ReadEpisodeNfo {
-    ReadEpisodeNfo::new(|_| Box::pin(async { Err(UnreadableNfo::default()) }))
+    ReadEpisodeNfo::new(|_| Box::pin(async { Err(UnreadableNfo::default().into()) }))
 }
 
 pub(crate) fn empty_movie_folder() -> ReadMovieFolder {
-    ReadMovieFolder::new(|_| Box::pin(async { Default::default() }))
+    ReadMovieFolder::new(|_| Box::pin(async { Ok(Default::default()) }))
 }
 
 pub(crate) fn unreadable_movie_nfo() -> ReadMovieNfo {
-    ReadMovieNfo::new(|_| Box::pin(async { Err(UnreadableNfo::default()) }))
+    ReadMovieNfo::new(|_| Box::pin(async { Err(UnreadableNfo::default().into()) }))
 }
 
 pub(crate) fn empty_show_folder() -> ReadShowFolder {
-    ReadShowFolder::new(|_, _| Box::pin(async { Default::default() }))
+    ReadShowFolder::new(|_, _| Box::pin(async { Ok(Default::default()) }))
 }
 
 pub(crate) fn unreadable_show_nfo() -> ReadShowNfo {
-    ReadShowNfo::new(|_| Box::pin(async { Err(UnreadableNfo::default()) }))
+    ReadShowNfo::new(|_| Box::pin(async { Err(UnreadableNfo::default().into()) }))
+}
+
+fn readable<'a>(
+    unreadable_files: &HashSet<String>,
+    files: impl IntoIterator<Item = &'a FoundFile>,
+) -> Result<(), UnreadableFile> {
+    match files
+        .into_iter()
+        .find(|x| unreadable_files.contains(&x.path))
+    {
+        Some(file) => Err(UnreadableFile::new(file.path.clone())),
+        None => Ok(()),
+    }
+}
+
+fn random_id() -> i64 {
+    Uuid::new_v4().as_u64_pair().0 as i64
 }
 
 pub(crate) fn movie(db_context: &DbContext, title: &str) -> <Movie as Model>::Create {
     db_context
         .movies()
         .create()
-        .tmdb_id(Uuid::new_v4().as_u64_pair().0 as i64)
-        .radarr_id(1)
+        .tmdb_id(TmdbId(random_id()))
+        .radarr_id(RadarrId(random_id()))
         .title(title)
         .year(2016)
         .genres(Vec::<String>::new())
         .directors(Vec::<String>::new())
-        .visible(true)
+        .in_library(true)
 }
 
 pub(crate) fn show(db_context: &DbContext, title: &str) -> <Show as Model>::Create {
-    let tvdb_id = Uuid::new_v4().as_u64_pair().0 as i64;
     db_context
         .shows()
         .create()
-        .tvdb_id(tvdb_id)
-        .sonarr_id(tvdb_id)
+        .tvdb_id(TvdbId(random_id()))
+        .sonarr_id(SonarrId(random_id()))
         .title(title)
         .year(Some(2022))
         .genres(Vec::<String>::new())
@@ -204,10 +240,10 @@ pub(crate) fn episode(db_context: &DbContext, season_id: Uuid) -> <Episode as Mo
         .episodes()
         .create()
         .season_id(season_id)
-        .tvdb_id(Uuid::new_v4().as_u64_pair().0 as i64)
+        .tvdb_id(TvdbId(random_id()))
         .number(1)
         .title("Good News About Hell")
-        .visible(true)
+        .in_library(true)
 }
 
 pub(crate) const MOVIE_FILE: &str = "/media/Movies/Arrival (2016)/Arrival (2016) Bluray-1080p.mkv";
@@ -216,26 +252,27 @@ pub(crate) fn at(timestamp: &str) -> Timestamp {
     timestamp.parse().expect("the timestamp is valid")
 }
 
-pub(crate) fn arrival(file: Option<&str>) -> RadarrMovie {
-    RadarrMovie {
-        radarr_id: 42,
-        tmdb_id: 329_865,
+pub(crate) fn arrival(file: Option<&str>) -> SourceMovie {
+    SourceMovie {
+        radarr_id: RadarrId(42),
+        tmdb_id: TmdbId(329_865),
         title: "Arrival".to_owned(),
         year: 2016,
         overview: Some("An expert linguist is recruited by the military.".to_owned()),
         genres: vec!["Drama".to_owned(), "Science Fiction".to_owned()],
-        movie_file: file.map(|path| RadarrMovieFile {
+        media_file: file.map(|path| SourceMediaFile {
             path: path.to_owned(),
-            date_added: at("2026-10-29T10:00:00Z"),
+            added_at: at("2026-10-29T10:00:00Z"),
         }),
     }
 }
 
 #[derive(Default)]
 pub(crate) struct MovieSources {
-    pub(crate) radarr_movie: Option<RadarrMovie>,
+    pub(crate) movie: Option<SourceMovie>,
     pub(crate) radarr_is_down: bool,
     pub(crate) files_on_disk: HashMap<String, FoundMediaFile>,
+    pub(crate) unreadable_files: HashSet<String>,
     pub(crate) subtitle_files: Vec<FoundSubtitleFile>,
     pub(crate) folder: MovieFolder,
     pub(crate) nfo: Option<MovieNfo>,
@@ -259,7 +296,7 @@ impl MovieLibrary {
             source_health: SourceHealth::default(),
             sources: Arc::default(),
         };
-        library.sources().radarr_movie = Some(arrival(Some(MOVIE_FILE)));
+        library.sources().movie = Some(arrival(Some(MOVIE_FILE)));
         library.put_file(MOVIE_FILE, 1_000, "2026-10-29T09:00:00Z");
         library
     }
@@ -281,7 +318,12 @@ impl MovieLibrary {
     pub(crate) fn find_media_file(&self) -> FindMediaFile {
         let sources = self.sources.clone();
         FindMediaFile::new(move |path| {
-            let found = sources.lock().unwrap().files_on_disk.get(&path).copied();
+            let sources = sources.lock().unwrap();
+            let found = if sources.unreadable_files.contains(&path) {
+                Err(UnreadableFile::new(path))
+            } else {
+                Ok(sources.files_on_disk.get(&path).copied())
+            };
             Box::pin(async move { found })
         })
     }
@@ -326,20 +368,35 @@ impl MovieLibrary {
                 let movie = if sources.radarr_is_down {
                     Err(RadarrError::caused_by("Radarr is down"))
                 } else {
-                    Ok(sources.radarr_movie.clone())
+                    Ok(sources.movie.clone())
                 };
                 Box::pin(async move { movie })
             }),
             list_subtitle_files: self.list_subtitle_files(),
             prober: self.prober(),
             read_movie_folder: ReadMovieFolder::new(move |_| {
-                let folder = folder.lock().unwrap().folder.clone();
+                let sources = folder.lock().unwrap();
+                let folder = &sources.folder;
+                let folder = readable(
+                    &sources.unreadable_files,
+                    [&folder.poster, &folder.fanart, &folder.clearlogo]
+                        .into_iter()
+                        .flatten(),
+                )
+                .map(|()| folder.clone());
                 Box::pin(async move { folder })
             }),
-            read_movie_nfo: ReadMovieNfo::new(move |_| {
+            read_movie_nfo: ReadMovieNfo::new(move |path| {
                 let mut sources = nfo.lock().unwrap();
                 sources.nfo_reads += 1;
-                let nfo = sources.nfo.clone().ok_or_else(UnreadableNfo::default);
+                let nfo = if sources.unreadable_files.contains(&path) {
+                    Err(UnreadableFile::new(path).into())
+                } else {
+                    sources
+                        .nfo
+                        .clone()
+                        .ok_or_else(|| UnreadableNfo::default().into())
+                };
                 Box::pin(async move { nfo })
             }),
             source_health: self.source_health.clone(),
@@ -347,7 +404,7 @@ impl MovieLibrary {
     }
 
     pub(crate) async fn sync_movie(&self) -> Result<sync_movie::Output, sync_movie::Error> {
-        sync_movie::call(self.sync_movie_dependencies(), 42).await
+        sync_movie::call(self.sync_movie_dependencies(), RadarrId(42)).await
     }
 }
 
@@ -474,18 +531,18 @@ pub(crate) const S01E02_E03_FILE: &str = "/media/TV/Severance/Season 01/Severanc
 pub(crate) const S02E01_FILE: &str =
     "/media/TV/Severance/Season 02/Severance - S02E01 - Hello, Ms. Cobel WEBDL-1080p.mkv";
 
-pub(crate) fn sonarr_episode_file(path: &str, date_added: &str) -> Option<SonarrEpisodeFile> {
-    Some(SonarrEpisodeFile {
+pub(crate) fn source_media_file(path: &str, added_at: &str) -> Option<SourceMediaFile> {
+    Some(SourceMediaFile {
         path: path.to_owned(),
-        date_added: at(date_added),
+        added_at: at(added_at),
     })
 }
 
-pub(crate) fn severance() -> SonarrShow {
-    SonarrShow {
-        listing: SonarrShowListing {
-            sonarr_id: 7,
-            tvdb_id: 371_980,
+pub(crate) fn severance() -> SourceShow {
+    SourceShow {
+        listing: SourceShowListing {
+            sonarr_id: SonarrId(7),
+            tvdb_id: TvdbId(371_980),
             path: SHOW_FOLDER.to_owned(),
             title: "Severance".to_owned(),
             year: Some(2022),
@@ -497,65 +554,65 @@ pub(crate) fn severance() -> SonarrShow {
             overview: Some("Mark leads a team of office workers.".to_owned()),
         },
         episodes: vec![
-            SonarrEpisode {
-                sonarr_id: 1001,
-                tvdb_id: 9_094_718,
+            SourceEpisode {
+                sonarr_id: SonarrId(1001),
+                tvdb_id: TvdbId(9_094_718),
                 season_number: 0,
                 episode_number: 1,
                 title: "Inside the Episode".to_owned(),
                 air_date: Some(date(2022, 2, 18)),
                 overview: Some("Ben Stiller and the cast talk about the first season.".to_owned()),
-                episode_file: sonarr_episode_file(SPECIAL_FILE, "2022-03-04T11:02:19Z"),
+                media_file: source_media_file(SPECIAL_FILE, "2022-03-04T11:02:19Z"),
             },
-            SonarrEpisode {
-                sonarr_id: 1011,
-                tvdb_id: 8_486_245,
+            SourceEpisode {
+                sonarr_id: SonarrId(1011),
+                tvdb_id: TvdbId(8_486_245),
                 season_number: 1,
                 episode_number: 1,
                 title: "Good News About Hell".to_owned(),
                 air_date: Some(date(2022, 2, 18)),
                 overview: Some("Mark's memories are divided.".to_owned()),
-                episode_file: sonarr_episode_file(S01E01_FILE, "2022-03-01T09:30:00Z"),
+                media_file: source_media_file(S01E01_FILE, "2022-03-01T09:30:00Z"),
             },
-            SonarrEpisode {
-                sonarr_id: 1012,
-                tvdb_id: 8_786_934,
+            SourceEpisode {
+                sonarr_id: SonarrId(1012),
+                tvdb_id: TvdbId(8_786_934),
                 season_number: 1,
                 episode_number: 2,
                 title: "Half Loop".to_owned(),
                 air_date: Some(date(2022, 2, 18)),
                 overview: Some("Mark takes Helly on a tour of the office.".to_owned()),
-                episode_file: sonarr_episode_file(S01E02_E03_FILE, "2022-03-01T09:31:00Z"),
+                media_file: source_media_file(S01E02_E03_FILE, "2022-03-01T09:31:00Z"),
             },
-            SonarrEpisode {
-                sonarr_id: 1013,
-                tvdb_id: 8_786_935,
+            SourceEpisode {
+                sonarr_id: SonarrId(1013),
+                tvdb_id: TvdbId(8_786_935),
                 season_number: 1,
                 episode_number: 3,
                 title: "In Perpetuity".to_owned(),
                 air_date: Some(date(2022, 2, 25)),
                 overview: Some("Helly takes a tour of the Perpetuity Wing.".to_owned()),
-                episode_file: sonarr_episode_file(S01E02_E03_FILE, "2022-03-01T09:31:00Z"),
+                media_file: source_media_file(S01E02_E03_FILE, "2022-03-01T09:31:00Z"),
             },
-            SonarrEpisode {
-                sonarr_id: 1021,
-                tvdb_id: 10_535_541,
+            SourceEpisode {
+                sonarr_id: SonarrId(1021),
+                tvdb_id: TvdbId(10_535_541),
                 season_number: 2,
                 episode_number: 1,
                 title: "Hello, Ms. Cobel".to_owned(),
                 air_date: Some(date(2025, 1, 17)),
                 overview: Some("Mark leads his team on a search for answers.".to_owned()),
-                episode_file: sonarr_episode_file(S02E01_FILE, "2025-01-17T03:12:44Z"),
+                media_file: source_media_file(S02E01_FILE, "2025-01-17T03:12:44Z"),
             },
-            SonarrEpisode {
-                sonarr_id: 1022,
-                tvdb_id: 10_535_542,
+            SourceEpisode {
+                sonarr_id: SonarrId(1022),
+                tvdb_id: TvdbId(10_535_542),
                 season_number: 2,
                 episode_number: 2,
                 title: "Goodbye, Mrs. Selvig".to_owned(),
                 air_date: Some(date(2025, 1, 24)),
                 overview: Some("Helly and Mark go looking for Ms. Casey.".to_owned()),
-                episode_file: None,
+                media_file: None,
             },
         ],
     }
@@ -563,8 +620,9 @@ pub(crate) fn severance() -> SonarrShow {
 
 #[derive(Default)]
 pub(crate) struct ShowSources {
-    pub(crate) sonarr_show: Option<SonarrShow>,
+    pub(crate) show: Option<SourceShow>,
     pub(crate) files_on_disk: HashSet<String>,
+    pub(crate) unreadable_files: HashSet<String>,
     pub(crate) folder: ShowFolder,
     pub(crate) nfo: Option<ShowNfo>,
     pub(crate) nfo_reads: usize,
@@ -587,7 +645,7 @@ impl ShowLibrary {
         };
         {
             let mut sources = library.sources();
-            sources.sonarr_show = Some(severance());
+            sources.show = Some(severance());
             sources.files_on_disk = [SPECIAL_FILE, S01E01_FILE, S01E02_E03_FILE, S02E01_FILE]
                 .map(str::to_owned)
                 .into();
@@ -609,51 +667,75 @@ impl ShowLibrary {
         sync_show::Dependencies {
             db_context: self.db_context.clone(),
             find_media_file: FindMediaFile::new(move |path| {
-                let found =
-                    disk.lock()
-                        .unwrap()
+                let sources = disk.lock().unwrap();
+                let found = if sources.unreadable_files.contains(&path) {
+                    Err(UnreadableFile::new(path))
+                } else {
+                    Ok(sources
                         .files_on_disk
                         .contains(&path)
                         .then(|| FoundMediaFile {
                             size: 1_000,
                             modified_at: at("2026-10-29T09:00:00Z"),
-                        });
+                        }))
+                };
                 Box::pin(async move { found })
             }),
             get_sonarr_show: GetSonarrShow::new(move |_| {
-                let show = sonarr.lock().unwrap().sonarr_show.clone();
+                let show = sonarr.lock().unwrap().show.clone();
                 Box::pin(async move { Ok(show) })
             }),
             list_subtitle_files: no_subtitle_files(),
             prober: readable_prober(),
             read_episode_folder: ReadEpisodeFolder::new(move |path| {
-                let folder = episode_folders
-                    .lock()
-                    .unwrap()
+                let sources = episode_folders.lock().unwrap();
+                let folder = sources
                     .episode_folders
                     .get(&path)
                     .cloned()
                     .unwrap_or_default();
+                let folder =
+                    readable(&sources.unreadable_files, folder.thumb.iter()).map(|()| folder);
                 Box::pin(async move { folder })
             }),
             read_episode_nfo: ReadEpisodeNfo::new(move |path| {
                 let mut sources = episode_nfos.lock().unwrap();
                 sources.episode_nfo_reads += 1;
-                let roots = sources
-                    .episode_nfos
-                    .get(&path)
-                    .cloned()
-                    .ok_or_else(UnreadableNfo::default);
+                let roots = if sources.unreadable_files.contains(&path) {
+                    Err(UnreadableFile::new(path).into())
+                } else {
+                    sources
+                        .episode_nfos
+                        .get(&path)
+                        .cloned()
+                        .ok_or_else(|| UnreadableNfo::default().into())
+                };
                 Box::pin(async move { roots })
             }),
             read_show_folder: ReadShowFolder::new(move |_, _| {
-                let folder = folder.lock().unwrap().folder.clone();
+                let sources = folder.lock().unwrap();
+                let folder = &sources.folder;
+                let folder = readable(
+                    &sources.unreadable_files,
+                    [&folder.poster, &folder.fanart, &folder.clearlogo]
+                        .into_iter()
+                        .flatten()
+                        .chain(folder.season_posters.iter().map(|(_, x)| x)),
+                )
+                .map(|()| folder.clone());
                 Box::pin(async move { folder })
             }),
-            read_show_nfo: ReadShowNfo::new(move |_| {
+            read_show_nfo: ReadShowNfo::new(move |path| {
                 let mut sources = nfo.lock().unwrap();
                 sources.nfo_reads += 1;
-                let nfo = sources.nfo.clone().ok_or_else(UnreadableNfo::default);
+                let nfo = if sources.unreadable_files.contains(&path) {
+                    Err(UnreadableFile::new(path).into())
+                } else {
+                    sources
+                        .nfo
+                        .clone()
+                        .ok_or_else(|| UnreadableNfo::default().into())
+                };
                 Box::pin(async move { nfo })
             }),
             source_health: SourceHealth::default(),
@@ -661,6 +743,6 @@ impl ShowLibrary {
     }
 
     pub(crate) async fn sync_show(&self) -> Result<sync_show::Output, sync_show::Error> {
-        sync_show::call(self.sync_show_dependencies(), 7).await
+        sync_show::call(self.sync_show_dependencies(), SonarrId(7)).await
     }
 }

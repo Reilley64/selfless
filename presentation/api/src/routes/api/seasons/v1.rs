@@ -102,12 +102,12 @@ mod tests {
             .episodes()
             .create()
             .season_id(season_id)
-            .tvdb_id(Uuid::new_v4().as_u64_pair().0 as i64)
+            .tvdb_id(domain::TvdbId(Uuid::new_v4().as_u64_pair().0 as i64))
             .number(2)
             .title("Half Loop")
             .overview(Some("Mark takes Helly to the break room.".to_owned()))
             .media_file_id(Some(media_file.id))
-            .visible(true)
+            .in_library(true)
             .exec(db_context.executor_mut())
             .await
             .unwrap();
@@ -126,10 +126,10 @@ mod tests {
             .episodes()
             .create()
             .season_id(season_id)
-            .tvdb_id(Uuid::new_v4().as_u64_pair().0 as i64)
+            .tvdb_id(domain::TvdbId(Uuid::new_v4().as_u64_pair().0 as i64))
             .number(3)
             .title("In Perpetuity")
-            .visible(false)
+            .in_library(false)
             .exec(db_context.executor_mut())
             .await
             .unwrap();

@@ -42,13 +42,13 @@ async fn image_requests_are_counted_by_whether_the_cache_held_the_image() {
     let movie = db_context
         .movies()
         .create()
-        .tmdb_id(329865)
-        .radarr_id(42)
+        .tmdb_id(domain::TmdbId(329865))
+        .radarr_id(domain::RadarrId(42))
         .title("Arrival")
         .year(2016)
         .genres(Vec::<String>::new())
         .directors(Vec::<String>::new())
-        .visible(true)
+        .in_library(true)
         .exec(db_context.executor_mut())
         .await
         .unwrap();

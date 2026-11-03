@@ -2,7 +2,9 @@ use crate::Actor;
 use crate::Artwork;
 use crate::MediaFile;
 use crate::MovieMetadata;
+use crate::RadarrId;
 use crate::SyncProblem;
+use crate::TmdbId;
 use jiff::Timestamp;
 use jiff::civil::Date;
 use uuid::Uuid;
@@ -13,9 +15,9 @@ pub struct Movie {
     #[auto]
     pub id: Uuid,
     #[unique]
-    pub tmdb_id: i64,
-    #[index]
-    pub radarr_id: i64,
+    pub tmdb_id: TmdbId,
+    #[unique]
+    pub radarr_id: RadarrId,
     pub title: String,
     pub year: i64,
     pub overview: Option<String>,
@@ -25,7 +27,7 @@ pub struct Movie {
     pub media_file_id: Option<Uuid>,
     #[belongs_to(key = media_file_id, references = id)]
     pub media_file: toasty::Deferred<Option<MediaFile>>,
-    pub visible: bool,
+    pub in_library: bool,
     pub sort_title: Option<String>,
     pub original_title: Option<String>,
     pub runtime_minutes: Option<i64>,
@@ -49,7 +51,7 @@ impl Movie {
     }
 
     pub fn in_library_filter() -> toasty::stmt::Expr<bool> {
-        Self::fields().visible().eq(true)
+        Self::fields().in_library().eq(true)
     }
 
     pub fn metadata(&self) -> MovieMetadata {

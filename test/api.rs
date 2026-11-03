@@ -79,8 +79,8 @@ pub(crate) fn movie(app: &TestApp, title: &str) -> <Movie as Model>::Create {
         .db_context
         .movies()
         .create()
-        .tmdb_id(Uuid::new_v4().as_u64_pair().0 as i64)
-        .radarr_id(42)
+        .tmdb_id(domain::TmdbId(Uuid::new_v4().as_u64_pair().0 as i64))
+        .radarr_id(domain::RadarrId(Uuid::new_v4().as_u64_pair().0 as i64))
         .title(title)
         .year(2016)
         .certification(Some("PG-13".to_owned()))
@@ -90,15 +90,15 @@ pub(crate) fn movie(app: &TestApp, title: &str) -> <Movie as Model>::Create {
             "A linguist works with the military to talk to aliens.".to_owned(),
         ))
         .directors(Vec::<String>::new())
-        .visible(true)
+        .in_library(true)
 }
 
 pub(crate) async fn add_show(app: &TestApp, title: &str, season_numbers: &[i64]) -> Uuid {
     let mut db_context = app.state.db_context.clone();
     let tvdb_id = Uuid::new_v4().as_u64_pair().0 as i64;
     let show = Show::create()
-        .tvdb_id(tvdb_id)
-        .sonarr_id(tvdb_id)
+        .tvdb_id(domain::TvdbId(tvdb_id))
+        .sonarr_id(domain::SonarrId(tvdb_id))
         .title(title)
         .year(Some(2022))
         .certification(Some("TV-MA".to_owned()))
@@ -116,10 +116,10 @@ pub(crate) async fn add_show(app: &TestApp, title: &str, season_numbers: &[i64])
             .unwrap();
         Episode::create()
             .season_id(season.id)
-            .tvdb_id(Uuid::new_v4().as_u64_pair().0 as i64)
+            .tvdb_id(domain::TvdbId(Uuid::new_v4().as_u64_pair().0 as i64))
             .number(1)
             .title("Good News About Hell")
-            .visible(true)
+            .in_library(true)
             .exec(db_context.executor_mut())
             .await
             .unwrap();

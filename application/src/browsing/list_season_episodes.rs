@@ -139,7 +139,7 @@ mod tests {
                 .number(number)
                 .title(title)
                 .overview(Some(format!("The plot of {title}.")))
-                .visible(visible)
+                .in_library(visible)
                 .media_file_id(media_file_id)
                 .exec(db_context.executor_mut())
                 .await
@@ -215,7 +215,7 @@ mod tests {
         let mut db_context = mock_db_context().await;
         let hidden = add_season_of(&mut db_context, 3).await;
         episode(&db_context, hidden)
-            .visible(false)
+            .in_library(false)
             .exec(db_context.executor_mut())
             .await
             .unwrap();

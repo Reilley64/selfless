@@ -6,11 +6,13 @@ use application::ports::CheckSonarrKodiMetadata;
 use application::ports::GetSonarrEpisodes;
 use application::ports::GetSonarrShow;
 use application::ports::ListSonarrShows;
-use application::ports::SonarrEpisode;
-use application::ports::SonarrEpisodeFile;
 use application::ports::SonarrError;
-use application::ports::SonarrShow;
-use application::ports::SonarrShowListing;
+use application::ports::SourceEpisode;
+use application::ports::SourceMediaFile;
+use application::ports::SourceShow;
+use application::ports::SourceShowListing;
+use domain::SonarrId;
+use domain::TvdbId;
 use jiff::Timestamp;
 use jiff::civil::Date;
 use reqwest::StatusCode;
@@ -34,56 +36,53 @@ impl SonarrSettings {
         setting(&self.webhook_password, "SONARR__WEBHOOK_PASSWORD")
     }
 
-    pub fn get_show(&self) -> Result<GetSonarrShow, MissingSetting> {
-        let api = self.api()?;
-        Ok(GetSonarrShow::new(move |sonarr_id| {
-            let api = api.clone();
-            Box::pin(async move { show(&api, sonarr_id).await.map_err(SonarrError::caused_by) })
-        }))
-    }
-
-    pub fn list_shows(&self) -> Result<ListSonarrShows, MissingSetting> {
-        let api = self.api()?;
-        Ok(ListSonarrShows::new(move || {
-            let api = api.clone();
-            Box::pin(async move {
-                Ok(api
-                    .get::<Vec<Series>>("/api/v3/series", &["series"], None)
-                    .await
-                    .map_err(SonarrError::caused_by)?
-                    .into_iter()
-                    .map(SonarrShowListing::from)
-                    .collect())
-            })
-        }))
-    }
-
-    pub fn get_episodes(&self) -> Result<GetSonarrEpisodes, MissingSetting> {
-        let api = self.api()?;
-        Ok(GetSonarrEpisodes::new(move |sonarr_id| {
-            let api = api.clone();
-            Box::pin(async move {
-                episodes(&api, sonarr_id)
-                    .await
-                    .map_err(SonarrError::caused_by)
-            })
-        }))
-    }
-
-    pub fn check_kodi_metadata(&self) -> Result<CheckSonarrKodiMetadata, MissingSetting> {
-        let api = self.api()?;
-        Ok(CheckSonarrKodiMetadata::new(move || {
-            let api = api.clone();
-            Box::pin(async move { api.kodi_metadata().await.map_err(SonarrError::caused_by) })
-        }))
-    }
-
-    fn api(&self) -> Result<Api, MissingSetting> {
+    pub fn api(&self, client: reqwest::Client) -> Result<Api, MissingSetting> {
         Ok(Api::new(
+            client,
             setting(&self.url, "SONARR__URL")?,
             setting(&self.api_key, "SONARR__API_KEY")?,
         ))
     }
+}
+
+pub fn get_show(api: Api) -> GetSonarrShow {
+    GetSonarrShow::new(move |sonarr_id| {
+        let api = api.clone();
+        Box::pin(async move { show(&api, sonarr_id).await.map_err(SonarrError::caused_by) })
+    })
+}
+
+pub fn list_shows(api: Api) -> ListSonarrShows {
+    ListSonarrShows::new(move || {
+        let api = api.clone();
+        Box::pin(async move {
+            Ok(api
+                .get::<Vec<Series>>("/api/v3/series", &["series"], None)
+                .await
+                .map_err(SonarrError::caused_by)?
+                .into_iter()
+                .map(SourceShowListing::from)
+                .collect())
+        })
+    })
+}
+
+pub fn get_episodes(api: Api) -> GetSonarrEpisodes {
+    GetSonarrEpisodes::new(move |sonarr_id| {
+        let api = api.clone();
+        Box::pin(async move {
+            episodes(&api, sonarr_id)
+                .await
+                .map_err(SonarrError::caused_by)
+        })
+    })
+}
+
+pub fn check_kodi_metadata(api: Api) -> CheckSonarrKodiMetadata {
+    CheckSonarrKodiMetadata::new(move || {
+        let api = api.clone();
+        Box::pin(async move { api.kodi_metadata().await.map_err(SonarrError::caused_by) })
+    })
 }
 
 #[derive(Deserialize)]
@@ -119,11 +118,11 @@ struct EpisodeFile {
     date_added: Timestamp,
 }
 
-async fn show(api: &Api, sonarr_id: i64) -> Result<Option<SonarrShow>, reqwest::Error> {
+async fn show(api: &Api, sonarr_id: SonarrId) -> Result<Option<SourceShow>, reqwest::Error> {
     let series = match api
         .get::<Series>(
             "/api/v3/series/{id}",
-            &["series", &sonarr_id.to_string()],
+            &["series", &sonarr_id.0.to_string()],
             None,
         )
         .await
@@ -131,14 +130,14 @@ async fn show(api: &Api, sonarr_id: i64) -> Result<Option<SonarrShow>, reqwest::
         Err(error) if error.status() == Some(StatusCode::NOT_FOUND) => return Ok(None),
         series => series?,
     };
-    Ok(Some(SonarrShow {
+    Ok(Some(SourceShow {
         listing: series.into(),
         episodes: episodes(api, sonarr_id).await?,
     }))
 }
 
-async fn episodes(api: &Api, sonarr_id: i64) -> Result<Vec<SonarrEpisode>, reqwest::Error> {
-    let id = sonarr_id.to_string();
+async fn episodes(api: &Api, sonarr_id: SonarrId) -> Result<Vec<SourceEpisode>, reqwest::Error> {
+    let id = sonarr_id.0.to_string();
     let query = Some(("seriesId", id.as_str()));
     let episodes = api
         .get::<Vec<Episode>>("/api/v3/episode", &["episode"], query)
@@ -151,27 +150,27 @@ async fn episodes(api: &Api, sonarr_id: i64) -> Result<Vec<SonarrEpisode>, reqwe
         .collect::<HashMap<_, _>>();
     Ok(episodes
         .into_iter()
-        .map(|x| SonarrEpisode {
-            sonarr_id: x.id,
-            tvdb_id: x.tvdb_id,
+        .map(|x| SourceEpisode {
+            sonarr_id: SonarrId(x.id),
+            tvdb_id: TvdbId(x.tvdb_id),
             season_number: x.season_number,
             episode_number: x.episode_number,
             title: x.title,
             air_date: x.air_date,
             overview: x.overview,
-            episode_file: files.get(&x.episode_file_id).map(|x| SonarrEpisodeFile {
+            media_file: files.get(&x.episode_file_id).map(|x| SourceMediaFile {
                 path: x.path.clone(),
-                date_added: x.date_added,
+                added_at: x.date_added,
             }),
         })
         .collect())
 }
 
-impl From<Series> for SonarrShowListing {
+impl From<Series> for SourceShowListing {
     fn from(series: Series) -> Self {
-        SonarrShowListing {
-            sonarr_id: series.id,
-            tvdb_id: series.tvdb_id,
+        SourceShowListing {
+            sonarr_id: SonarrId(series.id),
+            tvdb_id: TvdbId(series.tvdb_id),
             path: series.path,
             title: series.title,
             year: (series.year != 0).then_some(series.year),
@@ -184,8 +183,14 @@ impl From<Series> for SonarrShowListing {
 #[cfg(test)]
 mod tests {
     use super::SonarrSettings;
+    use super::get_episodes;
+    use super::get_show;
+    use super::list_shows;
+    use domain::SonarrId;
+    use domain::TvdbId;
     use jiff::Timestamp;
     use jiff::civil::date;
+    use servarr::Api;
     use wiremock::Mock;
     use wiremock::MockServer;
     use wiremock::ResponseTemplate;
@@ -225,12 +230,14 @@ mod tests {
                 .await;
         }
 
-        fn settings(&self) -> SonarrSettings {
+        fn api(&self) -> Api {
             SonarrSettings {
                 url: Some(self.0.uri().parse().unwrap()),
                 api_key: Some("sonarr-api-key".to_owned()),
                 webhook_password: None,
             }
+            .api(servarr::client().unwrap())
+            .unwrap()
         }
     }
 
@@ -239,17 +246,14 @@ mod tests {
         let sonarr = Sonarr::start().await;
         sonarr.serve_show(SERIES).await;
 
-        let show = sonarr
-            .settings()
-            .get_show()
-            .unwrap()
-            .call(7)
+        let show = get_show(sonarr.api())
+            .call(SonarrId(7))
             .await
             .unwrap()
             .unwrap();
 
-        assert_eq!(show.listing.sonarr_id, 7);
-        assert_eq!(show.listing.tvdb_id, 371980);
+        assert_eq!(show.listing.sonarr_id, SonarrId(7));
+        assert_eq!(show.listing.tvdb_id, TvdbId(371980));
         assert_eq!(show.listing.path, "/mnt/media/TV/Severance");
         assert_eq!(show.listing.title, "Severance");
         assert_eq!(show.listing.year, Some(2022));
@@ -269,11 +273,11 @@ mod tests {
             show.episodes
                 .iter()
                 .map(|x| (
-                    x.sonarr_id,
+                    x.sonarr_id.0,
                     x.season_number,
                     x.episode_number,
                     x.title.as_str(),
-                    x.episode_file.as_ref().map(|x| x.path.as_str()),
+                    x.media_file.as_ref().map(|x| x.path.as_str()),
                 ))
                 .collect::<Vec<_>>(),
             [
@@ -311,7 +315,7 @@ mod tests {
             ]
         );
         let first = &show.episodes[1];
-        assert_eq!(first.tvdb_id, 8486245);
+        assert_eq!(first.tvdb_id, TvdbId(8486245));
         assert_eq!(first.air_date, Some(date(2022, 2, 18)));
         assert_eq!(
             first.overview.as_deref(),
@@ -321,7 +325,7 @@ mod tests {
             )
         );
         assert_eq!(
-            first.episode_file.as_ref().unwrap().date_added,
+            first.media_file.as_ref().unwrap().added_at,
             "2022-03-01T09:30:00Z".parse::<Timestamp>().unwrap()
         );
         let unaired = &show.episodes[6];
@@ -341,7 +345,7 @@ mod tests {
             )
             .await;
 
-        let show = sonarr.settings().get_show().unwrap().call(7).await.unwrap();
+        let show = get_show(sonarr.api()).call(SonarrId(7)).await.unwrap();
 
         assert!(show.is_none());
     }
@@ -353,11 +357,8 @@ mod tests {
             .serve_show(&SERIES.replace(r#""year": 2022"#, r#""year": 0"#))
             .await;
 
-        let show = sonarr
-            .settings()
-            .get_show()
-            .unwrap()
-            .call(7)
+        let show = get_show(sonarr.api())
+            .call(SonarrId(7))
             .await
             .unwrap()
             .unwrap();
@@ -377,20 +378,14 @@ mod tests {
             )
             .await;
 
-        let shows = sonarr
-            .settings()
-            .list_shows()
-            .unwrap()
-            .call()
-            .await
-            .unwrap();
+        let shows = list_shows(sonarr.api()).call().await.unwrap();
 
         assert_eq!(
             shows
                 .iter()
                 .map(|x| (
-                    x.sonarr_id,
-                    x.tvdb_id,
+                    x.sonarr_id.0,
+                    x.tvdb_id.0,
                     x.title.as_str(),
                     x.path.as_str(),
                     x.year
@@ -429,21 +424,15 @@ mod tests {
             )
             .await;
 
-        let episodes = sonarr
-            .settings()
-            .get_episodes()
-            .unwrap()
-            .call(8)
-            .await
-            .unwrap();
+        let episodes = get_episodes(sonarr.api()).call(SonarrId(8)).await.unwrap();
 
         assert_eq!(
             episodes
                 .iter()
                 .map(|x| (
-                    x.sonarr_id,
+                    x.sonarr_id.0,
                     x.title.as_str(),
-                    x.episode_file.as_ref().map(|x| x.path.as_str()),
+                    x.media_file.as_ref().map(|x| x.path.as_str()),
                 ))
                 .collect::<Vec<_>>(),
             [

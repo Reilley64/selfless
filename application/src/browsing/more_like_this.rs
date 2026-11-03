@@ -42,7 +42,7 @@ pub(crate) async fn more_like_this(
     };
     let movies = db_context
         .movies()
-        .filter(Movie::fields().visible().eq(true).and(movie_genre))
+        .filter(Movie::fields().in_library().eq(true).and(movie_genre))
         .exec(db_context.executor_mut())
         .await?;
     let shows = db_context

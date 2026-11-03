@@ -29,7 +29,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, movie_id: Uuid) -> Resu
             domain::Movie::fields()
                 .id()
                 .eq(movie_id)
-                .and(domain::Movie::fields().visible().eq(true)),
+                .and(domain::Movie::fields().in_library().eq(true)),
         )
         .first()
         .exec(db_context.executor_mut())
@@ -224,7 +224,7 @@ mod tests {
             .unwrap();
         let season_id = add_season(db_context, show.id, 1).await;
         episode(db_context, season_id)
-            .visible(visible)
+            .in_library(visible)
             .exec(db_context.executor_mut())
             .await
             .unwrap();
@@ -265,7 +265,7 @@ mod tests {
             movie(&db_context, title)
                 .sort_title(sort_title.map(str::to_owned))
                 .genres(names(genres))
-                .visible(visible)
+                .in_library(visible)
                 .exec(db_context.executor_mut())
                 .await
                 .unwrap();
@@ -362,7 +362,7 @@ mod tests {
     async fn an_unknown_or_hidden_movie_is_not_found() {
         let mut db_context = mock_db_context().await;
         let hidden = movie(&db_context, "Arrival")
-            .visible(false)
+            .in_library(false)
             .exec(db_context.executor_mut())
             .await
             .unwrap();

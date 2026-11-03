@@ -1,4 +1,5 @@
 use crate::Movie;
+use crate::Owner;
 use crate::Show;
 use uuid::Uuid;
 
@@ -21,6 +22,13 @@ pub struct Actor {
 }
 
 impl Actor {
+    pub fn owner_filter(owner: Owner) -> toasty::stmt::Expr<bool> {
+        match owner {
+            Owner::Movie(id) => Self::fields().movie_id().eq(id),
+            Owner::Show(id) => Self::fields().show_id().eq(id),
+        }
+    }
+
     pub fn listing_order(&self) -> Option<i64> {
         self.order
     }

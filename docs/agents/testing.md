@@ -5,7 +5,7 @@
 ## Fixtures
 
 - `test/fixtures/src/lib.rs` lists the shared fakes and helpers: the fake clock and mailer, `TestServer` and `Browser` for HTTP, `TestDatabase` for PostgreSQL, `Logs`, `ScriptedSmtpServer` and `set_default_subscriber`.
-- `TestApp` runs on the mocked database. Its `AcquireLock` holds nothing, and its `ExportTelemetry` always fails. A relay test that needs a 200 replaces `app.state.export_telemetry` with its own port.
+- `TestApp` runs on the mocked database. Its `AcquireLock` holds nothing, its `TryAcquireLock` always succeeds, and its `ExportTelemetry` always fails. A relay test that needs a 200 replaces `app.state.export_telemetry` with its own port.
 - The glue files are `test/application.rs`, `api.rs`, `admin.rs`, `persistence.rs`, `selfless.rs` and `webhooks.rs`. A helper that one crate needs goes in that crate's glue file. It goes in `test/fixtures` only when several crates need it. `test/application.rs` has `RecordingLock`, which records the lock keys a use case asks for, and mailers that fail or refuse.
 - `test/selfless.rs` starts the server for root tests. It also has the stub Radarr and Sonarr servers, a temporary media folder, `fixture()`, `send_webhook` and `eventually`.
 - Data fixtures, such as Radarr and Sonarr API responses, webhook bodies, NFO files and ffprobe output, live in `test/fixtures/radarr/`, `sonarr/` and `ffprobe/`.

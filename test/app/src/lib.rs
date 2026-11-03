@@ -37,6 +37,7 @@ use application::ports::ResizeImageError;
 use application::ports::SaveCachedImage;
 use application::ports::SendEmail;
 use application::ports::SonarrError;
+use application::ports::TryAcquireLock;
 use application::ports::UnreadableNfo;
 use application::ports::UnreadableWebhook;
 use application::ports::persistence;
@@ -86,7 +87,7 @@ impl TestApp {
             export_telemetry: ExportTelemetry::new(|_, _| {
                 Box::pin(async { Err(ExportTelemetryError::default()) })
             }),
-            find_media_file: FindMediaFile::new(|_| Box::pin(async { None })),
+            find_media_file: FindMediaFile::new(|_| Box::pin(async { Ok(None) })),
             get_radarr_movie: GetRadarrMovie::new(|_| {
                 Box::pin(async { Err(RadarrError::default()) })
             }),
@@ -108,17 +109,23 @@ impl TestApp {
                 Box::pin(async { Err(ProbeError::default()) })
             })),
             read_cached_image: ReadCachedImage::new(|_| Box::pin(async { Ok(None) })),
-            read_episode_folder: ReadEpisodeFolder::new(|_| Box::pin(async { Default::default() })),
-            read_episode_nfo: ReadEpisodeNfo::new(|_| {
-                Box::pin(async { Err(UnreadableNfo::default()) })
+            read_episode_folder: ReadEpisodeFolder::new(|_| {
+                Box::pin(async { Ok(Default::default()) })
             }),
-            read_movie_folder: ReadMovieFolder::new(|_| Box::pin(async { Default::default() })),
+            read_episode_nfo: ReadEpisodeNfo::new(|_| {
+                Box::pin(async { Err(UnreadableNfo::default().into()) })
+            }),
+            read_movie_folder: ReadMovieFolder::new(|_| Box::pin(async { Ok(Default::default()) })),
             read_movie_nfo: ReadMovieNfo::new(|_| {
-                Box::pin(async { Err(UnreadableNfo::default()) })
+                Box::pin(async { Err(UnreadableNfo::default().into()) })
             }),
             read_radarr_webhook: ReadRadarrWebhook::new(|_| Err(UnreadableWebhook::default())),
-            read_show_folder: ReadShowFolder::new(|_, _| Box::pin(async { Default::default() })),
-            read_show_nfo: ReadShowNfo::new(|_| Box::pin(async { Err(UnreadableNfo::default()) })),
+            read_show_folder: ReadShowFolder::new(|_, _| {
+                Box::pin(async { Ok(Default::default()) })
+            }),
+            read_show_nfo: ReadShowNfo::new(|_| {
+                Box::pin(async { Err(UnreadableNfo::default().into()) })
+            }),
             read_sonarr_webhook: ReadSonarrWebhook::new(|_| Err(UnreadableWebhook::default())),
             read_webhook_event_type: ReadWebhookEventType::new(|_| None),
             reconciles: Reconciles::default(),
@@ -128,6 +135,7 @@ impl TestApp {
             save_cached_image: SaveCachedImage::new(|_, _| Box::pin(async { Ok(()) })),
             send_email: SendEmail::new(mailer.sender()),
             source_health: SourceHealth::default(),
+            try_acquire_lock: TryAcquireLock::new(|_| Box::pin(async { Some(LockGuard::new(())) })),
             url_signer: UrlSigner::new(b"a household secret"),
             webhook_passwords: WebhookPasswords::default(),
         };

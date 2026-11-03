@@ -3,35 +3,42 @@ mod subtitle_files;
 pub use subtitle_files::list_subtitle_files;
 
 use application::ports::EpisodeFolder;
-use application::ports::EpisodeNfo;
 use application::ports::FindMediaFile;
 use application::ports::FoundFile;
 use application::ports::FoundMediaFile;
 use application::ports::MovieFolder;
-use application::ports::MovieNfo;
-use application::ports::NfoActor;
 use application::ports::ReadEpisodeFolder;
 use application::ports::ReadEpisodeNfo;
 use application::ports::ReadMovieFolder;
 use application::ports::ReadMovieNfo;
+use application::ports::ReadNfoError;
 use application::ports::ReadShowFolder;
 use application::ports::ReadShowNfo;
 use application::ports::ShowFolder;
-use application::ports::ShowNfo;
+use application::ports::UnreadableFile;
 use application::ports::UnreadableNfo;
+use domain::EpisodeNfo;
+use domain::MovieNfo;
+use domain::NfoActor;
+use domain::Season;
+use domain::ShowNfo;
+use domain::SonarrId;
 use jiff::Timestamp;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
+use std::io::ErrorKind;
 use std::path::Path;
 
 pub fn find_media_file() -> FindMediaFile {
     FindMediaFile::new(|path| {
         Box::pin(async move {
-            let (size, modified_at) = stat(Path::new(&path)).await?;
-            Some(FoundMediaFile {
-                size: i64::try_from(size).ok()?,
+            let Some((size, modified_at)) = stat(Path::new(&path)).await? else {
+                return Ok(None);
+            };
+            Ok(Some(FoundMediaFile {
+                size: i64::try_from(size).map_err(|x| UnreadableFile::caused_by(path, x))?,
                 modified_at,
-            })
+            }))
         })
     })
 }
@@ -41,34 +48,42 @@ pub fn read_movie_folder() -> ReadMovieFolder {
         Box::pin(async move {
             let media_file = Path::new(&media_file_path);
             let folder = media_file.parent().unwrap_or(Path::new(""));
-            MovieFolder {
-                nfo: found(&media_file.with_extension("nfo")).await,
-                poster: found(&folder.join("poster.jpg")).await,
-                fanart: found(&folder.join("fanart.jpg")).await,
-                clearlogo: found(&folder.join("clearlogo.png")).await,
-            }
+            Ok(MovieFolder {
+                nfo: found(&media_file.with_extension("nfo")).await?,
+                poster: found(&folder.join("poster.jpg")).await?,
+                fanart: found(&folder.join("fanart.jpg")).await?,
+                clearlogo: found(&folder.join("clearlogo.png")).await?,
+            })
         })
     })
 }
 
-async fn found(path: &Path) -> Option<FoundFile> {
-    let (_, modified_at) = stat(path).await?;
-    Some(FoundFile {
-        path: path.to_str()?.to_owned(),
+async fn found(path: &Path) -> Result<Option<FoundFile>, UnreadableFile> {
+    Ok(stat(path).await?.map(|(_, modified_at)| FoundFile {
+        path: path.to_string_lossy().into_owned(),
         modified_at,
-    })
+    }))
 }
 
-async fn stat(path: &Path) -> Option<(u64, Timestamp)> {
-    let metadata = tokio::fs::metadata(path)
-        .await
-        .ok()
-        .filter(|x| x.is_file())?;
-    let modified_at = Timestamp::try_from(metadata.modified().ok()?).ok()?;
-    Some((
-        metadata.len(),
-        Timestamp::from_microsecond(modified_at.as_microsecond()).ok()?,
-    ))
+async fn stat(path: &Path) -> Result<Option<(u64, Timestamp)>, UnreadableFile> {
+    let unreadable = |error: Box<dyn std::error::Error + Send + Sync>| {
+        UnreadableFile::caused_by(path.to_string_lossy().into_owned(), error)
+    };
+    let metadata = match tokio::fs::metadata(path).await {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(unreadable(error.into())),
+    };
+    if !metadata.is_file() {
+        return Ok(None);
+    }
+    let modified_at = metadata
+        .modified()
+        .map_err(|x| unreadable(x.into()))
+        .and_then(|x| Timestamp::try_from(x).map_err(|x| unreadable(x.into())))?;
+    let modified_at = Timestamp::from_microsecond(modified_at.as_microsecond())
+        .map_err(|x| unreadable(x.into()))?;
+    Ok(Some((metadata.len(), modified_at)))
 }
 
 pub fn read_show_folder() -> ReadShowFolder {
@@ -77,21 +92,22 @@ pub fn read_show_folder() -> ReadShowFolder {
             let folder = Path::new(&show_path);
             let mut season_posters = Vec::new();
             for number in season_numbers {
-                let name = match number {
-                    0 => "season-specials-poster.jpg".to_owned(),
-                    number => format!("season{number:02}-poster.jpg"),
+                let name = if Season::is_specials(number) {
+                    "season-specials-poster.jpg".to_owned()
+                } else {
+                    format!("season{number:02}-poster.jpg")
                 };
-                if let Some(file) = found(&folder.join(name)).await {
+                if let Some(file) = found(&folder.join(name)).await? {
                     season_posters.push((number, file));
                 }
             }
-            ShowFolder {
-                nfo: found(&folder.join("tvshow.nfo")).await,
-                poster: found(&folder.join("poster.jpg")).await,
-                fanart: found(&folder.join("fanart.jpg")).await,
-                clearlogo: found(&folder.join("clearlogo.png")).await,
+            Ok(ShowFolder {
+                nfo: found(&folder.join("tvshow.nfo")).await?,
+                poster: found(&folder.join("poster.jpg")).await?,
+                fanart: found(&folder.join("fanart.jpg")).await?,
+                clearlogo: found(&folder.join("clearlogo.png")).await?,
                 season_posters,
-            }
+            })
         })
     })
 }
@@ -101,10 +117,10 @@ pub fn read_episode_folder() -> ReadEpisodeFolder {
         Box::pin(async move {
             let media_file = Path::new(&media_file_path);
             let stem = media_file.file_stem().unwrap_or_default().to_string_lossy();
-            EpisodeFolder {
-                nfo: found(&media_file.with_extension("nfo")).await,
-                thumb: found(&media_file.with_file_name(format!("{stem}-thumb.jpg"))).await,
-            }
+            Ok(EpisodeFolder {
+                nfo: found(&media_file.with_extension("nfo")).await?,
+                thumb: found(&media_file.with_file_name(format!("{stem}-thumb.jpg"))).await?,
+            })
         })
     })
 }
@@ -140,12 +156,12 @@ pub fn read_episode_nfo() -> ReadEpisodeNfo {
     })
 }
 
-async fn read_nfo<T: DeserializeOwned>(path: &str) -> Result<T, UnreadableNfo> {
+async fn read_nfo<T: DeserializeOwned>(path: &str) -> Result<T, ReadNfoError> {
     let bytes = tokio::fs::read(path)
         .await
-        .map_err(UnreadableNfo::caused_by)?;
+        .map_err(|x| UnreadableFile::caused_by(path.to_owned(), x))?;
     let text = String::from_utf8(bytes).map_err(UnreadableNfo::caused_by)?;
-    quick_xml::de::from_str(&clean_up(&text)).map_err(UnreadableNfo::caused_by)
+    Ok(quick_xml::de::from_str(&clean_up(&text)).map_err(UnreadableNfo::caused_by)?)
 }
 
 fn clean_up(text: &str) -> String {
@@ -260,7 +276,7 @@ impl From<NfoMovie> for MovieNfo {
             sort_title: text(movie.sorttitle),
             original_title: text(movie.originaltitle),
             year: parsed(movie.year),
-            plot: text(movie.plot),
+            overview: text(movie.plot),
             runtime_minutes: parsed(movie.runtime),
             certification: text(movie.mpaa),
             premiered: parsed(movie.premiered),
@@ -283,7 +299,7 @@ impl From<NfoShow> for ShowNfo {
         Self {
             title: text(show.title),
             sort_title: text(show.sorttitle),
-            plot: text(show.plot),
+            overview: text(show.plot),
             certification: text(show.mpaa),
             premiered: parsed(show.premiered),
             end_date: parsed(show.enddate),
@@ -303,12 +319,13 @@ impl From<NfoEpisode> for EpisodeNfo {
                 .uniqueid
                 .into_iter()
                 .find(|x| x.kind.as_deref() == Some("sonarr"))
-                .and_then(|x| parsed(x.value)),
+                .and_then(|x| parsed(x.value))
+                .map(SonarrId),
             title: text(episode.title),
             season_number: parsed(episode.season),
             episode_number: parsed(episode.episode),
             air_date: parsed(episode.aired),
-            plot: text(episode.plot),
+            overview: text(episode.plot),
             rating: parsed(episode.rating),
         }
     }
@@ -348,10 +365,12 @@ mod tests {
     use super::read_movie_nfo;
     use super::read_show_folder;
     use super::read_show_nfo;
-    use application::ports::EpisodeNfo;
     use application::ports::FoundFile;
     use application::ports::FoundMediaFile;
-    use application::ports::NfoActor;
+    use application::ports::ReadNfoError;
+    use domain::EpisodeNfo;
+    use domain::NfoActor;
+    use domain::SonarrId;
     use jiff::Timestamp;
     use jiff::civil::date;
     use std::time::SystemTime;
@@ -377,7 +396,7 @@ mod tests {
             .iter()
             .map(|x| {
                 (
-                    x.sonarr_id,
+                    x.sonarr_id.map(|x| x.0),
                     x.title.as_deref(),
                     x.season_number,
                     x.episode_number,
@@ -439,7 +458,7 @@ mod tests {
         assert_eq!(nfo.original_title.as_deref(), Some("Arrival"));
         assert_eq!(nfo.year, Some(2016));
         assert_eq!(
-            nfo.plot.as_deref(),
+            nfo.overview.as_deref(),
             Some(
                 "When twelve mysterious spacecraft appear around the world, linguistics professor \
                  Louise Banks is tasked with interpreting the language of the apparent alien visitors."
@@ -474,12 +493,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_unreadable_movie_nfo_is_an_error() {
+    async fn a_movie_nfo_that_cannot_be_parsed_is_an_unreadable_nfo() {
         let nfo = read_movie_nfo()
             .call(&fixture("radarr/nfo/movie-unreadable.nfo"))
             .await;
 
-        assert!(nfo.is_err());
+        assert!(matches!(nfo, Err(ReadNfoError::UnreadableNfo(_))));
+    }
+
+    #[tokio::test]
+    async fn a_movie_nfo_that_cannot_be_read_is_an_unreadable_file() {
+        let folder = Folder::new();
+        let not_a_folder = folder.write("Arrival (2016)", "");
+        let path = format!("{not_a_folder}/Arrival (2016) Bluray-1080p.nfo");
+
+        let nfo = read_movie_nfo().call(&path).await;
+
+        assert!(matches!(nfo, Err(ReadNfoError::UnreadableFile(error)) if error.path == path));
     }
 
     #[tokio::test]
@@ -492,7 +522,7 @@ mod tests {
         assert_eq!(nfo.title.as_deref(), Some("Andor"));
         assert_eq!(nfo.sort_title.as_deref(), Some("andor"));
         assert!(
-            nfo.plot
+            nfo.overview
                 .as_deref()
                 .unwrap()
                 .ends_with("destined to turn him into a rebel hero.")
@@ -527,13 +557,13 @@ mod tests {
         let [nfo] = nfos.as_slice() else {
             panic!("one episode, not {nfos:?}");
         };
-        assert_eq!(nfo.sonarr_id, Some(1101));
+        assert_eq!(nfo.sonarr_id, Some(SonarrId(1101)));
         assert_eq!(nfo.title.as_deref(), Some("Kassa"));
         assert_eq!(nfo.season_number, Some(1));
         assert_eq!(nfo.episode_number, Some(1));
         assert_eq!(nfo.air_date, Some(date(2022, 9, 21)));
         assert_eq!(
-            nfo.plot.as_deref(),
+            nfo.overview.as_deref(),
             Some(
                 "Cassian Andor looks for his missing sister on the industrial planet of Morlana One."
             )
@@ -588,12 +618,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_unreadable_episode_nfo_is_an_error() {
+    async fn an_episode_nfo_that_cannot_be_parsed_is_an_unreadable_nfo() {
         let nfos = read_episode_nfo()
             .call(&fixture("sonarr/nfo/unreadable.nfo"))
             .await;
 
-        assert!(nfos.is_err());
+        assert!(matches!(nfos, Err(ReadNfoError::UnreadableNfo(_))));
     }
 
     #[tokio::test]
@@ -611,7 +641,7 @@ mod tests {
             folder.write(&format!("Arrival (2016)/{name}"), "");
         }
 
-        let movie_folder = read_movie_folder().call(&media_file).await;
+        let movie_folder = read_movie_folder().call(&media_file).await.unwrap();
 
         assert_eq!(
             movie_folder.nfo,
@@ -648,7 +678,8 @@ mod tests {
 
         let show_folder = read_show_folder()
             .call(&folder.path("Severance"), vec![0, 1, 2])
-            .await;
+            .await
+            .unwrap();
 
         assert_eq!(show_folder.nfo, folder.found("Severance/tvshow.nfo"));
         assert_eq!(show_folder.poster, folder.found("Severance/poster.jpg"));
@@ -678,7 +709,7 @@ mod tests {
         folder.write("Andor/Season 01/Andor - S01E01 - Kassa.nfo", "");
         folder.write("Andor/Season 01/Andor - S01E01 - Kassa-thumb.jpg", "");
 
-        let episode_folder = read_episode_folder().call(&media_file).await;
+        let episode_folder = read_episode_folder().call(&media_file).await.unwrap();
 
         assert_eq!(
             episode_folder.nfo,
@@ -696,7 +727,7 @@ mod tests {
         let media_file = folder.write("Arrival (2016)/Arrival (2016) Bluray-1080p.mkv", "video");
 
         assert_eq!(
-            find_media_file().call(&media_file).await,
+            find_media_file().call(&media_file).await.unwrap(),
             Some(FoundMediaFile {
                 size: 5,
                 modified_at: modified_at(),
@@ -711,8 +742,36 @@ mod tests {
         assert_eq!(
             find_media_file()
                 .call(&folder.path("Arrival (2016)/Arrival (2016) Bluray-1080p.mkv"))
-                .await,
+                .await
+                .unwrap(),
             None
+        );
+    }
+
+    #[tokio::test]
+    async fn find_media_file_gives_a_read_error_for_a_path_it_cannot_read() {
+        let folder = Folder::new();
+        let not_a_folder = folder.write("Arrival (2016)", "");
+        let media_file = format!("{not_a_folder}/Arrival (2016) Bluray-1080p.mkv");
+
+        let error = find_media_file().call(&media_file).await.unwrap_err();
+
+        assert_eq!(error.path, media_file);
+    }
+
+    #[tokio::test]
+    async fn read_movie_folder_gives_a_read_error_for_a_file_it_cannot_read() {
+        let folder = Folder::new();
+        let not_a_folder = folder.write("Arrival (2016)", "");
+
+        let error = read_movie_folder()
+            .call(&format!("{not_a_folder}/Arrival (2016) Bluray-1080p.mkv"))
+            .await
+            .unwrap_err();
+
+        assert_eq!(
+            error.path,
+            format!("{not_a_folder}/Arrival (2016) Bluray-1080p.nfo")
         );
     }
 }

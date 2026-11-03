@@ -257,11 +257,11 @@ mod tests {
                 .episodes()
                 .create()
                 .season_id(season.id)
-                .tvdb_id(Uuid::new_v4().as_u64_pair().0 as i64)
+                .tvdb_id(domain::TvdbId(Uuid::new_v4().as_u64_pair().0 as i64))
                 .number(1)
                 .title("Good News About Hell")
                 .air_date(Some(air_date))
-                .visible(true)
+                .in_library(true)
                 .exec(db_context.executor_mut())
                 .await
                 .unwrap();

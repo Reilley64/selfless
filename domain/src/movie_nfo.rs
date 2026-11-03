@@ -7,7 +7,7 @@ pub struct MovieNfo {
     pub sort_title: Option<String>,
     pub original_title: Option<String>,
     pub year: Option<i64>,
-    pub plot: Option<String>,
+    pub overview: Option<String>,
     pub runtime_minutes: Option<i64>,
     pub certification: Option<String>,
     pub premiered: Option<Date>,

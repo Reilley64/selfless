@@ -2,6 +2,7 @@
 #[column(type = text)]
 pub enum SyncProblemKind {
     UnreadableNfo,
-    FileNotFound,
-    FfprobeFailed,
+    MissingMediaFile,
+    UnrecognisedMediaFile,
+    UnreadableFile,
 }

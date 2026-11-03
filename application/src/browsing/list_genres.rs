@@ -17,7 +17,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, kind: TitleKind) -> Res
     let titles: Vec<Vec<String>> = match kind {
         TitleKind::Movie => db_context
             .movies()
-            .filter(domain::Movie::fields().visible().eq(true))
+            .filter(domain::Movie::fields().in_library().eq(true))
             .exec(db_context.executor_mut())
             .await
             .map_err(Error::caused_by)?
@@ -68,7 +68,7 @@ mod tests {
             .unwrap();
         let season_id = add_season(db_context, show.id, 1).await;
         episode(db_context, season_id)
-            .visible(visible)
+            .in_library(visible)
             .exec(db_context.executor_mut())
             .await
             .unwrap();
@@ -106,7 +106,7 @@ mod tests {
         ] {
             movie(&db_context, title)
                 .genres(genres(names))
-                .visible(visible)
+                .in_library(visible)
                 .exec(db_context.executor_mut())
                 .await
                 .unwrap();

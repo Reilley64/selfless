@@ -1,78 +1,50 @@
 use crate::ports::FoundFile;
-use crate::ports::NfoActor;
 use crate::ports::PortFuture;
-use crate::ports::UnreadableNfo;
+use crate::ports::ReadNfoError;
+use crate::ports::UnreadableFile;
 use crate::ports::persistence::DbScope;
 use domain::Actor;
 use domain::Artwork;
 use domain::ArtworkKind;
+use domain::Nfo;
+use domain::NfoActor;
+use domain::Owner;
 use domain::SyncProblem;
 use domain::SyncProblemKind;
 use jiff::Timestamp;
 use std::collections::HashSet;
 use uuid::Uuid;
 
-#[derive(Clone, Copy)]
-pub(crate) enum Owner {
-    Movie(Uuid),
-    Show(Uuid),
-}
-
-impl Owner {
-    fn movie_id(self) -> Option<Uuid> {
-        match self {
-            Owner::Movie(id) => Some(id),
-            Owner::Show(_) => None,
+pub(crate) async fn read_nfo<T>(
+    found: Option<FoundFile>,
+    stored_modified_at: Option<Timestamp>,
+    read: impl FnOnce(&str) -> PortFuture<Result<T, ReadNfoError>>,
+) -> Result<Nfo<T>, UnreadableFile> {
+    match found {
+        None => Ok(Nfo::Missing),
+        Some(file) if !domain::needs_reread(stored_modified_at, file.modified_at) => {
+            Ok(Nfo::Unchanged)
         }
-    }
-
-    fn show_id(self) -> Option<Uuid> {
-        match self {
-            Owner::Movie(_) => None,
-            Owner::Show(id) => Some(id),
-        }
-    }
-}
-
-pub(crate) enum Nfo<T> {
-    Missing,
-    Unchanged,
-    Read(T, Timestamp),
-    Unreadable(String),
-}
-
-impl<T> Nfo<T> {
-    pub(crate) async fn read(
-        found: Option<FoundFile>,
-        stored_modified_at: Option<Timestamp>,
-        read: impl FnOnce(&str) -> PortFuture<Result<T, UnreadableNfo>>,
-    ) -> Self {
-        match found {
-            None => Nfo::Missing,
-            Some(file) if stored_modified_at == Some(file.modified_at) => Nfo::Unchanged,
-            Some(file) => match read(&file.path).await {
-                Ok(nfo) => Nfo::Read(nfo, file.modified_at),
-                Err(error) => {
-                    warn_unreadable(&error, &file.path);
-                    Nfo::Unreadable(file.path)
-                }
-            },
-        }
-    }
-
-    pub(crate) fn unreadable_path(&self) -> Option<&str> {
-        match self {
-            Nfo::Unreadable(path) => Some(path),
-            _ => None,
-        }
+        Some(file) => match read(&file.path).await {
+            Ok(nfo) => Ok(Nfo::Read(nfo, file.modified_at)),
+            Err(ReadNfoError::UnreadableNfo(error)) => {
+                tracing::warn!(
+                    error = &error as &dyn std::error::Error,
+                    file.path = file.path,
+                    "failed to read an NFO file"
+                );
+                Ok(Nfo::Unreadable(file.path))
+            }
+            Err(ReadNfoError::UnreadableFile(error)) => Err(error),
+        },
     }
 }
 
-pub(crate) fn warn_unreadable(error: &UnreadableNfo, path: &str) {
+pub(crate) fn warn_unreadable_file(error: &UnreadableFile) {
     tracing::warn!(
         error = error as &dyn std::error::Error,
-        file.path = path,
-        "failed to read an NFO file"
+        file.path = error.path,
+        "failed to read a file"
     );
 }
 
@@ -91,7 +63,7 @@ pub(crate) async fn save_actors<T>(
     if had_nfo {
         scope
             .actors()
-            .filter(actor_owner(owner))
+            .filter(Actor::owner_filter(owner))
             .delete()
             .exec(scope.executor_mut())
             .await?;
@@ -111,7 +83,6 @@ pub(crate) async fn save_actors<T>(
     Ok(())
 }
 
-#[derive(PartialEq)]
 pub(crate) struct FoundArtwork {
     pub(crate) season_id: Option<Uuid>,
     pub(crate) episode_id: Option<Uuid>,
@@ -148,26 +119,25 @@ pub(crate) async fn save_artwork(
 ) -> toasty::Result<bool> {
     let stored = scope
         .artwork()
-        .filter(artwork_owner(owner))
+        .filter(Artwork::owner_filter(owner))
         .exec(scope.executor_mut())
-        .await?
-        .into_iter()
-        .map(|x| FoundArtwork {
-            season_id: x.season_id,
-            episode_id: x.episode_id,
-            kind: x.kind,
-            file: FoundFile {
-                path: x.path,
-                modified_at: x.modified_at,
-            },
-        })
-        .collect::<Vec<_>>();
-    if stored.len() == found.len() && found.iter().all(|x| stored.contains(x)) {
+        .await?;
+    let unchanged = stored.len() == found.len()
+        && found.iter().all(|found| {
+            stored.iter().any(|x| {
+                x.season_id == found.season_id
+                    && x.episode_id == found.episode_id
+                    && x.kind == found.kind
+                    && x.path == found.file.path
+                    && !domain::needs_reread(Some(x.modified_at), found.file.modified_at)
+            })
+        });
+    if unchanged {
         return Ok(false);
     }
     scope
         .artwork()
-        .filter(artwork_owner(owner))
+        .filter(Artwork::owner_filter(owner))
         .delete()
         .exec(scope.executor_mut())
         .await?;
@@ -199,7 +169,7 @@ pub(crate) async fn save_unreadable_nfos(
         .eq(SyncProblemKind::UnreadableNfo);
     let mut stored = scope
         .sync_problems()
-        .filter(problem_owner(owner).and(unreadable_nfo.clone()))
+        .filter(SyncProblem::owner_filter(owner).and(unreadable_nfo.clone()))
         .exec(scope.executor_mut())
         .await?;
     if !media_file_ids.is_empty() {
@@ -246,40 +216,20 @@ pub(crate) async fn save_unreadable_nfos(
 pub(crate) async fn delete(scope: &mut impl DbScope, owner: Owner) -> toasty::Result<()> {
     scope
         .actors()
-        .filter(actor_owner(owner))
+        .filter(Actor::owner_filter(owner))
         .delete()
         .exec(scope.executor_mut())
         .await?;
     scope
         .artwork()
-        .filter(artwork_owner(owner))
+        .filter(Artwork::owner_filter(owner))
         .delete()
         .exec(scope.executor_mut())
         .await?;
     scope
         .sync_problems()
-        .filter(problem_owner(owner))
+        .filter(SyncProblem::owner_filter(owner))
         .delete()
         .exec(scope.executor_mut())
         .await
-}
-fn actor_owner(owner: Owner) -> toasty::stmt::Expr<bool> {
-    match owner {
-        Owner::Movie(id) => Actor::fields().movie_id().eq(id),
-        Owner::Show(id) => Actor::fields().show_id().eq(id),
-    }
-}
-
-fn artwork_owner(owner: Owner) -> toasty::stmt::Expr<bool> {
-    match owner {
-        Owner::Movie(id) => Artwork::fields().movie_id().eq(id),
-        Owner::Show(id) => Artwork::fields().show_id().eq(id),
-    }
-}
-
-fn problem_owner(owner: Owner) -> toasty::stmt::Expr<bool> {
-    match owner {
-        Owner::Movie(id) => SyncProblem::fields().movie_id().eq(id),
-        Owner::Show(id) => SyncProblem::fields().show_id().eq(id),
-    }
 }

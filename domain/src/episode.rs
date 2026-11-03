@@ -2,6 +2,7 @@ use crate::Artwork;
 use crate::EpisodeMetadata;
 use crate::MediaFile;
 use crate::Season;
+use crate::TvdbId;
 use jiff::Timestamp;
 use jiff::civil::Date;
 use uuid::Uuid;
@@ -16,7 +17,7 @@ pub struct Episode {
     #[belongs_to(key = season_id, references = id)]
     pub season: toasty::Deferred<Season>,
     #[unique]
-    pub tvdb_id: i64,
+    pub tvdb_id: TvdbId,
     pub number: i64,
     pub title: String,
     pub air_date: Option<Date>,
@@ -26,7 +27,7 @@ pub struct Episode {
     pub media_file_id: Option<Uuid>,
     #[belongs_to(key = media_file_id, references = id)]
     pub media_file: toasty::Deferred<Option<MediaFile>>,
-    pub visible: bool,
+    pub in_library: bool,
     pub rating: Option<f64>,
     pub nfo_modified_at: Option<Timestamp>,
     #[has_many]
@@ -39,7 +40,7 @@ impl Episode {
     }
 
     pub fn in_library_filter() -> toasty::stmt::Expr<bool> {
-        Self::fields().visible().eq(true)
+        Self::fields().in_library().eq(true)
     }
 
     pub fn metadata(&self) -> EpisodeMetadata {

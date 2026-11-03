@@ -73,24 +73,26 @@ mod tests {
     use crate::test::at;
     use crate::test::mock_db_context;
     use domain::ArtworkKind;
+    use domain::RadarrId;
+    use domain::TmdbId;
     use uuid::Uuid;
 
     async fn seed_movie(
         db_context: &mut DbContext,
         tmdb_id: i64,
         title: &str,
-        visible: bool,
+        in_library: bool,
     ) -> Uuid {
         db_context
             .movies()
             .create()
-            .tmdb_id(tmdb_id)
-            .radarr_id(tmdb_id)
+            .tmdb_id(TmdbId(tmdb_id))
+            .radarr_id(RadarrId(tmdb_id + 1_000))
             .title(title)
             .year(2016)
             .genres(Vec::<String>::new())
             .directors(Vec::<String>::new())
-            .visible(visible)
+            .in_library(in_library)
             .exec(db_context.executor_mut())
             .await
             .unwrap()

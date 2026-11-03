@@ -18,12 +18,9 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<Output, Error
         .filter(domain::Show::in_library_filter())
         .include(domain::Show::fields().actors())
         .include(
-            domain::Show::fields().artwork().filter(
-                domain::Artwork::fields()
-                    .season_id()
-                    .is_none()
-                    .and(domain::Artwork::fields().episode_id().is_none()),
-            ),
+            domain::Show::fields()
+                .artwork()
+                .filter(domain::Artwork::show_level_filter()),
         )
         .exec(db_context.executor_mut())
         .await
@@ -77,14 +74,16 @@ mod tests {
     use crate::test::at;
     use crate::test::mock_db_context;
     use domain::ArtworkKind;
+    use domain::SonarrId;
+    use domain::TvdbId;
     use uuid::Uuid;
 
     async fn seed_show(db_context: &mut DbContext, tvdb_id: i64, title: &str) -> Uuid {
         db_context
             .shows()
             .create()
-            .tvdb_id(tvdb_id)
-            .sonarr_id(tvdb_id)
+            .tvdb_id(TvdbId(tvdb_id))
+            .sonarr_id(SonarrId(tvdb_id + 1_000))
             .title(title)
             .genres(Vec::<String>::new())
             .exec(db_context.executor_mut())
@@ -110,16 +109,16 @@ mod tests {
         season_id: Uuid,
         tvdb_id: i64,
         number: i64,
-        visible: bool,
+        in_library: bool,
     ) -> Uuid {
         db_context
             .episodes()
             .create()
             .season_id(season_id)
-            .tvdb_id(tvdb_id)
+            .tvdb_id(TvdbId(tvdb_id))
             .number(number)
             .title(format!("Episode {number}"))
-            .visible(visible)
+            .in_library(in_library)
             .exec(db_context.executor_mut())
             .await
             .unwrap()
@@ -163,8 +162,8 @@ mod tests {
     async fn only_shows_with_an_episode_in_the_library_are_listed() {
         let mut db_context = mock_db_context().await;
         seed_show_in_library(&mut db_context, 1, "Severance").await;
-        let hidden = seed_show(&mut db_context, 2, "Andor").await;
-        let hidden_season = seed_season(&mut db_context, hidden, 1).await;
+        let not_in_library = seed_show(&mut db_context, 2, "Andor").await;
+        let hidden_season = seed_season(&mut db_context, not_in_library, 1).await;
         seed_episode(&mut db_context, hidden_season, 2, 1, false).await;
         seed_show(&mut db_context, 3, "Silo").await;
 

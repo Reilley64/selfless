@@ -1,3 +1,5 @@
+use crate::telemetry::attribute_values::library_source;
+use crate::telemetry::attribute_values::reconcile_result;
 mod dependencies;
 mod error;
 mod output;
@@ -12,33 +14,37 @@ use crate::library::SourceHealth;
 use crate::library::prober::CONCURRENT_PROBES;
 use crate::library::reconciles::Progress;
 use crate::library::source_states;
-use crate::library::sync_movie;
-use crate::library::sync_movie::MovieFiles;
-use crate::library::sync_show;
-use crate::library::sync_show::ShowFiles;
+use crate::library::sync;
+use crate::library::sync::Removal;
+use crate::library::sync::movies;
+use crate::library::sync::movies::MovieFiles;
+use crate::library::sync::shows;
+use crate::library::sync::shows::ShowFiles;
 use crate::metrics::SELFLESS_RECONCILE_DURATION;
 use crate::ports::GetSonarrEpisodes;
 use crate::ports::ListRadarrMovies;
 use crate::ports::ListSonarrShows;
-use crate::ports::SonarrShow;
+use crate::ports::SourceShow;
 use crate::ports::persistence::DbContext;
 use crate::ports::persistence::DbScope;
 use domain::HeldRemoval;
-use domain::Movie;
+use domain::HeldRemovalItem;
+use domain::LastReconcile;
 use domain::ReconcileResult;
-use domain::Show;
 use domain::Source;
+use futures_util::FutureExt;
 use futures_util::StreamExt;
 use futures_util::stream;
 use opentelemetry::KeyValue;
 use opentelemetry::global;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::panic;
+use std::panic::AssertUnwindSafe;
 use std::sync::Mutex;
 use std::time::Instant;
 use tracing::Instrument;
 use tracing::field;
-use uuid::Uuid;
 
 pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Result<Output, Error> {
     let Dependencies {
@@ -60,12 +66,12 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
         read_show_nfo,
         reconciles,
         source_health,
+        try_acquire_lock,
     } = dependencies.into();
-    let reconcile = reconciles.source(source);
-    let Ok(_running) = reconcile.running.clone().try_lock_owned() else {
+    let Some(_running) = try_acquire_lock.call(sync::lock_key(source)).await else {
         return Ok(Output);
     };
-    let progress = &reconcile.progress;
+    let progress = &reconciles.source(source).progress;
     *progress.lock().unwrap() = Some(Progress {
         imported: 0,
         total: None,
@@ -74,8 +80,8 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
     let start = Instant::now();
     let span = tracing::info_span!(
         "reconcile",
-        otel.name = format!("reconcile {}", source.name()),
-        selfless.library.source = source.name(),
+        otel.name = format!("reconcile {}", library_source(source)),
+        selfless.library.source = library_source(source),
         selfless.reconcile.result = field::Empty,
     );
     let reconciled = async {
@@ -127,35 +133,38 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
             ),
         };
         let failed_calls = failed_metadata_calls + listing.failed_calls;
-        if failed_calls == 0 {
-            remove_or_hold(&mut db_context, source, &listing).await?;
-        }
         if failed_calls > 0 {
             return Err(Error::caused_by(format!(
-                "{failed_calls} calls to {} failed, so nothing was removed",
-                source.name()
+                "{failed_calls} calls to {source:?} failed, so nothing was removed"
             )));
         }
-        Ok(())
+        if listing.unreadable_items > 0 {
+            return Err(Error::caused_by(format!(
+                "{} items from {source:?} had unreadable files, so nothing was removed",
+                listing.unreadable_items
+            )));
+        }
+        remove_or_hold(&mut db_context, source, listing).await
     }
-    .instrument(span.clone())
-    .await;
+    .instrument(span.clone());
+    let reconciled = AssertUnwindSafe(reconciled).catch_unwind().await;
     *progress.lock().unwrap() = None;
     let duration = start.elapsed();
-    let result = match reconciled {
-        Ok(()) => ReconcileResult::Succeeded,
-        Err(error) => {
+    let result = match &reconciled {
+        Ok(Ok(())) => ReconcileResult::Succeeded,
+        Err(_) => ReconcileResult::Failed,
+        Ok(Err(error)) => {
             span.in_scope(|| {
                 tracing::warn!(
-                    error = &error as &dyn std::error::Error,
-                    selfless.library.source = source.name(),
+                    error = error as &dyn std::error::Error,
+                    selfless.library.source = library_source(source),
                     "failed to reconcile the library"
                 );
             });
             ReconcileResult::Failed
         }
     };
-    span.record(SELFLESS_RECONCILE_RESULT, result.name());
+    span.record(SELFLESS_RECONCILE_RESULT, reconcile_result(result));
     global::meter("selfless")
         .f64_histogram(SELFLESS_RECONCILE_DURATION)
         .with_unit("s")
@@ -163,25 +172,26 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
         .record(
             duration.as_secs_f64(),
             &[
-                KeyValue::new(SELFLESS_LIBRARY_SOURCE, source.name()),
-                KeyValue::new(SELFLESS_RECONCILE_RESULT, result.name()),
+                KeyValue::new(SELFLESS_LIBRARY_SOURCE, library_source(source)),
+                KeyValue::new(SELFLESS_RECONCILE_RESULT, reconcile_result(result)),
             ],
         );
-    source_states::upsert(&mut db_context, source)
-        .instrument(span.clone())
-        .await
-        .map_err(Error::caused_by)?
-        .update()
-        .last_reconcile_started_at(Some(started_at))
-        .last_reconcile_duration_ms(Some(
-            i64::try_from(duration.as_millis()).unwrap_or(i64::MAX),
-        ))
-        .last_reconcile_result(Some(result))
-        .exec(db_context.executor_mut())
-        .instrument(span)
-        .await
-        .map_err(Error::caused_by)?;
-    Ok(Output)
+    let recorded = async {
+        source_states::upsert(&mut db_context, source)
+            .await
+            .map_err(Error::caused_by)?
+            .update()
+            .last_reconcile(Some(LastReconcile::new(started_at, duration, result)))
+            .exec(db_context.executor_mut())
+            .await
+            .map_err(Error::caused_by)
+    }
+    .instrument(span)
+    .await;
+    if let Err(panic) = reconciled {
+        panic::resume_unwind(panic);
+    }
+    recorded.map(|()| Output)
 }
 
 fn record_kodi_metadata(
@@ -197,7 +207,7 @@ fn record_kodi_metadata(
         Err(error) => {
             tracing::warn!(
                 error = &error as &dyn std::error::Error,
-                selfless.library.source = source.name(),
+                selfless.library.source = library_source(source),
                 "failed to read the metadata settings"
             );
             1
@@ -206,10 +216,10 @@ fn record_kodi_metadata(
 }
 
 struct Listing {
-    listed: HashSet<i64>,
     total: usize,
-    absent: Vec<Uuid>,
+    removal: Removal,
     failed_calls: usize,
+    unreadable_items: usize,
 }
 
 async fn sync_movies(
@@ -219,14 +229,14 @@ async fn sync_movies(
     source_health: &SourceHealth,
     progress: &Mutex<Option<Progress>>,
 ) -> Result<Listing, Error> {
-    let radarr_movies = source_health
+    let source_movies = source_health
         .api_call(Source::Radarr, list_radarr_movies.call().await)
         .map_err(Error::caused_by)?;
-    let listed = radarr_movies
+    let listed = source_movies
         .iter()
         .map(|x| x.tmdb_id)
         .collect::<HashSet<_>>();
-    set_total(progress, radarr_movies.len());
+    set_total(progress, source_movies.len());
     let stored_movies = db_context
         .movies()
         .all()
@@ -234,7 +244,11 @@ async fn sync_movies(
         .await
         .map_err(Error::caused_by)?;
     let total = stored_movies.len();
-    let absent = stored_movies
+    let nfo_modified_at = stored_movies
+        .iter()
+        .map(|x| (x.tmdb_id, x.nfo_modified_at))
+        .collect::<HashMap<_, _>>();
+    let movie_ids = stored_movies
         .into_iter()
         .filter(|x| !listed.contains(&x.tmdb_id))
         .map(|x| x.id)
@@ -248,34 +262,41 @@ async fn sync_movies(
         .into_iter()
         .map(|x| (x.path.clone(), x))
         .collect::<HashMap<_, _>>();
-    let mut inspections = stream::iter(radarr_movies)
-        .map(|radarr_movie| {
-            let span = sync_movie::span();
-            let stored = radarr_movie
-                .movie_file
+    let mut inspections = stream::iter(source_movies)
+        .map(|source_movie| {
+            let span = movies::span();
+            let stored_file = source_movie
+                .media_file
                 .as_ref()
                 .and_then(|x| stored.get(&x.path));
+            let stored_nfo_modified_at = nfo_modified_at
+                .get(&source_movie.tmdb_id)
+                .copied()
+                .flatten();
             async move {
-                let inspected = sync_movie::inspect(files, stored, &radarr_movie)
-                    .instrument(span.clone())
-                    .await;
-                (radarr_movie, inspected, span)
+                let inspected =
+                    movies::inspect(files, stored_file, stored_nfo_modified_at, &source_movie)
+                        .instrument(span.clone())
+                        .await;
+                (source_movie, inspected, span)
             }
         })
         .buffered(CONCURRENT_PROBES);
-    while let Some((radarr_movie, inspected, span)) = inspections.next().await {
+    let mut unreadable_items = 0;
+    while let Some((source_movie, inspected, span)) = inspections.next().await {
         let inspected = inspected.map_err(Error::caused_by)?;
-        sync_movie::save(db_context, files, radarr_movie, inspected)
+        unreadable_items += usize::from(inspected.unreadable());
+        movies::save(db_context, source_movie, inspected)
             .instrument(span)
             .await
             .map_err(Error::caused_by)?;
         imported(progress);
     }
     Ok(Listing {
-        listed,
         total,
-        absent,
+        removal: Removal::Movies { movie_ids, listed },
         failed_calls: 0,
+        unreadable_items,
     })
 }
 
@@ -299,21 +320,28 @@ async fn sync_shows(
         .await
         .map_err(Error::caused_by)?;
     let total = stored_shows.len();
-    let absent = stored_shows
+    let show_ids = stored_shows
         .into_iter()
         .filter(|x| !listed.contains(&x.tvdb_id))
         .map(|x| x.id)
         .collect();
     let mut failed_calls = 0;
+    let mut unreadable_items = 0;
     for listing in listings {
-        let span = sync_show::span();
+        let span = shows::span();
         let episodes = get_sonarr_episodes
             .call(listing.sonarr_id)
             .instrument(span.clone())
             .await;
         match source_health.api_call(Source::Sonarr, episodes) {
             Ok(episodes) => {
-                sync_show::save(db_context, files, SonarrShow { listing, episodes })
+                let source_show = SourceShow { listing, episodes };
+                let inspected = shows::inspect(db_context, files, &source_show)
+                    .instrument(span.clone())
+                    .await
+                    .map_err(Error::caused_by)?;
+                unreadable_items += usize::from(inspected.unreadable());
+                shows::save(db_context, source_show, inspected)
                     .instrument(span)
                     .await
                     .map_err(Error::caused_by)?;
@@ -331,10 +359,10 @@ async fn sync_shows(
         imported(progress);
     }
     Ok(Listing {
-        listed,
         total,
-        absent,
+        removal: Removal::Shows { show_ids, listed },
         failed_calls,
+        unreadable_items,
     })
 }
 
@@ -354,83 +382,46 @@ fn imported(progress: &Mutex<Option<Progress>>) {
 async fn remove_or_hold(
     db_context: &mut DbContext,
     source: Source,
-    listing: &Listing,
+    listing: Listing,
 ) -> Result<(), Error> {
-    db_context
+    let mut transaction = db_context.transaction().await.map_err(Error::caused_by)?;
+    transaction
         .held_removals()
         .filter(HeldRemoval::fields().source().eq(source))
         .delete()
-        .exec(db_context.executor_mut())
+        .exec(transaction.executor_mut())
         .await
         .map_err(Error::caused_by)?;
-    if HeldRemoval::holds(listing.absent.len(), listing.total) {
-        tracing::warn!(
-            selfless.library.source = source.name(),
-            "held a removal of more than half of a source's items"
-        );
-        let mut transaction = db_context.transaction().await.map_err(Error::caused_by)?;
-        transaction
-            .held_removals()
-            .create()
-            .source(source)
-            .exec(transaction.executor_mut())
-            .await
-            .map_err(Error::caused_by)?;
-        for item_id in &listing.absent {
-            transaction
-                .held_removal_items()
-                .create()
-                .source(source)
-                .item_id(*item_id)
-                .exec(transaction.executor_mut())
-                .await
-                .map_err(Error::caused_by)?;
-        }
+    if !HeldRemoval::holds(listing.removal.count(), listing.total) {
         transaction.commit().await.map_err(Error::caused_by)?;
-        return Ok(());
+        return sync::remove(db_context, listing.removal)
+            .await
+            .map_err(Error::caused_by);
     }
-    remove(db_context, source, listing.absent.clone(), &listing.listed).await
-}
-
-pub(crate) async fn remove(
-    db_context: &mut DbContext,
-    source: Source,
-    ids: Vec<Uuid>,
-    listed: &HashSet<i64>,
-) -> Result<(), Error> {
-    if ids.is_empty() {
-        return Ok(());
-    }
-    match source {
-        Source::Radarr => {
-            let movies = db_context
-                .movies()
-                .filter(Movie::fields().id().in_list(ids))
-                .exec(db_context.executor_mut())
-                .await
-                .map_err(Error::caused_by)?
-                .into_iter()
-                .filter(|x| !listed.contains(&x.tmdb_id))
-                .collect();
-            sync_movie::remove(db_context, movies)
-                .await
-                .map_err(Error::caused_by)
-        }
-        Source::Sonarr => {
-            let shows = db_context
-                .shows()
-                .filter(Show::fields().id().in_list(ids))
-                .exec(db_context.executor_mut())
-                .await
-                .map_err(Error::caused_by)?;
-            for show in shows.into_iter().filter(|x| !listed.contains(&x.tvdb_id)) {
-                sync_show::remove(db_context, show)
-                    .await
-                    .map_err(Error::caused_by)?;
-            }
-            Ok(())
-        }
-    }
+    tracing::warn!(
+        selfless.library.source = library_source(source),
+        "held a removal of more than half of a source's items"
+    );
+    let items = match listing.removal {
+        Removal::Movies { movie_ids, .. } => movie_ids
+            .into_iter()
+            .map(|x| HeldRemovalItem::create().movie_id(Some(x)))
+            .collect::<Vec<_>>(),
+        Removal::Shows { show_ids, .. } => show_ids
+            .into_iter()
+            .map(|x| HeldRemovalItem::create().show_id(Some(x)))
+            .collect(),
+    };
+    transaction
+        .held_removals()
+        .create()
+        .source(source)
+        .items(items)
+        .exec(transaction.executor_mut())
+        .await
+        .map_err(Error::caused_by)?;
+    transaction.commit().await.map_err(Error::caused_by)?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -445,85 +436,100 @@ mod tests {
     use crate::ports::Clock;
     use crate::ports::FindMediaFile;
     use crate::ports::FoundMediaFile;
+    use crate::ports::LockGuard;
     use crate::ports::RadarrError;
-    use crate::ports::RadarrMovie;
-    use crate::ports::RadarrMovieFile;
-    use crate::ports::SonarrEpisode;
-    use crate::ports::SonarrEpisodeFile;
     use crate::ports::SonarrError;
-    use crate::ports::SonarrShowListing;
+    use crate::ports::SourceEpisode;
+    use crate::ports::SourceMediaFile;
+    use crate::ports::SourceMovie;
+    use crate::ports::SourceShowListing;
+    use crate::ports::TryAcquireLock;
+    use crate::ports::UnreadableFile;
     use crate::test::empty_episode_folder;
     use crate::test::empty_movie_folder;
     use crate::test::empty_show_folder;
     use crate::test::failing_prober;
     use crate::test::mock_db_context;
+    use crate::test::movie_titles;
     use crate::test::no_subtitle_files;
     use crate::test::unreadable_episode_nfo;
     use crate::test::unreadable_movie_nfo;
     use crate::test::unreadable_show_nfo;
+    use domain::Movie;
+    use domain::Owner;
+    use domain::RadarrId;
+    use domain::SonarrId;
+    use domain::TmdbId;
+    use domain::TvdbId;
     use jiff::Timestamp;
     use std::sync::Arc;
     use test_fixtures::FakeClock;
     use tokio::sync::Notify;
 
-    const ARRIVAL: i64 = 42;
-    const DUNE: i64 = 43;
-    const SICARIO: i64 = 44;
-    const BLADE_RUNNER: i64 = 45;
-    const SEVERANCE: i64 = 7;
-    const ANDOR: i64 = 8;
+    const ARRIVAL: TmdbId = TmdbId(42);
+    const DUNE: TmdbId = TmdbId(43);
+    const SICARIO: TmdbId = TmdbId(44);
+    const BLADE_RUNNER: TmdbId = TmdbId(45);
+    const SEVERANCE: SonarrId = SonarrId(7);
+    const ANDOR: SonarrId = SonarrId(8);
 
-    fn title(id: i64) -> &'static str {
-        match id {
+    fn movie_title(tmdb_id: TmdbId) -> &'static str {
+        match tmdb_id {
             ARRIVAL => "Arrival",
             DUNE => "Dune",
             SICARIO => "Sicario",
             BLADE_RUNNER => "Blade Runner 2049",
+            _ => unreachable!(),
+        }
+    }
+
+    fn show_title(sonarr_id: SonarrId) -> &'static str {
+        match sonarr_id {
             SEVERANCE => "Severance",
             ANDOR => "Andor",
             _ => unreachable!(),
         }
     }
 
-    fn radarr_movie(tmdb_id: i64) -> RadarrMovie {
-        RadarrMovie {
-            radarr_id: tmdb_id,
+    fn source_movie(tmdb_id: TmdbId) -> SourceMovie {
+        SourceMovie {
+            radarr_id: RadarrId(tmdb_id.0 + 1_000),
             tmdb_id,
-            title: title(tmdb_id).to_owned(),
+            title: movie_title(tmdb_id).to_owned(),
             year: 2016,
             overview: None,
             genres: Vec::new(),
-            movie_file: Some(RadarrMovieFile {
-                path: format!("/movies/{}.mkv", title(tmdb_id)),
-                date_added: Timestamp::UNIX_EPOCH,
+            media_file: Some(SourceMediaFile {
+                path: format!("/movies/{}.mkv", movie_title(tmdb_id)),
+                added_at: Timestamp::UNIX_EPOCH,
             }),
         }
     }
 
-    fn sonarr_listing(sonarr_id: i64) -> SonarrShowListing {
-        SonarrShowListing {
+    fn source_show_listing(sonarr_id: SonarrId) -> SourceShowListing {
+        SourceShowListing {
             sonarr_id,
-            tvdb_id: sonarr_id,
-            path: format!("/tv/{}", title(sonarr_id)),
-            title: title(sonarr_id).to_owned(),
+            tvdb_id: TvdbId(sonarr_id.0 + 1_000),
+            path: format!("/tv/{}", show_title(sonarr_id)),
+            title: show_title(sonarr_id).to_owned(),
             year: None,
             genres: Vec::new(),
             overview: None,
         }
     }
 
-    fn sonarr_episodes(sonarr_id: i64) -> Vec<SonarrEpisode> {
-        vec![SonarrEpisode {
-            sonarr_id,
-            tvdb_id: sonarr_id,
+    fn source_episodes(sonarr_id: SonarrId) -> Vec<SourceEpisode> {
+        vec![SourceEpisode {
+            sonarr_id: SonarrId(sonarr_id.0 + 100),
+            tvdb_id: TvdbId(sonarr_id.0 + 2_000),
             season_number: 1,
             episode_number: 1,
             title: "Pilot".to_owned(),
             air_date: None,
             overview: None,
-            episode_file: Some(SonarrEpisodeFile {
-                path: format!("/tv/{}/S01E01.mkv", title(sonarr_id)),
-                date_added: Timestamp::UNIX_EPOCH,
+            media_file: Some(SourceMediaFile {
+                path: format!("/tv/{}/S01E01.mkv", show_title(sonarr_id)),
+                added_at: Timestamp::UNIX_EPOCH,
             }),
         }]
     }
@@ -534,9 +540,10 @@ mod tests {
         clock: FakeClock,
         reconciles: Reconciles,
         source_health: SourceHealth,
-        radarr: Arc<Mutex<Result<Vec<RadarrMovie>, &'static str>>>,
-        sonarr: Arc<Mutex<Result<Vec<i64>, &'static str>>>,
-        failing_episodes: Arc<Mutex<HashSet<i64>>>,
+        radarr: Arc<Mutex<Result<Vec<SourceMovie>, &'static str>>>,
+        sonarr: Arc<Mutex<Result<Vec<SonarrId>, &'static str>>>,
+        failing_episodes: Arc<Mutex<HashSet<SonarrId>>>,
+        unreadable_files: Arc<Mutex<HashSet<String>>>,
         held_episodes: Arc<Mutex<Option<HeldEpisodes>>>,
         radarr_kodi: Arc<Mutex<Result<bool, &'static str>>>,
         sonarr_kodi: Arc<Mutex<Result<bool, &'static str>>>,
@@ -544,7 +551,7 @@ mod tests {
 
     #[derive(Clone)]
     struct HeldEpisodes {
-        sonarr_id: i64,
+        sonarr_id: SonarrId,
         reached: Arc<Notify>,
         released: Arc<Notify>,
     }
@@ -559,21 +566,22 @@ mod tests {
                 radarr: Arc::new(Mutex::new(Ok(Vec::new()))),
                 sonarr: Arc::new(Mutex::new(Ok(Vec::new()))),
                 failing_episodes: Arc::default(),
+                unreadable_files: Arc::default(),
                 held_episodes: Arc::default(),
                 radarr_kodi: Arc::new(Mutex::new(Ok(true))),
                 sonarr_kodi: Arc::new(Mutex::new(Ok(true))),
             }
         }
 
-        fn radarr_lists(&self, ids: &[i64]) {
-            self.radarr_lists_movies(ids.iter().copied().map(radarr_movie).collect());
+        fn radarr_lists(&self, ids: &[TmdbId]) {
+            self.radarr_lists_movies(ids.iter().copied().map(source_movie).collect());
         }
 
-        fn radarr_lists_movies(&self, movies: Vec<RadarrMovie>) {
+        fn radarr_lists_movies(&self, movies: Vec<SourceMovie>) {
             *self.radarr.lock().unwrap() = Ok(movies);
         }
 
-        fn sonarr_lists(&self, ids: &[i64]) {
+        fn sonarr_lists(&self, ids: &[SonarrId]) {
             *self.sonarr.lock().unwrap() = Ok(ids.to_vec());
         }
 
@@ -584,6 +592,7 @@ mod tests {
             let held_episodes = self.held_episodes.clone();
             let radarr_kodi = self.radarr_kodi.clone();
             let sonarr_kodi = self.sonarr_kodi.clone();
+            let unreadable_files = self.unreadable_files.clone();
             Dependencies {
                 check_radarr_kodi_metadata: CheckRadarrKodiMetadata::new(move || {
                     let enabled = *radarr_kodi.lock().unwrap();
@@ -595,13 +604,16 @@ mod tests {
                 }),
                 clock: Clock::new(self.clock.reader()),
                 db_context: self.db_context.clone(),
-                find_media_file: FindMediaFile::new(|_| {
-                    Box::pin(async {
-                        Some(FoundMediaFile {
+                find_media_file: FindMediaFile::new(move |path| {
+                    let found = if unreadable_files.lock().unwrap().contains(&path) {
+                        Err(UnreadableFile::new(path))
+                    } else {
+                        Ok(Some(FoundMediaFile {
                             size: 1,
                             modified_at: Timestamp::UNIX_EPOCH,
-                        })
-                    })
+                        }))
+                    };
+                    Box::pin(async move { found })
                 }),
                 get_sonarr_episodes: GetSonarrEpisodes::new(move |sonarr_id| {
                     let failing = failing_episodes.lock().unwrap().contains(&sonarr_id);
@@ -618,7 +630,7 @@ mod tests {
                         if failing {
                             return Err(SonarrError::caused_by("500 Internal Server Error"));
                         }
-                        Ok(sonarr_episodes(sonarr_id))
+                        Ok(source_episodes(sonarr_id))
                     })
                 }),
                 list_radarr_movies: ListRadarrMovies::new(move || {
@@ -628,7 +640,7 @@ mod tests {
                 list_sonarr_shows: ListSonarrShows::new(move || {
                     let ids = sonarr.lock().unwrap().clone();
                     Box::pin(async move {
-                        ids.map(|x| x.into_iter().map(sonarr_listing).collect())
+                        ids.map(|x| x.into_iter().map(source_show_listing).collect())
                             .map_err(SonarrError::caused_by)
                     })
                 }),
@@ -642,6 +654,9 @@ mod tests {
                 read_show_nfo: unreadable_show_nfo(),
                 reconciles: self.reconciles.clone(),
                 source_health: self.source_health.clone(),
+                try_acquire_lock: TryAcquireLock::new(|_| {
+                    Box::pin(async { Some(LockGuard::new(())) })
+                }),
             }
         }
 
@@ -655,7 +670,8 @@ mod tests {
                 .exec(db_context.executor_mut())
                 .await
                 .unwrap()
-                .last_reconcile_result
+                .last_reconcile
+                .map(|x| x.result())
         }
 
         async fn status(&self) -> sync_status::Output {
@@ -666,21 +682,6 @@ mod tests {
             })
             .await
             .unwrap()
-        }
-
-        async fn movie_titles(&self) -> Vec<String> {
-            let mut db_context = self.db_context.clone();
-            let mut titles = db_context
-                .movies()
-                .all()
-                .exec(db_context.executor_mut())
-                .await
-                .unwrap()
-                .into_iter()
-                .map(|x| x.title)
-                .collect::<Vec<_>>();
-            titles.sort();
-            titles
         }
 
         async fn held_movie_titles(&self) -> Option<Vec<String>> {
@@ -697,7 +698,8 @@ mod tests {
                 .items
                 .get()
                 .iter()
-                .map(|x| x.item_id)
+                .filter_map(HeldRemovalItem::owner)
+                .filter_map(Owner::movie_id)
                 .collect::<Vec<_>>();
             let mut titles = db_context
                 .movies()
@@ -739,7 +741,7 @@ mod tests {
 
         assert_eq!(result, Some(ReconcileResult::Succeeded));
         assert_eq!(
-            library.movie_titles().await,
+            movie_titles(&library.db_context).await,
             ["Arrival", "Blade Runner 2049", "Dune"]
         );
     }
@@ -757,17 +759,67 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_reconcile_does_nothing_while_its_source_is_locked_by_another_reconcile() {
+        let library = Library::new().await;
+        library.radarr_lists(&[ARRIVAL]);
+        let locked = sync::lock_key(Source::Radarr);
+
+        call(
+            Dependencies {
+                try_acquire_lock: TryAcquireLock::new(move |key| {
+                    let free = key != locked;
+                    Box::pin(async move { free.then(|| LockGuard::new(())) })
+                }),
+                ..library.dependencies()
+            },
+            Source::Radarr,
+        )
+        .await
+        .unwrap();
+
+        assert!(movie_titles(&library.db_context).await.is_empty());
+        assert!(library.status().await.radarr.last_reconcile.is_none());
+    }
+
+    #[tokio::test]
+    async fn a_panicking_reconcile_is_recorded_as_failed_and_shows_no_progress() {
+        let library = Library::new().await;
+        let reconciling = tokio::spawn(call(
+            Dependencies {
+                list_radarr_movies: ListRadarrMovies::new(|| {
+                    panic!("an unloaded relation was read")
+                }),
+                ..library.dependencies()
+            },
+            Source::Radarr,
+        ));
+
+        let reconciled = reconciling.await;
+
+        assert!(reconciled.unwrap_err().is_panic());
+        let status = library.status().await.radarr;
+        assert_eq!(
+            status.last_reconcile.map(|x| x.result),
+            Some(ReconcileResult::Failed)
+        );
+        assert_eq!(status.reconcile_progress, None);
+    }
+
+    #[tokio::test]
     async fn a_reconcile_re_syncs_a_movie_whose_radarr_data_changed() {
         let library = Library::new().await;
         library.radarr_lists(&[ARRIVAL]);
         library.reconcile(Source::Radarr).await;
 
-        let mut arrival = radarr_movie(ARRIVAL);
+        let mut arrival = source_movie(ARRIVAL);
         arrival.title = "Arrival (Extended)".to_owned();
         library.radarr_lists_movies(vec![arrival]);
         library.reconcile(Source::Radarr).await;
 
-        assert_eq!(library.movie_titles().await, ["Arrival (Extended)"]);
+        assert_eq!(
+            movie_titles(&library.db_context).await,
+            ["Arrival (Extended)"]
+        );
     }
 
     #[tokio::test]
@@ -780,7 +832,7 @@ mod tests {
         let result = library.reconcile(Source::Radarr).await;
 
         assert_eq!(result, Some(ReconcileResult::Failed));
-        assert_eq!(library.movie_titles().await, ["Arrival", "Dune"]);
+        assert_eq!(movie_titles(&library.db_context).await, ["Arrival", "Dune"]);
     }
 
     #[tokio::test]
@@ -794,7 +846,10 @@ mod tests {
         let result = library.reconcile(Source::Radarr).await;
 
         assert_eq!(result, Some(ReconcileResult::Failed));
-        assert_eq!(library.movie_titles().await, ["Arrival", "Dune", "Sicario"]);
+        assert_eq!(
+            movie_titles(&library.db_context).await,
+            ["Arrival", "Dune", "Sicario"]
+        );
     }
 
     #[tokio::test]
@@ -817,6 +872,52 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn an_unreadable_movie_file_removes_no_movie_until_it_can_be_read() {
+        let library = Library::new().await;
+        library.radarr_lists(&[ARRIVAL, DUNE, SICARIO]);
+        library.reconcile(Source::Radarr).await;
+
+        library.radarr_lists(&[ARRIVAL, DUNE]);
+        library
+            .unreadable_files
+            .lock()
+            .unwrap()
+            .insert("/movies/Arrival.mkv".to_owned());
+        let failed = library.reconcile(Source::Radarr).await;
+        let after_failure = movie_titles(&library.db_context).await;
+        library.unreadable_files.lock().unwrap().clear();
+        let succeeded = library.reconcile(Source::Radarr).await;
+
+        assert_eq!(failed, Some(ReconcileResult::Failed));
+        assert_eq!(after_failure, ["Arrival", "Dune", "Sicario"]);
+        assert_eq!(succeeded, Some(ReconcileResult::Succeeded));
+        assert_eq!(movie_titles(&library.db_context).await, ["Arrival", "Dune"]);
+    }
+
+    #[tokio::test]
+    async fn an_unreadable_episode_file_removes_no_show_until_it_can_be_read() {
+        let library = Library::new().await;
+        library.sonarr_lists(&[SEVERANCE, ANDOR]);
+        library.reconcile(Source::Sonarr).await;
+
+        library.sonarr_lists(&[SEVERANCE]);
+        library
+            .unreadable_files
+            .lock()
+            .unwrap()
+            .insert("/tv/Severance/S01E01.mkv".to_owned());
+        let failed = library.reconcile(Source::Sonarr).await;
+        let after_failure = library.show_titles().await;
+        library.unreadable_files.lock().unwrap().clear();
+        let succeeded = library.reconcile(Source::Sonarr).await;
+
+        assert_eq!(failed, Some(ReconcileResult::Failed));
+        assert_eq!(after_failure, ["Andor", "Severance"]);
+        assert_eq!(succeeded, Some(ReconcileResult::Succeeded));
+        assert_eq!(library.show_titles().await, ["Severance"]);
+    }
+
+    #[tokio::test]
     async fn a_removal_of_more_than_half_the_movies_is_held_and_removes_nothing() {
         let library = Library::new().await;
         library.radarr_lists(&[ARRIVAL, DUNE, SICARIO, BLADE_RUNNER]);
@@ -830,7 +931,7 @@ mod tests {
             ["Blade Runner 2049", "Dune", "Sicario"]
         );
         assert_eq!(
-            library.movie_titles().await,
+            movie_titles(&library.db_context).await,
             ["Arrival", "Blade Runner 2049", "Dune", "Sicario"]
         );
     }
@@ -849,7 +950,7 @@ mod tests {
             ["Arrival", "Dune"]
         );
         assert_eq!(
-            library.movie_titles().await,
+            movie_titles(&library.db_context).await,
             ["Arrival", "Blade Runner 2049", "Dune", "Sicario"]
         );
     }

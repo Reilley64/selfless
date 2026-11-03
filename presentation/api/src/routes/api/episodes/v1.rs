@@ -153,14 +153,14 @@ mod tests {
             .unwrap();
         let half_loop = Episode::create()
             .season_id(season_id)
-            .tvdb_id(Uuid::new_v4().as_u64_pair().0 as i64)
+            .tvdb_id(domain::TvdbId(Uuid::new_v4().as_u64_pair().0 as i64))
             .number(2)
             .title("Half Loop")
             .air_date(Some(date(2022, 2, 18)))
             .rating(Some(8.1))
             .overview(Some("Mark takes Helly to the break room.".to_owned()))
             .media_file_id(Some(media_file.id))
-            .visible(true)
+            .in_library(true)
             .exec(db_context.executor_mut())
             .await
             .unwrap();
@@ -180,10 +180,9 @@ mod tests {
                 .await
                 .unwrap();
         }
-        db_context
+        media_file
             .audio_streams()
             .create()
-            .media_file_id(media_file.id)
             .index(1)
             .codec("eac3")
             .language(Some("eng".to_owned()))
@@ -193,10 +192,9 @@ mod tests {
             .await
             .unwrap();
         for (index, language, text) in [(2, "eng", true), (3, "deu", false)] {
-            db_context
+            media_file
                 .subtitle_streams()
                 .create()
-                .media_file_id(media_file.id)
                 .index(index)
                 .codec(if text { "subrip" } else { "hdmv_pgs_subtitle" })
                 .language(Some(language.to_owned()))
@@ -208,10 +206,9 @@ mod tests {
                 .await
                 .unwrap();
         }
-        db_context
+        media_file
             .subtitle_files()
             .create()
-            .media_file_id(media_file.id)
             .path("/media/TV/Severance/Season 01/Severance - S01E02.en.hi.srt")
             .language(Some("en".to_owned()))
             .hearing_impaired(true)
@@ -275,10 +272,10 @@ mod tests {
             .id;
         let hidden = Episode::create()
             .season_id(season_id)
-            .tvdb_id(Uuid::new_v4().as_u64_pair().0 as i64)
+            .tvdb_id(domain::TvdbId(Uuid::new_v4().as_u64_pair().0 as i64))
             .number(2)
             .title("Half Loop")
-            .visible(false)
+            .in_library(false)
             .exec(db_context.executor_mut())
             .await
             .unwrap();

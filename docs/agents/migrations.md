@@ -22,6 +22,8 @@ Toasty 0.11 cannot express these. Each one is a hand edit to the generated SQL.
 - When a migration removes the last column of a PostgreSQL enum type, Toasty drops the column but not the type. Add `DROP TYPE "<type>";` after it.
 - Renaming an enum variant makes the generator panic with "reordering or renaming variants is not supported". Generate while the Rust variant keeps its old name and only its fields are renamed, and answer Rename at the column prompt. Add `ALTER TYPE "<type>" RENAME VALUE '<old>' TO '<new>';` to the SQL and rename the variant in the new snapshot. Then rename the Rust variant. See `20261103_015518_invite_email_refused.sql`.
 
+- A `#[column(type = text)]` enum stores each variant as its snake_case name, and the snapshot does not list the variants. Renaming a variant needs no generated migration, but stored rows keep the old name. Add `UPDATE "<table>" SET "<column>" = '<new>' WHERE "<column>" = '<old>';` to a migration. See `20261103_101533_glossary_names.sql`.
+
 A model field with `#[column(type = "custom")]` panics when the PostgreSQL driver binds it. Use a type Toasty maps itself, or a `toasty::Embed`.
 
 ## Scratch databases

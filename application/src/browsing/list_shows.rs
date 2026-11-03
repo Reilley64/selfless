@@ -59,7 +59,7 @@ pub async fn call(
         let show_of_season: HashMap<_, _> = seasons.iter().map(|x| (x.id, x.show_id)).collect();
         for episode in db_context
             .episodes()
-            .filter(domain::Episode::fields().visible().eq(true))
+            .filter(domain::Episode::fields().in_library().eq(true))
             .exec(db_context.executor_mut())
             .await
             .map_err(Error::caused_by)?
@@ -160,14 +160,14 @@ mod tests {
 
     struct Episode {
         season: i64,
-        visible: bool,
+        in_library: bool,
         added_at: Option<&'static str>,
         air_date: Option<Date>,
     }
 
     const VISIBLE: Episode = Episode {
         season: 1,
-        visible: true,
+        in_library: true,
         added_at: None,
         air_date: None,
     };
@@ -189,7 +189,7 @@ mod tests {
                 }
             };
             episode(db_context, season_id)
-                .visible(x.visible)
+                .in_library(x.in_library)
                 .added_at(x.added_at.map(|x| x.parse::<Timestamp>().unwrap()))
                 .air_date(x.air_date)
                 .exec(db_context.executor_mut())
@@ -229,7 +229,15 @@ mod tests {
             ("andor", None, true),
         ] {
             let show = show(&db_context, title).sort_title(sort_title.map(str::to_owned));
-            add_show(&mut db_context, show, &[Episode { visible, ..VISIBLE }]).await;
+            add_show(
+                &mut db_context,
+                show,
+                &[Episode {
+                    in_library: visible,
+                    ..VISIBLE
+                }],
+            )
+            .await;
         }
 
         let output = list(&db_context, None, GridSort::Title, None).await;
@@ -260,7 +268,7 @@ mod tests {
                 },
                 Episode {
                     season: 3,
-                    visible: false,
+                    in_library: false,
                     ..VISIBLE
                 },
             ],
@@ -333,7 +341,7 @@ mod tests {
                     ..VISIBLE
                 })
                 .chain([Episode {
-                    visible: false,
+                    in_library: false,
                     added_at: Some("2026-10-30T08:00:00Z"),
                     ..VISIBLE
                 }])
@@ -362,7 +370,7 @@ mod tests {
                     ..VISIBLE
                 })
                 .chain([Episode {
-                    visible: false,
+                    in_library: false,
                     air_date: Some(date(2026, 1, 1)),
                     ..VISIBLE
                 }])

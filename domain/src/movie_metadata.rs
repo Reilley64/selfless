@@ -18,7 +18,7 @@ pub struct MovieMetadata {
 }
 
 impl MovieMetadata {
-    pub fn from_radarr(
+    pub fn from_source(
         title: String,
         year: i64,
         overview: Option<String>,
@@ -46,7 +46,7 @@ impl MovieMetadata {
             sort_title: nfo.sort_title.clone(),
             original_title: nfo.original_title.clone(),
             year: nfo.year.unwrap_or(self.year),
-            overview: nfo.plot.clone().or(self.overview),
+            overview: nfo.overview.clone().or(self.overview),
             runtime_minutes: nfo.runtime_minutes,
             certification: nfo.certification.clone(),
             premiered: nfo.premiered,
@@ -68,7 +68,7 @@ mod tests {
     use jiff::civil::date;
 
     fn radarr() -> MovieMetadata {
-        MovieMetadata::from_radarr(
+        MovieMetadata::from_source(
             "Arrival".to_owned(),
             2016,
             Some("Radarr's overview".to_owned()),
@@ -104,7 +104,7 @@ mod tests {
             sort_title: Some("arrival".to_owned()),
             original_title: Some("Story of Your Life".to_owned()),
             year: Some(2017),
-            plot: Some("The NFO's plot".to_owned()),
+            overview: Some("The NFO's overview".to_owned()),
             runtime_minutes: Some(116),
             certification: Some("PG-13".to_owned()),
             premiered: Some(date(2016, 11, 10)),
@@ -122,7 +122,7 @@ mod tests {
                 sort_title: Some("arrival".to_owned()),
                 original_title: Some("Story of Your Life".to_owned()),
                 year: 2017,
-                overview: Some("The NFO's plot".to_owned()),
+                overview: Some("The NFO's overview".to_owned()),
                 runtime_minutes: Some(116),
                 certification: Some("PG-13".to_owned()),
                 premiered: Some(date(2016, 11, 10)),

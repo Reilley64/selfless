@@ -1,15 +1,17 @@
 use application::ports::AudioStream;
-use application::ports::HdrType;
 use application::ports::Probe;
 use application::ports::ProbeError;
 use application::ports::ProbeMediaFile;
 use application::ports::SubtitleStream;
 use application::ports::VideoStream;
+use domain::HdrType;
 use serde::Deserialize;
 use std::time::Duration;
 use tokio::process::Command;
 use tracing::Instrument;
 use tracing::field;
+
+const PROBE_TIMEOUT: Duration = Duration::from_secs(120);
 
 const IMAGE_SUBTITLE_CODECS: [&str; 4] =
     ["hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle", "xsub"];
@@ -29,24 +31,32 @@ pub fn probe_media_file() -> ProbeMediaFile {
 }
 
 async fn probe(path: String, span: tracing::Span) -> Result<Probe, ProbeError> {
-    let output = Command::new("ffprobe")
-        .args([
-            "-v",
-            "error",
-            "-print_format",
-            "json",
-            "-show_format",
-            "-show_streams",
-        ])
-        .arg(&path)
-        .kill_on_drop(true)
-        .output()
-        .await
-        .map_err(|error| {
-            span.record("otel.status_code", "ERROR");
-            span.record("error.type", "spawn");
-            ProbeError::caused_by(error)
-        })?;
+    let output = tokio::time::timeout(
+        PROBE_TIMEOUT,
+        Command::new("ffprobe")
+            .args([
+                "-v",
+                "error",
+                "-print_format",
+                "json",
+                "-show_format",
+                "-show_streams",
+            ])
+            .arg(&path)
+            .kill_on_drop(true)
+            .output(),
+    )
+    .await
+    .map_err(|error| {
+        span.record("otel.status_code", "ERROR");
+        span.record("error.type", "timeout");
+        ProbeError::caused_by(error)
+    })?
+    .map_err(|error| {
+        span.record("otel.status_code", "ERROR");
+        span.record("error.type", "spawn");
+        ProbeError::caused_by(error)
+    })?;
     if let Some(code) = output.status.code() {
         span.record("process.exit.code", code);
     }
@@ -241,10 +251,10 @@ fn frame_rate(rational: &str) -> Option<f64> {
 mod tests {
     use super::parse;
     use application::ports::AudioStream;
-    use application::ports::HdrType;
     use application::ports::Probe;
     use application::ports::SubtitleStream;
     use application::ports::VideoStream;
+    use domain::HdrType;
     use std::time::Duration;
 
     fn subtitle(index: i64, codec: &str, language: &str, title: Option<&str>) -> SubtitleStream {

@@ -3,10 +3,8 @@ use domain::Actor;
 use domain::Admin;
 use domain::AdminSession;
 use domain::Artwork;
-use domain::AudioStream;
 use domain::Episode;
 use domain::HeldRemoval;
-use domain::HeldRemovalItem;
 use domain::Inbox;
 use domain::Invite;
 use domain::MediaFile;
@@ -16,11 +14,8 @@ use domain::Season;
 use domain::Session;
 use domain::Show;
 use domain::SourceState;
-use domain::SubtitleFile;
-use domain::SubtitleStream;
 use domain::SyncProblem;
 use domain::User;
-use domain::VideoStream;
 use opentelemetry::KeyValue;
 use opentelemetry::global;
 use opentelemetry::metrics::Histogram;
@@ -97,15 +92,7 @@ pub trait DbScope {
         DbSet::new()
     }
 
-    fn audio_streams(&self) -> DbSet<AudioStream> {
-        DbSet::new()
-    }
-
     fn episodes(&self) -> DbSet<Episode> {
-        DbSet::new()
-    }
-
-    fn held_removal_items(&self) -> DbSet<HeldRemovalItem> {
         DbSet::new()
     }
 
@@ -149,23 +136,11 @@ pub trait DbScope {
         DbSet::new()
     }
 
-    fn subtitle_files(&self) -> DbSet<SubtitleFile> {
-        DbSet::new()
-    }
-
-    fn subtitle_streams(&self) -> DbSet<SubtitleStream> {
-        DbSet::new()
-    }
-
     fn sync_problems(&self) -> DbSet<SyncProblem> {
         DbSet::new()
     }
 
     fn users(&self) -> DbSet<User> {
-        DbSet::new()
-    }
-
-    fn video_streams(&self) -> DbSet<VideoStream> {
         DbSet::new()
     }
 

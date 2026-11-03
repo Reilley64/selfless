@@ -244,7 +244,7 @@ mod tests {
     struct Episode {
         season: i64,
         number: i64,
-        visible: bool,
+        in_library: bool,
         added_at: Option<&'static str>,
         air_date: Option<Date>,
     }
@@ -252,7 +252,7 @@ mod tests {
     const EPISODE: Episode = Episode {
         season: 1,
         number: 1,
-        visible: true,
+        in_library: true,
         added_at: None,
         air_date: None,
     };
@@ -276,7 +276,7 @@ mod tests {
             };
             let episode = episode(db_context, season_id)
                 .number(x.number)
-                .visible(x.visible)
+                .in_library(x.in_library)
                 .added_at(x.added_at.map(at))
                 .air_date(x.air_date)
                 .exec(db_context.executor_mut())
@@ -333,7 +333,7 @@ mod tests {
             })
             .chain([Episode {
                 number: 4,
-                visible: false,
+                in_library: false,
                 added_at: Some("2026-10-30T08:00:00Z"),
                 ..EPISODE
             }])
@@ -390,7 +390,7 @@ mod tests {
             movie(&db_context, title)
                 .sort_title(sort_title.map(str::to_owned))
                 .genres(genres(names))
-                .visible(visible)
+                .in_library(visible)
                 .exec(db_context.executor_mut())
                 .await
                 .unwrap();
@@ -401,7 +401,15 @@ mod tests {
             ("Gone", &["Action", "Western"][..], false),
         ] {
             let show = show(&db_context, title).genres(genres(names));
-            add_show(&mut db_context, show, &[Episode { visible, ..EPISODE }]).await;
+            add_show(
+                &mut db_context,
+                show,
+                &[Episode {
+                    in_library: visible,
+                    ..EPISODE
+                }],
+            )
+            .await;
         }
 
         let output = home(&db_context).await;
@@ -488,7 +496,7 @@ mod tests {
                 },
                 Episode {
                     number: 2,
-                    visible: false,
+                    in_library: false,
                     air_date: Some(date(2026, 1, 1)),
                     ..EPISODE
                 },

@@ -5,10 +5,10 @@ use application::ports::FindMediaFile;
 use application::ports::GetRadarrMovie;
 use application::ports::GetSonarrShow;
 use application::ports::ListSubtitleFiles;
+use application::ports::MovieWebhookDelivery;
 use application::ports::ProbeError;
 use application::ports::ProbeMediaFile;
 use application::ports::RadarrError;
-use application::ports::RadarrWebhook;
 use application::ports::ReadEpisodeFolder;
 use application::ports::ReadEpisodeNfo;
 use application::ports::ReadMovieFolder;
@@ -18,7 +18,7 @@ use application::ports::ReadShowFolder;
 use application::ports::ReadShowNfo;
 use application::ports::ReadSonarrWebhook;
 use application::ports::ReadWebhookEventType;
-use application::ports::SonarrWebhook;
+use application::ports::ShowWebhookDelivery;
 use application::ports::UnreadableNfo;
 use application::ports::UnreadableWebhook;
 use application::ports::persistence;
@@ -29,6 +29,8 @@ use application::webhooks::process_radarr_delivery;
 use application::webhooks::process_sonarr_delivery;
 use application::webhooks::store_webhook_delivery;
 use bytes::Bytes;
+use domain::RadarrId;
+use domain::SonarrId;
 use domain::Source;
 use opentelemetry::global;
 use opentelemetry_sdk::metrics::InMemoryMetricExporter;
@@ -82,11 +84,11 @@ async fn process_radarr(
     process_radarr_delivery::call(
         process_radarr_delivery::Dependencies {
             db_context: db_context.clone(),
-            find_media_file: FindMediaFile::new(|_| Box::pin(async { None })),
+            find_media_file: FindMediaFile::new(|_| Box::pin(async { Ok(None) })),
             get_radarr_movie: GetRadarrMovie::new(|radarr_id| {
                 Box::pin(async move {
                     match radarr_id {
-                        1 => Ok(None),
+                        RadarrId(1) => Ok(None),
                         _ => Err(RadarrError::caused_by("Radarr is down")),
                     }
                 })
@@ -95,9 +97,9 @@ async fn process_radarr(
             prober: Prober::new(ProbeMediaFile::new(|_| {
                 Box::pin(async { Err(ProbeError::default()) })
             })),
-            read_movie_folder: ReadMovieFolder::new(|_| Box::pin(async { Default::default() })),
+            read_movie_folder: ReadMovieFolder::new(|_| Box::pin(async { Ok(Default::default()) })),
             read_movie_nfo: ReadMovieNfo::new(|_| {
-                Box::pin(async { Err(UnreadableNfo::default()) })
+                Box::pin(async { Err(UnreadableNfo::default().into()) })
             }),
             read_radarr_webhook,
             read_webhook_event_type: event_type(event),
@@ -117,18 +119,24 @@ async fn process_sonarr(
     process_sonarr_delivery::call(
         process_sonarr_delivery::Dependencies {
             db_context: db_context.clone(),
-            find_media_file: FindMediaFile::new(|_| Box::pin(async { None })),
+            find_media_file: FindMediaFile::new(|_| Box::pin(async { Ok(None) })),
             get_sonarr_show: GetSonarrShow::new(|_| Box::pin(async { Ok(None) })),
             list_subtitle_files: ListSubtitleFiles::new(|_| Box::pin(async { Ok(Vec::new()) })),
             prober: Prober::new(ProbeMediaFile::new(|_| {
                 Box::pin(async { Err(ProbeError::default()) })
             })),
-            read_episode_folder: ReadEpisodeFolder::new(|_| Box::pin(async { Default::default() })),
-            read_episode_nfo: ReadEpisodeNfo::new(|_| {
-                Box::pin(async { Err(UnreadableNfo::default()) })
+            read_episode_folder: ReadEpisodeFolder::new(|_| {
+                Box::pin(async { Ok(Default::default()) })
             }),
-            read_show_folder: ReadShowFolder::new(|_, _| Box::pin(async { Default::default() })),
-            read_show_nfo: ReadShowNfo::new(|_| Box::pin(async { Err(UnreadableNfo::default()) })),
+            read_episode_nfo: ReadEpisodeNfo::new(|_| {
+                Box::pin(async { Err(UnreadableNfo::default().into()) })
+            }),
+            read_show_folder: ReadShowFolder::new(|_, _| {
+                Box::pin(async { Ok(Default::default()) })
+            }),
+            read_show_nfo: ReadShowNfo::new(|_| {
+                Box::pin(async { Err(UnreadableNfo::default().into()) })
+            }),
             read_sonarr_webhook,
             read_webhook_event_type: event_type(event),
             source_health: SourceHealth::default(),
@@ -155,14 +163,18 @@ async fn deliveries_are_counted_as_stored_rejected_processed_ignored_skipped_and
     store(&db_context, Source::Sonarr, PASSWORD, "Test").await;
     process_radarr(
         &db_context,
-        ReadRadarrWebhook::new(|_| Ok(RadarrWebhook::Movie { radarr_id: 1 })),
+        ReadRadarrWebhook::new(|_| {
+            Ok(MovieWebhookDelivery::Movie {
+                radarr_id: RadarrId(1),
+            })
+        }),
         "MovieDelete",
     )
     .await
     .unwrap();
     process_radarr(
         &db_context,
-        ReadRadarrWebhook::new(|_| Ok(RadarrWebhook::Ignored)),
+        ReadRadarrWebhook::new(|_| Ok(MovieWebhookDelivery::Ignored)),
         "Grab",
     )
     .await
@@ -176,20 +188,28 @@ async fn deliveries_are_counted_as_stored_rejected_processed_ignored_skipped_and
     .unwrap();
     process_radarr(
         &db_context,
-        ReadRadarrWebhook::new(|_| Ok(RadarrWebhook::Movie { radarr_id: 42 })),
+        ReadRadarrWebhook::new(|_| {
+            Ok(MovieWebhookDelivery::Movie {
+                radarr_id: RadarrId(42),
+            })
+        }),
         "Download",
     )
     .await
     .unwrap_err();
     process_sonarr(
         &db_context,
-        ReadSonarrWebhook::new(|_| Ok(SonarrWebhook::Show { sonarr_id: 7 })),
+        ReadSonarrWebhook::new(|_| {
+            Ok(ShowWebhookDelivery::Show {
+                sonarr_id: SonarrId(7),
+            })
+        }),
         "Download",
     )
     .await;
     process_sonarr(
         &db_context,
-        ReadSonarrWebhook::new(|_| Ok(SonarrWebhook::Ignored)),
+        ReadSonarrWebhook::new(|_| Ok(ShowWebhookDelivery::Ignored)),
         "Test",
     )
     .await;

@@ -41,7 +41,7 @@ fn visible_show() -> toasty::stmt::Expr<bool> {
 fn visible_season() -> toasty::stmt::Expr<bool> {
     Season::fields()
         .episodes()
-        .any(Episode::fields().visible().eq(true))
+        .any(Episode::fields().in_library().eq(true))
 }
 
 fn season_counts(seasons: &[Season]) -> HashMap<Uuid, i64> {

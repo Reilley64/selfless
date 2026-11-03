@@ -31,7 +31,7 @@ pub async fn call(
     } = dependencies.into();
     let movies = db_context
         .movies()
-        .filter(Movie::fields().visible().eq(true))
+        .filter(Movie::fields().in_library().eq(true))
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?
@@ -145,7 +145,7 @@ mod tests {
         ] {
             movie(&db_context, title)
                 .sort_title(sort_title.map(str::to_owned))
-                .visible(visible)
+                .in_library(visible)
                 .exec(db_context.executor_mut())
                 .await
                 .unwrap();
