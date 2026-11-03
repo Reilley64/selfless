@@ -126,10 +126,9 @@ mod tests {
             .await
             .unwrap();
         for index in [2, 0] {
-            db_context
+            media_file
                 .video_streams()
                 .create()
-                .media_file_id(media_file.id)
                 .index(index)
                 .codec("hevc")
                 .width(3840)
@@ -140,10 +139,9 @@ mod tests {
                 .unwrap();
         }
         for index in [3, 1] {
-            db_context
+            media_file
                 .audio_streams()
                 .create()
-                .media_file_id(media_file.id)
                 .index(index)
                 .codec("truehd")
                 .channels(8)
@@ -153,10 +151,9 @@ mod tests {
                 .unwrap();
         }
         for index in [5, 4] {
-            db_context
+            media_file
                 .subtitle_streams()
                 .create()
-                .media_file_id(media_file.id)
                 .index(index)
                 .codec("subrip")
                 .is_default(false)
@@ -168,10 +165,9 @@ mod tests {
                 .unwrap();
         }
         for path in ["Arrival.fr.srt", "Arrival.en.srt"] {
-            db_context
+            media_file
                 .subtitle_files()
                 .create()
-                .media_file_id(media_file.id)
                 .path(path)
                 .hearing_impaired(false)
                 .forced(false)
