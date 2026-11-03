@@ -4097,6 +4097,7 @@ dependencies = [
  "admin",
  "api",
  "application",
+ "base64 0.22.1",
  "domain",
  "email",
  "ffmpeg",
