@@ -1,8 +1,10 @@
 import { type HomeRow, type HomeRowKind, useGetHome } from "@selfless/api-client";
+import { useRouter } from "expo-router";
 import { ScrollView, Text, View } from "react-native-css/components";
 import { FeaturedTitle } from "./FeaturedTitle";
 import { serverUnreachable } from "./messages";
 import { TileRow } from "./TileRow";
+import { tilePath } from "./tilePath";
 
 const rowTitles: Record<Exclude<HomeRowKind, "genre">, string> = {
   continueWatching: "Continue watching",
@@ -15,6 +17,7 @@ export function rowTitle(row: HomeRow) {
 }
 
 export function Home() {
+  const router = useRouter();
   const { data, isError } = useGetHome();
   if (isError) {
     return <Text className="p-web-inset font-sans text-web-body text-text-muted">{serverUnreachable}</Text>;
@@ -30,7 +33,12 @@ export function Home() {
         {rows
           .filter((row) => row.tiles.length > 0)
           .map((row) => (
-            <TileRow key={`${row.kind} ${row.genre}`} title={rowTitle(row)} tiles={row.tiles} />
+            <TileRow
+              key={`${row.kind} ${row.genre}`}
+              title={rowTitle(row)}
+              tiles={row.tiles}
+              onPressTile={(tile) => router.push(tilePath(tile))}
+            />
           ))}
       </View>
     </ScrollView>

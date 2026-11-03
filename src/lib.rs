@@ -137,10 +137,6 @@ impl Server {
         self.listener.local_addr()
     }
 
-    pub fn state(&self) -> &AppState {
-        &self.state
-    }
-
     pub async fn serve(self, shutdown: impl Future<Output = ()>) -> Result<(), AppError> {
         let availability = self.availability;
         let stop_workers = CancellationToken::new();

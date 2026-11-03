@@ -5,7 +5,8 @@ import { Text, View } from "react-native-css/components";
 import { ActionButton } from "./ActionButton";
 import { ArtworkImage } from "./Tile";
 import { TitleMeta } from "./TitleMeta";
-import { playHref, titleHref } from "./titleHref";
+import { playHref } from "./playHref";
+import { tilePath } from "./tilePath";
 
 export function FeaturedTitle({ featured }: { featured: FeaturedTitleData }) {
   const router = useRouter();
@@ -49,7 +50,7 @@ export function FeaturedTitle({ featured }: { featured: FeaturedTitleData }) {
         )}
         <View className="mt-3 flex-row gap-3">
           <ActionButton label="Play" primary onPress={() => router.push(playHref(featured))} />
-          <ActionButton label="More info" onPress={() => router.push(titleHref(tile))} />
+          <ActionButton label="More info" onPress={() => router.push(tilePath(tile))} />
         </View>
       </View>
     </View>

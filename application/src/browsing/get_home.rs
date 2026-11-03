@@ -10,6 +10,7 @@ pub use output::Row;
 pub use output::RowKind;
 
 use crate::browsing::Tile;
+use crate::browsing::season_counts;
 use crate::browsing::title_images;
 use crate::ports::persistence::DbScope;
 use domain::Artwork;
@@ -143,6 +144,14 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<Output, Error
         .flat_map(|(_, ids)| ids.iter().copied())
         .chain(featured)
         .collect();
+    let play_episode_id = featured.and_then(|id| {
+        episodes
+            .iter()
+            .filter_map(|x| Some((season_of.get(&x.season_id)?, x)))
+            .filter(|(season, _)| season.show_id == id)
+            .min_by_key(|(season, episode)| (season.listing_order(), episode.number))
+            .map(|(_, episode)| episode.id)
+    });
     let now = clock.call();
     let mut movie_images = title_images(
         &mut db_context,
@@ -174,33 +183,30 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<Output, Error
     )
     .await
     .map_err(Error::caused_by)?;
-    let mut season_counts = HashMap::<Uuid, i64>::new();
-    for season in seasons.iter().filter(|x| x.number > 0) {
-        *season_counts.entry(season.show_id).or_default() += 1;
-    }
+    let season_counts = season_counts(&seasons);
     let tiles: HashMap<Uuid, Tile> = movies
-        .iter()
+        .into_iter()
         .filter(|x| shown.contains(&x.id))
         .map(|movie| {
             let images = movie_images.remove(&movie.id).unwrap_or_default();
             (movie.id, Tile::movie(movie, images))
         })
-        .chain(shows.iter().filter(|x| shown.contains(&x.id)).map(|show| {
-            let images = show_images.remove(&show.id).unwrap_or_default();
-            let season_count = season_counts.get(&show.id).copied().unwrap_or_default();
-            (show.id, Tile::show(show, season_count, images))
-        }))
+        .chain(
+            shows
+                .into_iter()
+                .filter(|x| shown.contains(&x.id))
+                .map(|show| {
+                    let images = show_images.remove(&show.id).unwrap_or_default();
+                    let season_count = season_counts.get(&show.id).copied().unwrap_or_default();
+                    (show.id, Tile::show(show, season_count, images))
+                }),
+        )
         .collect();
 
     Ok(Output {
         featured: featured.map(|id| FeaturedTitle {
             tile: tiles[&id].clone(),
-            play_episode_id: episodes
-                .iter()
-                .filter_map(|x| Some((season_of.get(&x.season_id)?, x)))
-                .filter(|(season, _)| season.show_id == id)
-                .min_by_key(|(season, episode)| (season.listing_order(), episode.number))
-                .map(|(_, episode)| episode.id),
+            play_episode_id,
         }),
         rows: rows
             .into_iter()

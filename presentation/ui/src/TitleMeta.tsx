@@ -1,12 +1,11 @@
 import type { Tile } from "@selfless/api-client";
 import { Platform } from "react-native";
 import { Text, View } from "react-native-css/components";
+import { runtimeLabel } from "./runtimeLabel";
 
 function length(tile: Tile) {
-  if (tile.runtimeMinutes != null) {
-    const hours = Math.floor(tile.runtimeMinutes / 60);
-    const minutes = tile.runtimeMinutes % 60;
-    return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+  if (tile.runtimeMinutes) {
+    return runtimeLabel(tile.runtimeMinutes);
   }
   if (tile.seasonCount != null) {
     return `${tile.seasonCount} ${tile.seasonCount === 1 ? "Season" : "Seasons"}`;

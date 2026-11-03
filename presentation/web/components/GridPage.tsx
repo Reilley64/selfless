@@ -1,6 +1,7 @@
 import type { InfiniteData, UseInfiniteQueryResult } from "@tanstack/react-query";
 import type { TilePage } from "@selfless/api-client";
-import { GridSelectors, TileGrid } from "@selfless/ui";
+import { GridSelectors, TileGrid, tilePath } from "@selfless/ui";
+import { useRouter } from "expo-router";
 import { useWindowDimensions } from "react-native";
 import { Text, View } from "react-native-css/components";
 import { ServerUnreachable } from "./form";
@@ -23,6 +24,7 @@ export function GridPage({
   kind: "movie" | "show";
   query: UseInfiniteQueryResult<InfiniteData<TilePageResponse, string | undefined>, unknown>;
 }) {
+  const router = useRouter();
   const { width } = useWindowDimensions();
   const numColumns = Math.max(1, Math.floor((width - 2 * INSET + GAP) / (MIN_TILE_WIDTH + GAP)));
   const tiles = query.data?.pages.flatMap((page) => (page.status === 200 ? page.data.tiles : [])) ?? [];
@@ -38,6 +40,7 @@ export function GridPage({
         tiles={tiles}
         numColumns={numColumns}
         onEndReached={loadMore}
+        onPressTile={(tile) => router.push(tilePath(tile))}
         header={
           <View className="gap-4 px-2 pt-8 pb-5">
             <View className="z-50 flex-row items-center gap-6">

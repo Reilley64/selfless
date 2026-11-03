@@ -10,6 +10,7 @@ use crate::browsing::Cursor;
 use crate::browsing::SortKey;
 use crate::browsing::Tile;
 use crate::browsing::page;
+use crate::browsing::season_counts;
 use crate::browsing::title_images;
 use crate::browsing::visible_season;
 use crate::browsing::visible_show;
@@ -20,7 +21,6 @@ use domain::Season;
 use domain::sort_key;
 use std::cmp::Reverse;
 use std::collections::HashMap;
-use uuid::Uuid;
 
 pub async fn call(
     dependencies: impl Into<Dependencies>,
@@ -53,10 +53,7 @@ pub async fn call(
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?;
-    let mut season_counts = HashMap::<Uuid, i64>::new();
-    for season in seasons.iter().filter(|x| x.number > 0) {
-        *season_counts.entry(season.show_id).or_default() += 1;
-    }
+    let season_counts = season_counts(&seasons);
     let mut newest = HashMap::new();
     if sort != GridSort::Title {
         let show_of_season: HashMap<_, _> = seasons.iter().map(|x| (x.id, x.show_id)).collect();
@@ -104,11 +101,9 @@ pub async fn call(
         tiles: shows
             .into_iter()
             .map(|show| {
-                Tile::show(
-                    &show,
-                    season_counts.get(&show.id).copied().unwrap_or_default(),
-                    images.remove(&show.id).unwrap_or_default(),
-                )
+                let images = images.remove(&show.id).unwrap_or_default();
+                let season_count = season_counts.get(&show.id).copied().unwrap_or_default();
+                Tile::show(show, season_count, images)
             })
             .collect(),
         next,
@@ -133,6 +128,7 @@ mod tests {
     use jiff::civil::date;
     use test_fixtures::FakeClock;
     use toasty::schema::Model;
+    use uuid::Uuid;
 
     fn dependencies(db_context: &DbContext) -> Dependencies {
         Dependencies {

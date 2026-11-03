@@ -1,7 +1,7 @@
 #[path = "../test/persistence.rs"]
 mod persistence_test;
 #[path = "../test/selfless.rs"]
-mod selfless_test;
+pub mod selfless_test;
 
 use application::invites::create_invite;
 use application::ports::Clock;

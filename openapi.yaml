@@ -335,6 +335,35 @@ paths:
           $ref: "#/components/responses/Unauthenticated"
         "500":
           $ref: "#/components/responses/InternalError"
+  /api/movies/{movieId}/v1:
+    get:
+      operationId: getMovie
+      summary: The movie page
+      description: A visible movie with its details, credits, artwork, the user's progress, the Play target and the More like this row. A movie is visible when its file is on disk.
+      tags: [browsing]
+      parameters:
+        - name: movieId
+          in: path
+          required: true
+          description: The movie's ID.
+          schema:
+            type: string
+            format: uuid
+          example: 0190f3c4-5b6a-7c8d-9e0f-1a2b3c4d5e6f
+      responses:
+        "200":
+          description: The movie page.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MoviePage"
+              example: {"id":"0190f3c4-5b6a-7c8d-9e0f-1a2b3c4d5e6f","title":"Arrival","year":2016,"certification":"PG-13","runtimeMinutes":116,"genres":["Drama","Science Fiction"],"rating":7.6,"plot":"A linguist works with the military to talk to aliens.","studio":"Paramount","originalTitle":"Arrival","directors":["Denis Villeneuve"],"cast":[{"name":"Amy Adams","role":"Louise Banks"}],"images":{"fanart":null,"logo":null},"progress":null,"watched":false,"play":{"resumePosition":null},"moreLikeThis":[{"id":"0190f3c4-6c7d-7e8f-9a0b-1c2d3e4f5a6b","kind":"movie","title":"Dune","year":2021,"certification":"PG-13","runtimeMinutes":155,"seasonCount":null,"genres":["Science Fiction"],"plot":"A noble family becomes embroiled in a war for control of a desert planet.","images":{"fanart":null,"logo":null,"thumb":null},"progress":null,"watched":false,"episode":null}]}
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /api/shows/v1:
     get:
       operationId: listShows
@@ -1175,6 +1204,120 @@ components:
           type: string
           format: uri-reference
           examples: ["/api/images/0190f3c4-7d8e-7f90-a1b2-c3d4e5f6a7b8/480/v1?expires=1793836800&signature=Jm2vX8kQ0rH3c1yF5bR7tVw9nL4pA6sD0eG2iK8uO1M"]
+      additionalProperties: false
+    MoviePage:
+      description: Everything the movie page shows.
+      type: object
+      required: [id, title, year, certification, runtimeMinutes, genres, rating, plot, studio, originalTitle, directors, cast, images, progress, watched, play, moreLikeThis]
+      properties:
+        id:
+          type: string
+          format: uuid
+          examples: ["0190f3c4-5b6a-7c8d-9e0f-1a2b3c4d5e6f"]
+        title:
+          type: string
+          examples: [Arrival]
+        year:
+          type: integer
+          examples: [2016]
+        certification:
+          description: The age rating from the movie's NFO file.
+          type: [string, "null"]
+          examples: [PG-13]
+        runtimeMinutes:
+          type: [integer, "null"]
+          examples: [116]
+        genres:
+          type: array
+          items:
+            type: string
+          examples: [[Drama, Science Fiction]]
+        rating:
+          description: The TMDB rating from the NFO file, from 0 to 10.
+          type: [number, "null"]
+          examples: [7.6]
+        plot:
+          type: [string, "null"]
+          examples: [A linguist works with the military to talk to aliens.]
+        studio:
+          type: [string, "null"]
+          examples: [Paramount]
+        originalTitle:
+          description: The title in the movie's original language. The apps show it only when it differs from the title.
+          type: [string, "null"]
+          examples: [Arrival]
+        directors:
+          type: array
+          items:
+            type: string
+          examples: [[Denis Villeneuve]]
+        cast:
+          description: Up to 10 cast members in billing order.
+          type: array
+          items:
+            $ref: "#/components/schemas/CastMember"
+          examples: [[{name: Amy Adams, role: Louise Banks}]]
+        images:
+          $ref: "#/components/schemas/TitleImages"
+          examples: [{fanart: null, logo: null}]
+        progress:
+          description: How far the user got in the movie, from 0 to 1, when they have a resume position. Otherwise null.
+          type: [number, "null"]
+          minimum: 0
+          maximum: 1
+          examples: [0.42]
+        watched:
+          description: Whether the user has watched the movie.
+          type: boolean
+          examples: [false]
+        play:
+          $ref: "#/components/schemas/MoviePlay"
+          examples: [{resumePosition: null}]
+        moreLikeThis:
+          description: Up to 20 visible movies and shows that share a genre with the movie, the most shared genres first, then by sort title.
+          type: array
+          items:
+            $ref: "#/components/schemas/Tile"
+          examples: [[]]
+      additionalProperties: false
+    CastMember:
+      description: An actor and the role they play.
+      type: object
+      required: [name, role]
+      properties:
+        name:
+          type: string
+          examples: [Amy Adams]
+        role:
+          type: [string, "null"]
+          examples: [Louise Banks]
+      additionalProperties: false
+    TitleImages:
+      description: The artwork of a movie or show page. A missing image is null, and the app draws the title instead.
+      type: object
+      required: [fanart, logo]
+      properties:
+        fanart:
+          description: The backdrop.
+          anyOf:
+            - $ref: "#/components/schemas/Artwork"
+            - type: "null"
+        logo:
+          description: The clearlogo.
+          anyOf:
+            - $ref: "#/components/schemas/Artwork"
+            - type: "null"
+      additionalProperties: false
+    MoviePlay:
+      description: What the movie's Play button plays. The web app plays a movie at /play/movies/{movieId}.
+      type: object
+      required: [resumePosition]
+      properties:
+        resumePosition:
+          description: The user's resume position in seconds. With one, the page offers Resume and Start over. Otherwise it offers Play from the start.
+          type: [number, "null"]
+          minimum: 0
+          examples: [1534.2]
       additionalProperties: false
     GenreKind:
       description: The kind of title a genre list counts.

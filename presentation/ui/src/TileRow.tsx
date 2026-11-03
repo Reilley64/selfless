@@ -6,13 +6,12 @@ import { Pressable, ScrollView, Text, View } from "react-native-css/components";
 import { ActionButton } from "./ActionButton";
 import { ArtworkImage, Tile } from "./Tile";
 import { TitleMeta } from "./TitleMeta";
-import { titleHref } from "./titleHref";
 
 const HOVER_DELAY = 400;
 const INSET = 48;
 const EXPANDED_WIDTH = 520;
 
-function TileCard({ tile, onPress }: { tile: TileData; onPress: () => void }) {
+function TileCard({ tile, onPress }: { tile: TileData; onPress?: () => void }) {
   const router = useRouter();
   return (
     <Pressable
@@ -39,14 +38,21 @@ function TileCard({ tile, onPress }: { tile: TileData; onPress: () => void }) {
         {tile.kind === "movie" && (
           <ActionButton label="Play" primary small onPress={() => router.push(`/play/movies/${tile.id}`)} />
         )}
-        <ActionButton label="More info" small onPress={onPress} />
+        {onPress && <ActionButton label="More info" small onPress={onPress} />}
       </View>
     </Pressable>
   );
 }
 
-function RowTile({ tile, onOpen }: { tile: TileData; onOpen: (left: number) => void }) {
-  const router = useRouter();
+function RowTile({
+  tile,
+  onPress,
+  onOpen,
+}: {
+  tile: TileData;
+  onPress?: () => void;
+  onOpen: (left: number) => void;
+}) {
   const [open, setOpen] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const left = useRef(0);
@@ -62,7 +68,6 @@ function RowTile({ tile, onOpen }: { tile: TileData; onOpen: (left: number) => v
     clearTimeout(timer.current);
     setOpen(false);
   };
-  const go = () => router.push(titleHref(tile));
   const width = Platform.isTV ? "w-tile-tv-width" : open ? "w-tile-web-expanded-width" : "w-tile-web-width";
   return (
     <View
@@ -73,7 +78,7 @@ function RowTile({ tile, onOpen }: { tile: TileData; onOpen: (left: number) => v
       onPointerEnter={later}
       onPointerLeave={close}
     >
-      {open ? <TileCard tile={tile} onPress={go} /> : <Tile tile={tile} onPress={go} />}
+      {open ? <TileCard tile={tile} onPress={onPress} /> : <Tile tile={tile} onPress={onPress} />}
     </View>
   );
 }
@@ -90,7 +95,15 @@ function Arrow({ side, onPress }: { side: "left" | "right"; onPress: () => void 
   );
 }
 
-export function TileRow({ title, tiles }: { title: string; tiles: TileData[] }) {
+export function TileRow({
+  title,
+  tiles,
+  onPressTile,
+}: {
+  title: string;
+  tiles: TileData[];
+  onPressTile?: (tile: TileData) => void;
+}) {
   const scroll = useRef<ScrollViewInstance>(null);
   const [offset, setOffset] = useState(0);
   const [viewport, setViewport] = useState(0);
@@ -120,6 +133,7 @@ export function TileRow({ title, tiles }: { title: string; tiles: TileData[] }) 
             <RowTile
               key={tile.id}
               tile={tile}
+              onPress={onPressTile && (() => onPressTile(tile))}
               onOpen={(left) => {
                 const overflow = left - offset + EXPANDED_WIDTH - (viewport - INSET);
                 if (overflow > 0) {

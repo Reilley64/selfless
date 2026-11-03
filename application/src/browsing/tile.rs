@@ -18,21 +18,15 @@ pub struct Tile {
     pub images: TileImages,
 }
 
-#[derive(Clone, Debug)]
-pub enum TileKind {
-    Movie { runtime_minutes: Option<i64> },
-    Show { season_count: i64 },
-}
-
 impl Tile {
-    pub(crate) fn movie(movie: &Movie, images: TileImages) -> Self {
+    pub(crate) fn movie(movie: Movie, images: TileImages) -> Self {
         Self {
             id: movie.id,
-            title: movie.title.clone(),
+            title: movie.title,
             year: Some(movie.year),
-            certification: movie.certification.clone(),
-            genres: movie.genres.clone(),
-            plot: movie.overview.clone(),
+            certification: movie.certification,
+            genres: movie.genres,
+            plot: movie.overview,
             kind: TileKind::Movie {
                 runtime_minutes: movie.runtime_minutes,
             },
@@ -40,18 +34,24 @@ impl Tile {
         }
     }
 
-    pub(crate) fn show(show: &Show, season_count: i64, images: TileImages) -> Self {
+    pub(crate) fn show(show: Show, season_count: i64, images: TileImages) -> Self {
         Self {
             id: show.id,
-            title: show.title.clone(),
+            title: show.title,
             year: show.year,
-            certification: show.certification.clone(),
-            genres: show.genres.clone(),
-            plot: show.overview.clone(),
+            certification: show.certification,
+            genres: show.genres,
+            plot: show.overview,
             kind: TileKind::Show { season_count },
             images,
         }
     }
+}
+
+#[derive(Clone, Debug)]
+pub enum TileKind {
+    Movie { runtime_minutes: Option<i64> },
+    Show { season_count: i64 },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]

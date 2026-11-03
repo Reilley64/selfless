@@ -63,7 +63,10 @@ pub async fn call(
     Ok(Output {
         tiles: movies
             .into_iter()
-            .map(|movie| Tile::movie(&movie, images.remove(&movie.id).unwrap_or_default()))
+            .map(|movie| {
+                let images = images.remove(&movie.id).unwrap_or_default();
+                Tile::movie(movie, images)
+            })
             .collect(),
         next,
     })

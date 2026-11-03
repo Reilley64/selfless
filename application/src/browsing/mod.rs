@@ -1,10 +1,12 @@
 mod image;
+mod more_like_this;
 mod resizer;
 mod tile;
 
 pub mod clean_image_cache;
 pub mod get_home;
 pub mod get_image;
+pub mod get_movie;
 pub mod list_genres;
 pub mod list_movies;
 pub mod list_shows;
@@ -18,6 +20,9 @@ pub use resizer::Resizer;
 use domain::Episode;
 use domain::Season;
 use domain::Show;
+use more_like_this::more_like_this;
+use std::collections::HashMap;
+use uuid::Uuid;
 
 pub use tile::Cursor;
 pub use tile::SortKey;
@@ -34,6 +39,14 @@ fn visible_season() -> toasty::stmt::Expr<bool> {
     Season::fields()
         .episodes()
         .any(Episode::fields().visible().eq(true))
+}
+
+fn season_counts(seasons: &[Season]) -> HashMap<Uuid, i64> {
+    let mut counts = HashMap::new();
+    for season in seasons.iter().filter(|x| x.number > 0) {
+        *counts.entry(season.show_id).or_default() += 1;
+    }
+    counts
 }
 
 fn page<T>(mut keyed: Vec<(Cursor, T)>, after: Option<&Cursor>) -> (Vec<T>, Option<Cursor>) {
