@@ -34,6 +34,48 @@ _Avoid_: File, media source, version, asset
 A category from the NFO files that users filter movies and shows by.
 _Avoid_: Tag, category
 
+## Library sync
+
+**Source**:
+Radarr or Sonarr, as the system a movie or show comes from. Each source has its own webhook password, reconcile and sync status.
+_Avoid_: Provider, arr, upstream
+
+**Webhook delivery**:
+One webhook request from a source, kept in the inbox until selfless has re-synced the movie or show it names.
+_Avoid_: Event, notification, hook
+
+**Reconcile**:
+A full comparison of one source's movies or shows with the library. It adds, re-syncs and removes items. It runs at startup, every reconcile interval, and when an admin presses Sync now.
+_Avoid_: Full sync, scan, refresh
+
+**Held removal**:
+A reconcile's removal of more than half of a source's stored items. Nothing is removed until an admin confirms it, and a later reconcile replaces it.
+_Avoid_: Pending deletion, quarantine
+
+**Sync status**:
+What an admin sees about library sync for each source: the last webhook, rejected webhooks, the last reconcile, any held removal, and the sync problems.
+_Avoid_: Health, sync state
+
+**Sync problem**:
+A movie or episode selfless could sync only in part, listed in the sync status with the path to fix. It is a missing media file, an unreadable file, an unreadable NFO or an unrecognised media file.
+_Avoid_: Error, issue, warning
+
+**Missing media file**:
+A sync problem: Radarr or Sonarr reports a media file whose path doesn't exist on selfless's disk. The movie or episode leaves the library until the path appears.
+_Avoid_: File not found
+
+**Unreadable file**:
+A sync problem: a media file, NFO or image exists on disk but selfless can't read it, for example because of its permissions. The movie or episode stays as it was until the read succeeds.
+_Avoid_: Permission error, IO error
+
+**Unreadable NFO**:
+A sync problem: an NFO file selfless read but couldn't parse. Radarr's or Sonarr's title, year, genres and overview stand in for it.
+_Avoid_: Bad NFO, invalid metadata
+
+**Unrecognised media file**:
+A sync problem: ffprobe couldn't read a media file's container or streams. The movie or episode stays in the library.
+_Avoid_: Ffprobe failed, probe error
+
 ## People
 
 **User**:
