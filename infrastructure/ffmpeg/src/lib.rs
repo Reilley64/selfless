@@ -1,10 +1,10 @@
 use application::ports::AudioStream;
-use application::ports::HdrType;
 use application::ports::Probe;
 use application::ports::ProbeError;
 use application::ports::ProbeMediaFile;
 use application::ports::SubtitleStream;
 use application::ports::VideoStream;
+use domain::HdrType;
 use serde::Deserialize;
 use std::ffi::OsStr;
 use std::time::Duration;
@@ -258,10 +258,10 @@ mod tests {
     use super::parse;
     use super::probe;
     use application::ports::AudioStream;
-    use application::ports::HdrType;
     use application::ports::Probe;
     use application::ports::SubtitleStream;
     use application::ports::VideoStream;
+    use domain::HdrType;
     use std::fs::Permissions;
     use std::os::unix::fs::PermissionsExt;
     use std::time::Duration;

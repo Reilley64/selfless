@@ -1,5 +1,4 @@
 use crate::ports::FoundFile;
-use crate::ports::NfoActor;
 use crate::ports::PortFuture;
 use crate::ports::ReadNfoError;
 use crate::ports::UnreadableFile;
@@ -8,6 +7,7 @@ use crate::ports::persistence::DbScope;
 use domain::Actor;
 use domain::Artwork;
 use domain::ArtworkKind;
+use domain::NfoActor;
 use domain::SyncProblem;
 use domain::SyncProblemKind;
 use jiff::Timestamp;

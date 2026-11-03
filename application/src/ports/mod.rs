@@ -1,10 +1,9 @@
 use bytes::Bytes;
 use domain::EmailAddress;
-pub use domain::EpisodeNfo;
-pub use domain::HdrType;
-pub use domain::MovieNfo;
-pub use domain::NfoActor;
-pub use domain::ShowNfo;
+use domain::EpisodeNfo;
+use domain::HdrType;
+use domain::MovieNfo;
+use domain::ShowNfo;
 use jiff::Timestamp;
 use jiff::civil::Date;
 use std::error::Error;

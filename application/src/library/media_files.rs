@@ -338,12 +338,12 @@ pub(crate) async fn delete(scope: &mut impl DbScope, ids: Vec<Uuid>) -> toasty::
 mod tests {
     use super::*;
     use crate::ports::AudioStream as ProbedAudioStream;
-    use crate::ports::HdrType;
     use crate::ports::SubtitleStream as ProbedSubtitleStream;
     use crate::ports::VideoStream as ProbedVideoStream;
     use crate::ports::persistence::DbContext;
     use crate::test::MOVIE_FILE;
     use crate::test::MovieLibrary;
+    use domain::HdrType;
     use domain::Movie;
     use std::time::Duration;
 
