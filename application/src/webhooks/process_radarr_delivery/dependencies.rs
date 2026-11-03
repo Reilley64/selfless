@@ -6,6 +6,7 @@ use crate::ports::ListSubtitleFiles;
 use crate::ports::ReadMovieFolder;
 use crate::ports::ReadMovieNfo;
 use crate::ports::ReadRadarrWebhook;
+use crate::ports::ReadWebhookEventType;
 use crate::ports::persistence::DbContext;
 
 #[fundle::deps]
@@ -18,5 +19,6 @@ pub struct Dependencies {
     pub read_movie_folder: ReadMovieFolder,
     pub read_movie_nfo: ReadMovieNfo,
     pub read_radarr_webhook: ReadRadarrWebhook,
+    pub read_webhook_event_type: ReadWebhookEventType,
     pub source_health: SourceHealth,
 }

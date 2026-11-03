@@ -27,6 +27,7 @@ use application::ports::ReadRadarrWebhook;
 use application::ports::ReadShowFolder;
 use application::ports::ReadShowNfo;
 use application::ports::ReadSonarrWebhook;
+use application::ports::ReadWebhookEventType;
 use application::ports::SendEmail;
 use application::ports::SonarrError;
 use application::ports::UnreadableNfo;
@@ -108,6 +109,7 @@ impl TestApp {
             read_show_folder: ReadShowFolder::new(|_, _| Box::pin(async { Default::default() })),
             read_show_nfo: ReadShowNfo::new(|_| Box::pin(async { Err(UnreadableNfo::default()) })),
             read_sonarr_webhook: ReadSonarrWebhook::new(|_| Err(UnreadableWebhook::default())),
+            read_webhook_event_type: ReadWebhookEventType::new(|_| None),
             reconciles: Reconciles::default(),
             send_email: SendEmail::new(mailer.sender()),
             source_health: SourceHealth::default(),

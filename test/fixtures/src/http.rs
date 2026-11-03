@@ -68,20 +68,37 @@ impl TestServer {
         method: Method,
         path: &str,
         token: Option<&str>,
-        headers: HeaderMap,
+        mut headers: HeaderMap,
         body: Option<Value>,
     ) -> (StatusCode, Value) {
+        if let Some(token) = token {
+            headers.insert(
+                AUTHORIZATION,
+                HeaderValue::from_str(&format!("Bearer {token}")).unwrap(),
+            );
+        }
+        let (status, _, body) = self
+            .request_with_response_headers(method, path, headers, body)
+            .await;
+        (status, body)
+    }
+
+    pub async fn request_with_response_headers(
+        &self,
+        method: Method,
+        path: &str,
+        headers: HeaderMap,
+        body: Option<Value>,
+    ) -> (StatusCode, HeaderMap, Value) {
         let mut request = reqwest::Client::new()
             .request(method.clone(), self.url(path))
             .headers(headers);
-        if let Some(token) = token {
-            request = request.header(AUTHORIZATION, format!("Bearer {token}"));
-        }
         if let Some(body) = body {
             request = request.json(&body);
         }
         let response = request.send().await.unwrap();
         let status = response.status();
+        let headers = response.headers().clone();
         let content_type = media_type(&response);
         let text = response.text().await.unwrap();
         let body = openapi::check_response(
@@ -91,7 +108,7 @@ impl TestServer {
             content_type.as_deref(),
             &text,
         );
-        (status, body)
+        (status, headers, body)
     }
 
     pub async fn get(&self, path: &str) -> (StatusCode, Value) {

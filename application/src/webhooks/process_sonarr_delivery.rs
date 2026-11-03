@@ -34,10 +34,11 @@ pub async fn call(
         read_show_folder,
         read_show_nfo,
         read_sonarr_webhook,
+        read_webhook_event_type,
         source_health,
     } = dependencies.into();
     let span = Span::current();
-    let event_type = webhook_deliveries::event_type(&body);
+    let event_type = read_webhook_event_type.call(&body);
     span.set_attribute(SELFLESS_WEBHOOK_SOURCE, Source::Sonarr.name());
     if let Some(event_type) = &event_type {
         span.set_attribute(SELFLESS_WEBHOOK_EVENT_TYPE, event_type.clone());
@@ -83,6 +84,7 @@ mod tests {
     use crate::library::SourceHealth;
     use crate::ports::GetSonarrShow;
     use crate::ports::ReadSonarrWebhook;
+    use crate::ports::ReadWebhookEventType;
     use crate::ports::SonarrError;
     use crate::ports::UnreadableWebhook;
     use crate::test::empty_episode_folder;
@@ -115,6 +117,7 @@ mod tests {
             read_show_folder: empty_show_folder(),
             read_show_nfo: unreadable_show_nfo(),
             read_sonarr_webhook,
+            read_webhook_event_type: ReadWebhookEventType::new(|_| Some("Download".to_owned())),
             source_health: SourceHealth::default(),
         }
     }

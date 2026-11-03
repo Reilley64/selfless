@@ -387,6 +387,72 @@ paths:
           $ref: "#/components/responses/Unauthenticated"
         "500":
           $ref: "#/components/responses/InternalError"
+  /webhooks/radarr/v1:
+    post:
+      operationId: postRadarrWebhook
+      summary: Store a webhook delivery that Radarr sends by POST
+      description: The server checks only the HTTP Basic password, against RADARR__WEBHOOK_PASSWORD, and stores the delivery in the inbox. The inbox worker then re-syncs the movie a library event names.
+      tags: [webhooks]
+      security:
+        - webhookPassword: []
+      requestBody:
+        $ref: "#/components/requestBodies/RadarrWebhook"
+      responses:
+        "200":
+          $ref: "#/components/responses/WebhookStored"
+        "401":
+          $ref: "#/components/responses/WrongWebhookPassword"
+        "500":
+          $ref: "#/components/responses/WebhookNotStored"
+    put:
+      operationId: putRadarrWebhook
+      summary: Store a webhook delivery that Radarr sends by PUT
+      description: The same as POST /webhooks/radarr/v1, for a Radarr webhook set to the PUT method.
+      tags: [webhooks]
+      security:
+        - webhookPassword: []
+      requestBody:
+        $ref: "#/components/requestBodies/RadarrWebhook"
+      responses:
+        "200":
+          $ref: "#/components/responses/WebhookStored"
+        "401":
+          $ref: "#/components/responses/WrongWebhookPassword"
+        "500":
+          $ref: "#/components/responses/WebhookNotStored"
+  /webhooks/sonarr/v1:
+    post:
+      operationId: postSonarrWebhook
+      summary: Store a webhook delivery that Sonarr sends by POST
+      description: The server checks only the HTTP Basic password, against SONARR__WEBHOOK_PASSWORD, and stores the delivery in the inbox. The inbox worker then re-syncs the show a library event names.
+      tags: [webhooks]
+      security:
+        - webhookPassword: []
+      requestBody:
+        $ref: "#/components/requestBodies/SonarrWebhook"
+      responses:
+        "200":
+          $ref: "#/components/responses/WebhookStored"
+        "401":
+          $ref: "#/components/responses/WrongWebhookPassword"
+        "500":
+          $ref: "#/components/responses/WebhookNotStored"
+    put:
+      operationId: putSonarrWebhook
+      summary: Store a webhook delivery that Sonarr sends by PUT
+      description: The same as POST /webhooks/sonarr/v1, for a Sonarr webhook set to the PUT method.
+      tags: [webhooks]
+      security:
+        - webhookPassword: []
+      requestBody:
+        $ref: "#/components/requestBodies/SonarrWebhook"
+      responses:
+        "200":
+          $ref: "#/components/responses/WebhookStored"
+        "401":
+          $ref: "#/components/responses/WrongWebhookPassword"
+        "500":
+          $ref: "#/components/responses/WebhookNotStored"
 tags:
   - name: actuator
     description: Health and info endpoints in the shape of Spring Boot Actuator.
@@ -400,12 +466,35 @@ tags:
     description: The relay that forwards OTLP from the web and TV apps to the server's collector.
   - name: browsing
     description: The movies, shows and episodes a user browses in the web and TV apps.
+  - name: webhooks
+    description: The webhooks Radarr and Sonarr send when the library changes.
 components:
   securitySchemes:
     sessionToken:
       description: A session token from POST /api/sessions/v1, sent as Authorization Bearer.
       type: http
       scheme: bearer
+    webhookPassword:
+      description: HTTP Basic credentials that Radarr or Sonarr sends. The server checks only the password.
+      type: http
+      scheme: basic
+  requestBodies:
+    RadarrWebhook:
+      description: The webhook delivery as Radarr sends it.
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+          example: {"eventType":"Test"}
+    SonarrWebhook:
+      description: The webhook delivery as Sonarr sends it.
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+          example: {"eventType":"Test"}
   parameters:
     Cursor:
       name: cursor
@@ -434,6 +523,18 @@ components:
         default: title
       example: added
   responses:
+    WebhookStored:
+      description: The delivery is stored in the inbox.
+    WebhookNotStored:
+      description: The server could not store the delivery.
+    WrongWebhookPassword:
+      description: The password is wrong or missing. The server stores nothing and counts a rejected webhook for the source.
+      headers:
+        WWW-Authenticate:
+          description: The HTTP Basic challenge.
+          schema:
+            type: string
+            const: Basic realm="selfless"
     MalformedTelemetry:
       description: The body is not a valid OTLP protobuf request for this signal.
     CollectorFailed:
