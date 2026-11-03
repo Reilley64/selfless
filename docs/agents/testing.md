@@ -13,7 +13,7 @@
 
 ## HTTP tests
 
-- `TestServer::request`, `request_with_headers` and `Browser` check each JSON response against the one response `openapi.yaml` lists for its status. If a status can carry two problem types, that response's `type` is an `enum` of both, like `BadRequestOrInvalidIdempotencyKey`.
+- `TestServer::request`, `request_with_headers` and `Browser` check each JSON response against the one response `openapi.yaml` lists for its status. `request` drops the query string before it looks up the path, so `/api/movies/v1?cursor=…` checks against `/api/movies/v1`. If a status can carry two problem types, that response's `type` is an `enum` of both, like `BadRequestOrInvalidIdempotencyKey`.
 - `get_text` follows redirects and checks nothing against `openapi.yaml`, so `get_text("/admin")` returns the sign-in page with 200.
 - `post_protobuf` panics with `openapi.yaml has nothing at` when the file lists no protobuf body for that path and status, such as a 401.
 - `#[route(GET "/x")]` works inside a `#[cfg(test)] mod tests`, so a test can serve its own routes with `TestServer::serve(Router::builder().route(x).layer(ProblemLayer).build())`. The macro turns the function into a unit struct, so a route named like a local variable in the same test fails to compile.
