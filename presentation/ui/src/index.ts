@@ -11,7 +11,7 @@ export { GridSelectors, useGridQuery } from "./GridSelectors";
 export { Home, rowTitle } from "./Home";
 export { initials } from "./initials";
 export { forgetInviteIdempotencyKey, inviteIdempotencyKey } from "./inviteIdempotencyKey";
-export { serverUnreachable } from "./messages";
+export { noLongerAvailable, serverUnreachable } from "./messages";
 export { MovieHeader } from "./MovieHeader";
 export { NextEpisodeButton } from "./NextEpisodeButton";
 export { PlaybackSettingsToggles } from "./PlaybackSettingsToggles";

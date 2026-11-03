@@ -12,6 +12,7 @@ import {
   nextEpisodeHref,
   type PlaybackSpans,
   type Resume,
+  noLongerAvailable,
   serverUnreachable,
   StillWatchingPrompt,
   type Tracks,
@@ -84,7 +85,7 @@ function Playing({ mediaFileId, startPosition, autoplayed, stillWatching, backHr
         />
       );
     case 404:
-      return <NotFound />;
+      return <NotFound message={noLongerAvailable} />;
     case 422:
       return <Failure backHref={backHref} message="selfless can't read this file." />;
     default:

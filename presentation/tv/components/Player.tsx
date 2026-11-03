@@ -17,6 +17,7 @@ import {
   type PlaybackSpans,
   playerTrackFor,
   type Resume,
+  noLongerAvailable,
   serverUnreachable,
   StillWatchingPrompt,
   usePlaybackStart,
@@ -75,7 +76,7 @@ function Playing({ mediaFileId, startPosition, autoplayed, stillWatching, titleH
         />
       );
     case 404:
-      return <NotFound />;
+      return <NotFound message={noLongerAvailable} />;
     case 422:
       return <Failure message="selfless can't read this file." />;
     default:
