@@ -185,18 +185,18 @@ mod tests {
 
     #[test]
     fn a_movie_in_the_library_appears_while_the_user_has_a_resume_position_in_it() {
-        let (arrival, dune, hidden) = (movie(true), movie(true), movie(false));
+        let (arrival, dune, gone) = (movie(true), movie(true), movie(false));
         let states = [
             movie_watch_state(&arrival, Some(600), LATER),
             movie_watch_state(&dune, None, LATER),
-            movie_watch_state(&hidden, Some(600), EARLIER),
+            movie_watch_state(&gone, Some(600), EARLIER),
         ];
 
         let found = continue_watching(
             [
                 (&arrival, &states[0]),
                 (&dune, &states[1]),
-                (&hidden, &states[2]),
+                (&gone, &states[2]),
             ],
             [],
             &[],

@@ -81,7 +81,7 @@ mod tests {
     use uuid::Uuid;
 
     #[tokio::test]
-    async fn a_season_returns_its_visible_episodes_with_runtime_plot_thumb_and_the_signed_in_users_watch_state()
+    async fn a_season_returns_its_episodes_in_the_library_with_runtime_plot_thumb_and_the_signed_in_users_watch_state()
      {
         let app = TestApp::new().await;
         let (noor, token) = signed_in_user(&app, "Noor", "a long passphrase about tea").await;
@@ -193,7 +193,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_unknown_hidden_or_malformed_season_id_returns_the_not_found_problem() {
+    async fn an_unknown_out_of_library_or_malformed_season_id_returns_the_not_found_problem() {
         let app = TestApp::new().await;
         let (_, token) = signed_in_user(&app, "Noor", "a long passphrase about tea").await;
         let mut db_context = app.state.db_context.clone();

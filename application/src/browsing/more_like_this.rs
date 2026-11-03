@@ -2,8 +2,6 @@ use crate::browsing::Tile;
 use crate::browsing::movie_watches;
 use crate::browsing::season_counts;
 use crate::browsing::title_images;
-use crate::browsing::visible_season;
-use crate::browsing::visible_show;
 use crate::ports::persistence::DbContext;
 use crate::ports::persistence::DbScope;
 use crate::url_signer::UrlSigner;
@@ -44,12 +42,12 @@ pub(crate) async fn more_like_this(
     };
     let movies = db_context
         .movies()
-        .filter(Movie::fields().in_library().eq(true).and(movie_genre))
+        .filter(Movie::in_library_filter().and(movie_genre))
         .exec(db_context.executor_mut())
         .await?;
     let shows = db_context
         .shows()
-        .filter(visible_show().and(show_genre))
+        .filter(Show::in_library_filter().and(show_genre))
         .exec(db_context.executor_mut())
         .await?;
     let mut titles: Vec<_> = movies
@@ -71,7 +69,7 @@ pub(crate) async fn more_like_this(
             Season::fields()
                 .show_id()
                 .in_list(ids.clone())
-                .and(visible_season()),
+                .and(Season::in_library_filter()),
         )
         .exec(db_context.executor_mut())
         .await?;

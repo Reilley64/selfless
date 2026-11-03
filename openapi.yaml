@@ -315,7 +315,7 @@ paths:
     get:
       operationId: listMovies
       summary: A page of the movies grid
-      description: Every visible movie, or every visible movie of one genre, in the chosen sort, then by ID. A movie is visible when its file is on disk. The released sort uses the premiere date.
+      description: Every movie in the library, or only those of one genre, in the chosen sort, then by ID. A movie is in the library when Radarr has its file and the file is on disk. The released sort uses the premiere date.
       tags: [browsing]
       parameters:
         - $ref: "#/components/parameters/Genre"
@@ -339,7 +339,7 @@ paths:
     get:
       operationId: getMovie
       summary: The movie page
-      description: A visible movie with its details, credits, artwork, the user's progress, the Play target and the More like this row. A movie is visible when its file is on disk.
+      description: A movie in the library with its details, credits, artwork, the user's progress, the Play target and the More like this row. A movie is in the library when Radarr has its file and the file is on disk.
       tags: [browsing]
       parameters:
         - name: movieId
@@ -368,7 +368,7 @@ paths:
     get:
       operationId: listShows
       summary: A page of the shows grid
-      description: Every visible show, or every visible show of one genre, in the chosen sort, then by ID. A show is visible when one of its episodes has its file on disk. The added and released sorts use the newest added date and air date among its visible episodes.
+      description: Every show in the library, or only those of one genre, in the chosen sort, then by ID. A show is in the library when one of its episodes is in the library, which means Sonarr has the episode's file and the file is on disk. The added and released sorts use the newest added date and air date among its episodes in the library.
       tags: [browsing]
       parameters:
         - $ref: "#/components/parameters/Genre"
@@ -392,7 +392,7 @@ paths:
     get:
       operationId: getShow
       summary: The show page
-      description: A visible show with its details, cast, artwork, its visible seasons with Specials last, the Play target and the More like this row. A show is visible when one of its episodes has its file on disk, and a season is listed only when it has a visible episode.
+      description: A show in the library with its details, cast, artwork, its seasons in the library with Specials last, the Play target and the More like this row. A show or season is in the library when one of its episodes is in the library, which means Sonarr has the episode's file and the file is on disk.
       tags: [browsing]
       parameters:
         - name: showId
@@ -421,7 +421,7 @@ paths:
     get:
       operationId: listSeasonEpisodes
       summary: The episodes of a season
-      description: Every visible episode of a season, by episode number, unpaged. An episode is visible when its file is on disk. A season with no visible episode is not found.
+      description: Every episode in the library of a season, by episode number, unpaged. An episode is in the library when Sonarr has its file and the file is on disk. A season with no episode in the library is not found.
       tags: [browsing]
       parameters:
         - name: seasonId
@@ -450,7 +450,7 @@ paths:
     get:
       operationId: getEpisode
       summary: The episode page
-      description: A visible episode with its details, thumb, its show, and the audio and subtitle languages of its media file. An episode is visible when its file is on disk. The two episodes of a file that holds both share its languages and runtime.
+      description: An episode in the library with its details, thumb, its show, and the audio and subtitle languages of its media file. An episode is in the library when Sonarr has its file and the file is on disk. The two episodes of a file that holds both share its languages and runtime.
       tags: [browsing]
       parameters:
         - name: episodeId
@@ -479,7 +479,7 @@ paths:
     get:
       operationId: listGenres
       summary: The genres of the movies or shows grid
-      description: Every genre with at least one visible title of the kind, with the number of those titles, sorted by name. A title with several genres counts once in each.
+      description: Every genre with at least one title of the kind in the library, with the number of those titles, sorted by name. A title with several genres counts once in each.
       tags: [browsing]
       parameters:
         - name: kind
@@ -507,7 +507,7 @@ paths:
     get:
       operationId: getHome
       summary: The featured title and the rows of Home
-      description: The rows come in this order, each with up to 20 tiles, and empty rows are left out. Continue watching holds the user's movies with a resume position and one episode tile per show, the episode with a resume position played most recently or else the next up episode. It sorts newest first by the user's last played time for the movie or show, or the next up episode's added time when that is later. A movie or show the user removed from Continue watching is left out until their last played time for it is newer than the removal. Recently added holds one tile per movie and per show, newest added first; a show counts the newest added date among its visible episodes. Popular now holds the movies and shows with the most different users whose last played time is in the last 14 days, a show counted once per user, with ties going to the most recent play. The genre rows are the 6 genres with the most visible titles, movies and shows together, each sorted by sort title. The featured title is the first title in Popular now. With nobody having played anything in the last 14 days, it is the latest released title, a movie by its premiere date and a show by the air date of its newest visible episode. Undated titles are skipped and ties go by sort title.
+      description: The rows come in this order, each with up to 20 tiles, and empty rows are left out. Continue watching holds the user's movies with a resume position and one episode tile per show, the episode with a resume position played most recently or else the next up episode. It sorts newest first by the user's last played time for the movie or show, or the next up episode's added time when that is later. A movie or show the user removed from Continue watching is left out until their last played time for it is newer than the removal. Recently added holds one tile per movie and per show, newest added first; a show counts the newest added date among its episodes in the library. Popular now holds the movies and shows with the most different users whose last played time is in the last 14 days, a show counted once per user, with ties going to the most recent play. The genre rows are the 6 genres with the most titles in the library, movies and shows together, each sorted by sort title. The featured title is the first title in Popular now. With nobody having played anything in the last 14 days, it is the latest released title, a movie by its premiere date and a show by the air date of its newest episode in the library. Undated titles are skipped and ties go by sort title.
       tags: [browsing]
       responses:
         "200":
@@ -1236,7 +1236,7 @@ components:
           type: [integer, "null"]
           examples: [116]
         seasonCount:
-          description: The number of numbered seasons of a show with a visible episode, without Specials. It is null for a movie or episode.
+          description: The number of numbered seasons of a show with an episode in the library, without Specials. It is null for a movie or episode.
           type: [integer, "null"]
           examples: [2]
         genres:
@@ -1409,7 +1409,7 @@ components:
           $ref: "#/components/schemas/MoviePlay"
           examples: [{resumePosition: null}]
         moreLikeThis:
-          description: Up to 20 visible movies and shows that share a genre with the movie, the most shared genres first, then by sort title.
+          description: Up to 20 movies and shows in the library that share a genre with the movie, the most shared genres first, then by sort title.
           type: array
           items:
             $ref: "#/components/schemas/Tile"
@@ -1482,7 +1482,7 @@ components:
           type: [string, "null"]
           examples: [Apple TV+]
         seasonCount:
-          description: The number of numbered seasons with a visible episode. Specials don't count.
+          description: The number of numbered seasons with an episode in the library. Specials don't count.
           type: integer
           minimum: 0
           examples: [2]
@@ -1508,7 +1508,7 @@ components:
           $ref: "#/components/schemas/TitleImages"
           examples: [{fanart: null, logo: null}]
         seasons:
-          description: The seasons with a visible episode, numbered seasons first and Specials last.
+          description: The seasons with an episode in the library, numbered seasons first and Specials last.
           type: array
           items:
             $ref: "#/components/schemas/ShowSeason"
@@ -1542,7 +1542,7 @@ components:
           type: string
           examples: [Season 1]
         episodeCount:
-          description: The number of visible episodes in the season.
+          description: The number of the season's episodes in the library.
           type: integer
           minimum: 1
           examples: [9]
@@ -1600,7 +1600,7 @@ components:
           examples: [Good News About Hell]
       additionalProperties: false
     EpisodeList:
-      description: The visible episodes of one season.
+      description: The episodes in the library of one season.
       type: object
       required: [episodes]
       properties:
@@ -1782,7 +1782,7 @@ components:
             - [{"name":"Drama","count":2},{"name":"Science Fiction","count":1}]
       additionalProperties: false
     Genre:
-      description: A genre and the number of visible titles in it.
+      description: A genre and the number of its titles in the library.
       type: object
       required: [name, count]
       properties:

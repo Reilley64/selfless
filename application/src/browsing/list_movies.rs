@@ -34,7 +34,7 @@ pub async fn call(
     } = dependencies.into();
     let movies = db_context
         .movies()
-        .filter(Movie::fields().in_library().eq(true))
+        .filter(Movie::in_library_filter())
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?
@@ -145,18 +145,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_page_lists_every_visible_movie_by_sort_title() {
+    async fn the_page_lists_every_movie_in_the_library_by_sort_title() {
         let mut db_context = mock_db_context().await;
-        for (title, sort_title, visible) in [
+        for (title, sort_title, in_library) in [
             ("Sicario", None, true),
             ("The Arrival", Some("Arrival"), true),
             ("dune", None, true),
-            ("Hidden", None, false),
+            ("Gone", None, false),
             ("Blade Runner 2049", None, true),
         ] {
             movie(&db_context, title)
                 .sort_title(sort_title.map(str::to_owned))
-                .in_library(visible)
+                .in_library(in_library)
                 .exec(db_context.executor_mut())
                 .await
                 .unwrap();

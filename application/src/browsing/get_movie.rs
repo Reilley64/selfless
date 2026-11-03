@@ -34,7 +34,7 @@ pub async fn call(
             domain::Movie::fields()
                 .id()
                 .eq(movie_id)
-                .and(domain::Movie::fields().in_library().eq(true)),
+                .and(domain::Movie::in_library_filter()),
         )
         .first()
         .exec(db_context.executor_mut())
@@ -236,7 +236,7 @@ mod tests {
         names.iter().map(|x| (*x).to_owned()).collect()
     }
 
-    async fn add_show(db_context: &mut DbContext, title: &str, genres: &[&str], visible: bool) {
+    async fn add_show(db_context: &mut DbContext, title: &str, genres: &[&str], in_library: bool) {
         let show = show(db_context, title)
             .genres(names(genres))
             .exec(db_context.executor_mut())
@@ -244,7 +244,7 @@ mod tests {
             .unwrap();
         let season_id = add_season(db_context, show.id, 1).await;
         episode(db_context, season_id)
-            .in_library(visible)
+            .in_library(in_library)
             .exec(db_context.executor_mut())
             .await
             .unwrap();
@@ -261,7 +261,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn more_like_this_ranks_visible_titles_by_shared_genres_then_sort_title_without_the_movie()
+    async fn more_like_this_ranks_titles_in_the_library_by_shared_genres_then_sort_title_without_the_movie()
      {
         let mut db_context = mock_db_context().await;
         let arrival = movie(&db_context, "Arrival")
@@ -269,14 +269,14 @@ mod tests {
             .exec(db_context.executor_mut())
             .await
             .unwrap();
-        for (title, sort_title, genres, visible) in [
+        for (title, sort_title, genres, in_library) in [
             ("Dune", None, &["Science Fiction", "Drama"][..], true),
             ("Blade Runner 2049", None, &["Science Fiction"][..], true),
             ("Sicario", None, &["Drama"][..], true),
             ("The Prestige", Some("Prestige"), &["Mystery"][..], true),
             ("Amélie", None, &["Comedy"][..], true),
             (
-                "Hidden",
+                "Gone",
                 None,
                 &["Drama", "Science Fiction", "Mystery"][..],
                 false,
@@ -285,7 +285,7 @@ mod tests {
             movie(&db_context, title)
                 .sort_title(sort_title.map(str::to_owned))
                 .genres(names(genres))
-                .in_library(visible)
+                .in_library(in_library)
                 .exec(db_context.executor_mut())
                 .await
                 .unwrap();
@@ -442,18 +442,21 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_unknown_or_hidden_movie_is_not_found() {
+    async fn an_unknown_movie_or_one_not_in_the_library_is_not_found() {
         let mut db_context = mock_db_context().await;
-        let hidden = movie(&db_context, "Arrival")
+        let out_of_library = movie(&db_context, "Arrival")
             .in_library(false)
             .exec(db_context.executor_mut())
             .await
             .unwrap();
 
-        let hidden = get(&db_context, hidden.id).await;
+        let out_of_library = get(&db_context, out_of_library.id).await;
         let unknown = get(&db_context, Uuid::new_v4()).await;
 
-        assert!(matches!(hidden, Output::NotFound), "{hidden:?}");
+        assert!(
+            matches!(out_of_library, Output::NotFound),
+            "{out_of_library:?}"
+        );
         assert!(matches!(unknown, Output::NotFound), "{unknown:?}");
     }
 }

@@ -230,7 +230,7 @@ mod tests {
             .unwrap();
         let mut seasons = HashMap::new();
         let mut ids = HashMap::new();
-        for &(season, number, visible) in episodes {
+        for &(season, number, in_library) in episodes {
             let season_id = match seasons.get(&season) {
                 Some(id) => *id,
                 None => {
@@ -242,7 +242,7 @@ mod tests {
             let media_file_id = add_media_file(db_context, None).await;
             let episode = episode(db_context, season_id)
                 .number(number)
-                .in_library(visible)
+                .in_library(in_library)
                 .media_file_id(Some(media_file_id))
                 .exec(db_context.executor_mut())
                 .await
@@ -349,7 +349,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_seasons_with_visible_episodes_are_listed_with_their_episode_counts_and_specials_last()
+    async fn the_seasons_with_episodes_in_the_library_are_listed_with_their_episode_counts_and_specials_last()
      {
         let mut db_context = mock_db_context().await;
         let (severance, _) = add_show(
@@ -380,7 +380,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn with_no_watch_state_play_starts_the_first_visible_episode_of_the_first_numbered_season()
+    async fn with_no_watch_state_play_starts_the_first_episode_in_the_library_of_the_first_numbered_season()
      {
         let mut db_context = mock_db_context().await;
         let (severance, episodes) = add_show(
@@ -508,15 +508,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_unknown_show_or_one_without_visible_episodes_is_not_found() {
+    async fn an_unknown_show_or_one_without_episodes_in_the_library_is_not_found() {
         let mut db_context = mock_db_context().await;
-        let (hidden, _) = add_show(&mut db_context, "Gone", &[(1, 1, false)]).await;
+        let (out_of_library, _) = add_show(&mut db_context, "Gone", &[(1, 1, false)]).await;
         let empty = show(&db_context, "Empty")
             .exec(db_context.executor_mut())
             .await
             .unwrap();
 
-        for show_id in [hidden, empty.id, Uuid::new_v4()] {
+        for show_id in [out_of_library, empty.id, Uuid::new_v4()] {
             let output = get(&db_context, show_id).await;
 
             assert!(matches!(output, Output::NotFound), "{output:?}");

@@ -262,7 +262,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_unknown_hidden_or_malformed_episode_id_returns_the_not_found_problem() {
+    async fn an_unknown_out_of_library_or_malformed_episode_id_returns_the_not_found_problem() {
         let app = TestApp::new().await;
         let (_, token) = signed_in_user(&app, "Noor", "a long passphrase about tea").await;
         let mut db_context = app.state.db_context.clone();
@@ -276,7 +276,7 @@ mod tests {
             .unwrap()
             .unwrap()
             .id;
-        let hidden = Episode::create()
+        let out_of_library = Episode::create()
             .season_id(season_id)
             .tvdb_id(domain::TvdbId(Uuid::new_v4().as_u64_pair().0 as i64))
             .number(2)
@@ -288,7 +288,7 @@ mod tests {
         let server = serve(&app).await;
 
         for id in [
-            hidden.id.to_string(),
+            out_of_library.id.to_string(),
             Uuid::new_v4().to_string(),
             "episode-2".to_owned(),
         ] {

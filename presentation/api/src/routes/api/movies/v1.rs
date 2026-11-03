@@ -319,11 +319,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_unknown_hidden_or_malformed_movie_id_returns_the_not_found_problem() {
+    async fn an_unknown_out_of_library_or_malformed_movie_id_returns_the_not_found_problem() {
         let app = TestApp::new().await;
         let (_, token) = signed_in_user(&app, "Noor", "a long passphrase about tea").await;
         let mut db_context = app.state.db_context.clone();
-        let hidden = movie(&app, "Arrival")
+        let out_of_library = movie(&app, "Arrival")
             .in_library(false)
             .exec(db_context.executor_mut())
             .await
@@ -331,7 +331,7 @@ mod tests {
         let server = serve(&app).await;
 
         for id in [
-            hidden.id.to_string(),
+            out_of_library.id.to_string(),
             Uuid::new_v4().to_string(),
             "arrival".to_owned(),
         ] {

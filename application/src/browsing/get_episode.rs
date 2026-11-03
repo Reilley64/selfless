@@ -420,20 +420,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_unknown_or_hidden_episode_is_not_found() {
+    async fn an_unknown_episode_or_one_not_in_the_library_is_not_found() {
         let mut db_context = mock_db_context().await;
         let severance = show(&db_context, "Severance")
             .exec(db_context.executor_mut())
             .await
             .unwrap();
         let season_id = add_season(&mut db_context, severance.id, 1).await;
-        let hidden = episode(&db_context, season_id)
+        let out_of_library = episode(&db_context, season_id)
             .in_library(false)
             .exec(db_context.executor_mut())
             .await
             .unwrap();
 
-        for episode_id in [hidden.id, Uuid::new_v4()] {
+        for episode_id in [out_of_library.id, Uuid::new_v4()] {
             let output = get(&db_context, episode_id).await;
 
             assert!(matches!(output, Output::NotFound), "{output:?}");

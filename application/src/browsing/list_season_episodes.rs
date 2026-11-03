@@ -143,7 +143,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_season_lists_its_visible_episodes_in_order_with_runtime_plot_and_thumb() {
+    async fn a_season_lists_its_episodes_in_the_library_in_order_with_runtime_plot_and_thumb() {
         let mut db_context = mock_db_context().await;
         let season_id = add_season_of(&mut db_context, 1).await;
         let media_file = db_context
@@ -154,7 +154,7 @@ mod tests {
             .exec(db_context.executor_mut())
             .await
             .unwrap();
-        for (number, title, visible, media_file_id) in [
+        for (number, title, in_library, media_file_id) in [
             (3, "In Perpetuity", true, Some(media_file.id)),
             (4, "The You You Are", false, None),
             (1, "Good News About Hell", true, None),
@@ -164,7 +164,7 @@ mod tests {
                 .number(number)
                 .title(title)
                 .overview(Some(format!("The plot of {title}.")))
-                .in_library(visible)
+                .in_library(in_library)
                 .media_file_id(media_file_id)
                 .exec(db_context.executor_mut())
                 .await
@@ -236,17 +236,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_unknown_season_or_one_without_visible_episodes_is_not_found() {
+    async fn an_unknown_season_or_one_without_episodes_in_the_library_is_not_found() {
         let mut db_context = mock_db_context().await;
-        let hidden = add_season_of(&mut db_context, 3).await;
-        episode(&db_context, hidden)
+        let out_of_library = add_season_of(&mut db_context, 3).await;
+        episode(&db_context, out_of_library)
             .in_library(false)
             .exec(db_context.executor_mut())
             .await
             .unwrap();
         let empty = add_season_of(&mut db_context, 4).await;
 
-        for season_id in [hidden, empty, Uuid::new_v4()] {
+        for season_id in [out_of_library, empty, Uuid::new_v4()] {
             let output = list(&db_context, season_id).await;
 
             assert!(matches!(output, Output::NotFound), "{output:?}");

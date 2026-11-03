@@ -133,7 +133,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn removing_an_unknown_or_hidden_title_returns_404() {
+    async fn removing_an_unknown_title_or_one_not_in_the_library_returns_404() {
         let app = TestApp::new().await;
         let (_, token) = signed_in_user(&app, "Noor", "a long passphrase about tea").await;
         let mut db_context = app.state.db_context.clone();
@@ -143,10 +143,10 @@ mod tests {
             .await
             .unwrap()
             .id;
-        let hidden_show = add_show(&app, "Severance", &[1]).await;
+        let show_out_of_library = add_show(&app, "Severance", &[1]).await;
         db_context
             .episodes()
-            .filter(Episode::fields().in_library().eq(true))
+            .filter(Episode::in_library_filter())
             .update()
             .in_library(false)
             .exec(db_context.executor_mut())
@@ -158,7 +158,7 @@ mod tests {
             format!("/api/continue-watching/movies/{gone}/v1"),
             format!("/api/continue-watching/movies/{}/v1", Uuid::new_v4()),
             "/api/continue-watching/movies/arrival/v1".to_owned(),
-            format!("/api/continue-watching/shows/{hidden_show}/v1"),
+            format!("/api/continue-watching/shows/{show_out_of_library}/v1"),
             format!("/api/continue-watching/shows/{}/v1", Uuid::new_v4()),
         ] {
             let (status, problem) = server

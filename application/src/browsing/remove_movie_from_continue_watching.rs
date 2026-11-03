@@ -107,7 +107,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_unknown_or_hidden_movie_is_not_found() {
+    async fn an_unknown_movie_or_one_not_in_the_library_is_not_found() {
         let mut db_context = mock_db_context().await;
         let gone = movie(&db_context, "Gone")
             .in_library(false)

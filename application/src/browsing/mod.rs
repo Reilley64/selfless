@@ -23,9 +23,7 @@ pub use image::TileImages;
 use image::title_images;
 pub use resizer::Resizer;
 
-use domain::Episode;
 use domain::Season;
-use domain::Show;
 use more_like_this::more_like_this;
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -40,16 +38,6 @@ pub use tile::TileKind;
 pub use tile::TileShow;
 
 const PAGE_SIZE: usize = 60;
-
-fn visible_show() -> toasty::stmt::Expr<bool> {
-    Show::fields().seasons().any(visible_season())
-}
-
-fn visible_season() -> toasty::stmt::Expr<bool> {
-    Season::fields()
-        .episodes()
-        .any(Episode::fields().in_library().eq(true))
-}
 
 fn season_counts(seasons: &[Season]) -> HashMap<Uuid, i64> {
     let mut counts = HashMap::new();

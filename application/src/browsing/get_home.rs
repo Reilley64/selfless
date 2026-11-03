@@ -572,8 +572,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn recently_added_has_one_tile_per_title_and_a_show_sorts_by_its_newest_visible_episode()
-    {
+    async fn recently_added_has_one_tile_per_title_and_a_show_sorts_by_its_newest_episode_in_the_library()
+     {
         let mut db_context = mock_db_context().await;
         add_movie(&mut db_context, "Arrival", Some("2026-10-29T08:00:00Z")).await;
         add_movie(&mut db_context, "Dune", Some("2026-10-20T08:00:00Z")).await;
@@ -625,9 +625,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_genre_rows_are_the_6_genres_with_the_most_visible_titles_sorted_by_sort_title() {
+    async fn the_genre_rows_are_the_6_genres_with_the_most_titles_in_the_library_sorted_by_sort_title()
+     {
         let mut db_context = mock_db_context().await;
-        for (title, sort_title, names, visible) in [
+        for (title, sort_title, names, in_library) in [
             ("Arrival", None, &["Drama", "Mystery"][..], true),
             (
                 "The Departed",
@@ -638,17 +639,17 @@ mod tests {
             ("Zodiac", None, &["Crime", "Mystery", "Thriller"][..], true),
             ("Airplane!", None, &["Comedy"][..], true),
             ("Heat", None, &["Action"][..], true),
-            ("Hidden", None, &["Action"][..], false),
+            ("Gone", None, &["Action"][..], false),
         ] {
             movie(&db_context, title)
                 .sort_title(sort_title.map(str::to_owned))
                 .genres(genres(names))
-                .in_library(visible)
+                .in_library(in_library)
                 .exec(db_context.executor_mut())
                 .await
                 .unwrap();
         }
-        for (title, names, visible) in [
+        for (title, names, in_library) in [
             ("Severance", &["Drama", "Comedy", "Horror"][..], true),
             ("Barry", &["Drama", "Comedy", "Crime", "Horror"][..], true),
             ("Gone", &["Action", "Western"][..], false),
@@ -658,7 +659,7 @@ mod tests {
                 &mut db_context,
                 show,
                 &[Episode {
-                    in_library: visible,
+                    in_library,
                     ..EPISODE
                 }],
             )

@@ -469,14 +469,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_unknown_hidden_or_malformed_show_id_returns_the_not_found_problem() {
+    async fn an_unknown_out_of_library_or_malformed_show_id_returns_the_not_found_problem() {
         let app = TestApp::new().await;
         let (_, token) = signed_in_user(&app, "Noor", "a long passphrase about tea").await;
-        let hidden = add_show(&app, "Severance", &[]).await;
+        let out_of_library = add_show(&app, "Severance", &[]).await;
         let server = serve(&app).await;
 
         for id in [
-            hidden.to_string(),
+            out_of_library.to_string(),
             Uuid::new_v4().to_string(),
             "severance".to_owned(),
         ] {
