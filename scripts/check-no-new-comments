@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+base=${1:-origin/main}
+
+comments=$(
+  git diff --unified=0 --no-color --no-ext-diff "$(git merge-base "$base" HEAD)" \
+    -- '*.rs' '*.ts' '*.tsx' ':(exclude)patches/' |
+    awk '
+      /^\+\+\+ / { file = substr($0, 7); next }
+      /^@@ / { split($3, added, ","); line = substr(added[1], 2); next }
+      /^\+/ { if ($0 ~ /^\+[[:space:]]*\/\//) print file ":" line ": " substr($0, 2); line++ }
+    '
+)
+
+if [ -n "$comments" ]; then
+  echo "New code has no comments or doc comments (CODING_STANDARDS.md). These lines add one against $base:" >&2
+  echo "$comments" >&2
+  exit 1
+fi

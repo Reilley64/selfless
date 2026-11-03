@@ -71,6 +71,10 @@ description = "Start selfless:local beside PostgreSQL and wait for readiness"
 depends = ["build:image"]
 run = "scripts/smoke-test-image selfless:local"
 
+[tasks."lint:comments"]
+description = "List lines that add a comment against a base ref, origin/main by default"
+run = "scripts/check-no-new-comments"
+
 [tasks."lint:openapi"]
 description = "Lint the OpenAPI file"
 run = "vacuum lint --details openapi.yaml"
