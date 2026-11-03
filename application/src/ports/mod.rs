@@ -176,6 +176,8 @@ pub struct HlsSession {
     pub video_transcode: Option<VideoTranscode>,
     pub video: VideoStream,
     pub audio: Option<AudioStream>,
+    pub subtitle_streams: Vec<SubtitleStream>,
+    pub subtitle_files: Vec<FoundSubtitleFile>,
     pub start_position: Duration,
 }
 
