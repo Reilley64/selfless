@@ -34,56 +34,53 @@ impl SonarrSettings {
         setting(&self.webhook_password, "SONARR__WEBHOOK_PASSWORD")
     }
 
-    pub fn get_show(&self) -> Result<GetSonarrShow, MissingSetting> {
-        let api = self.api()?;
-        Ok(GetSonarrShow::new(move |sonarr_id| {
-            let api = api.clone();
-            Box::pin(async move { show(&api, sonarr_id).await.map_err(SonarrError::caused_by) })
-        }))
-    }
-
-    pub fn list_shows(&self) -> Result<ListSonarrShows, MissingSetting> {
-        let api = self.api()?;
-        Ok(ListSonarrShows::new(move || {
-            let api = api.clone();
-            Box::pin(async move {
-                Ok(api
-                    .get::<Vec<Series>>("/api/v3/series", &["series"], None)
-                    .await
-                    .map_err(SonarrError::caused_by)?
-                    .into_iter()
-                    .map(SonarrShowListing::from)
-                    .collect())
-            })
-        }))
-    }
-
-    pub fn get_episodes(&self) -> Result<GetSonarrEpisodes, MissingSetting> {
-        let api = self.api()?;
-        Ok(GetSonarrEpisodes::new(move |sonarr_id| {
-            let api = api.clone();
-            Box::pin(async move {
-                episodes(&api, sonarr_id)
-                    .await
-                    .map_err(SonarrError::caused_by)
-            })
-        }))
-    }
-
-    pub fn check_kodi_metadata(&self) -> Result<CheckSonarrKodiMetadata, MissingSetting> {
-        let api = self.api()?;
-        Ok(CheckSonarrKodiMetadata::new(move || {
-            let api = api.clone();
-            Box::pin(async move { api.kodi_metadata().await.map_err(SonarrError::caused_by) })
-        }))
-    }
-
-    fn api(&self) -> Result<Api, MissingSetting> {
+    pub fn api(&self, client: reqwest::Client) -> Result<Api, MissingSetting> {
         Ok(Api::new(
+            client,
             setting(&self.url, "SONARR__URL")?,
             setting(&self.api_key, "SONARR__API_KEY")?,
         ))
     }
+}
+
+pub fn get_show(api: Api) -> GetSonarrShow {
+    GetSonarrShow::new(move |sonarr_id| {
+        let api = api.clone();
+        Box::pin(async move { show(&api, sonarr_id).await.map_err(SonarrError::caused_by) })
+    })
+}
+
+pub fn list_shows(api: Api) -> ListSonarrShows {
+    ListSonarrShows::new(move || {
+        let api = api.clone();
+        Box::pin(async move {
+            Ok(api
+                .get::<Vec<Series>>("/api/v3/series", &["series"], None)
+                .await
+                .map_err(SonarrError::caused_by)?
+                .into_iter()
+                .map(SonarrShowListing::from)
+                .collect())
+        })
+    })
+}
+
+pub fn get_episodes(api: Api) -> GetSonarrEpisodes {
+    GetSonarrEpisodes::new(move |sonarr_id| {
+        let api = api.clone();
+        Box::pin(async move {
+            episodes(&api, sonarr_id)
+                .await
+                .map_err(SonarrError::caused_by)
+        })
+    })
+}
+
+pub fn check_kodi_metadata(api: Api) -> CheckSonarrKodiMetadata {
+    CheckSonarrKodiMetadata::new(move || {
+        let api = api.clone();
+        Box::pin(async move { api.kodi_metadata().await.map_err(SonarrError::caused_by) })
+    })
 }
 
 #[derive(Deserialize)]
@@ -184,8 +181,12 @@ impl From<Series> for SonarrShowListing {
 #[cfg(test)]
 mod tests {
     use super::SonarrSettings;
+    use super::get_episodes;
+    use super::get_show;
+    use super::list_shows;
     use jiff::Timestamp;
     use jiff::civil::date;
+    use servarr::Api;
     use wiremock::Mock;
     use wiremock::MockServer;
     use wiremock::ResponseTemplate;
@@ -225,12 +226,14 @@ mod tests {
                 .await;
         }
 
-        fn settings(&self) -> SonarrSettings {
+        fn api(&self) -> Api {
             SonarrSettings {
                 url: Some(self.0.uri().parse().unwrap()),
                 api_key: Some("sonarr-api-key".to_owned()),
                 webhook_password: None,
             }
+            .api(servarr::client().unwrap())
+            .unwrap()
         }
     }
 
@@ -239,14 +242,7 @@ mod tests {
         let sonarr = Sonarr::start().await;
         sonarr.serve_show(SERIES).await;
 
-        let show = sonarr
-            .settings()
-            .get_show()
-            .unwrap()
-            .call(7)
-            .await
-            .unwrap()
-            .unwrap();
+        let show = get_show(sonarr.api()).call(7).await.unwrap().unwrap();
 
         assert_eq!(show.listing.sonarr_id, 7);
         assert_eq!(show.listing.tvdb_id, 371980);
@@ -341,7 +337,7 @@ mod tests {
             )
             .await;
 
-        let show = sonarr.settings().get_show().unwrap().call(7).await.unwrap();
+        let show = get_show(sonarr.api()).call(7).await.unwrap();
 
         assert!(show.is_none());
     }
@@ -353,14 +349,7 @@ mod tests {
             .serve_show(&SERIES.replace(r#""year": 2022"#, r#""year": 0"#))
             .await;
 
-        let show = sonarr
-            .settings()
-            .get_show()
-            .unwrap()
-            .call(7)
-            .await
-            .unwrap()
-            .unwrap();
+        let show = get_show(sonarr.api()).call(7).await.unwrap().unwrap();
 
         assert_eq!(show.listing.year, None);
     }
@@ -377,13 +366,7 @@ mod tests {
             )
             .await;
 
-        let shows = sonarr
-            .settings()
-            .list_shows()
-            .unwrap()
-            .call()
-            .await
-            .unwrap();
+        let shows = list_shows(sonarr.api()).call().await.unwrap();
 
         assert_eq!(
             shows
@@ -429,13 +412,7 @@ mod tests {
             )
             .await;
 
-        let episodes = sonarr
-            .settings()
-            .get_episodes()
-            .unwrap()
-            .call(8)
-            .await
-            .unwrap();
+        let episodes = get_episodes(sonarr.api()).call(8).await.unwrap();
 
         assert_eq!(
             episodes

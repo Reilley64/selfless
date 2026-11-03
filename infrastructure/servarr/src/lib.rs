@@ -31,10 +31,14 @@ struct MetadataConsumer {
     enable: bool,
 }
 
+pub fn client() -> Result<reqwest::Client, reqwest::Error> {
+    reqwest::Client::builder().build()
+}
+
 impl Api {
-    pub fn new(url: Url, api_key: String) -> Self {
+    pub fn new(client: reqwest::Client, url: Url, api_key: String) -> Self {
         Self {
-            client: reqwest::Client::new(),
+            client,
             url,
             api_key,
         }
@@ -106,6 +110,7 @@ impl Api {
 #[cfg(test)]
 mod tests {
     use super::Api;
+    use super::client;
     use wiremock::Mock;
     use wiremock::MockServer;
     use wiremock::ResponseTemplate;
@@ -122,7 +127,11 @@ mod tests {
             .respond_with(response)
             .mount(&server)
             .await;
-        let api = Api::new(server.uri().parse().unwrap(), API_KEY.to_owned());
+        let api = Api::new(
+            client().unwrap(),
+            server.uri().parse().unwrap(),
+            API_KEY.to_owned(),
+        );
         (server, api)
     }
 
