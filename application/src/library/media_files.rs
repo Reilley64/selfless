@@ -329,3 +329,344 @@ pub(crate) async fn delete(scope: &mut impl DbScope, ids: Vec<Uuid>) -> toasty::
         .exec(scope.executor_mut())
         .await
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ports::AudioStream as ProbedAudioStream;
+    use crate::ports::HdrType;
+    use crate::ports::SubtitleStream as ProbedSubtitleStream;
+    use crate::ports::VideoStream as ProbedVideoStream;
+    use crate::ports::persistence::DbContext;
+    use crate::test::MOVIE_FILE;
+    use crate::test::MovieLibrary;
+    use domain::Movie;
+    use std::time::Duration;
+
+    fn hdr10_movie() -> Probe {
+        Probe {
+            container: "matroska,webm".to_owned(),
+            duration: Some(Duration::from_millis(6_981_000)),
+            video_streams: vec![ProbedVideoStream {
+                index: 0,
+                codec: "hevc".to_owned(),
+                profile: Some("Main 10".to_owned()),
+                width: 3840,
+                height: 1600,
+                frame_rate: Some(24000.0 / 1001.0),
+                hdr_type: HdrType::Hdr10,
+            }],
+            audio_streams: vec![ProbedAudioStream {
+                index: 1,
+                codec: "truehd".to_owned(),
+                language: Some("eng".to_owned()),
+                channels: 8,
+                title: Some("Dolby TrueHD Atmos 7.1".to_owned()),
+                default: true,
+            }],
+            subtitle_streams: vec![ProbedSubtitleStream {
+                index: 2,
+                codec: "hdmv_pgs_subtitle".to_owned(),
+                language: Some("eng".to_owned()),
+                title: Some("Heptapod".to_owned()),
+                default: true,
+                forced: true,
+                hearing_impaired: false,
+                text: false,
+            }],
+        }
+    }
+
+    fn sdr_movie() -> Probe {
+        Probe {
+            container: "mov,mp4,m4a,3gp,3g2,mj2".to_owned(),
+            duration: Some(Duration::from_millis(6_980_500)),
+            video_streams: vec![ProbedVideoStream {
+                index: 0,
+                codec: "h264".to_owned(),
+                profile: Some("High".to_owned()),
+                width: 1920,
+                height: 800,
+                frame_rate: Some(24000.0 / 1001.0),
+                hdr_type: HdrType::Sdr,
+            }],
+            audio_streams: Vec::new(),
+            subtitle_streams: Vec::new(),
+        }
+    }
+
+    fn subtitle_file(path: &str, language: &str) -> FoundSubtitleFile {
+        FoundSubtitleFile {
+            path: path.to_owned(),
+            language: Some(language.to_owned()),
+            hearing_impaired: false,
+            forced: false,
+        }
+    }
+
+    async fn media_file(library: &MovieLibrary) -> MediaFile {
+        let mut db_context = library.db_context.clone();
+        db_context
+            .media_files()
+            .filter(MediaFile::fields().path().eq(MOVIE_FILE))
+            .first()
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap()
+            .unwrap()
+    }
+
+    async fn streams(library: &MovieLibrary) -> Probe {
+        let mut db_context = library.db_context.clone();
+        let media_file = media_file(library).await;
+        let mut video_streams = db_context
+            .video_streams()
+            .all()
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap();
+        video_streams.sort_by_key(|x| x.index);
+        let mut audio_streams = db_context
+            .audio_streams()
+            .all()
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap();
+        audio_streams.sort_by_key(|x| x.index);
+        let mut subtitle_streams = db_context
+            .subtitle_streams()
+            .all()
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap();
+        subtitle_streams.sort_by_key(|x| x.index);
+        Probe {
+            container: media_file.container.unwrap_or_default(),
+            duration: media_file
+                .duration_ms
+                .map(|x| Duration::from_millis(x.try_into().unwrap())),
+            video_streams: video_streams
+                .into_iter()
+                .map(|x| ProbedVideoStream {
+                    index: x.index,
+                    codec: x.codec,
+                    profile: x.profile,
+                    width: x.width,
+                    height: x.height,
+                    frame_rate: x.frame_rate,
+                    hdr_type: x.hdr_type,
+                })
+                .collect(),
+            audio_streams: audio_streams
+                .into_iter()
+                .map(|x| ProbedAudioStream {
+                    index: x.index,
+                    codec: x.codec,
+                    language: x.language,
+                    channels: x.channels,
+                    title: x.title,
+                    default: x.is_default,
+                })
+                .collect(),
+            subtitle_streams: subtitle_streams
+                .into_iter()
+                .map(|x| ProbedSubtitleStream {
+                    index: x.index,
+                    codec: x.codec,
+                    language: x.language,
+                    title: x.title,
+                    default: x.is_default,
+                    forced: x.forced,
+                    hearing_impaired: x.hearing_impaired,
+                    text: x.text,
+                })
+                .collect(),
+        }
+    }
+
+    async fn problems(library: &MovieLibrary) -> Vec<(SyncProblemKind, Option<Uuid>, String)> {
+        let mut db_context = library.db_context.clone();
+        db_context
+            .sync_problems()
+            .all()
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|x| (x.kind, x.media_file_id, x.path))
+            .collect()
+    }
+
+    async fn subtitle_files(library: &MovieLibrary) -> Vec<FoundSubtitleFile> {
+        let mut db_context = library.db_context.clone();
+        let mut subtitle_files = db_context
+            .subtitle_files()
+            .all()
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|x| FoundSubtitleFile {
+                path: x.path,
+                language: x.language,
+                hearing_impaired: x.hearing_impaired,
+                forced: x.forced,
+            })
+            .collect::<Vec<_>>();
+        subtitle_files.sort();
+        subtitle_files
+    }
+
+    async fn movie_is_visible(library: &MovieLibrary) -> bool {
+        let mut db_context = library.db_context.clone();
+        let [movie]: [Movie; 1] = db_context
+            .movies()
+            .all()
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap()
+            .try_into()
+            .unwrap();
+        movie.visible
+    }
+
+    async fn inspect_and_save(library: &MovieLibrary) -> bool {
+        let mut db_context: DbContext = library.db_context.clone();
+        let stored = db_context
+            .media_files()
+            .filter(MediaFile::fields().path().eq(MOVIE_FILE))
+            .first()
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap();
+        let inspected = inspect(
+            &library.find_media_file(),
+            &library.list_subtitle_files(),
+            &library.prober(),
+            stored.as_ref(),
+            MOVIE_FILE,
+        )
+        .await
+        .unwrap();
+        let (_, changed) = save(&mut db_context, MOVIE_FILE, inspected).await.unwrap();
+        changed
+    }
+
+    #[tokio::test]
+    async fn a_new_file_is_probed_once_and_its_streams_are_stored() {
+        let library = MovieLibrary::new().await;
+        library
+            .sources()
+            .probes
+            .insert(MOVIE_FILE.to_owned(), hdr10_movie());
+
+        library.sync_movie().await.unwrap();
+
+        assert_eq!(streams(&library).await, hdr10_movie());
+        assert_eq!(media_file(&library).await.size, Some(1_000));
+        assert_eq!(library.sources().probe_calls, 1);
+    }
+
+    #[tokio::test]
+    async fn a_file_whose_size_or_modification_time_changed_is_probed_again() {
+        let library = MovieLibrary::new().await;
+        library
+            .sources()
+            .probes
+            .insert(MOVIE_FILE.to_owned(), hdr10_movie());
+        library.sync_movie().await.unwrap();
+        library.sync_movie().await.unwrap();
+        let unchanged_calls = library.sources().probe_calls;
+
+        library.put_file(MOVIE_FILE, 1_000, "2026-10-30T09:00:00Z");
+        library
+            .sources()
+            .probes
+            .insert(MOVIE_FILE.to_owned(), sdr_movie());
+        library.sync_movie().await.unwrap();
+
+        assert_eq!(unchanged_calls, 1);
+        assert_eq!(streams(&library).await, sdr_movie());
+        assert_eq!(library.sources().probe_calls, 2);
+    }
+
+    #[tokio::test]
+    async fn the_stored_subtitle_files_follow_the_listing_and_mark_the_media_file_changed() {
+        let library = MovieLibrary::new().await;
+        library.sources().subtitle_files = vec![subtitle_file(
+            "/media/Movies/Arrival (2016)/Arrival.en.srt",
+            "en",
+        )];
+        inspect_and_save(&library).await;
+        let unchanged = inspect_and_save(&library).await;
+
+        library.sources().subtitle_files = vec![subtitle_file(
+            "/media/Movies/Arrival (2016)/Arrival.de.srt",
+            "de",
+        )];
+        let changed = inspect_and_save(&library).await;
+
+        assert!(!unchanged);
+        assert!(changed);
+        assert_eq!(
+            subtitle_files(&library).await,
+            [subtitle_file(
+                "/media/Movies/Arrival (2016)/Arrival.de.srt",
+                "de"
+            )]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_file_ffprobe_cannot_read_stays_visible_without_streams_until_a_probe_succeeds() {
+        let library = MovieLibrary::new().await;
+        library.sources().unprobeable.insert(MOVIE_FILE.to_owned());
+
+        library.sync_movie().await.unwrap();
+        library.sync_movie().await.unwrap();
+
+        let media_file = media_file(&library).await;
+        assert_eq!(media_file.container, None);
+        assert!(streams(&library).await.video_streams.is_empty());
+        assert!(movie_is_visible(&library).await);
+        assert_eq!(
+            problems(&library).await,
+            [(
+                SyncProblemKind::FfprobeFailed,
+                Some(media_file.id),
+                MOVIE_FILE.to_owned()
+            )]
+        );
+        assert_eq!(library.sources().probe_calls, 1);
+        library.sources().unprobeable.clear();
+        library
+            .sources()
+            .probes
+            .insert(MOVIE_FILE.to_owned(), hdr10_movie());
+        library.put_file(MOVIE_FILE, 1_000, "2026-10-30T09:00:00Z");
+        library.sync_movie().await.unwrap();
+        assert_eq!(streams(&library).await, hdr10_movie());
+        assert_eq!(problems(&library).await, []);
+    }
+
+    #[tokio::test]
+    async fn a_missing_file_records_file_not_found_until_it_appears() {
+        let library = MovieLibrary::new().await;
+        library.sources().files_on_disk.clear();
+
+        library.sync_movie().await.unwrap();
+
+        let media_file = media_file(&library).await;
+        assert_eq!(
+            problems(&library).await,
+            [(
+                SyncProblemKind::FileNotFound,
+                Some(media_file.id),
+                MOVIE_FILE.to_owned()
+            )]
+        );
+        library.put_file(MOVIE_FILE, 1_000, "2026-10-29T09:00:00Z");
+        library.sync_movie().await.unwrap();
+        assert_eq!(problems(&library).await, []);
+    }
+}
