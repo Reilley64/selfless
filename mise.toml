@@ -10,7 +10,7 @@ yq = "4.54.1"
 [env]
 ADMIN__USERNAME = "admin"
 ADMIN__PASSWORD = "admin"
-DATABASE__URL = "postgres://selfless:selfless@localhost:5432/selfless"
+DATABASE__URL = "{{ get_env(name='DATABASE__URL', default='postgres://selfless:selfless@localhost:5432/selfless') }}"
 OTEL_SERVICE_NAME = "selfless"
 SMTP__HOST = "localhost"
 SMTP__PORT = "587"
