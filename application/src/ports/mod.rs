@@ -1,4 +1,5 @@
 use bytes::Bytes;
+use domain::AudioTranscode;
 use domain::EmailAddress;
 use domain::EpisodeNfo;
 use domain::HdrType;
@@ -175,10 +176,17 @@ pub struct HlsSession {
     pub keyframes: Vec<Duration>,
     pub video_transcode: Option<VideoTranscode>,
     pub video: VideoStream,
-    pub audio: Option<AudioStream>,
+    pub audio: Vec<HlsAudioTrack>,
     pub subtitle_streams: Vec<SubtitleStream>,
     pub subtitle_files: Vec<FoundSubtitleFile>,
     pub start_position: Duration,
+}
+
+#[derive(Clone, Debug)]
+pub struct HlsAudioTrack {
+    pub stream: AudioStream,
+    pub transcode: Option<AudioTranscode>,
+    pub selected: bool,
 }
 
 #[derive(ohno::Error, Default)]

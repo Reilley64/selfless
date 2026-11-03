@@ -1,8 +1,10 @@
 use crate::subtitles;
-use application::ports::AudioStream;
+use application::ports::HlsAudioTrack;
 use application::ports::SubtitleStream;
 use application::ports::VideoStream;
+use domain::AudioTranscodeCodec;
 use domain::VideoTranscode;
+use std::collections::HashMap;
 use std::io;
 use std::path::Path;
 use std::path::PathBuf;
@@ -110,7 +112,7 @@ pub async fn write_segments(
     input: &Path,
     video: &VideoStream,
     video_transcode: Option<&VideoTranscode>,
-    audio: Option<&AudioStream>,
+    audio: &[HlsAudioTrack],
     subtitles: &[SubtitleStream],
     segments: &Segments,
     segment: usize,
@@ -124,6 +126,16 @@ pub async fn write_segments(
         .map(|x| seconds(*x - first))
         .collect::<Vec<_>>()
         .join(",");
+    let segment_output = |command: &mut Command, pattern: &str| {
+        command
+            .args(["-copypriorss", "0", "-avoid_negative_ts", "disabled"])
+            .args(["-f", "segment", "-segment_format", "mp4"])
+            .args(["-segment_format_options", SEGMENT_FORMAT_OPTIONS])
+            .args(["-segment_times", &cuts, "-segment_time_delta", "0.001"])
+            .args(["-segment_start_number", &segment.to_string()])
+            .args(["-segment_list", "pipe:1", "-segment_list_type", "flat"])
+            .arg(folder.join(pattern));
+    };
     let mut command = Command::new("ffmpeg");
     command.args(["-hide_banner", "-nostdin", "-nostats", "-loglevel", "error"]);
     let hardware_decoded = match video.codec.as_str() {
@@ -145,10 +157,6 @@ pub async fn write_segments(
         .args(["-ss", &seconds(start), "-copyts", "-i"])
         .arg(input)
         .args(["-map", &format!("0:{}", video.index)]);
-    if let Some(audio) = audio {
-        command.args(["-map", &format!("0:{}", audio.index)]);
-    }
-    command.args(["-c", "copy"]);
     match video_transcode {
         Some(transcode) => {
             let mut filter = if hardware_decoded {
@@ -177,19 +185,33 @@ pub async fn write_segments(
                 .args(["-bufsize", &(transcode.bit_rate * 2).to_string()])
                 .args(["-g", &gop, "-keyint_min", &gop, "-bf", "0"]);
         }
-        None if video.codec == "hevc" => {
-            command.args(["-tag:v", "hvc1"]);
+        None => {
+            command.args(["-c", "copy"]);
+            if video.codec == "hevc" {
+                command.args(["-tag:v", "hvc1"]);
+            }
         }
-        None => {}
     }
-    command
-        .args(["-copypriorss", "0", "-avoid_negative_ts", "disabled"])
-        .args(["-f", "segment", "-segment_format", "mp4"])
-        .args(["-segment_format_options", SEGMENT_FORMAT_OPTIONS])
-        .args(["-segment_times", &cuts, "-segment_time_delta", "0.001"])
-        .args(["-segment_start_number", &segment.to_string()])
-        .args(["-segment_list", "pipe:1", "-segment_list_type", "flat"])
-        .arg(folder.join("%d.mp4"));
+    segment_output(&mut command, "%d.mp4");
+    let mut progress = HashMap::from([(String::new(), segment)]);
+    for (rendition, track) in audio.iter().enumerate() {
+        command.args(["-map", &format!("0:{}", track.stream.index)]);
+        match track.transcode {
+            None => command.args(["-c", "copy"]),
+            Some(transcode) => command.args([
+                "-c",
+                match transcode.codec {
+                    AudioTranscodeCodec::Eac3 => "eac3",
+                    AudioTranscodeCodec::Aac => "aac",
+                },
+                "-ac",
+                &transcode.channels.to_string(),
+            ]),
+        };
+        command.args(["-bsf:a", "noise=drop=lt(pts\\,0)"]);
+        segment_output(&mut command, &format!("{AUDIO}-{rendition}-%d.mp4"));
+        progress.insert(format!("{AUDIO}-{rendition}"), segment);
+    }
     let subtitle_runs = (0..subtitles.len())
         .map(|x| folder.join(format!("subtitles-{x}-from-{segment}.webvtt")))
         .collect::<Vec<_>>();
@@ -210,12 +232,12 @@ pub async fn write_segments(
             Span::current().record("error.type", "spawn");
         })?;
     let mut finished = BufReader::new(child.stdout.take().expect("stdout is piped")).lines();
-    let mut last = None;
+    let mut last = HashMap::new();
     while let Some(next) = finished.next_line().await? {
-        if let Some(name) = last.replace(next) {
-            let index = split_segment(folder, &name).await?;
-            write_subtitle_segments(folder, &subtitle_runs, segments, index).await?;
-            written.send_replace(index + 1);
+        let (rendition, _) = segment_name(&next)?;
+        if let Some(name) = last.insert(rendition.to_owned(), next) {
+            finish_segment(folder, &name, &subtitle_runs, segments, &mut progress).await?;
+            written.send_replace(progress.values().copied().min().unwrap_or(segment));
         }
     }
     let output = child.wait_with_output().await?;
@@ -229,11 +251,60 @@ pub async fn write_segments(
             String::from_utf8_lossy(&output.stderr).trim().to_owned(),
         ));
     }
-    if let Some(name) = last {
-        let index = split_segment(folder, &name).await?;
-        write_subtitle_segments(folder, &subtitle_runs, segments, index).await?;
-        written.send_replace(index + 1);
+    for name in last.into_values() {
+        finish_segment(folder, &name, &subtitle_runs, segments, &mut progress).await?;
     }
+    written.send_replace(progress.values().copied().min().unwrap_or(segment));
+    Ok(())
+}
+
+const AUDIO: &str = "audio";
+
+pub(crate) fn audio_playlist(rendition: usize) -> String {
+    format!("{AUDIO}-{rendition}.m3u8")
+}
+
+pub(crate) fn audio_init(rendition: usize) -> String {
+    format!("{AUDIO}-{rendition}.mp4")
+}
+
+pub(crate) fn audio_segment(rendition: usize, segment: usize) -> String {
+    format!("{AUDIO}-{rendition}-{segment}.m4s")
+}
+
+fn segment_name(name: &str) -> io::Result<(&str, usize)> {
+    name.strip_suffix(".mp4")
+        .map(|x| x.rsplit_once('-').unwrap_or(("", x)))
+        .and_then(|(rendition, index)| Some((rendition, index.parse().ok()?)))
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "unexpected segment name"))
+}
+
+async fn finish_segment(
+    folder: &Path,
+    name: &str,
+    subtitle_runs: &[PathBuf],
+    segments: &Segments,
+    progress: &mut HashMap<String, usize>,
+) -> io::Result<()> {
+    let (rendition, index) = segment_name(name)?;
+    let path = folder.join(name);
+    let bytes = fs::read(&path).await?;
+    let header = header_length(&bytes)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "segment without moov"))?;
+    let init = if rendition.is_empty() {
+        folder.join(INIT)
+    } else {
+        folder.join(format!("{rendition}.mp4"))
+    };
+    if !fs::try_exists(&init).await? {
+        write_atomically(&init, &bytes[..header]).await?;
+    }
+    write_atomically(&path.with_extension("m4s"), &bytes[header..]).await?;
+    fs::remove_file(path).await?;
+    if rendition.is_empty() {
+        write_subtitle_segments(folder, subtitle_runs, segments, index).await?;
+    }
+    progress.insert(rendition.to_owned(), index + 1);
     Ok(())
 }
 
@@ -256,24 +327,6 @@ async fn write_subtitle_segments(
         .await?;
     }
     Ok(())
-}
-
-async fn split_segment(folder: &Path, name: &str) -> io::Result<usize> {
-    let index = name
-        .strip_suffix(".mp4")
-        .and_then(|x| x.parse().ok())
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "unexpected segment name"))?;
-    let path = folder.join(name);
-    let bytes = fs::read(&path).await?;
-    let header = header_length(&bytes)
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "segment without moov"))?;
-    let init = folder.join(INIT);
-    if !fs::try_exists(&init).await? {
-        write_atomically(&init, &bytes[..header]).await?;
-    }
-    write_atomically(&path.with_extension("m4s"), &bytes[header..]).await?;
-    fs::remove_file(path).await?;
-    Ok(index)
 }
 
 fn header_length(segment: &[u8]) -> Option<usize> {
@@ -305,19 +358,24 @@ fn seconds(duration: Duration) -> String {
 #[cfg(test)]
 mod tests {
     use super::Segments;
+    use super::audio_init;
+    use super::audio_segment;
     use super::write_segments;
     use crate::keyframes::read_keyframes;
     use application::ports::AudioStream;
+    use application::ports::HlsAudioTrack;
     use application::ports::VideoStream;
+    use domain::AudioTranscode;
+    use domain::AudioTranscodeCodec;
     use domain::HdrType;
     use mp4_atom::Any;
     use mp4_atom::Decode;
-    use mp4_atom::FourCC;
     use std::path::Path;
     use std::time::Duration;
     use tempfile::TempDir;
 
     const FIXTURE_DURATION: Duration = Duration::from_secs(40);
+    const TWO_E_AC_3_FRAMES_MS: u64 = 64;
 
     fn seconds(values: &[f64]) -> Vec<Duration> {
         values.iter().map(|x| Duration::from_secs_f64(*x)).collect()
@@ -386,13 +444,13 @@ mod tests {
             .join(name)
     }
 
-    fn playlist_times(playlist: &str) -> Vec<(u64, u64)> {
+    fn playlist_times(playlist: &str) -> Vec<(i64, i64)> {
         let mut start = 0;
         playlist
             .lines()
             .filter_map(|x| x.strip_prefix("#EXTINF:")?.strip_suffix(','))
             .map(|x| {
-                let end = start + (x.parse::<f64>().unwrap() * 1000.0).round() as u64;
+                let end = start + (x.parse::<f64>().unwrap() * 1000.0).round() as i64;
                 let times = (start, end);
                 start = end;
                 times
@@ -410,26 +468,27 @@ mod tests {
         atoms
     }
 
-    fn video_segment_times(
+    fn segment_times(
         folder: &Path,
+        init: &str,
+        segment: impl Fn(usize) -> String,
         segments: impl Iterator<Item = usize>,
-    ) -> Vec<(u64, u64)> {
-        let (track_id, timescale) = atoms(&folder.join("init.mp4"))
+    ) -> Vec<(i64, i64)> {
+        let (track_id, timescale) = atoms(&folder.join(init))
             .into_iter()
             .find_map(|x| match x {
                 Any::Moov(moov) => moov
                     .trak
-                    .iter()
-                    .find(|x| x.mdia.hdlr.handler == FourCC::new(b"vide"))
-                    .map(|x| (x.tkhd.track_id, u64::from(x.mdia.mdhd.timescale))),
+                    .first()
+                    .map(|x| (x.tkhd.track_id, i64::from(x.mdia.mdhd.timescale))),
                 _ => None,
             })
-            .expect("the init segment has a video track");
+            .expect("the init segment has a track");
         segments
             .map(|index| {
                 let mut start = i64::MAX;
                 let mut end = i64::MIN;
-                for atom in atoms(&folder.join(format!("{index}.m4s"))) {
+                for atom in atoms(&folder.join(segment(index))) {
                     let Any::Moof(moof) = atom else { continue };
                     for traf in moof.traf.iter().filter(|x| x.tfhd.track_id == track_id) {
                         let mut decode_time =
@@ -448,13 +507,18 @@ mod tests {
                         }
                     }
                 }
-                let milliseconds = |x: i64| (x as u64 * 1000 + timescale / 2) / timescale;
+                let milliseconds = |x: i64| (x * 1000 + timescale / 2).div_euclid(timescale);
                 (milliseconds(start), milliseconds(end))
             })
             .collect()
     }
 
-    async fn remux_fixture(name: &str, audio_codec: &str, segment: usize) -> (Segments, TempDir) {
+    async fn write_fixture_segments(
+        name: &str,
+        audio_codec: &str,
+        transcode: Option<AudioTranscode>,
+        segment: usize,
+    ) -> (Segments, TempDir) {
         let input = fixture(name);
         let keyframes = read_keyframes(&input).await.unwrap();
         let segments = Segments::new(&keyframes, FIXTURE_DURATION);
@@ -470,19 +534,23 @@ mod tests {
             interlaced: false,
             bit_rate: None,
         };
-        let audio = AudioStream {
-            index: 1,
-            codec: audio_codec.to_owned(),
-            language: None,
-            channels: 1,
-            title: None,
-            default: true,
+        let audio = HlsAudioTrack {
+            stream: AudioStream {
+                index: 1,
+                codec: audio_codec.to_owned(),
+                language: None,
+                channels: 1,
+                title: None,
+                default: true,
+            },
+            transcode,
+            selected: true,
         };
         write_segments(
             &input,
             &video,
             None,
-            Some(&audio),
+            &[audio],
             &[],
             &segments,
             segment,
@@ -495,18 +563,27 @@ mod tests {
     }
 
     async fn assert_remux_matches_the_playlist(name: &str, audio_codec: &str) {
-        let (segments, from_start) = remux_fixture(name, audio_codec, 0).await;
-        let (_, restarted) = remux_fixture(name, audio_codec, 3).await;
+        let (segments, from_start) = write_fixture_segments(name, audio_codec, None, 0).await;
+        let (_, restarted) = write_fixture_segments(name, audio_codec, None, 3).await;
         let playlist =
             playlist_times(&segments.media_playlist(Some("init.mp4"), |x| format!("{x}.m4s")));
 
         assert_eq!(playlist.len(), 6);
-        assert_eq!(video_segment_times(from_start.path(), 0..6), playlist);
-        assert_eq!(video_segment_times(restarted.path(), 3..6), playlist[3..]);
         assert_eq!(
-            std::fs::read(restarted.path().join("init.mp4")).unwrap(),
-            std::fs::read(from_start.path().join("init.mp4")).unwrap()
+            segment_times(from_start.path(), "init.mp4", |x| format!("{x}.m4s"), 0..6),
+            playlist
         );
+        assert_eq!(
+            segment_times(restarted.path(), "init.mp4", |x| format!("{x}.m4s"), 3..6),
+            playlist[3..]
+        );
+        for init in ["init.mp4", "audio-0.mp4"] {
+            assert_eq!(
+                std::fs::read(restarted.path().join(init)).unwrap(),
+                std::fs::read(from_start.path().join(init)).unwrap(),
+                "{init}"
+            );
+        }
     }
 
     #[tokio::test]
@@ -518,5 +595,121 @@ mod tests {
     #[tokio::test]
     async fn a_remux_of_an_mp4_file_matches_the_playlist_from_the_start_and_after_a_restart() {
         assert_remux_matches_the_playlist("keyframes.mp4", "aac").await;
+    }
+
+    async fn decode(path: &Path) -> (String, String) {
+        let probe = tokio::process::Command::new("ffprobe")
+            .args(["-v", "error", "-show_entries", "stream=codec_name,channels"])
+            .args(["-of", "default=noprint_wrappers=1:nokey=1"])
+            .arg(path)
+            .output()
+            .await
+            .unwrap();
+        let decoded = tokio::process::Command::new("ffmpeg")
+            .args(["-v", "error", "-i"])
+            .arg(path)
+            .args(["-f", "null", "-"])
+            .output()
+            .await
+            .unwrap();
+        assert!(decoded.status.success());
+        (
+            String::from_utf8(probe.stdout)
+                .unwrap()
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(","),
+            String::from_utf8(decoded.stderr).unwrap(),
+        )
+    }
+
+    async fn assert_audio_transcode_plays_and_matches_the_playlist(
+        name: &str,
+        audio_codec: &str,
+        transcode: AudioTranscode,
+        decoded_as: &str,
+    ) {
+        let (segments, from_start) =
+            write_fixture_segments(name, audio_codec, Some(transcode), 0).await;
+        let (_, restarted) = write_fixture_segments(name, audio_codec, Some(transcode), 3).await;
+        let playlist =
+            playlist_times(&segments.media_playlist(Some(&audio_init(0)), |x| audio_segment(0, x)));
+        let video = segment_times(from_start.path(), "init.mp4", |x| format!("{x}.m4s"), 0..6);
+        let mut joined = std::fs::read(from_start.path().join(audio_init(0))).unwrap();
+        for (folder, index) in [(&from_start, 0..3), (&restarted, 3..6)]
+            .into_iter()
+            .flat_map(|(folder, range)| range.map(move |x| (folder, x)))
+        {
+            joined.extend(std::fs::read(folder.path().join(audio_segment(0, index))).unwrap());
+        }
+        let joined_path = from_start.path().join("joined.mp4");
+        std::fs::write(&joined_path, joined).unwrap();
+
+        let times = [
+            segment_times(
+                from_start.path(),
+                &audio_init(0),
+                |x| audio_segment(0, x),
+                0..6,
+            ),
+            segment_times(
+                restarted.path(),
+                &audio_init(0),
+                |x| audio_segment(0, x),
+                3..6,
+            ),
+        ];
+        let (codec, errors) = decode(&joined_path).await;
+
+        let off_by = |times: &[(i64, i64)], expected: &[(i64, i64)]| {
+            times
+                .iter()
+                .zip(expected)
+                .flat_map(|(x, y)| [x.0.abs_diff(y.0), x.1.abs_diff(y.1)])
+                .max()
+                .unwrap()
+        };
+        assert!(times[0][0].0 >= 0, "{times:?}");
+        assert!(
+            off_by(&times[0], &playlist) <= TWO_E_AC_3_FRAMES_MS,
+            "{times:?} {playlist:?}"
+        );
+        assert!(
+            off_by(&times[1], &playlist[3..]) <= TWO_E_AC_3_FRAMES_MS,
+            "{times:?} {playlist:?}"
+        );
+        assert_eq!(codec, decoded_as);
+        assert_eq!(errors, "");
+        assert_eq!(video, playlist);
+    }
+
+    #[tokio::test]
+    async fn an_audio_only_transcode_of_e_ac_3_to_aac_plays_and_matches_the_playlist_after_a_restart()
+     {
+        assert_audio_transcode_plays_and_matches_the_playlist(
+            "keyframes.mkv",
+            "eac3",
+            AudioTranscode {
+                codec: AudioTranscodeCodec::Aac,
+                channels: 1,
+            },
+            "aac,1",
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn an_audio_only_transcode_of_aac_to_e_ac_3_plays_and_matches_the_playlist_after_a_restart()
+     {
+        assert_audio_transcode_plays_and_matches_the_playlist(
+            "keyframes.mp4",
+            "aac",
+            AudioTranscode {
+                codec: AudioTranscodeCodec::Eac3,
+                channels: 1,
+            },
+            "eac3,1",
+        )
+        .await;
     }
 }

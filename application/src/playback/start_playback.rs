@@ -17,6 +17,7 @@ use crate::attributes::SELFLESS_PLAYBACK_REASON_KINDS;
 use crate::metrics::SELFLESS_PLAYBACK_DECISIONS;
 use crate::playback::resource;
 use crate::ports;
+use crate::ports::HlsAudioTrack;
 use crate::ports::HlsSession;
 use crate::ports::ReadKeyframes;
 use crate::ports::persistence::DbScope;
@@ -145,20 +146,43 @@ pub async fn call(
         }
         _ => None,
     };
+    let mut audio_tracks = Vec::new();
+    if hls.is_some() {
+        let mut streams = media_file.audio_streams.get().iter().collect::<Vec<_>>();
+        streams.sort_by_key(|x| x.index);
+        for stream in streams {
+            let transcode = profile.audio_reason(stream).map(|reason| {
+                if !reasons.contains(&reason) {
+                    reasons.push(reason);
+                }
+                profile.audio_transcode(stream)
+            });
+            audio_tracks.push(HlsAudioTrack {
+                stream: ports::AudioStream {
+                    index: stream.index,
+                    codec: stream.codec.clone(),
+                    language: stream.language.clone(),
+                    channels: stream.channels,
+                    title: stream.title.clone(),
+                    default: stream.is_default,
+                },
+                transcode,
+                selected: audio.is_some_and(|x| x.id == stream.id),
+            });
+        }
+    }
     if !reasons.is_empty() {
         Span::current().set_attribute(SELFLESS_PLAYBACK_REASON_KINDS, reason_kinds(&reasons));
-        if hls.is_none()
-            || reasons
-                .iter()
-                .any(|x| matches!(x, PlayReason::AudioCodec(_) | PlayReason::AudioChannels(_)))
-        {
+        if hls.is_none() {
             return Ok(Output::NeedsTranscode);
         }
     }
     let method = match &hls {
         None => PlayMethod::DirectPlay,
-        Some((_, _, _, None)) => PlayMethod::Remux,
-        Some((_, _, _, Some(_))) => PlayMethod::Transcode,
+        Some((_, _, _, None)) if audio_tracks.iter().all(|x| x.transcode.is_none()) => {
+            PlayMethod::Remux
+        }
+        Some(_) => PlayMethod::Transcode,
     };
     let episodes = player_episodes(&mut db_context, episodes)
         .await
@@ -226,14 +250,7 @@ pub async fn call(
                     interlaced: video.interlaced,
                     bit_rate: video.bit_rate,
                 },
-                audio: audio.map(|x| ports::AudioStream {
-                    index: x.index,
-                    codec: x.codec.clone(),
-                    language: x.language.clone(),
-                    channels: x.channels,
-                    title: x.title.clone(),
-                    default: x.is_default,
-                }),
+                audio: audio_tracks,
                 subtitle_streams: subtitle_streams
                     .iter()
                     .filter(|x| x.text)

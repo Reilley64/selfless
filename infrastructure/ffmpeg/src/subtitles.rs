@@ -1,4 +1,5 @@
-use crate::language::TrackLanguage;
+use crate::rendition::Rendition;
+use crate::rendition::named;
 use std::io;
 use std::path::Path;
 use std::process::Stdio;
@@ -7,13 +8,6 @@ use tokio::process::Command;
 use tracing::Span;
 
 const HEADER: &str = "WEBVTT\nX-TIMESTAMP-MAP=MPEGTS:0,LOCAL:00:00:00.000\n";
-
-pub(crate) struct Rendition<'a> {
-    pub(crate) language: Option<&'a str>,
-    pub(crate) title: Option<&'a str>,
-    pub(crate) forced: bool,
-    pub(crate) hearing_impaired: bool,
-}
 
 pub(crate) const GROUP: &str = "subtitles";
 
@@ -30,58 +24,22 @@ pub(crate) fn file(rendition: usize) -> String {
 }
 
 pub(crate) fn media_tags<'a>(renditions: impl Iterator<Item = Rendition<'a>>) -> String {
-    let mut names = Vec::<String>::new();
     let mut tags = String::new();
-    for (index, rendition) in renditions.enumerate() {
-        let language = rendition.language.and_then(TrackLanguage::parse);
-        let base = name(&rendition, language.as_ref());
-        let mut name = base.clone();
-        let mut count = 1;
-        while names.contains(&name) {
-            count += 1;
-            name = format!("{base} {count}");
-        }
+    for (index, rendition) in named(renditions).into_iter().enumerate() {
         tags.push_str(&format!(
-            "#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID=\"{GROUP}\",NAME=\"{name}\""
+            "#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID=\"{GROUP}\",NAME=\"{}\"",
+            rendition.name
         ));
-        if let Some(language) = &language {
-            tags.push_str(&format!(",LANGUAGE=\"{}\"", language.tag()));
+        if let Some(language) = &rendition.language {
+            tags.push_str(&format!(",LANGUAGE=\"{language}\""));
         }
         tags.push_str(",DEFAULT=NO");
         if rendition.forced {
             tags.push_str(",FORCED=YES");
         }
         tags.push_str(&format!(",URI=\"{}\"\n", playlist(index)));
-        names.push(name);
     }
     tags
-}
-
-fn name(rendition: &Rendition, language: Option<&TrackLanguage>) -> String {
-    let language_name = match (language, rendition.language) {
-        (Some(language), _) => language.name(),
-        (None, Some(code)) => code,
-        (None, None) => "Unknown",
-    };
-    let mut marks = Vec::new();
-    marks.extend(language.and_then(TrackLanguage::region));
-    marks.extend(
-        rendition
-            .title
-            .filter(|x| !x.eq_ignore_ascii_case(language_name)),
-    );
-    if rendition.hearing_impaired {
-        marks.push("SDH");
-    }
-    if rendition.forced {
-        marks.push("Forced");
-    }
-    let name = if marks.is_empty() {
-        language_name.to_owned()
-    } else {
-        format!("{language_name} ({})", marks.join(", "))
-    };
-    name.replace('"', "'")
 }
 
 pub(crate) struct Cue<'a> {

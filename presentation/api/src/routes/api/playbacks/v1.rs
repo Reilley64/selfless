@@ -418,7 +418,8 @@ mod tests {
     use crate::test::signed_in_user;
     use application::ports::ReadKeyframes;
     use application::ports::persistence::DbScope;
-    use domain::AudioStream;
+    use domain::AudioTranscode;
+    use domain::AudioTranscodeCodec;
     use domain::Episode;
     use domain::HdrType;
     use domain::MediaFile;
@@ -472,6 +473,24 @@ mod tests {
         extension: &str,
         container: Option<&str>,
     ) -> (Uuid, MediaFileOnDisk) {
+        add_media_file_with_audio(
+            app,
+            extension,
+            container,
+            &[
+                (2, "aac", 2, "jpn", "Stereo", false),
+                (1, "aac", 2, "eng", "Stereo", true),
+            ],
+        )
+        .await
+    }
+
+    async fn add_media_file_with_audio(
+        app: &TestApp,
+        extension: &str,
+        container: Option<&str>,
+        audio: &[(i64, &str, i64, &str, &str, bool)],
+    ) -> (Uuid, MediaFileOnDisk) {
         let path = std::env::temp_dir().join(format!("selfless-{}.{extension}", Uuid::new_v4()));
         std::fs::write(&path, BYTES).unwrap();
         let mut db_context = app.state.db_context.clone();
@@ -497,16 +516,14 @@ mod tests {
             .exec(db_context.executor_mut())
             .await
             .unwrap();
-        for (index, language, title, default) in
-            [(2, "jpn", "Stereo", false), (1, "eng", "Stereo", true)]
-        {
+        for &(index, codec, channels, language, title, default) in audio {
             media_file
                 .audio_streams()
                 .create()
                 .index(index)
-                .codec("aac")
+                .codec(codec)
                 .language(Some(language.to_owned()))
-                .channels(2)
+                .channels(channels)
                 .title(Some(title.to_owned()))
                 .is_default(default)
                 .exec(db_context.executor_mut())
@@ -542,19 +559,45 @@ mod tests {
         })
     }
 
+    fn apple_tv_profile() -> Value {
+        json!({
+            "containers": ["mp4", "mov"],
+            "videoCodecs": [{
+                "codec": "h264",
+                "profiles": ["main", "high"],
+                "maxWidth": 3840,
+                "maxHeight": 2160,
+                "hdrTypes": ["sdr"],
+            }],
+            "audioCodecs": [
+                { "codec": "aac", "maxChannels": 2 },
+                { "codec": "ac3", "maxChannels": 6 },
+                { "codec": "eac3", "maxChannels": 8 },
+            ],
+            "subtitleCodecs": [],
+        })
+    }
+
+    fn google_tv_profile_without_e_ac_3() -> Value {
+        json!({
+            "containers": ["mkv", "mp4", "webm"],
+            "videoCodecs": [{
+                "codec": "h264",
+                "profiles": ["main", "high"],
+                "maxWidth": 3840,
+                "maxHeight": 2160,
+                "hdrTypes": ["sdr"],
+            }],
+            "audioCodecs": [
+                { "codec": "aac", "maxChannels": 8 },
+                { "codec": "ac3", "maxChannels": 6 },
+            ],
+            "subtitleCodecs": [],
+        })
+    }
+
     async fn start(server: &TestServer, token: &str, media_file_id: Uuid) -> (StatusCode, Value) {
-        server
-            .request(
-                Method::POST,
-                "/api/playbacks/v1",
-                Some(token),
-                Some(json!({
-                    "mediaFileId": media_file_id,
-                    "startPosition": 0,
-                    "profile": browser_profile(),
-                })),
-            )
-            .await
+        start_for(server, token, media_file_id, browser_profile()).await
     }
 
     async fn report(
@@ -1025,25 +1068,147 @@ mod tests {
         );
     }
 
+    fn audio_targets(app: &TestApp) -> Vec<(i64, Option<AudioTranscode>, bool)> {
+        app.hls
+            .sessions()
+            .last()
+            .unwrap()
+            .audio
+            .iter()
+            .map(|x| (x.stream.index, x.transcode, x.selected))
+            .collect()
+    }
+
+    fn eac3(channels: i64) -> Option<AudioTranscode> {
+        Some(AudioTranscode {
+            codec: AudioTranscodeCodec::Eac3,
+            channels,
+        })
+    }
+
+    fn aac(channels: i64) -> Option<AudioTranscode> {
+        Some(AudioTranscode {
+            codec: AudioTranscodeCodec::Aac,
+            channels,
+        })
+    }
+
     #[tokio::test]
-    async fn audio_the_profile_does_not_cover_returns_the_needs_transcode_problem() {
+    async fn audio_a_profile_with_e_ac_3_does_not_cover_becomes_e_ac_3_and_the_rest_is_copied() {
         let app = TestApp::new().await;
         let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;
-        let (dts, _dts_file) = add_media_file(&app, "mp4", Some(MP4)).await;
-        add_movie_playing(&app, dts, true).await;
-        let mut db_context = app.state.db_context.clone();
-        AudioStream::filter_by_media_file_id(dts)
-            .update()
-            .codec("dts")
-            .exec(db_context.executor_mut())
-            .await
-            .unwrap();
+        let (media_file_id, _file) = add_media_file_with_audio(
+            &app,
+            "mkv",
+            Some("matroska,webm"),
+            &[
+                (1, "dts", 6, "eng", "DTS-HD MA 5.1", true),
+                (2, "dts", 2, "eng", "Director's commentary", false),
+                (3, "aac", 2, "fre", "Stereo", false),
+            ],
+        )
+        .await;
+        add_movie_playing(&app, media_file_id, true).await;
         let server = serve(&app).await;
 
-        let (status, problem) = start(&server, &token, dts).await;
+        let (status, playback) =
+            start_for(&server, &token, media_file_id, apple_tv_profile()).await;
 
-        assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
-        assert_eq!(problem["type"], "urn:selfless:problem:needs-transcode");
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(playback["method"], "transcode");
+        assert_eq!(
+            playback["reasons"],
+            json!([
+                { "kind": "container", "value": "mkv" },
+                { "kind": "audioCodec", "value": "dts" },
+            ])
+        );
+        assert!(
+            playback["url"].as_str().unwrap().ends_with("/v1/main.m3u8"),
+            "{}",
+            playback["url"]
+        );
+        assert_eq!(
+            audio_targets(&app),
+            [(1, eac3(6), true), (2, eac3(2), false), (3, None, false)]
+        );
+    }
+
+    #[tokio::test]
+    async fn audio_a_profile_without_e_ac_3_does_not_cover_becomes_aac_up_to_its_maximum_channels()
+    {
+        let app = TestApp::new().await;
+        let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;
+        let (media_file_id, _file) = add_media_file_with_audio(
+            &app,
+            "mkv",
+            Some("matroska,webm"),
+            &[
+                (1, "eac3", 6, "eng", "Surround 5.1", true),
+                (2, "ac3", 6, "eng", "Surround 5.1", false),
+                (3, "truehd", 8, "eng", "Atmos", false),
+            ],
+        )
+        .await;
+        add_movie_playing(&app, media_file_id, true).await;
+        let server = serve(&app).await;
+
+        let (status, playback) = start_for(
+            &server,
+            &token,
+            media_file_id,
+            google_tv_profile_without_e_ac_3(),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(playback["method"], "transcode");
+        assert_eq!(
+            playback["reasons"],
+            json!([
+                { "kind": "audioCodec", "value": "eac3" },
+                { "kind": "audioCodec", "value": "truehd" },
+            ])
+        );
+        assert_eq!(
+            audio_targets(&app),
+            [(1, aac(6), true), (2, None, false), (3, aac(6), false)]
+        );
+    }
+
+    #[tokio::test]
+    async fn audio_a_browser_does_not_cover_becomes_aac_with_at_most_two_channels() {
+        let app = TestApp::new().await;
+        let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;
+        let (media_file_id, _file) = add_media_file_with_audio(
+            &app,
+            "mp4",
+            Some(MP4),
+            &[
+                (1, "eac3", 6, "eng", "Surround 5.1", true),
+                (2, "aac", 6, "eng", "Surround 5.1", false),
+                (3, "aac", 1, "eng", "Mono", false),
+            ],
+        )
+        .await;
+        add_movie_playing(&app, media_file_id, true).await;
+        let server = serve(&app).await;
+
+        let (status, playback) = start(&server, &token, media_file_id).await;
+
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(playback["method"], "transcode");
+        assert_eq!(
+            playback["reasons"],
+            json!([
+                { "kind": "audioCodec", "value": "eac3" },
+                { "kind": "audioChannels", "value": "6" },
+            ])
+        );
+        assert_eq!(
+            audio_targets(&app),
+            [(1, aac(2), true), (2, aac(2), false), (3, None, false)]
+        );
     }
 
     #[tokio::test]

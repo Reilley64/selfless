@@ -21,6 +21,7 @@ mod keyframes;
 mod language;
 mod matroska;
 mod mp4;
+mod rendition;
 mod subtitles;
 
 pub use hls_sessions::HlsSessions;
