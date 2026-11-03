@@ -49,7 +49,12 @@ pub(crate) fn check_response(
         .unwrap();
     let validator = jsonschema::options()
         .with_registry(&registry)
-        .build(&json!({ "$ref": format!("{OPENAPI_URI}#{schema}") }))
+        .build(&json!({
+            "$ref": format!(
+                "{OPENAPI_URI}#{}",
+                schema.replace('{', "%7B").replace('}', "%7D")
+            )
+        }))
         .unwrap();
     let errors = validator
         .iter_errors(&body)

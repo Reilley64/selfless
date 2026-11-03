@@ -9,7 +9,6 @@ pub use output::Output;
 use crate::browsing::Cursor;
 use crate::browsing::SortKey;
 use crate::browsing::Tile;
-use crate::browsing::TileKind;
 use crate::browsing::page;
 use crate::browsing::title_images;
 use crate::ports::persistence::DbScope;
@@ -64,17 +63,9 @@ pub async fn call(
     Ok(Output {
         tiles: movies
             .into_iter()
-            .map(|movie| Tile {
-                images: images.remove(&movie.id).unwrap_or_default(),
-                id: movie.id,
-                title: movie.title,
-                year: Some(movie.year),
-                certification: movie.certification,
-                genres: movie.genres,
-                plot: movie.overview,
-                kind: TileKind::Movie {
-                    runtime_minutes: movie.runtime_minutes,
-                },
+            .map(|movie| {
+                let images = images.remove(&movie.id).unwrap_or_default();
+                Tile::movie(movie, images)
             })
             .collect(),
         next,

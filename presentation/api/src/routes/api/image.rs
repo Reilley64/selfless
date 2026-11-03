@@ -1,4 +1,5 @@
 use application::browsing::Image;
+use application::browsing::TileImages;
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -29,6 +30,21 @@ impl From<Image> for ImageBody {
                     ),
                 })
                 .collect(),
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub(crate) struct TitleImagesBody {
+    fanart: Option<ImageBody>,
+    logo: Option<ImageBody>,
+}
+
+impl From<TileImages> for TitleImagesBody {
+    fn from(images: TileImages) -> Self {
+        Self {
+            fanart: images.fanart.map(ImageBody::from),
+            logo: images.logo.map(ImageBody::from),
         }
     }
 }
