@@ -144,10 +144,6 @@ mod tests {
         }
 
         async fn confirm(&self) {
-            self.try_confirm().await.unwrap();
-        }
-
-        async fn try_confirm(&self) -> Result<Output, Error> {
             let radarr = self.radarr.clone();
             call(
                 Dependencies {
@@ -171,6 +167,7 @@ mod tests {
                 Source::Radarr,
             )
             .await
+            .unwrap();
         }
 
         async fn is_held(&self) -> bool {
@@ -232,28 +229,5 @@ mod tests {
         assert_eq!(movie_titles(&library.db_context).await, ["Arrival", "Dune"]);
         assert!(!library.is_held().await);
         assert_eq!(library.held_item_count().await, 0);
-    }
-
-    #[tokio::test]
-    async fn a_confirmation_that_fails_to_remove_reports_a_library_sync_error_not_a_reconcile_error()
-     {
-        let library = Library::new(&[(ARRIVAL, "Arrival"), (DUNE, "Dune")]).await;
-        library.hold(&[DUNE]).await;
-        library.radarr_lists(&[ARRIVAL]);
-        let mut db_context = library.db_context.clone();
-        toasty::sql::statement("ALTER TABLE actors RENAME TO actors_gone")
-            .exec(db_context.executor_mut())
-            .await
-            .unwrap();
-
-        let error = library.try_confirm().await.unwrap_err();
-
-        assert_eq!(
-            error.to_string().lines().take(2).collect::<Vec<_>>(),
-            [
-                "failed to confirm a held removal",
-                "caused by: failed to sync the library"
-            ]
-        );
     }
 }

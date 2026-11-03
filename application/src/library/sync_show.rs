@@ -611,7 +611,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_episode_whose_file_is_missing_on_disk_is_hidden() {
+    async fn an_episode_whose_file_is_missing_on_disk_is_not_in_the_library() {
         let library = ShowLibrary::new().await;
         library.sources().files_on_disk.remove(S01E01_FILE);
 
@@ -644,7 +644,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_show_without_files_is_hidden_and_files_again_show_it_with_the_same_rows() {
+    async fn a_show_without_files_is_not_in_the_library_and_files_again_put_it_back_with_the_same_rows()
+     {
         let library = ShowLibrary::new().await;
         library.sync_show().await.unwrap();
         let show_before = show(&library).await;
@@ -661,11 +662,11 @@ mod tests {
             }
         });
         library.sync_show().await.unwrap();
-        let hidden = episodes(&library).await;
+        let not_in_library = episodes(&library).await;
         with_source_episodes(&library, |episodes| *episodes = with_files);
         library.sync_show().await.unwrap();
 
-        assert!(hidden.iter().all(|(_, x)| !x.in_library));
+        assert!(not_in_library.iter().all(|(_, x)| !x.in_library));
         assert_eq!(show(&library).await.id, show_before.id);
         let episodes_after = episodes(&library).await;
         assert_eq!(

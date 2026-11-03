@@ -249,25 +249,26 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_movie_without_a_file_is_hidden_and_a_file_again_shows_it_with_the_same_id() {
+    async fn a_movie_without_a_file_is_not_in_the_library_and_a_file_again_puts_it_back_with_the_same_id()
+     {
         let library = MovieLibrary::new().await;
         library.sync_movie().await.unwrap();
         let before = movie(&library).await;
 
         library.sources().movie = Some(arrival(None));
         library.sync_movie().await.unwrap();
-        let hidden = movie(&library).await;
+        let not_in_library = movie(&library).await;
         library.sources().movie = Some(arrival(Some(MOVIE_FILE)));
         library.sync_movie().await.unwrap();
 
-        assert!(!hidden.in_library);
+        assert!(!not_in_library.in_library);
         let after = movie(&library).await;
         assert!(after.in_library);
         assert_eq!(after.id, before.id);
     }
 
     #[tokio::test]
-    async fn a_movie_whose_file_is_missing_on_disk_is_hidden() {
+    async fn a_movie_whose_file_is_missing_on_disk_is_not_in_the_library() {
         let library = MovieLibrary::new().await;
         library.sources().files_on_disk.clear();
 
@@ -606,7 +607,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_new_movie_whose_media_file_is_unreadable_is_stored_hidden_with_an_unreadable_file() {
+    async fn a_new_movie_whose_media_file_is_unreadable_is_stored_not_in_the_library_with_an_unreadable_file()
+     {
         let library = MovieLibrary::new().await;
         library
             .sources()

@@ -165,8 +165,8 @@ mod tests {
     async fn only_shows_with_an_episode_in_the_library_are_listed() {
         let mut db_context = mock_db_context().await;
         seed_show_in_library(&mut db_context, 1, "Severance").await;
-        let hidden = seed_show(&mut db_context, 2, "Andor").await;
-        let hidden_season = seed_season(&mut db_context, hidden, 1).await;
+        let not_in_library = seed_show(&mut db_context, 2, "Andor").await;
+        let hidden_season = seed_season(&mut db_context, not_in_library, 1).await;
         seed_episode(&mut db_context, hidden_season, 2, 1, false).await;
         seed_show(&mut db_context, 3, "Silo").await;
 
