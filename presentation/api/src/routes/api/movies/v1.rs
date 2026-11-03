@@ -70,6 +70,7 @@ struct MoviePageBody {
     studio: Option<String>,
     original_title: Option<String>,
     directors: Vec<String>,
+    media_file_id: Option<Uuid>,
     cast: Vec<CastMemberBody>,
     images: TitleImagesBody,
     progress: Option<f64>,
@@ -104,6 +105,7 @@ impl From<get_movie::Movie> for MoviePageBody {
             studio: page.studio,
             original_title: page.original_title,
             directors: page.directors,
+            media_file_id: page.media_file_id,
             cast: page
                 .cast
                 .into_iter()
@@ -250,6 +252,7 @@ mod tests {
                 "studio": "Paramount",
                 "originalTitle": "Arrival",
                 "directors": ["Denis Villeneuve"],
+                "mediaFileId": null,
                 "cast": [{ "name": "Amy Adams", "role": "Louise Banks" }],
                 "images": { "fanart": null, "logo": null },
                 "progress": null,

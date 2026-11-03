@@ -10,6 +10,8 @@ use domain::Invite;
 use domain::MediaFile;
 use domain::Movie;
 use domain::Outbox;
+use domain::Playback;
+use domain::PlaybackSettings;
 use domain::Season;
 use domain::Session;
 use domain::Show;
@@ -117,6 +119,14 @@ pub trait DbScope {
     }
 
     fn outboxes(&self) -> DbSet<Outbox> {
+        DbSet::new()
+    }
+
+    fn playbacks(&self) -> DbSet<Playback> {
+        DbSet::new()
+    }
+
+    fn playback_settings(&self) -> DbSet<PlaybackSettings> {
         DbSet::new()
     }
 

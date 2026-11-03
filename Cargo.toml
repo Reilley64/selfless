@@ -68,6 +68,7 @@ tokio = { version = "1.54.1", features = ["full"] }
 tokio-postgres = "0.7.18"
 tokio-util = "0.7.20"
 tonic = { version = "0.14.8", default-features = false }
+tower-http = { version = "0.7.1", default-features = false }
 topcoat = "0.11.0"
 tracing = "0.1.44"
 tracing-opentelemetry = "0.34.0"

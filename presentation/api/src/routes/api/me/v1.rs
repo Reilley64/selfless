@@ -3,6 +3,7 @@ use crate::user_auth::CurrentSession;
 use domain::Password;
 use infrastructure::AppState;
 use serde::Deserialize;
+use serde::Serialize;
 use topcoat::context::Cx;
 use topcoat::context::app_context;
 use topcoat::context::request_context;
@@ -45,6 +46,46 @@ pub(crate) async fn change_password(
         Ok(_) => StatusCode::NO_CONTENT.into_response(cx),
         Err(error) => problem::from_error(cx, error),
     }
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PlaybackSettingsBody {
+    autoplay_next_episode: bool,
+    ask_if_still_watching: bool,
+}
+
+#[route(GET "/api/(user)/me/playback-settings/v1")]
+pub(crate) async fn playback_settings(cx: &Cx) -> topcoat::Result<Response> {
+    let settings = application::playback::get_playback_settings::call(
+        app_context::<AppState>(cx),
+        request_context::<CurrentSession>(cx).user.id,
+    )
+    .await?;
+    Json(&PlaybackSettingsBody {
+        autoplay_next_episode: settings.autoplay_next_episode,
+        ask_if_still_watching: settings.ask_if_still_watching,
+    })
+    .into_response(cx)
+}
+
+#[route(PUT "/api/(user)/me/playback-settings/v1")]
+pub(crate) async fn change_playback_settings(
+    cx: &Cx,
+    Json(request): Json<PlaybackSettingsBody>,
+) -> topcoat::Result<Response> {
+    let settings = application::playback::change_playback_settings::call(
+        app_context::<AppState>(cx),
+        request_context::<CurrentSession>(cx).user.id,
+        request.autoplay_next_episode,
+        request.ask_if_still_watching,
+    )
+    .await?;
+    Json(&PlaybackSettingsBody {
+        autoplay_next_episode: settings.autoplay_next_episode,
+        ask_if_still_watching: settings.ask_if_still_watching,
+    })
+    .into_response(cx)
 }
 
 #[cfg(test)]
@@ -137,6 +178,57 @@ mod tests {
 
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
         assert_eq!(problem["type"], "urn:selfless:problem:empty-password");
+    }
+
+    #[tokio::test]
+    async fn playback_settings_start_with_autoplay_on_and_the_still_watching_prompt_off() {
+        let app = TestApp::new().await;
+        let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;
+        let server = serve(&app).await;
+
+        let (status, settings) = server
+            .request(
+                Method::GET,
+                "/api/me/playback-settings/v1",
+                Some(&token),
+                None,
+            )
+            .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            settings,
+            json!({ "autoplayNextEpisode": true, "askIfStillWatching": false })
+        );
+    }
+
+    #[tokio::test]
+    async fn changed_playback_settings_are_read_back() {
+        let app = TestApp::new().await;
+        let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;
+        let server = serve(&app).await;
+        let changed = json!({ "autoplayNextEpisode": false, "askIfStillWatching": true });
+
+        let (status, response) = server
+            .request(
+                Method::PUT,
+                "/api/me/playback-settings/v1",
+                Some(&token),
+                Some(changed.clone()),
+            )
+            .await;
+        let (_, settings) = server
+            .request(
+                Method::GET,
+                "/api/me/playback-settings/v1",
+                Some(&token),
+                None,
+            )
+            .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(response, changed);
+        assert_eq!(settings, changed);
     }
 
     #[tokio::test]

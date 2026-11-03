@@ -79,6 +79,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, show_id: Uuid) -> Resul
         episode_id: play_episode.id,
         episode_number: play_episode.number,
         episode_title: play_episode.title.clone(),
+        media_file_id: play_episode.media_file_id,
         season_id: play_season.id,
         season_number: play_season.number,
     };

@@ -42,6 +42,7 @@ struct EpisodeBody {
     runtime_minutes: Option<i64>,
     plot: Option<String>,
     thumb: Option<ImageBody>,
+    media_file_id: Option<Uuid>,
     progress: Option<f64>,
     watched: bool,
 }
@@ -55,6 +56,7 @@ impl From<list_season_episodes::Episode> for EpisodeBody {
             runtime_minutes: episode.runtime_minutes,
             plot: episode.plot,
             thumb: episode.thumb.map(ImageBody::from),
+            media_file_id: episode.media_file_id,
             progress: None,
             watched: false,
         }
@@ -167,6 +169,7 @@ mod tests {
                         "runtimeMinutes": null,
                         "plot": null,
                         "thumb": null,
+                        "mediaFileId": null,
                         "progress": null,
                         "watched": false,
                     },
@@ -177,11 +180,70 @@ mod tests {
                         "runtimeMinutes": 57,
                         "plot": "Mark takes Helly to the break room.",
                         "thumb": null,
+                        "mediaFileId": media_file.id,
                         "progress": null,
                         "watched": false,
                     },
                 ],
             })
+        );
+    }
+
+    #[tokio::test]
+    async fn both_episodes_of_a_two_episode_file_carry_its_media_file_id() {
+        let app = TestApp::new().await;
+        let (_, token) = signed_in_user(&app, "Noor", "a long passphrase about tea").await;
+        let mut db_context = app.state.db_context.clone();
+        let severance = add_show(&app, "Severance", &[]).await;
+        let season_id = db_context
+            .seasons()
+            .create()
+            .show_id(severance)
+            .number(1)
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap()
+            .id;
+        let media_file = db_context
+            .media_files()
+            .create()
+            .path("/media/TV/Severance/Season 01/Severance - S01E02-E03.mkv")
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap();
+        for number in [2, 3] {
+            db_context
+                .episodes()
+                .create()
+                .season_id(season_id)
+                .tvdb_id(domain::TvdbId(Uuid::new_v4().as_u64_pair().0 as i64))
+                .number(number)
+                .title("Half Loop")
+                .media_file_id(Some(media_file.id))
+                .in_library(true)
+                .exec(db_context.executor_mut())
+                .await
+                .unwrap();
+        }
+        let server = serve(&app).await;
+
+        let (_, list) = server
+            .request(
+                Method::GET,
+                &format!("/api/seasons/{season_id}/episodes/v1"),
+                Some(&token),
+                None,
+            )
+            .await;
+
+        assert_eq!(
+            list["episodes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|x| x["mediaFileId"].clone())
+                .collect::<Vec<_>>(),
+            [json!(media_file.id), json!(media_file.id)]
         );
     }
 

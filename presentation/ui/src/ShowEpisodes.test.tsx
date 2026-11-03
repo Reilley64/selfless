@@ -35,7 +35,7 @@ const severance: ShowPage = {
     verb: "play",
     resumePosition: null,
     season: { id: seasonTwo, number: 2 },
-    episode: { id: helloMsCobel, number: 1, title: "Hello, Ms. Cobel" },
+    episode: { id: helloMsCobel, number: 1, title: "Hello, Ms. Cobel", mediaFileId: "0190f3c4-c2d3-7e4f-8a5b-6c7d8e9f0a1b" },
   },
   moreLikeThis: [],
 };
@@ -47,6 +47,7 @@ const episode = (id: string, number: number, title: string, runtimeMinutes: numb
   runtimeMinutes,
   plot: `The plot of ${title}.`,
   thumb: null,
+  mediaFileId: null,
   progress: null,
   watched: false,
 });

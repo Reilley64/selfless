@@ -7,6 +7,7 @@ pub use error::Error;
 pub use output::Output;
 
 use crate::ports::persistence::DbScope;
+use domain::PlaybackSettings;
 use domain::Session;
 use domain::User;
 use uuid::Uuid;
@@ -24,6 +25,13 @@ pub async fn call(dependencies: impl Into<Dependencies>, id: Uuid) -> Result<Out
     transaction
         .sessions()
         .filter(Session::fields().user_id().eq(id))
+        .delete()
+        .exec(transaction.executor_mut())
+        .await
+        .map_err(Error::caused_by)?;
+    transaction
+        .playback_settings()
+        .filter(PlaybackSettings::fields().user_id().eq(id))
         .delete()
         .exec(transaction.executor_mut())
         .await
@@ -113,5 +121,41 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(users, [ravi]);
         assert_eq!(sessions, ["Ravi's laptop"]);
+    }
+
+    #[tokio::test]
+    async fn deleting_a_user_deletes_their_playback_settings() {
+        let mut db_context = mock_db_context().await;
+        let noor = create_user(&db_context, "Noor").await;
+        let ravi = create_user(&db_context, "Ravi").await;
+        for user_id in [noor, ravi] {
+            db_context
+                .playback_settings()
+                .create()
+                .user_id(user_id)
+                .exec(db_context.executor_mut())
+                .await
+                .unwrap();
+        }
+
+        call(
+            Dependencies {
+                db_context: db_context.clone(),
+            },
+            noor,
+        )
+        .await
+        .unwrap();
+
+        let settings = db_context
+            .playback_settings()
+            .all()
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|x| x.user_id)
+            .collect::<Vec<_>>();
+        assert_eq!(settings, [ravi]);
     }
 }

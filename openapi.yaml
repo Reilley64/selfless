@@ -173,6 +173,50 @@ paths:
           $ref: "#/components/responses/EmptyPassword"
         "500":
           $ref: "#/components/responses/InternalError"
+  /api/me/playback-settings/v1:
+    get:
+      operationId: getPlaybackSettings
+      summary: The signed-in user's playback settings
+      tags: [users]
+      responses:
+        "200":
+          description: The user's playback settings, the same on every device.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlaybackSettings"
+              example: {"autoplayNextEpisode":true,"askIfStillWatching":false}
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    put:
+      operationId: changePlaybackSettings
+      summary: Change the signed-in user's playback settings
+      description: The audio and subtitle languages playback remembers are not changed here. They follow the tracks the user picks during playback.
+      tags: [users]
+      requestBody:
+        description: Both playback settings.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangePlaybackSettingsRequest"
+            example: {"autoplayNextEpisode":false,"askIfStillWatching":true}
+      responses:
+        "200":
+          description: The playback settings have changed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlaybackSettings"
+              example: {"autoplayNextEpisode":false,"askIfStillWatching":true}
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /api/invites/accept/v1:
     post:
       operationId: acceptInvite
@@ -357,7 +401,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/MoviePage"
-              example: {"id":"0190f3c4-5b6a-7c8d-9e0f-1a2b3c4d5e6f","title":"Arrival","year":2016,"certification":"PG-13","runtimeMinutes":116,"genres":["Drama","Science Fiction"],"rating":7.6,"plot":"A linguist works with the military to talk to aliens.","studio":"Paramount","originalTitle":"Arrival","directors":["Denis Villeneuve"],"cast":[{"name":"Amy Adams","role":"Louise Banks"}],"images":{"fanart":null,"logo":null},"progress":null,"watched":false,"play":{"resumePosition":null},"moreLikeThis":[{"id":"0190f3c4-6c7d-7e8f-9a0b-1c2d3e4f5a6b","kind":"movie","title":"Dune","year":2021,"certification":"PG-13","runtimeMinutes":155,"seasonCount":null,"genres":["Science Fiction"],"plot":"A noble family becomes embroiled in a war for control of a desert planet.","images":{"fanart":null,"logo":null,"thumb":null},"progress":null,"watched":false,"episode":null}]}
+              example: {"id":"0190f3c4-5b6a-7c8d-9e0f-1a2b3c4d5e6f","title":"Arrival","year":2016,"certification":"PG-13","runtimeMinutes":116,"genres":["Drama","Science Fiction"],"rating":7.6,"plot":"A linguist works with the military to talk to aliens.","studio":"Paramount","originalTitle":"Arrival","directors":["Denis Villeneuve"],"mediaFileId":"0190f3c4-c2d3-7e4f-8a5b-6c7d8e9f0a1b","cast":[{"name":"Amy Adams","role":"Louise Banks"}],"images":{"fanart":null,"logo":null},"progress":null,"watched":false,"play":{"resumePosition":null},"moreLikeThis":[{"id":"0190f3c4-6c7d-7e8f-9a0b-1c2d3e4f5a6b","kind":"movie","title":"Dune","year":2021,"certification":"PG-13","runtimeMinutes":155,"seasonCount":null,"genres":["Science Fiction"],"plot":"A noble family becomes embroiled in a war for control of a desert planet.","images":{"fanart":null,"logo":null,"thumb":null},"progress":null,"watched":false,"episode":null}]}
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "404":
@@ -410,7 +454,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ShowPage"
-              example: {"id":"0190f3c4-6c7d-7e8f-9a0b-1c2d3e4f5a6b","title":"Severance","year":2022,"certification":"TV-MA","status":"Continuing","network":"Apple TV+","seasonCount":2,"genres":["Drama","Mystery"],"rating":8.7,"plot":"Office workers have their memories split.","cast":[{"name":"Adam Scott","role":"Mark Scout"}],"images":{"fanart":null,"logo":null},"seasons":[{"id":"0190f3c4-7d8e-7f90-a1b2-c3d4e5f6a7b8","number":1,"name":"Season 1","episodeCount":9},{"id":"0190f3c4-8e9f-7a01-b2c3-d4e5f6a7b8c9","number":2,"name":"Season 2","episodeCount":10},{"id":"0190f3c4-9a0b-7c1d-8e2f-3a4b5c6d7e8f","number":0,"name":"Specials","episodeCount":1}],"play":{"verb":"play","resumePosition":null,"season":{"id":"0190f3c4-7d8e-7f90-a1b2-c3d4e5f6a7b8","number":1},"episode":{"id":"0190f3c4-ab1c-7d2e-8f3a-4b5c6d7e8f9a","number":1,"title":"Good News About Hell"}},"moreLikeThis":[]}
+              example: {"id":"0190f3c4-6c7d-7e8f-9a0b-1c2d3e4f5a6b","title":"Severance","year":2022,"certification":"TV-MA","status":"Continuing","network":"Apple TV+","seasonCount":2,"genres":["Drama","Mystery"],"rating":8.7,"plot":"Office workers have their memories split.","cast":[{"name":"Adam Scott","role":"Mark Scout"}],"images":{"fanart":null,"logo":null},"seasons":[{"id":"0190f3c4-7d8e-7f90-a1b2-c3d4e5f6a7b8","number":1,"name":"Season 1","episodeCount":9},{"id":"0190f3c4-8e9f-7a01-b2c3-d4e5f6a7b8c9","number":2,"name":"Season 2","episodeCount":10},{"id":"0190f3c4-9a0b-7c1d-8e2f-3a4b5c6d7e8f","number":0,"name":"Specials","episodeCount":1}],"play":{"verb":"play","resumePosition":null,"season":{"id":"0190f3c4-7d8e-7f90-a1b2-c3d4e5f6a7b8","number":1},"episode":{"id":"0190f3c4-ab1c-7d2e-8f3a-4b5c6d7e8f9a","number":1,"title":"Good News About Hell","mediaFileId":"0190f3c4-c2d3-7e4f-8a5b-6c7d8e9f0a1b"}},"moreLikeThis":[]}
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "404":
@@ -439,7 +483,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/EpisodeList"
-              example: {"episodes":[{"id":"0190f3c4-ab1c-7d2e-8f3a-4b5c6d7e8f9a","number":1,"title":"Good News About Hell","runtimeMinutes":57,"plot":"Mark leads a team of office workers.","thumb":null,"progress":null,"watched":false}]}
+              example: {"episodes":[{"id":"0190f3c4-ab1c-7d2e-8f3a-4b5c6d7e8f9a","number":1,"title":"Good News About Hell","runtimeMinutes":57,"plot":"Mark leads a team of office workers.","thumb":null,"mediaFileId":"0190f3c4-c2d3-7e4f-8a5b-6c7d8e9f0a1b","progress":null,"watched":false}]}
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "404":
@@ -468,7 +512,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/EpisodePage"
-              example: {"id":"0190f3c4-ab1c-7d2e-8f3a-4b5c6d7e8f9a","title":"Half Loop","seasonNumber":1,"episodeNumber":2,"airDate":"2022-02-18","runtimeMinutes":57,"rating":8.1,"plot":"Mark takes Helly to the break room.","thumb":null,"show":{"id":"0190f3c4-6c7d-7e8f-9a0b-1c2d3e4f5a6b","title":"Severance","logo":null},"audioLanguages":["eng"],"subtitleLanguages":[{"language":"eng","hearingImpaired":false,"forced":true},{"language":"en","hearingImpaired":true,"forced":false}],"progress":null,"watched":false,"play":{"resumePosition":null}}
+              example: {"id":"0190f3c4-ab1c-7d2e-8f3a-4b5c6d7e8f9a","title":"Half Loop","seasonNumber":1,"episodeNumber":2,"airDate":"2022-02-18","runtimeMinutes":57,"rating":8.1,"plot":"Mark takes Helly to the break room.","thumb":null,"show":{"id":"0190f3c4-6c7d-7e8f-9a0b-1c2d3e4f5a6b","title":"Severance","logo":null},"audioLanguages":["eng"],"subtitleLanguages":[{"language":"eng","hearingImpaired":false,"forced":true},{"language":"en","hearingImpaired":true,"forced":false}],"mediaFileId":"0190f3c4-c2d3-7e4f-8a5b-6c7d8e9f0a1b","progress":null,"watched":false,"play":{"resumePosition":null}}
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "404":
@@ -650,6 +694,153 @@ paths:
           $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalError"
+  /api/playbacks/v1:
+    post:
+      operationId: startPlayback
+      summary: Start a playback of a media file
+      description: The server compares the capability profile with the media file and picks the play method. It plays the file directly when the profile covers its container, its video stream and the selected audio track, which is the file's default audio track, else its first. A file that needs HLS fails with the needs-hls problem for now. Starting a playback ends any playback the same session has not ended. A media file is hidden when no visible movie or episode plays from it.
+      tags: [playback]
+      requestBody:
+        description: The media file, the start position and the device's capability profile.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartPlaybackRequest"
+            example: {"mediaFileId":"0190f3c4-c2d3-7e4f-8a5b-6c7d8e9f0a1b","startPosition":0,"profile":{"containers":["mp4","webm"],"videoCodecs":[{"codec":"h264","profiles":["main","high"],"maxWidth":3840,"maxHeight":2160,"hdrTypes":["sdr"]}],"audioCodecs":[{"codec":"aac","maxChannels":2}],"subtitleCodecs":[]}}
+      responses:
+        "201":
+          description: The playback, with the URL the player plays.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Playback"
+              example: {"playbackId":"0190f3c4-d3e4-7f5a-8b6c-7d8e9f0a1b2c","method":"directPlay","reasons":[],"url":"/api/playbacks/0190f3c4-d3e4-7f5a-8b6c-7d8e9f0a1b2c/media/Jm2vX8kQ0rH3c1yF5bR7tVw9nL4pA6sD0eG2iK8uO1M/v1/file","duration":6981.0,"movie":{"id":"0190f3c4-5b6a-7c8d-9e0f-1a2b3c4d5e6f","title":"Arrival"},"episodes":[],"audioTracks":[{"id":"0190f3c4-e4f5-7a6b-8c7d-8e9f0a1b2c3d","language":"eng","label":"Stereo","codec":"aac","channels":2,"default":true,"inStream":true}],"subtitleTracks":[]}
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnreadableMediaFile"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "501":
+          $ref: "#/components/responses/NeedsHls"
+  /api/playbacks/{playbackId}/progress/v1:
+    put:
+      operationId: reportPlaybackProgress
+      summary: Report how far a playback has got
+      description: The player sends a report every 10 seconds while playing or paused, at once on pause, and on stop. The server stores the position and paused state with the time of the report. A stop report ends the playback. An unknown or ended playback, or one of another user, is not found.
+      tags: [playback]
+      parameters:
+        - $ref: "#/components/parameters/PlaybackId"
+      requestBody:
+        description: The player's position and state.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProgressReport"
+            example: {"position":1534.2,"paused":false,"stopped":false}
+      responses:
+        "204":
+          description: The report is stored.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/playbacks/{playbackId}/media/{signature}/v1/file:
+    get:
+      operationId: getPlaybackFile
+      summary: The media file of a direct play
+      description: The signature in the path authorizes the call, so it needs no session token. Take the URL from the playback. The file is served as it is on disk, and the player fetches parts of it with HTTP range requests.
+      tags: [media]
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/PlaybackId"
+        - name: signature
+          in: path
+          required: true
+          description: The server's signature of the playback ID.
+          schema:
+            type: string
+          example: Jm2vX8kQ0rH3c1yF5bR7tVw9nL4pA6sD0eG2iK8uO1M
+        - name: Range
+          in: header
+          required: false
+          description: The bytes to send, such as bytes=0-1023. Leave it out for the whole file.
+          schema:
+            type: string
+          example: bytes=0-1023
+      responses:
+        "200":
+          description: The whole media file.
+          headers:
+            Accept-Ranges:
+              description: Always bytes.
+              schema:
+                type: string
+                const: bytes
+          content:
+            video/mp4:
+              schema:
+                $ref: "#/components/schemas/MediaFileBytes"
+            video/webm:
+              schema:
+                $ref: "#/components/schemas/MediaFileBytes"
+            video/x-matroska:
+              schema:
+                $ref: "#/components/schemas/MediaFileBytes"
+            video/quicktime:
+              schema:
+                $ref: "#/components/schemas/MediaFileBytes"
+            application/octet-stream:
+              schema:
+                $ref: "#/components/schemas/MediaFileBytes"
+        "206":
+          description: The bytes of the Range header.
+          headers:
+            Content-Range:
+              description: The bytes sent and the size of the file, such as bytes 0-1023/5242880.
+              schema:
+                type: string
+              example: bytes 0-1023/5242880
+          content:
+            video/mp4:
+              schema:
+                $ref: "#/components/schemas/MediaFileBytes"
+            video/webm:
+              schema:
+                $ref: "#/components/schemas/MediaFileBytes"
+            video/x-matroska:
+              schema:
+                $ref: "#/components/schemas/MediaFileBytes"
+            video/quicktime:
+              schema:
+                $ref: "#/components/schemas/MediaFileBytes"
+            application/octet-stream:
+              schema:
+                $ref: "#/components/schemas/MediaFileBytes"
+        "403":
+          $ref: "#/components/responses/InvalidSignature"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "416":
+          description: The Range header asks for bytes past the end of the file.
+          headers:
+            Content-Range:
+              description: The size of the file, such as bytes */5242880.
+              schema:
+                type: string
+              example: bytes */5242880
+        "500":
+          $ref: "#/components/responses/InternalError"
 tags:
   - name: actuator
     description: Health and info endpoints in the shape of Spring Boot Actuator.
@@ -667,6 +858,10 @@ tags:
     description: The webhooks Radarr and Sonarr send when the library changes.
   - name: images
     description: The artwork images that tiles and pages draw, fetched through signed URLs.
+  - name: playback
+    description: Playing a movie or episode and reporting how far it has got.
+  - name: media
+    description: The media a playback plays, fetched through signed URLs.
 components:
   securitySchemes:
     sessionToken:
@@ -695,6 +890,15 @@ components:
             type: object
           example: {"eventType":"Test"}
   parameters:
+    PlaybackId:
+      name: playbackId
+      in: path
+      required: true
+      description: The playback's ID.
+      schema:
+        type: string
+        format: uuid
+      example: 0190f3c4-d3e4-7f5a-8b6c-7d8e9f0a1b2c
     Cursor:
       name: cursor
       in: query
@@ -898,6 +1102,32 @@ components:
                   status:
                     const: 403
           example: {"type":"urn:selfless:problem:invalid-signature","title":"The signed URL is not valid or has expired.","status":403}
+    UnreadableMediaFile:
+      description: Library sync couldn't read the media file's container or streams, so selfless can't play it.
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Problem"
+              - properties:
+                  type:
+                    const: urn:selfless:problem:unreadable-media-file
+                  status:
+                    const: 422
+          example: {"type":"urn:selfless:problem:unreadable-media-file","title":"selfless can't read this media file.","status":422}
+    NeedsHls:
+      description: The profile doesn't cover the media file, so it needs a remux or transcode to HLS, which the server can't serve yet.
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Problem"
+              - properties:
+                  type:
+                    const: urn:selfless:problem:needs-hls
+                  status:
+                    const: 501
+          example: {"type":"urn:selfless:problem:needs-hls","title":"The media file needs HLS, which the server can't serve yet.","status":501}
     InternalError:
       description: The server failed. The body holds no error details, and the server logs the error.
       content:
@@ -1008,6 +1238,33 @@ components:
           type: string
           minLength: 1
           examples: [a longer passphrase about coffee]
+    PlaybackSettings:
+      description: How playback behaves for a user, on every device.
+      type: object
+      required: [autoplayNextEpisode, askIfStillWatching]
+      properties:
+        autoplayNextEpisode:
+          description: Whether the Next episode button counts down and plays the next episode by itself. On for a new user.
+          type: boolean
+          examples: [true]
+        askIfStillWatching:
+          description: Whether playback pauses and asks "Are you still watching?" after three episodes autoplayed with no interaction. Off for a new user.
+          type: boolean
+          examples: [false]
+      additionalProperties: false
+    ChangePlaybackSettingsRequest:
+      description: Both playback settings of the signed-in user.
+      type: object
+      required: [autoplayNextEpisode, askIfStillWatching]
+      properties:
+        autoplayNextEpisode:
+          description: Whether the Next episode button counts down and plays the next episode by itself.
+          type: boolean
+          examples: [false]
+        askIfStillWatching:
+          description: Whether playback pauses and asks "Are you still watching?" after three episodes autoplayed with no interaction.
+          type: boolean
+          examples: [true]
     AcceptInviteRequest:
       description: The token from an invite link, and the name and password the invited person chose.
       type: object
@@ -1241,7 +1498,7 @@ components:
     TileEpisode:
       description: Where an episode belongs.
       type: object
-      required: [show, seasonNumber, episodeNumber]
+      required: [show, seasonNumber, episodeNumber, mediaFileId]
       properties:
         show:
           type: object
@@ -1266,6 +1523,11 @@ components:
         episodeNumber:
           type: integer
           examples: [4]
+        mediaFileId:
+          description: The media file the episode plays from, for POST /api/playbacks/v1. The episodes of a file that holds two share its ID. Null only while library sync has linked no file.
+          type: [string, "null"]
+          format: uuid
+          examples: ["0190f3c4-c2d3-7e4f-8a5b-6c7d8e9f0a1b"]
       additionalProperties: false
     Artwork:
       description: One artwork image, with a URL for each width it comes in. The URLs change when the image changes, and they expire at the end of the UTC day after the one they were made on.
@@ -1295,7 +1557,7 @@ components:
     MoviePage:
       description: Everything the movie page shows.
       type: object
-      required: [id, title, year, certification, runtimeMinutes, genres, rating, plot, studio, originalTitle, directors, cast, images, progress, watched, play, moreLikeThis]
+      required: [id, title, year, certification, runtimeMinutes, genres, rating, plot, studio, originalTitle, directors, mediaFileId, cast, images, progress, watched, play, moreLikeThis]
       properties:
         id:
           type: string
@@ -1338,6 +1600,11 @@ components:
           items:
             type: string
           examples: [[Denis Villeneuve]]
+        mediaFileId:
+          description: The media file the movie plays from, for POST /api/playbacks/v1. Null only while library sync has linked no file.
+          type: [string, "null"]
+          format: uuid
+          examples: ["0190f3c4-c2d3-7e4f-8a5b-6c7d8e9f0a1b"]
         cast:
           description: Up to 10 cast members in billing order.
           type: array
@@ -1538,7 +1805,7 @@ components:
     ShowPlayEpisode:
       description: The episode Play plays.
       type: object
-      required: [id, number, title]
+      required: [id, number, title, mediaFileId]
       properties:
         id:
           type: string
@@ -1550,6 +1817,11 @@ components:
         title:
           type: string
           examples: [Good News About Hell]
+        mediaFileId:
+          description: The media file the episode plays from, for POST /api/playbacks/v1. Null only while library sync has linked no file.
+          type: [string, "null"]
+          format: uuid
+          examples: ["0190f3c4-c2d3-7e4f-8a5b-6c7d8e9f0a1b"]
       additionalProperties: false
     EpisodeList:
       description: The visible episodes of one season.
@@ -1561,12 +1833,12 @@ components:
           items:
             $ref: "#/components/schemas/EpisodeListItem"
           examples:
-            - [{"id":"0190f3c4-ab1c-7d2e-8f3a-4b5c6d7e8f9a","number":1,"title":"Good News About Hell","runtimeMinutes":57,"plot":"Mark leads a team of office workers.","thumb":null,"progress":null,"watched":false}]
+            - [{"id":"0190f3c4-ab1c-7d2e-8f3a-4b5c6d7e8f9a","number":1,"title":"Good News About Hell","runtimeMinutes":57,"plot":"Mark leads a team of office workers.","thumb":null,"mediaFileId":"0190f3c4-c2d3-7e4f-8a5b-6c7d8e9f0a1b","progress":null,"watched":false}]
       additionalProperties: false
     EpisodeListItem:
       description: One episode of a season's episode list.
       type: object
-      required: [id, number, title, runtimeMinutes, plot, thumb, progress, watched]
+      required: [id, number, title, runtimeMinutes, plot, thumb, mediaFileId, progress, watched]
       properties:
         id:
           type: string
@@ -1590,6 +1862,11 @@ components:
           anyOf:
             - $ref: "#/components/schemas/Artwork"
             - type: "null"
+        mediaFileId:
+          description: The media file the episode plays from, for POST /api/playbacks/v1. The episodes of a file that holds two share its ID. Null only while library sync has linked no file.
+          type: [string, "null"]
+          format: uuid
+          examples: ["0190f3c4-c2d3-7e4f-8a5b-6c7d8e9f0a1b"]
         progress:
           description: How far the user got in the episode, from 0 to 1, when they have a resume position. Otherwise null.
           type: [number, "null"]
@@ -1604,7 +1881,7 @@ components:
     EpisodePage:
       description: Everything the episode page shows.
       type: object
-      required: [id, title, seasonNumber, episodeNumber, airDate, runtimeMinutes, rating, plot, thumb, show, audioLanguages, subtitleLanguages, progress, watched, play]
+      required: [id, title, seasonNumber, episodeNumber, airDate, runtimeMinutes, rating, plot, thumb, show, audioLanguages, subtitleLanguages, mediaFileId, progress, watched, play]
       properties:
         id:
           type: string
@@ -1657,6 +1934,11 @@ components:
           items:
             $ref: "#/components/schemas/SubtitleLanguage"
           examples: [[{language: eng, hearingImpaired: false, forced: true}]]
+        mediaFileId:
+          description: The media file the episode plays from, for POST /api/playbacks/v1. The episodes of a file that holds two share its ID. Null only while library sync has linked no file.
+          type: [string, "null"]
+          format: uuid
+          examples: ["0190f3c4-c2d3-7e4f-8a5b-6c7d8e9f0a1b"]
         progress:
           description: How far the user got in the episode, from 0 to 1, when they have a resume position. Otherwise null.
           type: [number, "null"]
@@ -1799,3 +2081,300 @@ components:
           items:
             $ref: "#/components/schemas/Tile"
       additionalProperties: false
+    StartPlaybackRequest:
+      description: The media file to play, where to start, and what the device plays.
+      type: object
+      required: [mediaFileId, startPosition, profile]
+      properties:
+        mediaFileId:
+          description: The mediaFileId of the movie or episode.
+          type: string
+          format: uuid
+          examples: ["0190f3c4-c2d3-7e4f-8a5b-6c7d8e9f0a1b"]
+        startPosition:
+          description: Where to start, in seconds.
+          type: number
+          minimum: 0
+          examples: [1534.2]
+        profile:
+          $ref: "#/components/schemas/CapabilityProfile"
+    CapabilityProfile:
+      description: What the device plays without server work. Names are ffprobe's, in lower case.
+      type: object
+      required: [containers, videoCodecs, audioCodecs, subtitleCodecs]
+      properties:
+        containers:
+          description: The containers the device plays directly, from mkv, webm, mp4 and mov.
+          type: array
+          items:
+            type: string
+          examples: [[mp4, webm]]
+        videoCodecs:
+          type: array
+          items:
+            $ref: "#/components/schemas/VideoCodecSupport"
+        audioCodecs:
+          description: The audio codecs the device decodes or passes through.
+          type: array
+          items:
+            $ref: "#/components/schemas/AudioCodecSupport"
+        subtitleCodecs:
+          description: The subtitle codecs the device shows when they are embedded in a direct play, such as subrip or hdmv_pgs_subtitle.
+          type: array
+          items:
+            type: string
+          examples: [[]]
+    VideoCodecSupport:
+      description: One video codec the device decodes.
+      type: object
+      required: [codec, profiles, maxWidth, maxHeight, hdrTypes]
+      properties:
+        codec:
+          description: The codec, such as h264, hevc, av1 or vp9.
+          type: string
+          examples: [h264]
+        profiles:
+          description: The profiles the device decodes, in lower case without spaces, such as main, high, high10 or main10.
+          type: array
+          items:
+            type: string
+          examples: [[main, high]]
+        maxWidth:
+          type: integer
+          minimum: 1
+          examples: [3840]
+        maxHeight:
+          type: integer
+          minimum: 1
+          examples: [2160]
+        hdrTypes:
+          description: The dynamic ranges the device shows. Dolby Vision plays as its HDR10 base layer where only hdr10 is listed.
+          type: array
+          items:
+            $ref: "#/components/schemas/HdrType"
+          examples: [[sdr]]
+    AudioCodecSupport:
+      description: One audio codec the device decodes or passes through.
+      type: object
+      required: [codec, maxChannels]
+      properties:
+        codec:
+          description: The codec, such as aac, ac3, eac3, flac or opus.
+          type: string
+          examples: [aac]
+        maxChannels:
+          type: integer
+          minimum: 1
+          examples: [2]
+    HdrType:
+      description: A dynamic range.
+      type: string
+      enum: [sdr, hdr10, hlg, dolbyVision]
+      examples: [hdr10]
+    ProgressReport:
+      description: Where a playback is, and whether it is paused or stopped.
+      type: object
+      required: [position, paused, stopped]
+      properties:
+        position:
+          description: The position in seconds.
+          type: number
+          minimum: 0
+          examples: [1534.2]
+        paused:
+          type: boolean
+          examples: [false]
+        stopped:
+          description: Whether the player stopped. A stop report ends the playback.
+          type: boolean
+          examples: [false]
+    Playback:
+      description: A playback the server started, with what the player needs to play it.
+      type: object
+      required: [playbackId, method, reasons, url, duration, movie, episodes, audioTracks, subtitleTracks]
+      properties:
+        playbackId:
+          type: string
+          format: uuid
+          examples: ["0190f3c4-d3e4-7f5a-8b6c-7d8e9f0a1b2c"]
+        method:
+          $ref: "#/components/schemas/PlayMethod"
+        reasons:
+          description: Why the playback is not a direct play. It is empty for a direct play.
+          type: array
+          items:
+            $ref: "#/components/schemas/PlayReason"
+          examples: [[]]
+        url:
+          description: The signed URL the player plays. It needs no Authorization header.
+          type: string
+          format: uri-reference
+          examples: ["/api/playbacks/0190f3c4-d3e4-7f5a-8b6c-7d8e9f0a1b2c/media/Jm2vX8kQ0rH3c1yF5bR7tVw9nL4pA6sD0eG2iK8uO1M/v1/file"]
+        duration:
+          description: The length of the media file in seconds, or null when probing it gave none.
+          type: [number, "null"]
+          minimum: 0
+          examples: [6981.0]
+        movie:
+          description: The movie the media file holds, or null for episodes.
+          anyOf:
+            - $ref: "#/components/schemas/PlaybackMovie"
+            - type: "null"
+          examples: [{id: "0190f3c4-5b6a-7c8d-9e0f-1a2b3c4d5e6f", title: Arrival}]
+        episodes:
+          description: The visible episodes the media file holds, in order. It is empty for a movie.
+          type: array
+          items:
+            $ref: "#/components/schemas/PlaybackEpisode"
+          examples: [[]]
+        audioTracks:
+          description: Every audio track of the media file, in stream order.
+          type: array
+          items:
+            $ref: "#/components/schemas/PlaybackAudioTrack"
+          examples: [[{id: "0190f3c4-e4f5-7a6b-8c7d-8e9f0a1b2c3d", language: eng, label: Stereo, codec: aac, channels: 2, default: true, inStream: true}]]
+        subtitleTracks:
+          description: Every subtitle in the media file in stream order, then the subtitle files beside it by file name.
+          type: array
+          items:
+            $ref: "#/components/schemas/PlaybackSubtitleTrack"
+          examples: [[]]
+      additionalProperties: false
+    PlayMethod:
+      description: How the media file plays.
+      type: string
+      enum: [directPlay, remux, transcode]
+      examples: [directPlay]
+    PlayReason:
+      description: One reason a playback is not a direct play.
+      type: object
+      required: [kind, value]
+      properties:
+        kind:
+          type: string
+          enum: [container, videoCodec, videoProfile, videoSize, videoRange, audioCodec, audioChannels]
+          examples: [audioCodec]
+        value:
+          description: The media file's value the profile doesn't cover, such as dts, 3840x2160, hdr10 or 6.
+          type: string
+          examples: [dts]
+      additionalProperties: false
+    PlaybackMovie:
+      description: The movie a playback plays.
+      type: object
+      required: [id, title]
+      properties:
+        id:
+          type: string
+          format: uuid
+          examples: ["0190f3c4-5b6a-7c8d-9e0f-1a2b3c4d5e6f"]
+        title:
+          type: string
+          examples: [Arrival]
+      additionalProperties: false
+    PlaybackEpisode:
+      description: An episode a playback plays.
+      type: object
+      required: [id, showTitle, seasonNumber, episodeNumber, title]
+      properties:
+        id:
+          type: string
+          format: uuid
+          examples: ["0190f3c4-ab1c-7d2e-8f3a-4b5c6d7e8f9a"]
+        showTitle:
+          type: string
+          examples: [Severance]
+        seasonNumber:
+          description: The season number. Specials are 0.
+          type: integer
+          minimum: 0
+          examples: [1]
+        episodeNumber:
+          type: integer
+          examples: [2]
+        title:
+          type: string
+          examples: [Half Loop]
+      additionalProperties: false
+    PlaybackAudioTrack:
+      description: One audio track of a playback.
+      type: object
+      required: [id, language, label, codec, channels, default, inStream]
+      properties:
+        id:
+          type: string
+          format: uuid
+          examples: ["0190f3c4-e4f5-7a6b-8c7d-8e9f0a1b2c3d"]
+        language:
+          description: The language the file tags the track with (ISO 639-2, such as eng), or null.
+          type: [string, "null"]
+          examples: [eng]
+        label:
+          description: The track's title from the file, or null.
+          type: [string, "null"]
+          examples: [Surround 5.1]
+        codec:
+          type: string
+          examples: [aac]
+        channels:
+          type: integer
+          minimum: 1
+          examples: [2]
+        default:
+          description: Whether the file marks the track as its default.
+          type: boolean
+          examples: [true]
+        inStream:
+          description: Whether the stream the player plays carries the track, so the player can switch to it in place.
+          type: boolean
+          examples: [true]
+      additionalProperties: false
+    PlaybackSubtitleTrack:
+      description: One subtitle track of a playback.
+      type: object
+      required: [id, language, label, codec, default, forced, hearingImpaired, external, text, inStream]
+      properties:
+        id:
+          type: string
+          format: uuid
+          examples: ["0190f3c4-f5a6-7b7c-8d8e-9f0a1b2c3d4e"]
+        language:
+          description: The language of the track, an ISO 639-2 code for a stream, such as eng, and the code in the name of a subtitle file, such as en. Null when there is none.
+          type: [string, "null"]
+          examples: [eng]
+        label:
+          description: The track's title from the file, or null. Subtitle files have none.
+          type: [string, "null"]
+          examples: [English SDH]
+        codec:
+          description: The codec of a stream, such as subrip or hdmv_pgs_subtitle, or the extension of a subtitle file, such as srt.
+          type: string
+          examples: [subrip]
+        default:
+          type: boolean
+          examples: [false]
+        forced:
+          description: Whether the subtitles cover only foreign or hard to hear lines.
+          type: boolean
+          examples: [false]
+        hearingImpaired:
+          description: Whether the subtitles are for the deaf and hard of hearing (SDH).
+          type: boolean
+          examples: [true]
+        external:
+          description: Whether the track is a subtitle file beside the media file.
+          type: boolean
+          examples: [false]
+        text:
+          description: Whether the subtitles are text. Image subtitles, such as PGS, are not.
+          type: boolean
+          examples: [true]
+        inStream:
+          description: Whether the stream the player plays carries the track and the device shows it.
+          type: boolean
+          examples: [false]
+      additionalProperties: false
+    MediaFileBytes:
+      description: The bytes of the media file, or of the requested range.
+      type: string
+      contentMediaType: application/octet-stream

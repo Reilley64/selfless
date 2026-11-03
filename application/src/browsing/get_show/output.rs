@@ -46,6 +46,7 @@ pub struct Play {
     pub episode_id: Uuid,
     pub episode_number: i64,
     pub episode_title: String,
+    pub media_file_id: Option<Uuid>,
     pub season_id: Uuid,
     pub season_number: i64,
 }

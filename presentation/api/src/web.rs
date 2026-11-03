@@ -64,6 +64,16 @@ pub(crate) async fn episode() -> topcoat::Result<Response> {
     app()
 }
 
+#[route(GET "/(web)/play/movies/{movie_id}")]
+pub(crate) async fn play_movie() -> topcoat::Result<Response> {
+    app()
+}
+
+#[route(GET "/(web)/play/episodes/{episode_id}")]
+pub(crate) async fn play_episode() -> topcoat::Result<Response> {
+    app()
+}
+
 fn app() -> topcoat::Result<Response> {
     Err(rewrite("/index.html", Body::empty()).into())
 }
@@ -189,6 +199,24 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert!(html.contains("<title>selfless</title>"), "{html}");
         assert!(headers.contains_key(CONTENT_SECURITY_POLICY));
+        std::fs::remove_dir_all(web_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn the_player_pages_load_from_their_own_addresses() {
+        let app = TestApp::new().await;
+        let (server, web_dir) = serve_web_app(&app).await;
+
+        for path in [
+            "/play/movies/0190f3c4-5b6a-7c8d-9e0f-1a2b3c4d5e6f",
+            "/play/episodes/0190f3c4-ab1c-7d2e-8f3a-4b5c6d7e8f9a?position=0",
+        ] {
+            let (status, headers, html) = server.get_text(path).await;
+
+            assert_eq!(status, StatusCode::OK, "{path}");
+            assert!(html.contains("<title>selfless</title>"), "{path}: {html}");
+            assert!(headers.contains_key(CONTENT_SECURITY_POLICY), "{path}");
+        }
         std::fs::remove_dir_all(web_dir).unwrap();
     }
 

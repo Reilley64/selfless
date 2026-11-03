@@ -93,6 +93,18 @@ pub(crate) const NOT_FOUND: Problem = Problem {
     status: StatusCode::NOT_FOUND,
 };
 
+pub(crate) const UNREADABLE_MEDIA_FILE: Problem = Problem {
+    problem_type: "urn:selfless:problem:unreadable-media-file",
+    title: "selfless can't read this media file.",
+    status: StatusCode::UNPROCESSABLE_ENTITY,
+};
+
+pub(crate) const NEEDS_HLS: Problem = Problem {
+    problem_type: "urn:selfless:problem:needs-hls",
+    title: "The media file needs HLS, which the server can't serve yet.",
+    status: StatusCode::NOT_IMPLEMENTED,
+};
+
 pub(crate) const INVALID_SIGNATURE: Problem = Problem {
     problem_type: "urn:selfless:problem:invalid-signature",
     title: "The signed URL is not valid or has expired.",

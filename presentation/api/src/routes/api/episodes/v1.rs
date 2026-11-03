@@ -40,6 +40,7 @@ struct EpisodePageBody {
     show: ShowBody,
     audio_languages: Vec<String>,
     subtitle_languages: Vec<SubtitleLanguageBody>,
+    media_file_id: Option<Uuid>,
     progress: Option<f64>,
     watched: bool,
     play: EpisodePlayBody,
@@ -93,6 +94,7 @@ impl From<get_episode::Episode> for EpisodePageBody {
                     forced: x.forced,
                 })
                 .collect(),
+            media_file_id: page.media_file_id,
             progress: None,
             watched: false,
             play: EpisodePlayBody {
@@ -248,6 +250,7 @@ mod tests {
                     { "language": "eng", "hearingImpaired": false, "forced": true },
                     { "language": "en", "hearingImpaired": true, "forced": false },
                 ],
+                "mediaFileId": media_file.id,
                 "progress": null,
                 "watched": false,
                 "play": { "resumePosition": null },

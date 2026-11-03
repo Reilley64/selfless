@@ -23,7 +23,7 @@ export default function Layout() {
         <Slot />
       ) : token ? (
         <View className="flex-1 bg-background">
-          <TopBar />
+          {!pathname.startsWith("/play/") && <TopBar />}
           <Slot />
         </View>
       ) : (
