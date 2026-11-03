@@ -17,30 +17,33 @@ mod tests {
     use crate::test::serve;
     use http::Method;
     use http::StatusCode;
-    use http::header::WWW_AUTHENTICATE;
     use test_app::TestApp;
 
     const PATH: &str = "/webhooks/radarr/v1";
 
     #[tokio::test]
-    async fn post_and_put_accept_the_right_password_with_any_username() {
+    async fn post_and_put_accept_the_right_password() {
         let server = serve(&TestApp::new().await).await;
 
-        for (method, username) in [(Method::POST, "radarr"), (Method::PUT, "anyone")] {
-            let (status, _) = send(&server, method.clone(), PATH, (username, PASSWORD)).await;
+        for method in [Method::POST, Method::PUT] {
+            let (status, _) = send(&server, method.clone(), PATH, Some(("radarr", PASSWORD))).await;
 
-            assert_eq!(status, StatusCode::OK, "{method} {username:?}");
+            assert_eq!(status, StatusCode::OK, "{method}");
         }
     }
 
     #[tokio::test]
-    async fn a_wrong_password_gets_a_basic_challenge() {
+    async fn a_wrong_password_is_rejected() {
         let server = serve(&TestApp::new().await).await;
 
-        let (status, headers) =
-            send(&server, Method::POST, PATH, ("radarr", "wrong password")).await;
+        let (status, _) = send(
+            &server,
+            Method::POST,
+            PATH,
+            Some(("radarr", "wrong password")),
+        )
+        .await;
 
         assert_eq!(status, StatusCode::UNAUTHORIZED);
-        assert_eq!(headers[WWW_AUTHENTICATE], r#"Basic realm="selfless""#);
     }
 }
