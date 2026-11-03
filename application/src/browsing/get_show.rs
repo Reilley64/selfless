@@ -18,6 +18,7 @@ use crate::ports::persistence::DbScope;
 use domain::Actor;
 use domain::Artwork;
 use domain::Episode;
+use domain::ShowEpisode;
 use domain::show_play_target;
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -80,11 +81,13 @@ pub async fn call(
     .await
     .map_err(Error::caused_by)?;
     let season_of: HashMap<_, _> = seasons.iter().map(|x| (x.id, x)).collect();
-    let Some(target) = show_play_target(
-        episodes
-            .iter()
-            .filter_map(|x| Some((*season_of.get(&x.season_id)?, x, states.get(&x.id)))),
-    ) else {
+    let Some(target) = show_play_target(episodes.iter().filter_map(|x| {
+        Some(ShowEpisode {
+            season: season_of.get(&x.season_id)?,
+            episode: x,
+            watch_state: states.get(&x.id),
+        })
+    })) else {
         return Ok(Output::NotFound);
     };
     let play = Play {

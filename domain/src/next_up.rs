@@ -1,28 +1,18 @@
-use crate::Episode;
-use crate::EpisodeWatchState;
 use crate::Season;
+use crate::ShowEpisode;
 use crate::last_watched_episode;
 
-pub fn next_up<'a>(
-    episodes: impl IntoIterator<Item = (&'a Season, &'a Episode, Option<&'a EpisodeWatchState>)>,
-) -> Option<(&'a Season, &'a Episode)> {
+pub fn next_up<'a>(episodes: impl IntoIterator<Item = ShowEpisode<'a>>) -> Option<ShowEpisode<'a>> {
     let numbered: Vec<_> = episodes
         .into_iter()
-        .filter(|(season, _, _)| !Season::is_specials(season.number))
+        .filter(|x| !Season::is_specials(x.season.number))
         .collect();
-    let (season, episode) = last_watched_episode(
-        numbered
-            .iter()
-            .filter_map(|&(season, episode, state)| Some((season, episode, state?))),
-    )?;
-    let anchor = (season.number, episode.number);
+    let anchor = last_watched_episode(numbered.iter().copied())?;
+    let anchor = (anchor.season.number, anchor.episode.number);
     numbered
         .into_iter()
-        .filter(|(season, episode, _)| {
-            episode.in_library && (season.number, episode.number) > anchor
-        })
-        .min_by_key(|(season, episode, _)| (season.number, episode.number))
-        .map(|(season, episode, _)| (season, episode))
+        .filter(|x| x.episode.in_library && (x.season.number, x.episode.number) > anchor)
+        .min_by_key(|x| (x.season.number, x.episode.number))
 }
 
 #[cfg(test)]

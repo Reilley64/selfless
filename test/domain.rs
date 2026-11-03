@@ -5,6 +5,7 @@ use crate::MovieContinueWatchingRemoval;
 use crate::MovieWatchState;
 use crate::Season;
 use crate::ShowContinueWatchingRemoval;
+use crate::ShowEpisode;
 use jiff::Timestamp;
 use toasty::Deferred;
 use uuid::Uuid;
@@ -109,10 +110,14 @@ impl ShowEpisodes {
         self
     }
 
-    pub(crate) fn episodes(&self) -> Vec<(&Season, &Episode, Option<&EpisodeWatchState>)> {
+    pub(crate) fn episodes(&self) -> Vec<ShowEpisode<'_>> {
         self.episodes
             .iter()
-            .map(|(index, episode, state)| (&self.seasons[*index], episode, state.as_ref()))
+            .map(|(index, episode, state)| ShowEpisode {
+                season: &self.seasons[*index],
+                episode,
+                watch_state: state.as_ref(),
+            })
             .collect()
     }
 }
@@ -185,6 +190,6 @@ pub(crate) fn show_removal(show_id: Uuid, removed_at: &str) -> ShowContinueWatch
     }
 }
 
-pub(crate) fn numbers(found: Option<(&Season, &Episode)>) -> Option<(i64, i64)> {
-    found.map(|(season, episode)| (season.number, episode.number))
+pub(crate) fn numbers(found: Option<ShowEpisode>) -> Option<(i64, i64)> {
+    found.map(|x| (x.season.number, x.episode.number))
 }

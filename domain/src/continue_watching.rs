@@ -1,10 +1,8 @@
-use crate::Episode;
-use crate::EpisodeWatchState;
 use crate::Movie;
 use crate::MovieContinueWatchingRemoval;
 use crate::MovieWatchState;
-use crate::Season;
 use crate::ShowContinueWatchingRemoval;
+use crate::ShowEpisode;
 use crate::episode_to_resume;
 use crate::next_up;
 use jiff::Timestamp;
@@ -15,13 +13,13 @@ use uuid::Uuid;
 #[derive(Debug)]
 pub enum ContinueWatching<'a> {
     Movie(&'a Movie, &'a MovieWatchState),
-    Resume(&'a Season, &'a Episode, &'a EpisodeWatchState),
-    NextUp(&'a Season, &'a Episode),
+    Resume(ShowEpisode<'a>),
+    NextUp(ShowEpisode<'a>),
 }
 
 pub fn continue_watching<'a>(
     movies: impl IntoIterator<Item = (&'a Movie, &'a MovieWatchState)>,
-    shows: impl IntoIterator<Item = Vec<(&'a Season, &'a Episode, Option<&'a EpisodeWatchState>)>>,
+    shows: impl IntoIterator<Item = Vec<ShowEpisode<'a>>>,
     movie_removals: &[MovieContinueWatchingRemoval],
     show_removals: &[ShowContinueWatchingRemoval],
 ) -> Vec<ContinueWatching<'a>> {
@@ -36,24 +34,21 @@ pub fn continue_watching<'a>(
             .is_some_and(|removed_at| last_played.is_none_or(|x| *removed_at > x))
     };
     let shows = shows.into_iter().filter_map(|episodes| {
-        let show_id = episodes.first()?.0.show_id;
+        let show_id = episodes.first()?.season.show_id;
         let last_played = episodes
             .iter()
-            .filter_map(|(_, _, state)| state.and_then(|x| x.last_played))
+            .filter_map(|x| x.watch_state?.last_played)
             .max();
         if removed(show_id, last_played) {
             return None;
         }
-        if let Some((season, episode, state)) = episode_to_resume(episodes.iter().copied()) {
-            return Some((
-                last_played,
-                ContinueWatching::Resume(season, episode, state),
-            ));
+        if let Some(episode) = episode_to_resume(episodes.iter().copied()) {
+            return Some((last_played, ContinueWatching::Resume(episode)));
         }
-        let (season, episode) = next_up(episodes)?;
+        let episode = next_up(episodes)?;
         Some((
-            last_played.max(episode.added_at),
-            ContinueWatching::NextUp(season, episode),
+            last_played.max(episode.episode.added_at),
+            ContinueWatching::NextUp(episode),
         ))
     });
     let mut tiles: Vec<_> = movies
@@ -97,11 +92,11 @@ mod tests {
             .into_iter()
             .map(|x| match x {
                 ContinueWatching::Movie(movie, _) => Tile::Movie(movie.id),
-                ContinueWatching::Resume(season, episode, _) => {
-                    Tile::Resume(season.show_id, season.number, episode.number)
+                ContinueWatching::Resume(x) => {
+                    Tile::Resume(x.season.show_id, x.season.number, x.episode.number)
                 }
-                ContinueWatching::NextUp(season, episode) => {
-                    Tile::NextUp(season.show_id, season.number, episode.number)
+                ContinueWatching::NextUp(x) => {
+                    Tile::NextUp(x.season.show_id, x.season.number, x.episode.number)
                 }
             })
             .collect()

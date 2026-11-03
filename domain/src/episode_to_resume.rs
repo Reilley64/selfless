@@ -1,17 +1,16 @@
-use crate::Episode;
-use crate::EpisodeWatchState;
-use crate::Season;
+use crate::ShowEpisode;
 
 pub fn episode_to_resume<'a>(
-    episodes: impl IntoIterator<Item = (&'a Season, &'a Episode, Option<&'a EpisodeWatchState>)>,
-) -> Option<(&'a Season, &'a Episode, &'a EpisodeWatchState)> {
+    episodes: impl IntoIterator<Item = ShowEpisode<'a>>,
+) -> Option<ShowEpisode<'a>> {
     episodes
         .into_iter()
-        .filter_map(|(season, episode, state)| {
-            let state = state.filter(|x| x.resume_position_seconds.is_some())?;
-            episode.in_library.then_some((season, episode, state))
+        .filter(|x| {
+            x.episode.in_library
+                && x.watch_state
+                    .is_some_and(|x| x.resume_position_seconds.is_some())
         })
-        .max_by_key(|(_, _, state)| state.last_played)
+        .max_by_key(|x| x.watch_state.and_then(|x| x.last_played))
 }
 
 #[cfg(test)]
@@ -21,15 +20,17 @@ mod tests {
     use crate::test::LATER;
     use crate::test::LATEST;
     use crate::test::ShowEpisodes;
-    use crate::test::numbers;
     use crate::test::resuming_at;
     use crate::test::watch_state;
     use crate::test::watched_at;
 
     fn resume(show: &ShowEpisodes) -> Option<(i64, i64, Option<i64>)> {
-        episode_to_resume(show.episodes()).map(|(season, episode, state)| {
-            let (season, episode) = numbers(Some((season, episode))).unwrap();
-            (season, episode, state.resume_position_seconds)
+        episode_to_resume(show.episodes()).map(|x| {
+            (
+                x.season.number,
+                x.episode.number,
+                x.watch_state.and_then(|x| x.resume_position_seconds),
+            )
         })
     }
 

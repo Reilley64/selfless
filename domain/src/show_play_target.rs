@@ -1,7 +1,7 @@
 use crate::Episode;
-use crate::EpisodeWatchState;
 use crate::PlayVerb;
 use crate::Season;
+use crate::ShowEpisode;
 use crate::episode_to_resume;
 use crate::first_episode;
 use crate::next_up;
@@ -14,26 +14,28 @@ pub struct ShowPlayTarget<'a> {
 }
 
 pub fn show_play_target<'a>(
-    episodes: impl IntoIterator<Item = (&'a Season, &'a Episode, Option<&'a EpisodeWatchState>)>,
+    episodes: impl IntoIterator<Item = ShowEpisode<'a>>,
 ) -> Option<ShowPlayTarget<'a>> {
     let episodes: Vec<_> = episodes.into_iter().collect();
-    if let Some((season, episode, state)) = episode_to_resume(episodes.iter().copied()) {
+    if let Some(x) = episode_to_resume(episodes.iter().copied()) {
         return Some(ShowPlayTarget {
-            season,
-            episode,
+            season: x.season,
+            episode: x.episode,
             verb: PlayVerb::Resume {
-                position_seconds: state.resume_position_seconds?,
+                position_seconds: x.watch_state?.resume_position_seconds?,
             },
         });
     }
-    let (season, episode) = next_up(episodes.iter().copied()).or_else(|| {
-        first_episode(
-            episodes
-                .iter()
-                .filter(|(_, episode, _)| episode.in_library)
-                .map(|&(season, episode, _)| (season, episode)),
-        )
-    })?;
+    let (season, episode) = next_up(episodes.iter().copied())
+        .map(|x| (x.season, x.episode))
+        .or_else(|| {
+            first_episode(
+                episodes
+                    .iter()
+                    .filter(|x| x.episode.in_library)
+                    .map(|x| (x.season, x.episode)),
+            )
+        })?;
     Some(ShowPlayTarget {
         season,
         episode,

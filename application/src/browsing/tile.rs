@@ -1,12 +1,10 @@
 use crate::browsing::Image;
 use crate::browsing::MovieWatch;
 use crate::browsing::TileImages;
-use domain::Episode;
-use domain::EpisodeWatchState;
 use domain::MediaFile;
 use domain::Movie;
-use domain::Season;
 use domain::Show;
+use domain::ShowEpisode;
 use jiff::Timestamp;
 use jiff::civil::Date;
 use std::cmp::Reverse;
@@ -46,12 +44,14 @@ impl Tile {
 
     pub(crate) fn episode(
         show: &Show,
-        season: &Season,
-        episode: &Episode,
+        ShowEpisode {
+            season,
+            episode,
+            watch_state,
+        }: ShowEpisode,
         show_images: TileImages,
         thumb: Option<Image>,
         media_file: Option<&MediaFile>,
-        state: Option<&EpisodeWatchState>,
     ) -> Self {
         let duration_ms = media_file.and_then(|x| x.duration_ms);
         Self {
@@ -76,8 +76,8 @@ impl Tile {
                 logo: None,
                 thumb,
             },
-            progress: state.and_then(|x| x.watch_state().progress(duration_ms)),
-            watched: state.is_some_and(|x| x.watched),
+            progress: watch_state.and_then(|x| x.watch_state().progress(duration_ms)),
+            watched: watch_state.is_some_and(|x| x.watched),
         }
     }
 

@@ -26,6 +26,7 @@ use domain::MovieWatchState;
 use domain::Season;
 use domain::Show;
 use domain::ShowContinueWatchingRemoval;
+use domain::ShowEpisode;
 use domain::continue_watching;
 use domain::popular_now;
 use domain::popular_now_start;
@@ -135,11 +136,14 @@ pub async fn call(dependencies: impl Into<Dependencies>, user_id: Uuid) -> Resul
     let mut show_episodes = HashMap::<Uuid, Vec<_>>::new();
     for episode in &episodes {
         if let Some(season) = season_of.get(&episode.season_id) {
-            show_episodes.entry(season.show_id).or_default().push((
-                *season,
-                episode,
-                user_state_of.get(&episode.id).copied(),
-            ));
+            show_episodes
+                .entry(season.show_id)
+                .or_default()
+                .push(ShowEpisode {
+                    season,
+                    episode,
+                    watch_state: user_state_of.get(&episode.id).copied(),
+                });
         }
     }
     let continue_watching: Vec<ContinueWatching> = continue_watching(
@@ -153,26 +157,23 @@ pub async fn call(dependencies: impl Into<Dependencies>, user_id: Uuid) -> Resul
     .into_iter()
     .take(ROW_SIZE)
     .collect();
-    let episode_tiles: Vec<(&Season, &Episode)> = continue_watching
+    let episode_tiles: Vec<ShowEpisode> = continue_watching
         .iter()
         .filter_map(|x| match *x {
             ContinueWatching::Movie(..) => None,
-            ContinueWatching::Resume(season, episode, _)
-            | ContinueWatching::NextUp(season, episode) => Some((season, episode)),
+            ContinueWatching::Resume(x) | ContinueWatching::NextUp(x) => Some(x),
         })
         .collect();
     let continue_watching: Vec<Uuid> = continue_watching
         .iter()
         .map(|x| match x {
             ContinueWatching::Movie(movie, _) => movie.id,
-            ContinueWatching::Resume(_, episode, _) | ContinueWatching::NextUp(_, episode) => {
-                episode.id
-            }
+            ContinueWatching::Resume(x) | ContinueWatching::NextUp(x) => x.episode.id,
         })
         .collect();
     let show_of_episode: HashMap<Uuid, Uuid> = show_episodes
         .iter()
-        .flat_map(|(show_id, episodes)| episodes.iter().map(|(_, x, _)| (x.id, *show_id)))
+        .flat_map(|(show_id, episodes)| episodes.iter().map(|x| (x.episode.id, *show_id)))
         .collect();
     let popular_now: Vec<Uuid> = popular_now(
         recent_movie_states
@@ -298,7 +299,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, user_id: Uuid) -> Resul
                 .iter()
                 .map(|x| x.id)
                 .filter(|x| shown.contains(x))
-                .chain(episode_tiles.iter().map(|(season, _)| season.show_id))
+                .chain(episode_tiles.iter().map(|x| x.season.show_id))
                 .collect::<Vec<_>>(),
         ),
         &url_signer,
@@ -319,7 +320,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, user_id: Uuid) -> Resul
             MediaFile::fields().id().in_list(
                 episode_tiles
                     .iter()
-                    .filter_map(|(_, x)| x.media_file_id)
+                    .filter_map(|x| x.episode.media_file_id)
                     .collect::<Vec<_>>(),
             ),
         )
@@ -334,7 +335,12 @@ pub async fn call(dependencies: impl Into<Dependencies>, user_id: Uuid) -> Resul
         .filter(
             Artwork::fields()
                 .episode_id()
-                .in_list(episode_tiles.iter().map(|(_, x)| x.id).collect::<Vec<_>>())
+                .in_list(
+                    episode_tiles
+                        .iter()
+                        .map(|x| x.episode.id)
+                        .collect::<Vec<_>>(),
+                )
                 .and(Artwork::fields().kind().is_thumb()),
         )
         .exec(db_context.executor_mut())
@@ -346,18 +352,16 @@ pub async fn call(dependencies: impl Into<Dependencies>, user_id: Uuid) -> Resul
     let show_of: HashMap<_, _> = shows.iter().map(|x| (x.id, x)).collect();
     let mut tiles: HashMap<Uuid, Tile> = episode_tiles
         .iter()
-        .filter_map(|&(season, episode)| {
-            let show = show_of.get(&season.show_id)?;
+        .filter_map(|&x| {
+            let show = show_of.get(&x.season.show_id)?;
             let tile = Tile::episode(
                 show,
-                season,
-                episode,
+                x,
                 show_images.get(&show.id).cloned().unwrap_or_default(),
-                thumbs.get(&episode.id).cloned(),
-                episode.media_file_id.and_then(|x| media_files.get(&x)),
-                user_state_of.get(&episode.id).copied(),
+                thumbs.get(&x.episode.id).cloned(),
+                x.episode.media_file_id.and_then(|x| media_files.get(&x)),
             );
-            Some((episode.id, tile))
+            Some((x.episode.id, tile))
         })
         .collect();
     let season_counts = season_counts(&seasons);
