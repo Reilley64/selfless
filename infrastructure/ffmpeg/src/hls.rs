@@ -1,7 +1,10 @@
+use crate::subtitles;
 use application::ports::AudioStream;
+use application::ports::SubtitleStream;
 use application::ports::VideoStream;
 use std::io;
 use std::path::Path;
+use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
 use tokio::fs;
@@ -47,12 +50,17 @@ impl Segments {
             .count()
     }
 
-    pub fn media_playlist(&self) -> String {
-        let lengths = [&Duration::ZERO]
+    pub fn bounds(&self) -> impl Iterator<Item = (Duration, Duration)> {
+        [Duration::ZERO]
             .into_iter()
-            .chain(self.starts.iter().skip(1))
-            .zip(self.starts.iter().skip(1).chain([&self.duration]))
-            .map(|(start, end)| end.saturating_sub(*start))
+            .chain(self.starts.iter().skip(1).copied())
+            .zip(self.starts.iter().skip(1).copied().chain([self.duration]))
+    }
+
+    pub fn media_playlist(&self, map: Option<&str>, segment: impl Fn(usize) -> String) -> String {
+        let lengths = self
+            .bounds()
+            .map(|(start, end)| end.saturating_sub(start))
             .collect::<Vec<_>>();
         let target = lengths
             .iter()
@@ -65,13 +73,16 @@ impl Segments {
              #EXT-X-TARGETDURATION:{target}\n\
              #EXT-X-MEDIA-SEQUENCE:0\n\
              #EXT-X-PLAYLIST-TYPE:VOD\n\
-             #EXT-X-INDEPENDENT-SEGMENTS\n\
-             #EXT-X-MAP:URI=\"{INIT}\"\n"
+             #EXT-X-INDEPENDENT-SEGMENTS\n"
         );
+        if let Some(map) = map {
+            playlist.push_str(&format!("#EXT-X-MAP:URI=\"{map}\"\n"));
+        }
         for (index, length) in lengths.iter().enumerate() {
             playlist.push_str(&format!(
-                "#EXTINF:{:.6},\n{index}.m4s\n",
-                length.as_secs_f64()
+                "#EXTINF:{:.6},\n{}\n",
+                length.as_secs_f64(),
+                segment(index)
             ));
         }
         playlist.push_str("#EXT-X-ENDLIST\n");
@@ -79,10 +90,12 @@ impl Segments {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn remux(
     input: &Path,
     video: &VideoStream,
     audio: Option<&AudioStream>,
+    subtitles: &[SubtitleStream],
     segments: &Segments,
     segment: usize,
     folder: &Path,
@@ -108,14 +121,24 @@ pub async fn remux(
     if video.codec == "hevc" {
         command.args(["-tag:v", "hvc1"]);
     }
-    let mut child = command
+    command
         .args(["-copypriorss", "0", "-avoid_negative_ts", "disabled"])
         .args(["-f", "segment", "-segment_format", "mp4"])
         .args(["-segment_format_options", SEGMENT_FORMAT_OPTIONS])
         .args(["-segment_times", &cuts, "-segment_time_delta", "0.001"])
         .args(["-segment_start_number", &segment.to_string()])
         .args(["-segment_list", "pipe:1", "-segment_list_type", "flat"])
-        .arg(folder.join("%d.mp4"))
+        .arg(folder.join("%d.mp4"));
+    let subtitle_runs = (0..subtitles.len())
+        .map(|x| folder.join(format!("subtitles-{x}-from-{segment}.webvtt")))
+        .collect::<Vec<_>>();
+    for (subtitle, run) in subtitles.iter().zip(&subtitle_runs) {
+        command
+            .args(["-map", &format!("0:{}", subtitle.index), "-c:s", "webvtt"])
+            .args(["-flush_packets", "1", "-f", "webvtt"])
+            .arg(run);
+    }
+    let mut child = command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -129,7 +152,9 @@ pub async fn remux(
     let mut last = None;
     while let Some(next) = finished.next_line().await? {
         if let Some(name) = last.replace(next) {
-            written.send_replace(split_segment(folder, &name).await? + 1);
+            let index = split_segment(folder, &name).await?;
+            write_subtitle_segments(folder, &subtitle_runs, segments, index).await?;
+            written.send_replace(index + 1);
         }
     }
     let output = child.wait_with_output().await?;
@@ -144,7 +169,30 @@ pub async fn remux(
         ));
     }
     if let Some(name) = last {
-        written.send_replace(split_segment(folder, &name).await? + 1);
+        let index = split_segment(folder, &name).await?;
+        write_subtitle_segments(folder, &subtitle_runs, segments, index).await?;
+        written.send_replace(index + 1);
+    }
+    Ok(())
+}
+
+async fn write_subtitle_segments(
+    folder: &Path,
+    runs: &[PathBuf],
+    segments: &Segments,
+    index: usize,
+) -> io::Result<()> {
+    let Some((start, end)) = segments.bounds().nth(index) else {
+        return Ok(());
+    };
+    for (rendition, run) in runs.iter().enumerate() {
+        let run = fs::read_to_string(run).await?;
+        let cues = subtitles::cues(&run).filter(|x| x.start < end && x.end > start);
+        write_atomically(
+            &folder.join(subtitles::segment(rendition, index)),
+            subtitles::webvtt(cues).as_bytes(),
+        )
+        .await?;
     }
     Ok(())
 }
@@ -179,7 +227,7 @@ fn header_length(segment: &[u8]) -> Option<usize> {
     None
 }
 
-async fn write_atomically(path: &Path, bytes: &[u8]) -> io::Result<()> {
+pub(crate) async fn write_atomically(path: &Path, bytes: &[u8]) -> io::Result<()> {
     let partial = path.with_extension("partial");
     fs::write(&partial, bytes).await?;
     fs::rename(partial, path).await
@@ -218,7 +266,7 @@ mod tests {
         );
 
         assert_eq!(
-            segments.media_playlist(),
+            segments.media_playlist(Some("init.mp4"), |x| format!("{x}.m4s")),
             "#EXTM3U\n\
              #EXT-X-VERSION:7\n\
              #EXT-X-TARGETDURATION:9\n\
@@ -348,6 +396,7 @@ mod tests {
             &input,
             &video,
             Some(&audio),
+            &[],
             &segments,
             segment,
             folder.path(),
@@ -361,7 +410,8 @@ mod tests {
     async fn assert_remux_matches_the_playlist(name: &str, audio_codec: &str) {
         let (segments, from_start) = remux_fixture(name, audio_codec, 0).await;
         let (_, restarted) = remux_fixture(name, audio_codec, 3).await;
-        let playlist = playlist_times(&segments.media_playlist());
+        let playlist =
+            playlist_times(&segments.media_playlist(Some("init.mp4"), |x| format!("{x}.m4s")));
 
         assert_eq!(playlist.len(), 6);
         assert_eq!(video_segment_times(from_start.path(), 0..6), playlist);
