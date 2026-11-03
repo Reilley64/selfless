@@ -4,8 +4,6 @@ import {
   type PlaybackSubtitleTrack,
   reportPlaybackProgress,
   serverUrl,
-  startPlayback,
-  useGetMe,
 } from "@selfless/api-client";
 import {
   ActionButton,
@@ -15,12 +13,13 @@ import {
   matchTrack,
   NextEpisodeButton,
   type NextEpisodeButtonState,
+  nextEpisodeHref,
   type PlaybackSpans,
   playerTrackFor,
   type Resume,
   serverUnreachable,
   StillWatchingPrompt,
-  startPlaybackSpans,
+  usePlaybackStart,
 } from "@selfless/ui";
 import { type Href, useRouter } from "expo-router";
 import { type AudioTrack, type SubtitleTrack, useVideoPlayer, type VideoPlayer, VideoView } from "expo-video";
@@ -32,8 +31,6 @@ import { androidTvProfile } from "../modules/capability-profile";
 import { useFirstFieldFocus } from "./form";
 import { NotFound } from "./NotFound";
 
-type Start = { response: Awaited<ReturnType<typeof startPlayback>>; spans: PlaybackSpans } | "unreachable";
-
 type PlayerProps = {
   mediaFileId: string;
   startPosition: number;
@@ -44,70 +41,22 @@ type PlayerProps = {
 
 const seekJump = 3;
 
+const tvProfile = () => (Platform.OS === "android" ? androidTvProfile() : Promise.resolve(appleTvProfile));
+
 export function Player(props: PlayerProps) {
   return <Playing key={`${props.mediaFileId}@${props.startPosition}`} {...props} />;
 }
 
 function Playing({ mediaFileId, startPosition, autoplayed, stillWatching, titleHref }: PlayerProps) {
-  const { data: me, isError } = useGetMe();
-  const userId = me?.status === 200 ? me.data.id : undefined;
-  const [start, setStart] = useState<Start>();
-  const [resume, setResume] = useState<Resume>({
-    position: startPosition,
-    paused: stillWatching,
-    forceHls: false,
+  const { start, resume, restart } = usePlaybackStart({
+    mediaFileId,
+    startPosition,
     autoplayed,
     stillWatching,
+    profile: tvProfile,
   });
-  useEffect(() => {
-    if (userId === undefined) {
-      return;
-    }
-    let current = true;
-    let answered = false;
-    const spans = startPlaybackSpans(userId, mediaFileId);
-    (Platform.OS === "android" ? androidTvProfile() : Promise.resolve(appleTvProfile))
-      .then((profile) =>
-        spans.during(() =>
-          startPlayback({
-            mediaFileId,
-            startPosition: resume.position,
-            profile,
-            forceHls: resume.forceHls,
-            ...(resume.tracks && {
-              audioTrackId: resume.tracks.audioTrackId ?? undefined,
-              subtitleTrackId: resume.tracks.subtitleTrackId,
-            }),
-          }),
-        ),
-      )
-      .then(
-        (response) => {
-          answered = true;
-          if (response.status !== 201) {
-            spans.failed(String(response.status));
-          }
-          if (current) {
-            setStart({ response, spans });
-          }
-        },
-        (error: unknown) => {
-          answered = true;
-          spans.failed(error instanceof Error ? error.name : "_OTHER");
-          if (current) {
-            setStart("unreachable");
-          }
-        },
-      );
-    return () => {
-      current = false;
-      if (!answered) {
-        spans.stopped();
-      }
-    };
-  }, [userId, mediaFileId, resume]);
-  const retry = () => setResume({ ...resume });
-  if (isError || start === "unreachable") {
+  const retry = () => restart({ ...resume });
+  if (start === "unreachable") {
     return <Failure message={serverUnreachable} onRetry={retry} />;
   }
   if (start === undefined) {
@@ -121,7 +70,7 @@ function Playing({ mediaFileId, startPosition, autoplayed, stillWatching, titleH
           playback={start.response.data}
           spans={start.spans}
           resume={resume}
-          restart={setResume}
+          restart={restart}
           titleHref={titleHref}
         />
       );
@@ -195,10 +144,7 @@ function Video({
         switchAudio: () => undefined,
         switchSubtitle: () => undefined,
         showNextEpisode: setNextButton,
-        playNextEpisode: (episode, { autoplayed, stillWatching }) =>
-          router.replace(
-            `/play/episodes/${episode.id}?position=0&autoplayed=${autoplayed}&stillWatching=${stillWatching}`,
-          ),
+        playNextEpisode: (episode, start) => router.replace(nextEpisodeHref(episode, start)),
         returnToTitle: () => router.dismissTo(titleHref),
         showStillWatching: setStillWatching,
         play: () => player.play(),

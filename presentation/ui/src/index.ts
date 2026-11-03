@@ -16,7 +16,7 @@ export { MovieHeader } from "./MovieHeader";
 export { NextEpisodeButton } from "./NextEpisodeButton";
 export { PlaybackSettingsToggles } from "./PlaybackSettingsToggles";
 export { PlayActions } from "./PlayActions";
-export { playHref } from "./playHref";
+export { nextEpisodeHref, playHref } from "./playHref";
 export {
   createPlayerLogic,
   type EpisodeStart,
@@ -45,4 +45,5 @@ export { TileGrid } from "./TileGrid";
 export { tilePath } from "./tilePath";
 export { TileRow } from "./TileRow";
 export { TitleMeta } from "./TitleMeta";
+export { type PlaybackStart, usePlaybackStart } from "./usePlaybackStart";
 export { WatchedMark } from "./WatchedMark";

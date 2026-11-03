@@ -3,18 +3,17 @@ import {
   type PlaybackAudioTrack,
   type PlaybackSubtitleTrack,
   reportPlaybackProgress,
-  startPlayback,
-  useGetMe,
 } from "@selfless/api-client";
 import {
   createPlayerLogic,
   NextEpisodeButton,
   type NextEpisodeButtonState,
+  nextEpisodeHref,
   type PlaybackSpans,
   type Resume,
   StillWatchingPrompt,
-  startPlaybackSpans,
   type Tracks,
+  usePlaybackStart,
 } from "@selfless/ui";
 import { getParser } from "bowser";
 import { type Href, useRouter } from "expo-router";
@@ -42,8 +41,6 @@ function audioTracksOf(element: HTMLVideoElement | undefined): AudioTrackList {
 
 const languageNames = new Intl.DisplayNames([navigator.language], { type: "language" });
 
-type Start = { response: Awaited<ReturnType<typeof startPlayback>>; spans: PlaybackSpans } | "unreachable";
-
 type PlayerProps = {
   mediaFileId: string;
   startPosition: number;
@@ -58,64 +55,14 @@ export function Player(props: PlayerProps) {
 }
 
 function Playing({ mediaFileId, startPosition, autoplayed, stillWatching, backHref, titleHref }: PlayerProps) {
-  const { data: me, isError } = useGetMe();
-  const userId = me?.status === 200 ? me.data.id : undefined;
-  const [start, setStart] = useState<Start>();
-  const [resume, setResume] = useState<Resume>({
-    position: startPosition,
-    paused: stillWatching,
-    forceHls: false,
+  const { start, resume, restart } = usePlaybackStart({
+    mediaFileId,
+    startPosition,
     autoplayed,
     stillWatching,
+    profile: capabilityProfile,
   });
-  useEffect(() => {
-    if (userId === undefined) {
-      return;
-    }
-    let current = true;
-    let answered = false;
-    const spans = startPlaybackSpans(userId, mediaFileId);
-    capabilityProfile()
-      .then((profile) =>
-        spans.during(() =>
-          startPlayback({
-            mediaFileId,
-            startPosition: resume.position,
-            profile,
-            forceHls: resume.forceHls,
-            ...(resume.tracks && {
-              audioTrackId: resume.tracks.audioTrackId ?? undefined,
-              subtitleTrackId: resume.tracks.subtitleTrackId,
-            }),
-          }),
-        ),
-      )
-      .then(
-        (response) => {
-          answered = true;
-          if (response.status !== 201) {
-            spans.failed(String(response.status));
-          }
-          if (current) {
-            setStart({ response, spans });
-          }
-        },
-        (error: unknown) => {
-          answered = true;
-          spans.failed(error instanceof Error ? error.name : "_OTHER");
-          if (current) {
-            setStart("unreachable");
-          }
-        },
-      );
-    return () => {
-      current = false;
-      if (!answered) {
-        spans.stopped();
-      }
-    };
-  }, [userId, mediaFileId, resume]);
-  if (isError || start === "unreachable") {
+  if (start === "unreachable") {
     return (
       <Screen backHref={backHref}>
         <ServerUnreachable />
@@ -134,7 +81,7 @@ function Playing({ mediaFileId, startPosition, autoplayed, stillWatching, backHr
             playback={start.response.data}
             spans={start.spans}
             resume={resume}
-            restart={setResume}
+            restart={restart}
             backHref={backHref}
             titleHref={titleHref}
           />
@@ -224,10 +171,7 @@ function Video({
           setSelected((current) => ({ ...current, subtitleTrackId: track?.id ?? null }));
         },
         showNextEpisode: setNextButton,
-        playNextEpisode: (episode, { autoplayed, stillWatching }) =>
-          router.replace(
-            `/play/episodes/${episode.id}?position=0&autoplayed=${autoplayed}&stillWatching=${stillWatching}`,
-          ),
+        playNextEpisode: (episode, start) => router.replace(nextEpisodeHref(episode, start)),
         returnToTitle: () => router.replace(titleHref),
         showStillWatching: setStillWatching,
         play: () => {
