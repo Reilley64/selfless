@@ -24,6 +24,7 @@ use domain::Source;
 use jiff::Timestamp;
 use std::collections::HashSet;
 use tracing::Span;
+use uuid::Uuid;
 
 pub(crate) struct MovieFiles {
     pub(crate) find_media_file: FindMediaFile,
@@ -99,6 +100,46 @@ pub(crate) async fn inspect(
     })))
 }
 
+struct SyncedMovie {
+    radarr_id: i64,
+    metadata: MovieMetadata,
+    nfo_modified_at: Option<Timestamp>,
+    added_at: Option<Timestamp>,
+    media_file_id: Option<Uuid>,
+    visible: bool,
+}
+
+macro_rules! set_movie {
+    ($builder:expr, $synced:expr) => {{
+        let SyncedMovie {
+            radarr_id,
+            metadata,
+            nfo_modified_at,
+            added_at,
+            media_file_id,
+            visible,
+        } = $synced;
+        $builder
+            .radarr_id(radarr_id)
+            .title(metadata.title)
+            .sort_title(metadata.sort_title)
+            .original_title(metadata.original_title)
+            .year(metadata.year)
+            .overview(metadata.overview)
+            .runtime_minutes(metadata.runtime_minutes)
+            .certification(metadata.certification)
+            .premiered(metadata.premiered)
+            .studio(metadata.studio)
+            .genres(metadata.genres)
+            .rating(metadata.rating)
+            .directors(metadata.directors)
+            .nfo_modified_at(nfo_modified_at)
+            .added_at(added_at)
+            .media_file_id(media_file_id)
+            .visible(visible)
+    }};
+}
+
 pub(crate) async fn save(
     db_context: &mut DbContext,
     mut source_movie: SourceMovie,
@@ -159,37 +200,26 @@ pub(crate) async fn save(
         MovieMetadata::with_nfo,
     );
     let had_nfo = stored.as_ref().is_some_and(|x| x.nfo_modified_at.is_some());
+    let synced = SyncedMovie {
+        radarr_id: source_movie.radarr_id,
+        metadata,
+        nfo_modified_at,
+        added_at: domain::first_added_at(stored.as_ref().and_then(|x| x.added_at), source_added_at),
+        media_file_id,
+        visible,
+    };
     let (movie_id, change) = match stored {
         Some(mut movie) => {
-            let added_at = domain::first_added_at(movie.added_at, source_added_at);
             let old_media_file_id = movie.media_file_id;
             let changed = media_file_changed
-                || movie.radarr_id != source_movie.radarr_id
-                || movie.added_at != added_at
-                || movie.media_file_id != media_file_id
-                || movie.visible != visible
-                || movie.nfo_modified_at != nfo_modified_at
-                || movie.metadata() != metadata;
+                || movie.radarr_id != synced.radarr_id
+                || movie.added_at != synced.added_at
+                || movie.media_file_id != synced.media_file_id
+                || movie.visible != synced.visible
+                || movie.nfo_modified_at != synced.nfo_modified_at
+                || movie.metadata() != synced.metadata;
             if changed {
-                movie
-                    .update()
-                    .radarr_id(source_movie.radarr_id)
-                    .title(metadata.title)
-                    .sort_title(metadata.sort_title)
-                    .original_title(metadata.original_title)
-                    .year(metadata.year)
-                    .overview(metadata.overview)
-                    .runtime_minutes(metadata.runtime_minutes)
-                    .certification(metadata.certification)
-                    .premiered(metadata.premiered)
-                    .studio(metadata.studio)
-                    .genres(metadata.genres)
-                    .rating(metadata.rating)
-                    .directors(metadata.directors)
-                    .nfo_modified_at(nfo_modified_at)
-                    .added_at(added_at)
-                    .media_file_id(media_file_id)
-                    .visible(visible)
+                set_movie!(movie.update(), synced)
                     .exec(transaction.executor_mut())
                     .await
                     .map_err(Error::caused_by)?;
@@ -204,30 +234,13 @@ pub(crate) async fn save(
             (movie.id, changed.then_some(Change::Changed))
         }
         None => {
-            let movie = transaction
-                .movies()
-                .create()
-                .tmdb_id(source_movie.tmdb_id)
-                .radarr_id(source_movie.radarr_id)
-                .title(metadata.title)
-                .sort_title(metadata.sort_title)
-                .original_title(metadata.original_title)
-                .year(metadata.year)
-                .overview(metadata.overview)
-                .runtime_minutes(metadata.runtime_minutes)
-                .certification(metadata.certification)
-                .premiered(metadata.premiered)
-                .studio(metadata.studio)
-                .genres(metadata.genres)
-                .rating(metadata.rating)
-                .directors(metadata.directors)
-                .nfo_modified_at(nfo_modified_at)
-                .added_at(source_added_at)
-                .media_file_id(media_file_id)
-                .visible(visible)
-                .exec(transaction.executor_mut())
-                .await
-                .map_err(Error::caused_by)?;
+            let movie = set_movie!(
+                transaction.movies().create().tmdb_id(source_movie.tmdb_id),
+                synced
+            )
+            .exec(transaction.executor_mut())
+            .await
+            .map_err(Error::caused_by)?;
             (movie.id, Some(Change::Added))
         }
     };

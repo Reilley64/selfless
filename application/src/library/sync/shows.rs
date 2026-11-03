@@ -33,10 +33,12 @@ use domain::ShowMetadata;
 use domain::ShowNfo;
 use domain::Source;
 use futures_util::future::try_join_all;
+use jiff::Timestamp;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use tracing::Span;
+use uuid::Uuid;
 
 pub(crate) struct ShowFiles {
     pub(crate) find_media_file: FindMediaFile,
@@ -318,6 +320,73 @@ pub(crate) async fn remove(db_context: &mut DbContext, show: Show) -> Result<(),
     Ok(())
 }
 
+struct SyncedShow {
+    sonarr_id: i64,
+    year: Option<i64>,
+    metadata: ShowMetadata,
+    nfo_modified_at: Option<Timestamp>,
+}
+
+macro_rules! set_show {
+    ($builder:expr, $synced:expr) => {{
+        let SyncedShow {
+            sonarr_id,
+            year,
+            metadata,
+            nfo_modified_at,
+        } = $synced;
+        $builder
+            .sonarr_id(sonarr_id)
+            .year(year)
+            .title(metadata.title)
+            .sort_title(metadata.sort_title)
+            .overview(metadata.overview)
+            .certification(metadata.certification)
+            .premiered(metadata.premiered)
+            .end_date(metadata.end_date)
+            .status(metadata.status)
+            .network(metadata.network)
+            .genres(metadata.genres)
+            .rating(metadata.rating)
+            .nfo_modified_at(nfo_modified_at)
+    }};
+}
+
+struct SyncedEpisode {
+    season_id: Uuid,
+    number: i64,
+    metadata: EpisodeMetadata,
+    nfo_modified_at: Option<Timestamp>,
+    added_at: Option<Timestamp>,
+    media_file_id: Option<Uuid>,
+    visible: bool,
+}
+
+macro_rules! set_episode {
+    ($builder:expr, $synced:expr) => {{
+        let SyncedEpisode {
+            season_id,
+            number,
+            metadata,
+            nfo_modified_at,
+            added_at,
+            media_file_id,
+            visible,
+        } = $synced;
+        $builder
+            .season_id(season_id)
+            .number(number)
+            .title(metadata.title)
+            .air_date(metadata.air_date)
+            .overview(metadata.overview)
+            .rating(metadata.rating)
+            .nfo_modified_at(nfo_modified_at)
+            .added_at(added_at)
+            .media_file_id(media_file_id)
+            .visible(visible)
+    }};
+}
+
 async fn write(
     scope: &mut impl DbScope,
     source_show: SourceShow,
@@ -347,27 +416,20 @@ async fn write(
         source_metadata,
         ShowMetadata::with_nfo,
     );
+    let synced = SyncedShow {
+        sonarr_id: listing.sonarr_id,
+        year: listing.year,
+        metadata,
+        nfo_modified_at,
+    };
     let (show, show_change) = match stored {
         Some(mut show) => {
-            let changed = show.sonarr_id != listing.sonarr_id
-                || show.year != listing.year
-                || show.nfo_modified_at != nfo_modified_at
-                || show.metadata() != metadata;
+            let changed = show.sonarr_id != synced.sonarr_id
+                || show.year != synced.year
+                || show.nfo_modified_at != synced.nfo_modified_at
+                || show.metadata() != synced.metadata;
             if changed {
-                show.update()
-                    .sonarr_id(listing.sonarr_id)
-                    .year(listing.year)
-                    .title(metadata.title)
-                    .sort_title(metadata.sort_title)
-                    .overview(metadata.overview)
-                    .certification(metadata.certification)
-                    .premiered(metadata.premiered)
-                    .end_date(metadata.end_date)
-                    .status(metadata.status)
-                    .network(metadata.network)
-                    .genres(metadata.genres)
-                    .rating(metadata.rating)
-                    .nfo_modified_at(nfo_modified_at)
+                set_show!(show.update(), synced)
                     .exec(scope.executor_mut())
                     .await
                     .map_err(Error::caused_by)?;
@@ -375,23 +437,7 @@ async fn write(
             (show, changed.then_some(Change::Changed))
         }
         None => (
-            scope
-                .shows()
-                .create()
-                .tvdb_id(listing.tvdb_id)
-                .sonarr_id(listing.sonarr_id)
-                .year(listing.year)
-                .title(metadata.title)
-                .sort_title(metadata.sort_title)
-                .overview(metadata.overview)
-                .certification(metadata.certification)
-                .premiered(metadata.premiered)
-                .end_date(metadata.end_date)
-                .status(metadata.status)
-                .network(metadata.network)
-                .genres(metadata.genres)
-                .rating(metadata.rating)
-                .nfo_modified_at(nfo_modified_at)
+            set_show!(scope.shows().create().tvdb_id(listing.tvdb_id), synced)
                 .exec(scope.executor_mut())
                 .await
                 .map_err(Error::caused_by)?,
@@ -488,30 +534,30 @@ async fn write(
         };
         let visible = Episode::in_library(source_episode.media_file.is_some(), file_on_disk);
         let source_added_at = source_episode.media_file.map(|x| x.added_at);
+        let synced = SyncedEpisode {
+            season_id,
+            number: source_episode.episode_number,
+            metadata,
+            nfo_modified_at,
+            added_at: domain::first_added_at(
+                stored.as_ref().and_then(|x| x.added_at),
+                source_added_at,
+            ),
+            media_file_id,
+            visible,
+        };
         let episode_id = match stored {
             Some(mut episode) => {
-                let added_at = domain::first_added_at(episode.added_at, source_added_at);
-                if episode.season_id != season_id
-                    || episode.number != source_episode.episode_number
-                    || episode.nfo_modified_at != nfo_modified_at
-                    || episode.metadata() != metadata
-                    || episode.added_at != added_at
-                    || episode.media_file_id != media_file_id
-                    || episode.visible != visible
+                if episode.season_id != synced.season_id
+                    || episode.number != synced.number
+                    || episode.nfo_modified_at != synced.nfo_modified_at
+                    || episode.metadata() != synced.metadata
+                    || episode.added_at != synced.added_at
+                    || episode.media_file_id != synced.media_file_id
+                    || episode.visible != synced.visible
                 {
                     changed = true;
-                    episode
-                        .update()
-                        .season_id(season_id)
-                        .number(source_episode.episode_number)
-                        .title(metadata.title)
-                        .air_date(metadata.air_date)
-                        .overview(metadata.overview)
-                        .rating(metadata.rating)
-                        .nfo_modified_at(nfo_modified_at)
-                        .added_at(added_at)
-                        .media_file_id(media_file_id)
-                        .visible(visible)
+                    set_episode!(episode.update(), synced)
                         .exec(scope.executor_mut())
                         .await
                         .map_err(Error::caused_by)?;
@@ -520,24 +566,14 @@ async fn write(
             }
             None => {
                 changed = true;
-                scope
-                    .episodes()
-                    .create()
-                    .season_id(season_id)
-                    .tvdb_id(source_episode.tvdb_id)
-                    .number(source_episode.episode_number)
-                    .title(metadata.title)
-                    .air_date(metadata.air_date)
-                    .overview(metadata.overview)
-                    .rating(metadata.rating)
-                    .nfo_modified_at(nfo_modified_at)
-                    .added_at(source_added_at)
-                    .media_file_id(media_file_id)
-                    .visible(visible)
-                    .exec(scope.executor_mut())
-                    .await
-                    .map_err(Error::caused_by)?
-                    .id
+                set_episode!(
+                    scope.episodes().create().tvdb_id(source_episode.tvdb_id),
+                    synced
+                )
+                .exec(scope.executor_mut())
+                .await
+                .map_err(Error::caused_by)?
+                .id
             }
         };
         if let Some(thumb) = episode_folder.and_then(|x| x.thumb.clone()) {
