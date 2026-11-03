@@ -1,0 +1,15 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'dev.reilley.selfless'
+version = '0.1.0'
+
+android {
+  namespace "dev.reilley.selfless.capabilityprofile"
+}
+
+dependencies {
+  implementation "androidx.media3:media3-exoplayer:1.9.1"
+}
