@@ -13,6 +13,7 @@ export { initials } from "./initials";
 export { forgetInviteIdempotencyKey, inviteIdempotencyKey } from "./inviteIdempotencyKey";
 export { serverUnreachable } from "./messages";
 export { MovieHeader } from "./MovieHeader";
+export { PlaybackSettingsToggles } from "./PlaybackSettingsToggles";
 export { playHref } from "./playHref";
 export { randomUuid } from "./randomUuid";
 export { runtimeLabel } from "./runtimeLabel";
