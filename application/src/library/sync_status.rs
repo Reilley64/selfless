@@ -559,6 +559,36 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_held_removal_is_shown_with_the_number_of_items_it_holds() {
+        let mut seeded = Seeded::new().await;
+        let severance = seeded.show(7, "Severance").await;
+        let andor = seeded.show(8, "Andor").await;
+        let db_context = &mut seeded.db_context;
+        db_context
+            .held_removals()
+            .create()
+            .source(Source::Sonarr)
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap();
+        for item_id in [severance, andor] {
+            db_context
+                .held_removal_items()
+                .create()
+                .source(Source::Sonarr)
+                .item_id(item_id)
+                .exec(db_context.executor_mut())
+                .await
+                .unwrap();
+        }
+
+        let status = seeded.status(&SourceHealth::default()).await;
+
+        assert_eq!(status.sonarr.held_removal, Some(HeldRemoval { count: 2 }));
+        assert_eq!(status.radarr.held_removal, None);
+    }
+
+    #[tokio::test]
     async fn the_last_api_call_is_shown_per_source() {
         let seeded = Seeded::new().await;
         let source_health = SourceHealth::default();
