@@ -1,10 +1,10 @@
 use crate::hls::INIT;
+use crate::hls::SegmentWriter;
 use crate::hls::Segments;
 use crate::hls::audio_init;
 use crate::hls::audio_playlist;
 use crate::hls::audio_segment;
 use crate::hls::write_atomically;
-use crate::hls::write_segments;
 use crate::rendition::Rendition;
 use crate::rendition::named;
 use crate::subtitles;
@@ -13,15 +13,11 @@ use application::attributes::SELFLESS_FFMPEG_START_SEGMENT;
 use application::attributes::selfless_ffmpeg_purpose;
 use application::ports::EndHlsOutput;
 use application::ports::GetHlsFile;
-use application::ports::HlsAudioTrack;
 use application::ports::HlsError;
 use application::ports::HlsOutput;
 use application::ports::StartHlsOutput;
-use application::ports::SubtitleStream;
-use application::ports::VideoStream;
 use application::spans::SELFLESS_FFMPEG;
 use domain::PlayMethod;
-use domain::VideoTranscode;
 use std::collections::HashMap;
 use std::io;
 use std::io::ErrorKind;
@@ -50,14 +46,8 @@ pub struct HlsOutputs {
 
 struct Output {
     method: PlayMethod,
-    folder: PathBuf,
-    input: PathBuf,
-    video: VideoStream,
-    video_transcode: Option<VideoTranscode>,
-    audio: Vec<HlsAudioTrack>,
-    subtitle_streams: Vec<SubtitleStream>,
+    writer: SegmentWriter,
     subtitle_files: Vec<SubtitleFile>,
-    segments: Arc<Segments>,
     run: Option<Run>,
 }
 
@@ -296,12 +286,15 @@ impl HlsOutputs {
         let start = segments.segment_at(output.start_position);
         let mut started = Output {
             method: output.method,
-            folder,
-            input: PathBuf::from(output.path),
-            video: output.video,
-            video_transcode: output.video_transcode,
-            audio: output.audio,
-            subtitle_streams: output.subtitle_streams,
+            writer: SegmentWriter {
+                input: PathBuf::from(output.path),
+                video: output.video,
+                video_transcode: output.video_transcode,
+                audio: output.audio,
+                subtitles: output.subtitle_streams,
+                segments: Arc::new(segments),
+                folder,
+            },
             subtitle_files: output
                 .subtitle_files
                 .into_iter()
@@ -310,7 +303,6 @@ impl HlsOutputs {
                     converted: Arc::default(),
                 })
                 .collect(),
-            segments: Arc::new(segments),
             run: None,
         };
         started.restart(start);
@@ -338,15 +330,15 @@ impl HlsOutputs {
                 if let Some(written) = &mut written {
                     written.borrow_and_update();
                 }
-                let path = output.folder.join(name);
+                let path = output.writer.folder.join(name);
                 if path.exists() {
                     return Ok(Some(path));
                 }
-                let embedded = output.subtitle_streams.len();
+                let embedded = output.writer.subtitles.len();
                 let segment = match requested {
                     Requested::Playlist => return Ok(None),
                     Requested::AudioInit(rendition) | Requested::AudioSegment(rendition, _)
-                        if rendition >= output.audio.len() =>
+                        if rendition >= output.writer.audio.len() =>
                     {
                         return Ok(None);
                     }
@@ -354,7 +346,7 @@ impl HlsOutputs {
                     Requested::Segment(x)
                     | Requested::AudioSegment(_, x)
                     | Requested::SubtitleSegment(_, x)
-                        if x >= output.segments.len() =>
+                        if x >= output.writer.segments.len() =>
                     {
                         return Ok(None);
                     }
@@ -415,7 +407,7 @@ impl HlsOutputs {
             run.task.abort();
             let _ = (&mut run.task).await;
         }
-        if let Err(error) = fs::remove_dir_all(&output.folder).await
+        if let Err(error) = fs::remove_dir_all(&output.writer.folder).await
             && error.kind() != ErrorKind::NotFound
         {
             tracing::warn!(
@@ -434,28 +426,10 @@ impl Output {
             PlayMethod::DirectPlay | PlayMethod::Remux => selfless_ffmpeg_purpose::REMUX,
         };
         let (sender, written) = watch::channel(start);
-        let input = self.input.clone();
-        let video = self.video.clone();
-        let video_transcode = self.video_transcode.clone();
-        let audio = self.audio.clone();
-        let subtitle_streams = self.subtitle_streams.clone();
-        let segments = self.segments.clone();
-        let folder = self.folder.clone();
+        let writer = self.writer.clone();
         let task = tokio::spawn(
             async move {
-                if let Err(error) = write_segments(
-                    &input,
-                    &video,
-                    video_transcode.as_ref(),
-                    &audio,
-                    &subtitle_streams,
-                    &segments,
-                    start,
-                    &folder,
-                    &sender,
-                )
-                .await
-                {
+                if let Err(error) = writer.write(start, &sender).await {
                     tracing::error!(
                         error = &error as &dyn std::error::Error,
                         "ffmpeg failed to write the HLS segments of a media file"
@@ -492,9 +466,13 @@ mod tests {
     use crate::keyframes::read_keyframes;
     use application::ports::AudioStream;
     use application::ports::FoundSubtitleFile;
+    use application::ports::HlsAudioTrack;
+    use application::ports::SubtitleStream;
+    use application::ports::VideoStream;
     use domain::AudioTranscode;
     use domain::AudioTranscodeCodec;
     use domain::HdrType;
+    use domain::VideoTranscode;
     use opentelemetry::KeyValue;
     use opentelemetry::trace::TracerProvider;
     use opentelemetry_sdk::trace::InMemorySpanExporter;
