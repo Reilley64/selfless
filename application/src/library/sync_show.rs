@@ -10,10 +10,14 @@ use crate::library::sync::shows;
 use crate::library::sync::shows::ShowFiles;
 use crate::ports::persistence::DbScope;
 use domain::Show;
+use domain::SonarrId;
 use domain::Source;
 use tracing::Instrument;
 
-pub async fn call(dependencies: impl Into<Dependencies>, sonarr_id: i64) -> Result<Output, Error> {
+pub async fn call(
+    dependencies: impl Into<Dependencies>,
+    sonarr_id: SonarrId,
+) -> Result<Output, Error> {
     let Dependencies {
         mut db_context,
         find_media_file,
@@ -93,6 +97,7 @@ mod tests {
     use domain::ShowNfo;
     use domain::SyncProblem;
     use domain::SyncProblemKind;
+    use domain::TvdbId;
     use jiff::civil::date;
     use std::collections::HashMap;
     use uuid::Uuid;
@@ -260,7 +265,7 @@ mod tests {
         rating: f64,
     ) -> EpisodeNfo {
         EpisodeNfo {
-            sonarr_id,
+            sonarr_id: sonarr_id.map(SonarrId),
             title: Some(title.to_owned()),
             season_number: Some(season_number),
             episode_number: Some(episode_number),
@@ -541,8 +546,8 @@ mod tests {
         library.sync_show().await.unwrap();
 
         let show = show(&library).await;
-        assert_eq!(show.sonarr_id, 7);
-        assert_eq!(show.tvdb_id, 371_980);
+        assert_eq!(show.sonarr_id, SonarrId(7));
+        assert_eq!(show.tvdb_id, TvdbId(371_980));
         assert_eq!(show.title, "Severance");
         assert_eq!(show.year, Some(2022));
         assert_eq!(show.genres, ["Drama", "Mystery", "Science Fiction"]);
@@ -557,7 +562,7 @@ mod tests {
         seasons.sort_unstable();
         assert_eq!(seasons, [0, 1, 2]);
         let episode = episode(&library, 2, 1).await;
-        assert_eq!(episode.tvdb_id, 10_535_541);
+        assert_eq!(episode.tvdb_id, TvdbId(10_535_541));
         assert_eq!(episode.title, "Hello, Ms. Cobel");
         assert_eq!(episode.air_date, Some(date(2025, 1, 17)));
         assert_eq!(

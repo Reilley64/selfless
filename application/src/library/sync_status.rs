@@ -186,9 +186,14 @@ mod tests {
     use super::*;
     use crate::ports::RadarrError;
     use crate::test::mock_db_context;
+    use domain::HeldRemovalItem;
     use domain::LastReconcile as StoredLastReconcile;
+    use domain::RadarrId;
     use domain::ReconcileResult;
+    use domain::SonarrId;
     use domain::SyncProblemKind;
+    use domain::TmdbId;
+    use domain::TvdbId;
     use jiff::Timestamp;
     use std::time::Duration;
     use uuid::Uuid;
@@ -229,8 +234,8 @@ mod tests {
             db_context
                 .movies()
                 .create()
-                .tmdb_id(tmdb_id)
-                .radarr_id(tmdb_id)
+                .tmdb_id(TmdbId(tmdb_id))
+                .radarr_id(RadarrId(tmdb_id + 1_000))
                 .title(title)
                 .year(2016)
                 .genres(Vec::<String>::new())
@@ -248,8 +253,8 @@ mod tests {
             db_context
                 .shows()
                 .create()
-                .tvdb_id(tvdb_id)
-                .sonarr_id(tvdb_id)
+                .tvdb_id(TvdbId(tvdb_id))
+                .sonarr_id(SonarrId(tvdb_id + 1_000))
                 .title(title)
                 .genres(Vec::<String>::new())
                 .exec(db_context.executor_mut())
@@ -285,7 +290,7 @@ mod tests {
                 .episodes()
                 .create()
                 .season_id(season_id)
-                .tvdb_id(self.episodes)
+                .tvdb_id(TvdbId(self.episodes))
                 .number(number)
                 .title(title)
                 .media_file_id(media_file_id)
@@ -579,19 +584,14 @@ mod tests {
             .held_removals()
             .create()
             .source(Source::Sonarr)
+            .items(
+                [severance, andor]
+                    .map(|x| HeldRemovalItem::create().show_id(Some(x)))
+                    .to_vec(),
+            )
             .exec(db_context.executor_mut())
             .await
             .unwrap();
-        for item_id in [severance, andor] {
-            db_context
-                .held_removal_items()
-                .create()
-                .source(Source::Sonarr)
-                .item_id(item_id)
-                .exec(db_context.executor_mut())
-                .await
-                .unwrap();
-        }
 
         let status = seeded.status(&SourceHealth::default()).await;
 

@@ -60,13 +60,15 @@ mod tests {
     use crate::test::at;
     use crate::test::mock_db_context;
     use domain::ArtworkKind;
+    use domain::SonarrId;
+    use domain::TvdbId;
 
     async fn seed_show(db_context: &mut DbContext, tvdb_id: i64, title: &str) -> Uuid {
         db_context
             .shows()
             .create()
-            .tvdb_id(tvdb_id)
-            .sonarr_id(tvdb_id)
+            .tvdb_id(TvdbId(tvdb_id))
+            .sonarr_id(SonarrId(tvdb_id + 1_000))
             .title(title)
             .genres(Vec::<String>::new())
             .exec(db_context.executor_mut())
@@ -98,7 +100,7 @@ mod tests {
             .episodes()
             .create()
             .season_id(season_id)
-            .tvdb_id(tvdb_id)
+            .tvdb_id(TvdbId(tvdb_id))
             .number(number)
             .title(format!("Episode {number}"))
             .in_library(in_library)

@@ -1,6 +1,7 @@
 use application::ports::ReadSonarrWebhook;
 use application::ports::ShowWebhookDelivery;
 use application::ports::UnreadableWebhook;
+use domain::SonarrId;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -45,7 +46,7 @@ pub fn read_webhook() -> ReadSonarrWebhook {
                 | SonarrEvent::SeriesAdd { series }
                 | SonarrEvent::SeriesDelete { series }
                 | SonarrEvent::EpisodeFileDelete { series } => ShowWebhookDelivery::Show {
-                    sonarr_id: series.id,
+                    sonarr_id: SonarrId(series.id),
                 },
                 SonarrEvent::Test
                 | SonarrEvent::Grab
@@ -85,7 +86,9 @@ mod tests {
         ] {
             assert_eq!(
                 read(name).unwrap(),
-                ShowWebhookDelivery::Show { sonarr_id: 7 },
+                ShowWebhookDelivery::Show {
+                    sonarr_id: SonarrId(7)
+                },
                 "{name}"
             );
         }

@@ -40,7 +40,11 @@ use crate::ports::persistence::DbLocation;
 use crate::ports::persistence::DbScope;
 use domain::EpisodeNfo;
 use domain::MovieNfo;
+use domain::RadarrId;
 use domain::ShowNfo;
+use domain::SonarrId;
+use domain::TmdbId;
+use domain::TvdbId;
 use jiff::Timestamp;
 use jiff::civil::date;
 use std::collections::HashMap;
@@ -179,8 +183,8 @@ pub(crate) fn at(timestamp: &str) -> Timestamp {
 
 pub(crate) fn arrival(file: Option<&str>) -> SourceMovie {
     SourceMovie {
-        radarr_id: 42,
-        tmdb_id: 329_865,
+        radarr_id: RadarrId(42),
+        tmdb_id: TmdbId(329_865),
         title: "Arrival".to_owned(),
         year: 2016,
         overview: Some("An expert linguist is recruited by the military.".to_owned()),
@@ -329,7 +333,7 @@ impl MovieLibrary {
     }
 
     pub(crate) async fn sync_movie(&self) -> Result<sync_movie::Output, sync_movie::Error> {
-        sync_movie::call(self.sync_movie_dependencies(), 42).await
+        sync_movie::call(self.sync_movie_dependencies(), RadarrId(42)).await
     }
 }
 
@@ -352,8 +356,8 @@ pub(crate) fn source_media_file(path: &str, added_at: &str) -> Option<SourceMedi
 pub(crate) fn severance() -> SourceShow {
     SourceShow {
         listing: SourceShowListing {
-            sonarr_id: 7,
-            tvdb_id: 371_980,
+            sonarr_id: SonarrId(7),
+            tvdb_id: TvdbId(371_980),
             path: SHOW_FOLDER.to_owned(),
             title: "Severance".to_owned(),
             year: Some(2022),
@@ -366,8 +370,8 @@ pub(crate) fn severance() -> SourceShow {
         },
         episodes: vec![
             SourceEpisode {
-                sonarr_id: 1001,
-                tvdb_id: 9_094_718,
+                sonarr_id: SonarrId(1001),
+                tvdb_id: TvdbId(9_094_718),
                 season_number: 0,
                 episode_number: 1,
                 title: "Inside the Episode".to_owned(),
@@ -376,8 +380,8 @@ pub(crate) fn severance() -> SourceShow {
                 media_file: source_media_file(SPECIAL_FILE, "2022-03-04T11:02:19Z"),
             },
             SourceEpisode {
-                sonarr_id: 1011,
-                tvdb_id: 8_486_245,
+                sonarr_id: SonarrId(1011),
+                tvdb_id: TvdbId(8_486_245),
                 season_number: 1,
                 episode_number: 1,
                 title: "Good News About Hell".to_owned(),
@@ -386,8 +390,8 @@ pub(crate) fn severance() -> SourceShow {
                 media_file: source_media_file(S01E01_FILE, "2022-03-01T09:30:00Z"),
             },
             SourceEpisode {
-                sonarr_id: 1012,
-                tvdb_id: 8_786_934,
+                sonarr_id: SonarrId(1012),
+                tvdb_id: TvdbId(8_786_934),
                 season_number: 1,
                 episode_number: 2,
                 title: "Half Loop".to_owned(),
@@ -396,8 +400,8 @@ pub(crate) fn severance() -> SourceShow {
                 media_file: source_media_file(S01E02_E03_FILE, "2022-03-01T09:31:00Z"),
             },
             SourceEpisode {
-                sonarr_id: 1013,
-                tvdb_id: 8_786_935,
+                sonarr_id: SonarrId(1013),
+                tvdb_id: TvdbId(8_786_935),
                 season_number: 1,
                 episode_number: 3,
                 title: "In Perpetuity".to_owned(),
@@ -406,8 +410,8 @@ pub(crate) fn severance() -> SourceShow {
                 media_file: source_media_file(S01E02_E03_FILE, "2022-03-01T09:31:00Z"),
             },
             SourceEpisode {
-                sonarr_id: 1021,
-                tvdb_id: 10_535_541,
+                sonarr_id: SonarrId(1021),
+                tvdb_id: TvdbId(10_535_541),
                 season_number: 2,
                 episode_number: 1,
                 title: "Hello, Ms. Cobel".to_owned(),
@@ -416,8 +420,8 @@ pub(crate) fn severance() -> SourceShow {
                 media_file: source_media_file(S02E01_FILE, "2025-01-17T03:12:44Z"),
             },
             SourceEpisode {
-                sonarr_id: 1022,
-                tvdb_id: 10_535_542,
+                sonarr_id: SonarrId(1022),
+                tvdb_id: TvdbId(10_535_542),
                 season_number: 2,
                 episode_number: 2,
                 title: "Goodbye, Mrs. Selvig".to_owned(),
@@ -554,6 +558,6 @@ impl ShowLibrary {
     }
 
     pub(crate) async fn sync_show(&self) -> Result<sync_show::Output, sync_show::Error> {
-        sync_show::call(self.sync_show_dependencies(), 7).await
+        sync_show::call(self.sync_show_dependencies(), SonarrId(7)).await
     }
 }

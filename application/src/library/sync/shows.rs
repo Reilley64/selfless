@@ -31,6 +31,7 @@ use domain::Season;
 use domain::Show;
 use domain::ShowMetadata;
 use domain::ShowNfo;
+use domain::SonarrId;
 use domain::Source;
 use futures_util::future::try_join_all;
 use jiff::Timestamp;
@@ -321,7 +322,7 @@ pub(crate) async fn remove(db_context: &mut DbContext, show: Show) -> Result<(),
 }
 
 struct SyncedShow {
-    sonarr_id: i64,
+    sonarr_id: SonarrId,
     year: Option<i64>,
     metadata: ShowMetadata,
     nfo_modified_at: Option<Timestamp>,

@@ -2,7 +2,9 @@ use crate::Actor;
 use crate::Artwork;
 use crate::MediaFile;
 use crate::MovieMetadata;
+use crate::RadarrId;
 use crate::SyncProblem;
+use crate::TmdbId;
 use jiff::Timestamp;
 use jiff::civil::Date;
 use uuid::Uuid;
@@ -13,9 +15,9 @@ pub struct Movie {
     #[auto]
     pub id: Uuid,
     #[unique]
-    pub tmdb_id: i64,
+    pub tmdb_id: TmdbId,
     #[index]
-    pub radarr_id: i64,
+    pub radarr_id: RadarrId,
     pub title: String,
     pub year: i64,
     pub overview: Option<String>,

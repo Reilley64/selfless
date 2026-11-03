@@ -80,6 +80,7 @@ mod tests {
     use crate::test::no_subtitle_files;
     use crate::test::unreadable_episode_nfo;
     use crate::test::unreadable_show_nfo;
+    use domain::SonarrId;
     use std::sync::Arc;
     use std::sync::atomic::AtomicUsize;
     use std::sync::atomic::Ordering;
@@ -131,7 +132,11 @@ mod tests {
     async fn a_failed_sync_returns_an_error() {
         let show_calls = Arc::new(AtomicUsize::new(0));
         let dependencies = dependencies(
-            ReadSonarrWebhook::new(|_| Ok(ShowWebhookDelivery::Show { sonarr_id: 42 })),
+            ReadSonarrWebhook::new(|_| {
+                Ok(ShowWebhookDelivery::Show {
+                    sonarr_id: SonarrId(42),
+                })
+            }),
             show_calls.clone(),
         )
         .await;

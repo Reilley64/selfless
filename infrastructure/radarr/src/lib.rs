@@ -8,6 +8,8 @@ use application::ports::ListRadarrMovies;
 use application::ports::RadarrError;
 use application::ports::SourceMediaFile;
 use application::ports::SourceMovie;
+use domain::RadarrId;
+use domain::TmdbId;
 use jiff::Timestamp;
 use reqwest::StatusCode;
 use serde::Deserialize;
@@ -45,7 +47,7 @@ pub fn get_movie(api: Api) -> GetRadarrMovie {
             match api
                 .get::<Movie>(
                     "/api/v3/movie/{id}",
-                    &["movie", &radarr_id.to_string()],
+                    &["movie", &radarr_id.0.to_string()],
                     None,
                 )
                 .await
@@ -102,8 +104,8 @@ struct MovieFile {
 impl From<Movie> for SourceMovie {
     fn from(movie: Movie) -> Self {
         SourceMovie {
-            radarr_id: movie.id,
-            tmdb_id: movie.tmdb_id,
+            radarr_id: RadarrId(movie.id),
+            tmdb_id: TmdbId(movie.tmdb_id),
             title: movie.title,
             year: movie.year,
             overview: movie.overview,
@@ -121,6 +123,8 @@ mod tests {
     use super::RadarrSettings;
     use super::get_movie;
     use super::list_movies;
+    use domain::RadarrId;
+    use domain::TmdbId;
     use jiff::Timestamp;
     use servarr::Api;
     use wiremock::Mock;
@@ -163,10 +167,10 @@ mod tests {
         )
         .await;
 
-        let movie = get_movie(api).call(42).await.unwrap().unwrap();
+        let movie = get_movie(api).call(RadarrId(42)).await.unwrap().unwrap();
 
-        assert_eq!(movie.radarr_id, 42);
-        assert_eq!(movie.tmdb_id, 329865);
+        assert_eq!(movie.radarr_id, RadarrId(42));
+        assert_eq!(movie.tmdb_id, TmdbId(329865));
         assert_eq!(movie.title, "Arrival");
         assert_eq!(movie.year, 2016);
         assert_eq!(movie.genres, ["Drama", "Science Fiction", "Mystery"]);
@@ -199,7 +203,7 @@ mod tests {
         )
         .await;
 
-        let movie = get_movie(api).call(42).await.unwrap().unwrap();
+        let movie = get_movie(api).call(RadarrId(42)).await.unwrap().unwrap();
 
         assert!(movie.media_file.is_none());
     }
@@ -215,7 +219,7 @@ mod tests {
         )
         .await;
 
-        let movie = get_movie(api).call(42).await.unwrap();
+        let movie = get_movie(api).call(RadarrId(42)).await.unwrap();
 
         assert!(movie.is_none());
     }
@@ -224,7 +228,7 @@ mod tests {
     async fn a_server_error_from_radarr_is_an_error() {
         let (_server, api) = radarr("/api/v3/movie/42", ResponseTemplate::new(500)).await;
 
-        let movie = get_movie(api).call(42).await;
+        let movie = get_movie(api).call(RadarrId(42)).await;
 
         assert!(movie.is_err());
     }
@@ -245,7 +249,7 @@ mod tests {
         assert_eq!(
             movies
                 .iter()
-                .map(|x| (x.radarr_id, x.tmdb_id, x.title.as_str(), x.year))
+                .map(|x| (x.radarr_id.0, x.tmdb_id.0, x.title.as_str(), x.year))
                 .collect::<Vec<_>>(),
             [
                 (42, 329865, "Arrival", 2016),

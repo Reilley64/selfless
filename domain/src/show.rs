@@ -3,7 +3,9 @@ use crate::Artwork;
 use crate::Episode;
 use crate::Season;
 use crate::ShowMetadata;
+use crate::SonarrId;
 use crate::SyncProblem;
+use crate::TvdbId;
 use jiff::Timestamp;
 use jiff::civil::Date;
 use uuid::Uuid;
@@ -14,9 +16,9 @@ pub struct Show {
     #[auto]
     pub id: Uuid,
     #[unique]
-    pub tvdb_id: i64,
+    pub tvdb_id: TvdbId,
     #[unique]
-    pub sonarr_id: i64,
+    pub sonarr_id: SonarrId,
     pub title: String,
     pub year: Option<i64>,
     pub genres: Vec<String>,

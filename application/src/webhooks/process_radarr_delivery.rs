@@ -74,6 +74,7 @@ mod tests {
     use crate::test::mock_db_context;
     use crate::test::no_subtitle_files;
     use crate::test::unreadable_movie_nfo;
+    use domain::RadarrId;
     use std::sync::Arc;
     use std::sync::atomic::AtomicUsize;
     use std::sync::atomic::Ordering;
@@ -123,7 +124,11 @@ mod tests {
     async fn a_failed_sync_returns_an_error() {
         let movie_calls = Arc::new(AtomicUsize::new(0));
         let dependencies = dependencies(
-            ReadRadarrWebhook::new(|_| Ok(MovieWebhookDelivery::Movie { radarr_id: 42 })),
+            ReadRadarrWebhook::new(|_| {
+                Ok(MovieWebhookDelivery::Movie {
+                    radarr_id: RadarrId(42),
+                })
+            }),
             movie_calls.clone(),
         )
         .await;

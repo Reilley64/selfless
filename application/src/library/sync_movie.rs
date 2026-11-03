@@ -11,10 +11,14 @@ use crate::library::sync::movies::MovieFiles;
 use crate::ports::persistence::DbScope;
 use domain::MediaFile;
 use domain::Movie;
+use domain::RadarrId;
 use domain::Source;
 use tracing::Instrument;
 
-pub async fn call(dependencies: impl Into<Dependencies>, radarr_id: i64) -> Result<Output, Error> {
+pub async fn call(
+    dependencies: impl Into<Dependencies>,
+    radarr_id: RadarrId,
+) -> Result<Output, Error> {
     let Dependencies {
         mut db_context,
         find_media_file,
@@ -105,6 +109,7 @@ mod tests {
     use domain::NfoActor;
     use domain::SyncProblem;
     use domain::SyncProblemKind;
+    use domain::TmdbId;
     use jiff::Timestamp;
     use jiff::civil::date;
     use uuid::Uuid;
@@ -231,8 +236,8 @@ mod tests {
 
         let movie = movie(&library).await;
         assert!(movie.in_library);
-        assert_eq!(movie.radarr_id, 42);
-        assert_eq!(movie.tmdb_id, 329_865);
+        assert_eq!(movie.radarr_id, RadarrId(42));
+        assert_eq!(movie.tmdb_id, TmdbId(329_865));
         assert_eq!(movie.title, "Arrival");
         assert_eq!(movie.year, 2016);
         assert_eq!(

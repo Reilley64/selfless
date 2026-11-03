@@ -7,6 +7,8 @@ use crate::ports::persistence::DbScope;
 use domain::Movie;
 use domain::Show;
 use domain::Source;
+use domain::TmdbId;
+use domain::TvdbId;
 use std::collections::HashSet;
 use uuid::Uuid;
 
@@ -18,20 +20,35 @@ pub(crate) fn lock_key(source: Source) -> String {
     AcquireLock::key("library", "reconcile", 1, [source.name().to_owned()])
 }
 
-pub(crate) async fn remove(
-    db_context: &mut DbContext,
-    source: Source,
-    ids: Vec<Uuid>,
-    listed: &HashSet<i64>,
-) -> Result<(), Error> {
-    if ids.is_empty() {
+pub(crate) enum Removal {
+    Movies {
+        movie_ids: Vec<Uuid>,
+        listed: HashSet<TmdbId>,
+    },
+    Shows {
+        show_ids: Vec<Uuid>,
+        listed: HashSet<TvdbId>,
+    },
+}
+
+impl Removal {
+    pub(crate) fn count(&self) -> usize {
+        match self {
+            Removal::Movies { movie_ids, .. } => movie_ids.len(),
+            Removal::Shows { show_ids, .. } => show_ids.len(),
+        }
+    }
+}
+
+pub(crate) async fn remove(db_context: &mut DbContext, removal: Removal) -> Result<(), Error> {
+    if removal.count() == 0 {
         return Ok(());
     }
-    match source {
-        Source::Radarr => {
+    match removal {
+        Removal::Movies { movie_ids, listed } => {
             let movies = db_context
                 .movies()
-                .filter(Movie::fields().id().in_list(ids))
+                .filter(Movie::fields().id().in_list(movie_ids))
                 .exec(db_context.executor_mut())
                 .await
                 .map_err(Error::caused_by)?
@@ -40,10 +57,10 @@ pub(crate) async fn remove(
                 .collect();
             movies::remove(db_context, movies).await
         }
-        Source::Sonarr => {
+        Removal::Shows { show_ids, listed } => {
             let shows = db_context
                 .shows()
-                .filter(Show::fields().id().in_list(ids))
+                .filter(Show::fields().id().in_list(show_ids))
                 .exec(db_context.executor_mut())
                 .await
                 .map_err(Error::caused_by)?;

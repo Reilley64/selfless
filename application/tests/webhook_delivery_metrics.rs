@@ -29,6 +29,8 @@ use application::webhooks::process_radarr_delivery;
 use application::webhooks::process_sonarr_delivery;
 use application::webhooks::store_webhook_delivery;
 use bytes::Bytes;
+use domain::RadarrId;
+use domain::SonarrId;
 use domain::Source;
 use opentelemetry::global;
 use opentelemetry_sdk::metrics::InMemoryMetricExporter;
@@ -86,7 +88,7 @@ async fn process_radarr(
             get_radarr_movie: GetRadarrMovie::new(|radarr_id| {
                 Box::pin(async move {
                     match radarr_id {
-                        1 => Ok(None),
+                        RadarrId(1) => Ok(None),
                         _ => Err(RadarrError::caused_by("Radarr is down")),
                     }
                 })
@@ -161,7 +163,11 @@ async fn deliveries_are_counted_as_stored_rejected_processed_ignored_skipped_and
     store(&db_context, Source::Sonarr, PASSWORD, "Test").await;
     process_radarr(
         &db_context,
-        ReadRadarrWebhook::new(|_| Ok(MovieWebhookDelivery::Movie { radarr_id: 1 })),
+        ReadRadarrWebhook::new(|_| {
+            Ok(MovieWebhookDelivery::Movie {
+                radarr_id: RadarrId(1),
+            })
+        }),
         "MovieDelete",
     )
     .await
@@ -182,14 +188,22 @@ async fn deliveries_are_counted_as_stored_rejected_processed_ignored_skipped_and
     .unwrap();
     process_radarr(
         &db_context,
-        ReadRadarrWebhook::new(|_| Ok(MovieWebhookDelivery::Movie { radarr_id: 42 })),
+        ReadRadarrWebhook::new(|_| {
+            Ok(MovieWebhookDelivery::Movie {
+                radarr_id: RadarrId(42),
+            })
+        }),
         "Download",
     )
     .await
     .unwrap_err();
     process_sonarr(
         &db_context,
-        ReadSonarrWebhook::new(|_| Ok(ShowWebhookDelivery::Show { sonarr_id: 7 })),
+        ReadSonarrWebhook::new(|_| {
+            Ok(ShowWebhookDelivery::Show {
+                sonarr_id: SonarrId(7),
+            })
+        }),
         "Download",
     )
     .await;

@@ -21,6 +21,7 @@ use domain::EpisodeNfo;
 use domain::MovieNfo;
 use domain::NfoActor;
 use domain::ShowNfo;
+use domain::SonarrId;
 use jiff::Timestamp;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
@@ -316,7 +317,8 @@ impl From<NfoEpisode> for EpisodeNfo {
                 .uniqueid
                 .into_iter()
                 .find(|x| x.kind.as_deref() == Some("sonarr"))
-                .and_then(|x| parsed(x.value)),
+                .and_then(|x| parsed(x.value))
+                .map(SonarrId),
             title: text(episode.title),
             season_number: parsed(episode.season),
             episode_number: parsed(episode.episode),
@@ -366,6 +368,7 @@ mod tests {
     use application::ports::ReadNfoError;
     use domain::EpisodeNfo;
     use domain::NfoActor;
+    use domain::SonarrId;
     use jiff::Timestamp;
     use jiff::civil::date;
     use std::time::SystemTime;
@@ -391,7 +394,7 @@ mod tests {
             .iter()
             .map(|x| {
                 (
-                    x.sonarr_id,
+                    x.sonarr_id.map(|x| x.0),
                     x.title.as_deref(),
                     x.season_number,
                     x.episode_number,
@@ -552,7 +555,7 @@ mod tests {
         let [nfo] = nfos.as_slice() else {
             panic!("one episode, not {nfos:?}");
         };
-        assert_eq!(nfo.sonarr_id, Some(1101));
+        assert_eq!(nfo.sonarr_id, Some(SonarrId(1101)));
         assert_eq!(nfo.title.as_deref(), Some("Kassa"));
         assert_eq!(nfo.season_number, Some(1));
         assert_eq!(nfo.episode_number, Some(1));

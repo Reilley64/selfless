@@ -15,6 +15,8 @@ use application::ports::UnreadableNfo;
 use application::ports::persistence;
 use application::ports::persistence::DbContext;
 use application::ports::persistence::DbLocation;
+use domain::RadarrId;
+use domain::TmdbId;
 use jiff::Timestamp;
 use opentelemetry::KeyValue;
 use opentelemetry::global;
@@ -44,8 +46,8 @@ fn at(timestamp: &str) -> Timestamp {
 
 fn arrival() -> SourceMovie {
     SourceMovie {
-        radarr_id: 42,
-        tmdb_id: 329_865,
+        radarr_id: RadarrId(42),
+        tmdb_id: TmdbId(329_865),
         title: "Arrival".to_owned(),
         year: 2016,
         overview: None,
@@ -104,7 +106,7 @@ async fn movie_syncs_count_movies_added_changed_and_removed_by_source() {
                 }),
                 source_health: SourceHealth::default(),
             },
-            42,
+            RadarrId(42),
         )
         .await
         .unwrap();

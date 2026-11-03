@@ -11,5 +11,6 @@ pub struct HeldRemovalItem {
     pub source: Source,
     #[belongs_to(key = source, references = source)]
     pub held_removal: toasty::Deferred<HeldRemoval>,
-    pub item_id: Uuid,
+    pub movie_id: Option<Uuid>,
+    pub show_id: Option<Uuid>,
 }

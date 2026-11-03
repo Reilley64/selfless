@@ -3,7 +3,11 @@ use domain::EmailAddress;
 use domain::EpisodeNfo;
 use domain::HdrType;
 use domain::MovieNfo;
+use domain::RadarrId;
 use domain::ShowNfo;
+use domain::SonarrId;
+use domain::TmdbId;
+use domain::TvdbId;
 use jiff::Timestamp;
 use jiff::civil::Date;
 use std::error::Error;
@@ -208,8 +212,8 @@ impl FindMediaFile {
 
 #[derive(Clone, Debug)]
 pub struct SourceMovie {
-    pub radarr_id: i64,
-    pub tmdb_id: i64,
+    pub radarr_id: RadarrId,
+    pub tmdb_id: TmdbId,
     pub title: String,
     pub year: i64,
     pub overview: Option<String>,
@@ -224,19 +228,25 @@ pub struct SourceMediaFile {
 }
 
 type GetRadarrMovieFn =
-    dyn Fn(i64) -> PortFuture<Result<Option<SourceMovie>, RadarrError>> + Send + Sync;
+    dyn Fn(RadarrId) -> PortFuture<Result<Option<SourceMovie>, RadarrError>> + Send + Sync;
 
 #[derive(Clone)]
 pub struct GetRadarrMovie(Arc<GetRadarrMovieFn>);
 
 impl GetRadarrMovie {
     pub fn new(
-        f: impl Fn(i64) -> PortFuture<Result<Option<SourceMovie>, RadarrError>> + Send + Sync + 'static,
+        f: impl Fn(RadarrId) -> PortFuture<Result<Option<SourceMovie>, RadarrError>>
+        + Send
+        + Sync
+        + 'static,
     ) -> Self {
         Self(Arc::new(f))
     }
 
-    pub fn call(&self, radarr_id: i64) -> PortFuture<Result<Option<SourceMovie>, RadarrError>> {
+    pub fn call(
+        &self,
+        radarr_id: RadarrId,
+    ) -> PortFuture<Result<Option<SourceMovie>, RadarrError>> {
         (self.0)(radarr_id)
     }
 }
@@ -257,27 +267,30 @@ impl RadarrError {
 }
 
 type GetSonarrEpisodesFn =
-    dyn Fn(i64) -> PortFuture<Result<Vec<SourceEpisode>, SonarrError>> + Send + Sync;
+    dyn Fn(SonarrId) -> PortFuture<Result<Vec<SourceEpisode>, SonarrError>> + Send + Sync;
 
 #[derive(Clone)]
 pub struct GetSonarrEpisodes(Arc<GetSonarrEpisodesFn>);
 
 impl GetSonarrEpisodes {
     pub fn new(
-        f: impl Fn(i64) -> PortFuture<Result<Vec<SourceEpisode>, SonarrError>> + Send + Sync + 'static,
+        f: impl Fn(SonarrId) -> PortFuture<Result<Vec<SourceEpisode>, SonarrError>>
+        + Send
+        + Sync
+        + 'static,
     ) -> Self {
         Self(Arc::new(f))
     }
 
-    pub fn call(&self, sonarr_id: i64) -> PortFuture<Result<Vec<SourceEpisode>, SonarrError>> {
+    pub fn call(&self, sonarr_id: SonarrId) -> PortFuture<Result<Vec<SourceEpisode>, SonarrError>> {
         (self.0)(sonarr_id)
     }
 }
 
 #[derive(Clone)]
 pub struct SourceShowListing {
-    pub sonarr_id: i64,
-    pub tvdb_id: i64,
+    pub sonarr_id: SonarrId,
+    pub tvdb_id: TvdbId,
     pub path: String,
     pub title: String,
     pub year: Option<i64>,
@@ -293,8 +306,8 @@ pub struct SourceShow {
 
 #[derive(Clone)]
 pub struct SourceEpisode {
-    pub sonarr_id: i64,
-    pub tvdb_id: i64,
+    pub sonarr_id: SonarrId,
+    pub tvdb_id: TvdbId,
     pub season_number: i64,
     pub episode_number: i64,
     pub title: String,
@@ -304,19 +317,22 @@ pub struct SourceEpisode {
 }
 
 type GetSonarrShowFn =
-    dyn Fn(i64) -> PortFuture<Result<Option<SourceShow>, SonarrError>> + Send + Sync;
+    dyn Fn(SonarrId) -> PortFuture<Result<Option<SourceShow>, SonarrError>> + Send + Sync;
 
 #[derive(Clone)]
 pub struct GetSonarrShow(Arc<GetSonarrShowFn>);
 
 impl GetSonarrShow {
     pub fn new(
-        f: impl Fn(i64) -> PortFuture<Result<Option<SourceShow>, SonarrError>> + Send + Sync + 'static,
+        f: impl Fn(SonarrId) -> PortFuture<Result<Option<SourceShow>, SonarrError>>
+        + Send
+        + Sync
+        + 'static,
     ) -> Self {
         Self(Arc::new(f))
     }
 
-    pub fn call(&self, sonarr_id: i64) -> PortFuture<Result<Option<SourceShow>, SonarrError>> {
+    pub fn call(&self, sonarr_id: SonarrId) -> PortFuture<Result<Option<SourceShow>, SonarrError>> {
         (self.0)(sonarr_id)
     }
 }
@@ -644,7 +660,7 @@ impl UnreadableFile {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum MovieWebhookDelivery {
-    Movie { radarr_id: i64 },
+    Movie { radarr_id: RadarrId },
     Ignored,
 }
 
@@ -734,7 +750,7 @@ impl ReadShowNfo {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ShowWebhookDelivery {
-    Show { sonarr_id: i64 },
+    Show { sonarr_id: SonarrId },
     Ignored,
 }
 

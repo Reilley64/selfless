@@ -7,6 +7,7 @@ use application::ports::persistence::DbScope;
 use domain::Episode;
 use domain::Movie;
 use domain::Show;
+use domain::SonarrId;
 use reqwest::StatusCode;
 use reqwest::header::HeaderMap;
 use selfless_test::MediaFolder;
@@ -112,7 +113,7 @@ async fn a_sonarr_download_delivery_re_syncs_its_show_while_the_server_runs() {
     .await;
     let show = db_context
         .shows()
-        .filter(Show::fields().sonarr_id().eq(7))
+        .filter(Show::fields().sonarr_id().eq(SonarrId(7)))
         .one()
         .exec(db_context.executor_mut())
         .await

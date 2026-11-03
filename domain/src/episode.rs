@@ -2,6 +2,7 @@ use crate::Artwork;
 use crate::EpisodeMetadata;
 use crate::MediaFile;
 use crate::Season;
+use crate::TvdbId;
 use jiff::Timestamp;
 use jiff::civil::Date;
 use uuid::Uuid;
@@ -16,7 +17,7 @@ pub struct Episode {
     #[belongs_to(key = season_id, references = id)]
     pub season: toasty::Deferred<Season>,
     #[unique]
-    pub tvdb_id: i64,
+    pub tvdb_id: TvdbId,
     pub number: i64,
     pub title: String,
     pub air_date: Option<Date>,

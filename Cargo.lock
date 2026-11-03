@@ -3589,6 +3589,7 @@ name = "radarr"
 version = "0.1.0"
 dependencies = [
  "application",
+ "domain",
  "jiff",
  "reqwest",
  "serde",
@@ -4467,6 +4468,7 @@ name = "sonarr"
 version = "0.1.0"
 dependencies = [
  "application",
+ "domain",
  "jiff",
  "reqwest",
  "serde",

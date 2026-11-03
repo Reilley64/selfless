@@ -1,9 +1,10 @@
+use crate::SonarrId;
 use jiff::civil::Date;
 use std::collections::HashSet;
 
 #[derive(Clone, Debug, Default)]
 pub struct EpisodeNfo {
-    pub sonarr_id: Option<i64>,
+    pub sonarr_id: Option<SonarrId>,
     pub title: Option<String>,
     pub season_number: Option<i64>,
     pub episode_number: Option<i64>,
@@ -15,10 +16,10 @@ pub struct EpisodeNfo {
 impl EpisodeNfo {
     pub fn matching<'a>(
         entries: &'a [EpisodeNfo],
-        sonarr_id: i64,
+        sonarr_id: SonarrId,
         season_number: i64,
         episode_number: i64,
-        show_sonarr_ids: &HashSet<i64>,
+        show_sonarr_ids: &HashSet<SonarrId>,
     ) -> Option<&'a EpisodeNfo> {
         entries
             .iter()
@@ -39,7 +40,7 @@ mod tests {
 
     fn entry(sonarr_id: Option<i64>, season_number: i64, episode_number: i64) -> EpisodeNfo {
         EpisodeNfo {
-            sonarr_id,
+            sonarr_id: sonarr_id.map(SonarrId),
             title: Some(format!("S{season_number:02}E{episode_number:02}")),
             season_number: Some(season_number),
             episode_number: Some(episode_number),
@@ -54,10 +55,10 @@ mod tests {
         episode_number: i64,
         show_sonarr_ids: &[i64],
     ) -> Option<String> {
-        let show_sonarr_ids = show_sonarr_ids.iter().copied().collect();
+        let show_sonarr_ids = show_sonarr_ids.iter().copied().map(SonarrId).collect();
         EpisodeNfo::matching(
             entries,
-            sonarr_id,
+            SonarrId(sonarr_id),
             season_number,
             episode_number,
             &show_sonarr_ids,

@@ -13,6 +13,7 @@ use crate::library::prober::CONCURRENT_PROBES;
 use crate::library::reconciles::Progress;
 use crate::library::source_states;
 use crate::library::sync;
+use crate::library::sync::Removal;
 use crate::library::sync::movies;
 use crate::library::sync::movies::MovieFiles;
 use crate::library::sync::shows;
@@ -42,7 +43,6 @@ use std::sync::Mutex;
 use std::time::Instant;
 use tracing::Instrument;
 use tracing::field;
-use uuid::Uuid;
 
 pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Result<Output, Error> {
     let Dependencies {
@@ -144,7 +144,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
                 source.name()
             )));
         }
-        remove_or_hold(&mut db_context, source, &listing).await
+        remove_or_hold(&mut db_context, source, listing).await
     }
     .instrument(span.clone());
     let reconciled = AssertUnwindSafe(reconciled).catch_unwind().await;
@@ -216,9 +216,8 @@ fn record_kodi_metadata(
 }
 
 struct Listing {
-    listed: HashSet<i64>,
     total: usize,
-    absent: Vec<Uuid>,
+    removal: Removal,
     failed_calls: usize,
     unreadable_items: usize,
 }
@@ -249,7 +248,7 @@ async fn sync_movies(
         .iter()
         .map(|x| (x.tmdb_id, x.nfo_modified_at))
         .collect::<HashMap<_, _>>();
-    let absent = stored_movies
+    let movie_ids = stored_movies
         .into_iter()
         .filter(|x| !listed.contains(&x.tmdb_id))
         .map(|x| x.id)
@@ -294,9 +293,8 @@ async fn sync_movies(
         imported(progress);
     }
     Ok(Listing {
-        listed,
         total,
-        absent,
+        removal: Removal::Movies { movie_ids, listed },
         failed_calls: 0,
         unreadable_items,
     })
@@ -322,7 +320,7 @@ async fn sync_shows(
         .await
         .map_err(Error::caused_by)?;
     let total = stored_shows.len();
-    let absent = stored_shows
+    let show_ids = stored_shows
         .into_iter()
         .filter(|x| !listed.contains(&x.tvdb_id))
         .map(|x| x.id)
@@ -361,9 +359,8 @@ async fn sync_shows(
         imported(progress);
     }
     Ok(Listing {
-        listed,
         total,
-        absent,
+        removal: Removal::Shows { show_ids, listed },
         failed_calls,
         unreadable_items,
     })
@@ -385,7 +382,7 @@ fn imported(progress: &Mutex<Option<Progress>>) {
 async fn remove_or_hold(
     db_context: &mut DbContext,
     source: Source,
-    listing: &Listing,
+    listing: Listing,
 ) -> Result<(), Error> {
     let mut transaction = db_context.transaction().await.map_err(Error::caused_by)?;
     transaction
@@ -395,9 +392,9 @@ async fn remove_or_hold(
         .exec(transaction.executor_mut())
         .await
         .map_err(Error::caused_by)?;
-    if !HeldRemoval::holds(listing.absent.len(), listing.total) {
+    if !HeldRemoval::holds(listing.removal.count(), listing.total) {
         transaction.commit().await.map_err(Error::caused_by)?;
-        return sync::remove(db_context, source, listing.absent.clone(), &listing.listed)
+        return sync::remove(db_context, listing.removal)
             .await
             .map_err(Error::caused_by);
     }
@@ -405,17 +402,21 @@ async fn remove_or_hold(
         selfless.library.source = source.name(),
         "held a removal of more than half of a source's items"
     );
+    let items = match listing.removal {
+        Removal::Movies { movie_ids, .. } => movie_ids
+            .into_iter()
+            .map(|x| HeldRemovalItem::create().movie_id(Some(x)))
+            .collect::<Vec<_>>(),
+        Removal::Shows { show_ids, .. } => show_ids
+            .into_iter()
+            .map(|x| HeldRemovalItem::create().show_id(Some(x)))
+            .collect(),
+    };
     transaction
         .held_removals()
         .create()
         .source(source)
-        .items(
-            listing
-                .absent
-                .iter()
-                .map(|x| HeldRemovalItem::create().item_id(*x))
-                .collect::<Vec<_>>(),
-        )
+        .items(items)
         .exec(transaction.executor_mut())
         .await
         .map_err(Error::caused_by)?;
@@ -455,68 +456,78 @@ mod tests {
     use crate::test::unreadable_movie_nfo;
     use crate::test::unreadable_show_nfo;
     use domain::Movie;
+    use domain::RadarrId;
+    use domain::SonarrId;
+    use domain::TmdbId;
+    use domain::TvdbId;
     use jiff::Timestamp;
     use std::sync::Arc;
     use test_fixtures::FakeClock;
     use tokio::sync::Notify;
 
-    const ARRIVAL: i64 = 42;
-    const DUNE: i64 = 43;
-    const SICARIO: i64 = 44;
-    const BLADE_RUNNER: i64 = 45;
-    const SEVERANCE: i64 = 7;
-    const ANDOR: i64 = 8;
+    const ARRIVAL: TmdbId = TmdbId(42);
+    const DUNE: TmdbId = TmdbId(43);
+    const SICARIO: TmdbId = TmdbId(44);
+    const BLADE_RUNNER: TmdbId = TmdbId(45);
+    const SEVERANCE: SonarrId = SonarrId(7);
+    const ANDOR: SonarrId = SonarrId(8);
 
-    fn title(id: i64) -> &'static str {
-        match id {
+    fn movie_title(tmdb_id: TmdbId) -> &'static str {
+        match tmdb_id {
             ARRIVAL => "Arrival",
             DUNE => "Dune",
             SICARIO => "Sicario",
             BLADE_RUNNER => "Blade Runner 2049",
+            _ => unreachable!(),
+        }
+    }
+
+    fn show_title(sonarr_id: SonarrId) -> &'static str {
+        match sonarr_id {
             SEVERANCE => "Severance",
             ANDOR => "Andor",
             _ => unreachable!(),
         }
     }
 
-    fn source_movie(tmdb_id: i64) -> SourceMovie {
+    fn source_movie(tmdb_id: TmdbId) -> SourceMovie {
         SourceMovie {
-            radarr_id: tmdb_id,
+            radarr_id: RadarrId(tmdb_id.0 + 1_000),
             tmdb_id,
-            title: title(tmdb_id).to_owned(),
+            title: movie_title(tmdb_id).to_owned(),
             year: 2016,
             overview: None,
             genres: Vec::new(),
             media_file: Some(SourceMediaFile {
-                path: format!("/movies/{}.mkv", title(tmdb_id)),
+                path: format!("/movies/{}.mkv", movie_title(tmdb_id)),
                 added_at: Timestamp::UNIX_EPOCH,
             }),
         }
     }
 
-    fn source_show_listing(sonarr_id: i64) -> SourceShowListing {
+    fn source_show_listing(sonarr_id: SonarrId) -> SourceShowListing {
         SourceShowListing {
             sonarr_id,
-            tvdb_id: sonarr_id,
-            path: format!("/tv/{}", title(sonarr_id)),
-            title: title(sonarr_id).to_owned(),
+            tvdb_id: TvdbId(sonarr_id.0 + 1_000),
+            path: format!("/tv/{}", show_title(sonarr_id)),
+            title: show_title(sonarr_id).to_owned(),
             year: None,
             genres: Vec::new(),
             overview: None,
         }
     }
 
-    fn source_episodes(sonarr_id: i64) -> Vec<SourceEpisode> {
+    fn source_episodes(sonarr_id: SonarrId) -> Vec<SourceEpisode> {
         vec![SourceEpisode {
-            sonarr_id,
-            tvdb_id: sonarr_id,
+            sonarr_id: SonarrId(sonarr_id.0 + 100),
+            tvdb_id: TvdbId(sonarr_id.0 + 2_000),
             season_number: 1,
             episode_number: 1,
             title: "Pilot".to_owned(),
             air_date: None,
             overview: None,
             media_file: Some(SourceMediaFile {
-                path: format!("/tv/{}/S01E01.mkv", title(sonarr_id)),
+                path: format!("/tv/{}/S01E01.mkv", show_title(sonarr_id)),
                 added_at: Timestamp::UNIX_EPOCH,
             }),
         }]
@@ -529,8 +540,8 @@ mod tests {
         reconciles: Reconciles,
         source_health: SourceHealth,
         radarr: Arc<Mutex<Result<Vec<SourceMovie>, &'static str>>>,
-        sonarr: Arc<Mutex<Result<Vec<i64>, &'static str>>>,
-        failing_episodes: Arc<Mutex<HashSet<i64>>>,
+        sonarr: Arc<Mutex<Result<Vec<SonarrId>, &'static str>>>,
+        failing_episodes: Arc<Mutex<HashSet<SonarrId>>>,
         unreadable_files: Arc<Mutex<HashSet<String>>>,
         held_episodes: Arc<Mutex<Option<HeldEpisodes>>>,
         radarr_kodi: Arc<Mutex<Result<bool, &'static str>>>,
@@ -539,7 +550,7 @@ mod tests {
 
     #[derive(Clone)]
     struct HeldEpisodes {
-        sonarr_id: i64,
+        sonarr_id: SonarrId,
         reached: Arc<Notify>,
         released: Arc<Notify>,
     }
@@ -561,7 +572,7 @@ mod tests {
             }
         }
 
-        fn radarr_lists(&self, ids: &[i64]) {
+        fn radarr_lists(&self, ids: &[TmdbId]) {
             self.radarr_lists_movies(ids.iter().copied().map(source_movie).collect());
         }
 
@@ -569,7 +580,7 @@ mod tests {
             *self.radarr.lock().unwrap() = Ok(movies);
         }
 
-        fn sonarr_lists(&self, ids: &[i64]) {
+        fn sonarr_lists(&self, ids: &[SonarrId]) {
             *self.sonarr.lock().unwrap() = Ok(ids.to_vec());
         }
 
@@ -686,7 +697,7 @@ mod tests {
                 .items
                 .get()
                 .iter()
-                .map(|x| x.item_id)
+                .filter_map(|x| x.movie_id)
                 .collect::<Vec<_>>();
             let mut titles = db_context
                 .movies()

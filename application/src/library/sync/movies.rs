@@ -20,6 +20,7 @@ use domain::MovieMetadata;
 use domain::MovieNfo;
 use domain::Nfo;
 use domain::Owner;
+use domain::RadarrId;
 use domain::Source;
 use jiff::Timestamp;
 use std::collections::HashSet;
@@ -101,7 +102,7 @@ pub(crate) async fn inspect(
 }
 
 struct SyncedMovie {
-    radarr_id: i64,
+    radarr_id: RadarrId,
     metadata: MovieMetadata,
     nfo_modified_at: Option<Timestamp>,
     added_at: Option<Timestamp>,

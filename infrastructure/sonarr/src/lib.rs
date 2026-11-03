@@ -11,6 +11,8 @@ use application::ports::SourceEpisode;
 use application::ports::SourceMediaFile;
 use application::ports::SourceShow;
 use application::ports::SourceShowListing;
+use domain::SonarrId;
+use domain::TvdbId;
 use jiff::Timestamp;
 use jiff::civil::Date;
 use reqwest::StatusCode;
@@ -116,11 +118,11 @@ struct EpisodeFile {
     date_added: Timestamp,
 }
 
-async fn show(api: &Api, sonarr_id: i64) -> Result<Option<SourceShow>, reqwest::Error> {
+async fn show(api: &Api, sonarr_id: SonarrId) -> Result<Option<SourceShow>, reqwest::Error> {
     let series = match api
         .get::<Series>(
             "/api/v3/series/{id}",
-            &["series", &sonarr_id.to_string()],
+            &["series", &sonarr_id.0.to_string()],
             None,
         )
         .await
@@ -134,8 +136,8 @@ async fn show(api: &Api, sonarr_id: i64) -> Result<Option<SourceShow>, reqwest::
     }))
 }
 
-async fn episodes(api: &Api, sonarr_id: i64) -> Result<Vec<SourceEpisode>, reqwest::Error> {
-    let id = sonarr_id.to_string();
+async fn episodes(api: &Api, sonarr_id: SonarrId) -> Result<Vec<SourceEpisode>, reqwest::Error> {
+    let id = sonarr_id.0.to_string();
     let query = Some(("seriesId", id.as_str()));
     let episodes = api
         .get::<Vec<Episode>>("/api/v3/episode", &["episode"], query)
@@ -149,8 +151,8 @@ async fn episodes(api: &Api, sonarr_id: i64) -> Result<Vec<SourceEpisode>, reqwe
     Ok(episodes
         .into_iter()
         .map(|x| SourceEpisode {
-            sonarr_id: x.id,
-            tvdb_id: x.tvdb_id,
+            sonarr_id: SonarrId(x.id),
+            tvdb_id: TvdbId(x.tvdb_id),
             season_number: x.season_number,
             episode_number: x.episode_number,
             title: x.title,
@@ -167,8 +169,8 @@ async fn episodes(api: &Api, sonarr_id: i64) -> Result<Vec<SourceEpisode>, reqwe
 impl From<Series> for SourceShowListing {
     fn from(series: Series) -> Self {
         SourceShowListing {
-            sonarr_id: series.id,
-            tvdb_id: series.tvdb_id,
+            sonarr_id: SonarrId(series.id),
+            tvdb_id: TvdbId(series.tvdb_id),
             path: series.path,
             title: series.title,
             year: (series.year != 0).then_some(series.year),
@@ -184,6 +186,8 @@ mod tests {
     use super::get_episodes;
     use super::get_show;
     use super::list_shows;
+    use domain::SonarrId;
+    use domain::TvdbId;
     use jiff::Timestamp;
     use jiff::civil::date;
     use servarr::Api;
@@ -242,10 +246,14 @@ mod tests {
         let sonarr = Sonarr::start().await;
         sonarr.serve_show(SERIES).await;
 
-        let show = get_show(sonarr.api()).call(7).await.unwrap().unwrap();
+        let show = get_show(sonarr.api())
+            .call(SonarrId(7))
+            .await
+            .unwrap()
+            .unwrap();
 
-        assert_eq!(show.listing.sonarr_id, 7);
-        assert_eq!(show.listing.tvdb_id, 371980);
+        assert_eq!(show.listing.sonarr_id, SonarrId(7));
+        assert_eq!(show.listing.tvdb_id, TvdbId(371980));
         assert_eq!(show.listing.path, "/mnt/media/TV/Severance");
         assert_eq!(show.listing.title, "Severance");
         assert_eq!(show.listing.year, Some(2022));
@@ -265,7 +273,7 @@ mod tests {
             show.episodes
                 .iter()
                 .map(|x| (
-                    x.sonarr_id,
+                    x.sonarr_id.0,
                     x.season_number,
                     x.episode_number,
                     x.title.as_str(),
@@ -307,7 +315,7 @@ mod tests {
             ]
         );
         let first = &show.episodes[1];
-        assert_eq!(first.tvdb_id, 8486245);
+        assert_eq!(first.tvdb_id, TvdbId(8486245));
         assert_eq!(first.air_date, Some(date(2022, 2, 18)));
         assert_eq!(
             first.overview.as_deref(),
@@ -337,7 +345,7 @@ mod tests {
             )
             .await;
 
-        let show = get_show(sonarr.api()).call(7).await.unwrap();
+        let show = get_show(sonarr.api()).call(SonarrId(7)).await.unwrap();
 
         assert!(show.is_none());
     }
@@ -349,7 +357,11 @@ mod tests {
             .serve_show(&SERIES.replace(r#""year": 2022"#, r#""year": 0"#))
             .await;
 
-        let show = get_show(sonarr.api()).call(7).await.unwrap().unwrap();
+        let show = get_show(sonarr.api())
+            .call(SonarrId(7))
+            .await
+            .unwrap()
+            .unwrap();
 
         assert_eq!(show.listing.year, None);
     }
@@ -372,8 +384,8 @@ mod tests {
             shows
                 .iter()
                 .map(|x| (
-                    x.sonarr_id,
-                    x.tvdb_id,
+                    x.sonarr_id.0,
+                    x.tvdb_id.0,
                     x.title.as_str(),
                     x.path.as_str(),
                     x.year
@@ -412,13 +424,13 @@ mod tests {
             )
             .await;
 
-        let episodes = get_episodes(sonarr.api()).call(8).await.unwrap();
+        let episodes = get_episodes(sonarr.api()).call(SonarrId(8)).await.unwrap();
 
         assert_eq!(
             episodes
                 .iter()
                 .map(|x| (
-                    x.sonarr_id,
+                    x.sonarr_id.0,
                     x.title.as_str(),
                     x.media_file.as_ref().map(|x| x.path.as_str()),
                 ))

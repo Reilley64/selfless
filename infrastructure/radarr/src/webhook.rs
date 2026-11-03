@@ -1,6 +1,7 @@
 use application::ports::MovieWebhookDelivery;
 use application::ports::ReadRadarrWebhook;
 use application::ports::UnreadableWebhook;
+use domain::RadarrId;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -45,7 +46,7 @@ pub fn read_webhook() -> ReadRadarrWebhook {
                 | RadarrEvent::MovieAdded { movie }
                 | RadarrEvent::MovieDelete { movie }
                 | RadarrEvent::MovieFileDelete { movie } => MovieWebhookDelivery::Movie {
-                    radarr_id: movie.id,
+                    radarr_id: RadarrId(movie.id),
                 },
                 RadarrEvent::Test
                 | RadarrEvent::Grab
@@ -84,7 +85,9 @@ mod tests {
         ] {
             assert_eq!(
                 read(name).unwrap(),
-                MovieWebhookDelivery::Movie { radarr_id: 42 },
+                MovieWebhookDelivery::Movie {
+                    radarr_id: RadarrId(42)
+                },
                 "{name}"
             );
         }
