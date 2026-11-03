@@ -58,6 +58,7 @@ use domain::EpisodeNfo;
 use domain::Movie;
 use domain::MovieNfo;
 use domain::PlayMethod;
+use domain::PlayReasonKind;
 use domain::Playback;
 use domain::RadarrId;
 use domain::Show;
@@ -314,9 +315,37 @@ pub(crate) fn playback(
         .media_file_id(Uuid::new_v4())
         .method(PlayMethod::DirectPlay)
         .position(0.0)
+        .duration(6981.0)
         .paused(false)
         .started_at(last_reported_at)
         .last_reported_at(last_reported_at)
+}
+
+pub(crate) async fn add_playback_reason(db_context: &mut DbContext, playback_id: Uuid) {
+    db_context
+        .playback_reasons()
+        .create()
+        .playback_id(playback_id)
+        .index(0)
+        .kind(PlayReasonKind::Container)
+        .value(Some("mkv".to_owned()))
+        .exec(db_context.executor_mut())
+        .await
+        .unwrap();
+}
+
+pub(crate) async fn playback_reason_owners(db_context: &mut DbContext) -> Vec<Uuid> {
+    let mut owners = db_context
+        .playback_reasons()
+        .all()
+        .exec(db_context.executor_mut())
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|x| x.playback_id)
+        .collect::<Vec<_>>();
+    owners.sort();
+    owners
 }
 
 pub(crate) async fn add_media_file(db_context: &DbContext, duration_ms: Option<i64>) -> Uuid {

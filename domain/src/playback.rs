@@ -15,6 +15,7 @@ pub struct Playback {
     pub media_file_id: Uuid,
     pub method: PlayMethod,
     pub position: f64,
+    pub duration: f64,
     pub paused: bool,
     pub audio_track_id: Option<Uuid>,
     pub subtitle_track_id: Option<Uuid>,

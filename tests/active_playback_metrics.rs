@@ -34,6 +34,7 @@ async fn the_server_records_the_active_playbacks_once_it_starts() {
         .media_file_id(Uuid::new_v4())
         .method(PlayMethod::DirectPlay)
         .position(0.0)
+        .duration(6981.0)
         .paused(false)
         .started_at(Timestamp::UNIX_EPOCH)
         .last_reported_at(Timestamp::UNIX_EPOCH)

@@ -55,6 +55,7 @@ mod tests {
             .media_file_id(Uuid::new_v4())
             .method(PlayMethod::DirectPlay)
             .position(0.0)
+            .duration(6981.0)
             .paused(false)
             .started_at(app.clock.now())
             .last_reported_at(app.clock.now())

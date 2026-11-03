@@ -1,4 +1,5 @@
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, toasty::Embed)]
+#[column(type = text)]
 pub enum PlayReasonKind {
     Container,
     VideoCodec,

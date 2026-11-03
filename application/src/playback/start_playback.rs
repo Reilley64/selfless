@@ -269,6 +269,7 @@ pub async fn call(
         .media_file_id(media_file_id)
         .method(decision.method)
         .position(start_position)
+        .duration(duration.as_secs_f64())
         .paused(false)
         .audio_track_id(default_audio_track_id)
         .subtitle_track_id(default_subtitle_track_id)
@@ -277,6 +278,18 @@ pub async fn call(
         .exec(transaction.executor_mut())
         .await
         .map_err(Error::caused_by)?;
+    for (index, reason) in (0..).zip(&decision.reasons) {
+        transaction
+            .playback_reasons()
+            .create()
+            .playback_id(playback.id)
+            .index(index)
+            .kind(reason.kind())
+            .value(reason.value())
+            .exec(transaction.executor_mut())
+            .await
+            .map_err(Error::caused_by)?;
+    }
     transaction.commit().await.map_err(Error::caused_by)?;
     for id in ended {
         end_hls_output.call(id).await;
@@ -575,6 +588,8 @@ mod tests {
     use domain::AudioTranscode;
     use domain::AudioTranscodeCodec;
     use domain::HdrType;
+    use domain::PlayReasonKind;
+    use domain::PlaybackReason;
     use domain::VideoCodecSupport;
     use domain::VideoStream;
     use std::sync::Arc;
@@ -1145,6 +1160,43 @@ mod tests {
             (
                 PlayMethod::Remux,
                 vec![PlayReason::Subtitle("srt".to_owned())]
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn the_playback_records_its_play_method_reasons_and_duration() {
+        let fixture = Fixture::new().await;
+        let media_file = fixture.add_movie(Some(MKV)).await;
+        fixture.set_video(media_file.id, "hevc").await;
+
+        let playback = fixture.start(media_file.id).await;
+
+        let stored = fixture.stored(playback.id).await;
+        let mut db_context = fixture.db_context.clone();
+        let mut reasons = db_context
+            .playback_reasons()
+            .filter(PlaybackReason::fields().playback_id().eq(playback.id))
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap();
+        reasons.sort_by_key(|x| x.index);
+        assert_eq!(
+            (
+                stored.method,
+                reasons
+                    .into_iter()
+                    .map(|x| (x.kind, x.value))
+                    .collect::<Vec<_>>(),
+                stored.duration
+            ),
+            (
+                PlayMethod::Transcode,
+                vec![
+                    (PlayReasonKind::Container, Some("mkv".to_owned())),
+                    (PlayReasonKind::VideoCodec, Some("hevc".to_owned())),
+                ],
+                6981.0
             )
         );
     }

@@ -11,6 +11,7 @@ use domain::EpisodeWatchState;
 use domain::MovieContinueWatchingRemoval;
 use domain::MovieWatchState;
 use domain::Playback;
+use domain::PlaybackReason;
 use domain::PlaybackSettings;
 use domain::Session;
 use domain::ShowContinueWatchingRemoval;
@@ -44,6 +45,22 @@ pub async fn call(dependencies: impl Into<Dependencies>, id: Uuid) -> Result<Out
     transaction
         .sessions()
         .filter(Session::fields().user_id().eq(id))
+        .delete()
+        .exec(transaction.executor_mut())
+        .await
+        .map_err(Error::caused_by)?;
+    let playbacks = transaction
+        .playbacks()
+        .filter(Playback::fields().user_id().eq(id))
+        .exec(transaction.executor_mut())
+        .await
+        .map_err(Error::caused_by)?
+        .into_iter()
+        .map(|x| x.id)
+        .collect::<Vec<_>>();
+    transaction
+        .playback_reasons()
+        .filter(PlaybackReason::fields().playback_id().in_list(playbacks))
         .delete()
         .exec(transaction.executor_mut())
         .await
@@ -102,11 +119,13 @@ mod tests {
     use super::*;
     use crate::ports::persistence::DbContext;
     use crate::test::EndedHlsOutputs;
+    use crate::test::add_playback_reason;
     use crate::test::add_season;
     use crate::test::episode;
     use crate::test::mock_db_context;
     use crate::test::movie;
     use crate::test::playback;
+    use crate::test::playback_reason_owners;
     use crate::test::show;
     use crate::users::create_user;
     use domain::ClientKind;
@@ -231,14 +250,14 @@ mod tests {
         let ravi = create_user(&db_context, "Ravi").await;
         let mut ids = Vec::new();
         for user_id in [noor, ravi] {
-            ids.push(
-                playback(&db_context, Timestamp::UNIX_EPOCH)
-                    .user_id(user_id)
-                    .exec(db_context.executor_mut())
-                    .await
-                    .unwrap()
-                    .id,
-            );
+            let id = playback(&db_context, Timestamp::UNIX_EPOCH)
+                .user_id(user_id)
+                .exec(db_context.executor_mut())
+                .await
+                .unwrap()
+                .id;
+            add_playback_reason(&mut db_context, id).await;
+            ids.push(id);
         }
         let ended = EndedHlsOutputs::default();
 
@@ -262,6 +281,7 @@ mod tests {
             .map(|x| x.user_id)
             .collect::<Vec<_>>();
         assert_eq!(playbacks, [ravi]);
+        assert_eq!(playback_reason_owners(&mut db_context).await, [ids[1]]);
         assert_eq!(ended.playback_ids(), [ids[0]]);
     }
 
