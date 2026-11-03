@@ -698,7 +698,7 @@ paths:
     post:
       operationId: startPlayback
       summary: Start a playback of a media file
-      description: The server compares the capability profile with the media file and picks the play method. It plays the file directly when the profile covers its container, its video stream and the selected audio track, which is the file's default audio track, else its first. Otherwise, when the profile covers the video stream and the server can read the file's keyframes, it copies the video into HLS and the URL is the HLS master playlist, which lists every audio track. Audio tracks the profile covers are copied. Others become E-AC-3 when the profile lists it, otherwise AAC, with the source's channels up to the profile's maximum and up to 5.1. The method is transcode when any audio track is converted, otherwise remux. A file whose video needs a transcode fails with the needs-transcode problem for now. Starting a playback ends any playback the same session has not ended. A media file is hidden when no visible movie or episode plays from it.
+      description: The server compares the capability profile with the media file and picks the play method. It plays the file directly when the profile covers its container, its video stream and the selected audio track, which is the file's default audio track, else its first. Otherwise the URL is the HLS master playlist, which lists every audio track. When only the container is wrong, or when the request forces HLS, it remuxes the file. When the profile doesn't cover the video stream, or the file has no keyframe at least every 20 seconds, it transcodes the video to H.264 at the source size up to 1080p and the source bitrate up to 10 Mbps, tone-mapping HDR to SDR and deinterlacing interlaced video. Dolby Vision plays as its HDR10 base layer where the profile lists hdr10. Audio tracks the profile covers are copied. Others become E-AC-3 when the profile lists it, otherwise AAC, with the source's channels up to the profile's maximum and up to 5.1. Any converted video or audio makes the method transcode. A file without a video stream or a known duration that the profile doesn't cover fails with the needs-transcode problem. Starting a playback ends any playback the same session has not ended. A media file is hidden when no visible movie or episode plays from it.
       tags: [playback]
       requestBody:
         description: The media file, the start position and the device's capability profile.
@@ -1174,7 +1174,7 @@ components:
                     const: 422
           example: {"type":"urn:selfless:problem:unreadable-media-file","title":"selfless can't read this media file.","status":422}
     NeedsTranscode:
-      description: The profile doesn't cover the media file's video stream, or the server can't read its keyframes, so its video needs a transcode, which the server can't do yet.
+      description: The profile doesn't cover the media file, and the file has no video stream or no known duration, so the server can't play it through HLS.
       content:
         application/problem+json:
           schema:
@@ -1185,7 +1185,7 @@ components:
                     const: urn:selfless:problem:needs-transcode
                   status:
                     const: 501
-          example: {"type":"urn:selfless:problem:needs-transcode","title":"The media file's video needs a transcode, which the server can't do yet.","status":501}
+          example: {"type":"urn:selfless:problem:needs-transcode","title":"The media file needs a transcode the server can't do yet.","status":501}
     InternalError:
       description: The server failed. The body holds no error details, and the server logs the error.
       content:

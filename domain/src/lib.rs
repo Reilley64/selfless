@@ -66,6 +66,7 @@ mod usable_keyframe_index;
 mod user;
 mod video_codec_support;
 mod video_stream;
+mod video_transcode;
 
 pub use actor::Actor;
 pub use admin::Admin;
@@ -135,3 +136,4 @@ pub use usable_keyframe_index::usable_keyframe_index;
 pub use user::User;
 pub use video_codec_support::VideoCodecSupport;
 pub use video_stream::VideoStream;
+pub use video_transcode::VideoTranscode;

@@ -107,7 +107,7 @@ pub(crate) const UNREADABLE_MEDIA_FILE: Problem = Problem {
 
 pub(crate) const NEEDS_TRANSCODE: Problem = Problem {
     problem_type: "urn:selfless:problem:needs-transcode",
-    title: "The media file's video needs a transcode, which the server can't do yet.",
+    title: "The media file needs a transcode the server can't do yet.",
     status: StatusCode::NOT_IMPLEMENTED,
 };
 

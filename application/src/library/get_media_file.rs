@@ -134,6 +134,7 @@ mod tests {
                 .width(3840)
                 .height(1600)
                 .hdr_type(HdrType::Hdr10)
+                .interlaced(false)
                 .exec(db_context.executor_mut())
                 .await
                 .unwrap();

@@ -14,10 +14,14 @@ pub enum PlayReason {
 }
 
 impl PlayReason {
-    pub fn copies_video(&self) -> bool {
+    pub fn transcodes_video(&self) -> bool {
         matches!(
             self,
-            Self::Container(_) | Self::AudioCodec(_) | Self::AudioChannels(_) | Self::ForcedHls
+            Self::VideoCodec(_)
+                | Self::VideoProfile(_)
+                | Self::VideoSize { .. }
+                | Self::VideoRange(_)
+                | Self::NoKeyframeIndex
         )
     }
 }
@@ -27,17 +31,27 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_wrong_container_audio_or_forced_hls_leaves_the_video_to_copy() {
-        let video_copied = [
+    fn only_a_video_stream_the_profile_does_not_cover_or_a_missing_keyframe_index_transcodes_the_video()
+     {
+        let transcodes = [
             PlayReason::Container("mkv".to_owned()),
             PlayReason::VideoCodec("hevc".to_owned()),
+            PlayReason::VideoProfile("main10".to_owned()),
+            PlayReason::VideoSize {
+                width: 3840,
+                height: 2160,
+            },
+            PlayReason::VideoRange(HdrType::Hdr10),
             PlayReason::AudioCodec("dts".to_owned()),
             PlayReason::AudioChannels(6),
             PlayReason::NoKeyframeIndex,
             PlayReason::ForcedHls,
         ]
-        .map(|x| x.copies_video());
+        .map(|x| x.transcodes_video());
 
-        assert_eq!(video_copied, [true, false, true, true, false, true]);
+        assert_eq!(
+            transcodes,
+            [false, true, true, true, true, false, false, true, false]
+        );
     }
 }

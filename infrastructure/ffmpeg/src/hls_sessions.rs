@@ -20,6 +20,7 @@ use application::ports::StartHlsSession;
 use application::ports::SubtitleStream;
 use application::ports::VideoStream;
 use application::spans::SELFLESS_FFMPEG;
+use domain::VideoTranscode;
 use std::collections::HashMap;
 use std::io;
 use std::io::ErrorKind;
@@ -50,6 +51,7 @@ struct Session {
     folder: PathBuf,
     input: PathBuf,
     video: VideoStream,
+    video_transcode: Option<VideoTranscode>,
     audio: Vec<HlsAudioTrack>,
     subtitle_streams: Vec<SubtitleStream>,
     subtitle_files: Vec<SubtitleFile>,
@@ -182,9 +184,23 @@ impl HlsSessions {
     async fn start(&self, session: HlsSession) -> io::Result<()> {
         let folder = self.segments_dir.join(session.playback_id.to_string());
         fs::create_dir_all(&folder).await?;
-        let segments = Segments::new(&session.keyframes, session.duration);
-        let size = fs::metadata(&session.path).await?.len();
-        let bandwidth = (size as f64 * 8.0 / session.duration.as_secs_f64().max(1.0)).ceil();
+        let (segments, bandwidth, width, height) = match &session.video_transcode {
+            Some(transcode) => (
+                Segments::fixed(session.video.frame_rate, session.duration),
+                transcode.bit_rate as f64,
+                transcode.width,
+                transcode.height,
+            ),
+            None => {
+                let size = fs::metadata(&session.path).await?.len();
+                (
+                    Segments::new(&session.keyframes, session.duration),
+                    (size as f64 * 8.0 / session.duration.as_secs_f64().max(1.0)).ceil(),
+                    session.video.width,
+                    session.video.height,
+                )
+            }
+        };
         let renditions = session
             .subtitle_streams
             .iter()
@@ -239,11 +255,9 @@ impl HlsSessions {
                  #EXT-X-INDEPENDENT-SEGMENTS\n\
                  {audio_tags}\
                  {}\
-                 #EXT-X-STREAM-INF:BANDWIDTH={bandwidth},RESOLUTION={}x{}{groups}\n\
+                 #EXT-X-STREAM-INF:BANDWIDTH={bandwidth},RESOLUTION={width}x{height}{groups}\n\
                  {VIDEO}\n",
                 subtitles::media_tags(renditions),
-                session.video.width,
-                session.video.height
             ),
         )
         .await?;
@@ -282,6 +296,7 @@ impl HlsSessions {
             folder,
             input: PathBuf::from(session.path),
             video: session.video,
+            video_transcode: session.video_transcode,
             audio: session.audio,
             subtitle_streams: session.subtitle_streams,
             subtitle_files: session
@@ -411,14 +426,16 @@ impl HlsSessions {
 impl Session {
     fn restart(&mut self, start: usize) {
         self.run = None;
-        let purpose = if self.audio.iter().any(|x| x.transcode.is_some()) {
-            selfless_ffmpeg_purpose::TRANSCODE
-        } else {
-            selfless_ffmpeg_purpose::REMUX
-        };
+        let purpose =
+            if self.video_transcode.is_some() || self.audio.iter().any(|x| x.transcode.is_some()) {
+                selfless_ffmpeg_purpose::TRANSCODE
+            } else {
+                selfless_ffmpeg_purpose::REMUX
+            };
         let (sender, written) = watch::channel(start);
         let input = self.input.clone();
         let video = self.video.clone();
+        let video_transcode = self.video_transcode.clone();
         let audio = self.audio.clone();
         let subtitle_streams = self.subtitle_streams.clone();
         let segments = self.segments.clone();
@@ -428,6 +445,7 @@ impl Session {
                 if let Err(error) = write_segments(
                     &input,
                     &video,
+                    video_transcode.as_ref(),
                     &audio,
                     &subtitle_streams,
                     &segments,
@@ -494,6 +512,7 @@ mod tests {
         HlsSession {
             playback_id: PLAYBACK_ID,
             keyframes: read_keyframes(&path).await.unwrap(),
+            video_transcode: None,
             path: path.to_string_lossy().into_owned(),
             duration: Duration::from_secs(40),
             video: VideoStream {
@@ -504,6 +523,8 @@ mod tests {
                 height: 90,
                 frame_rate: Some(25.0),
                 hdr_type: HdrType::Sdr,
+                interlaced: false,
+                bit_rate: None,
             },
             audio: vec![audio_track(None, None, None, true)],
             subtitle_streams: Vec::new(),
@@ -692,6 +713,39 @@ mod tests {
                 .map(|x| x.matches("#EXTINF:").count())
                 .collect::<Vec<_>>(),
             [6; 4]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_transcode_writes_playlists_of_6_second_gops_at_the_transcoded_size() {
+        let dir = TempDir::new().unwrap();
+        let sessions = HlsSessions::new(dir.path().join("segments")).await.unwrap();
+        let mut transcode = session(Duration::ZERO).await;
+        transcode.keyframes = Vec::new();
+        transcode.video.frame_rate = Some(24000.0 / 1001.0);
+        transcode.video_transcode = Some(VideoTranscode {
+            width: 1920,
+            height: 800,
+            bit_rate: 10_000_000,
+            tone_map: true,
+            deinterlace: false,
+        });
+
+        sessions.start_hls_session().call(transcode).await.unwrap();
+        let main = std::fs::read_to_string(get(&sessions, "main.m3u8").await.unwrap()).unwrap();
+        let video = std::fs::read_to_string(get(&sessions, "video.m3u8").await.unwrap()).unwrap();
+        sessions.end_hls_session().call(PLAYBACK_ID).await;
+
+        assert!(
+            main.ends_with(
+                "#EXT-X-STREAM-INF:BANDWIDTH=10000000,RESOLUTION=1920x800,AUDIO=\"audio\"\nvideo.m3u8\n"
+            ),
+            "{main}"
+        );
+        assert_eq!(video.matches("#EXTINF:6.006000,").count(), 6, "{video}");
+        assert!(
+            video.contains("#EXTINF:3.964000,\n6.m4s\n#EXT-X-ENDLIST"),
+            "{video}"
         );
     }
 

@@ -9,6 +9,7 @@ use domain::ShowNfo;
 use domain::SonarrId;
 use domain::TmdbId;
 use domain::TvdbId;
+use domain::VideoTranscode;
 use jiff::Timestamp;
 use jiff::civil::Date;
 use std::error::Error;
@@ -173,6 +174,7 @@ pub struct HlsSession {
     pub path: String,
     pub duration: Duration,
     pub keyframes: Vec<Duration>,
+    pub video_transcode: Option<VideoTranscode>,
     pub video: VideoStream,
     pub audio: Vec<HlsAudioTrack>,
     pub subtitle_streams: Vec<SubtitleStream>,
@@ -586,6 +588,8 @@ pub struct VideoStream {
     pub height: i64,
     pub frame_rate: Option<f64>,
     pub hdr_type: HdrType,
+    pub interlaced: bool,
+    pub bit_rate: Option<i64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
