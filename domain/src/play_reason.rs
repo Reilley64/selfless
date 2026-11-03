@@ -9,6 +9,7 @@ pub enum PlayReason {
     VideoRange(HdrType),
     AudioCodec(String),
     AudioChannels(i64),
+    Subtitle(String),
     NoKeyframeIndex,
     ForcedHls,
 }
@@ -44,6 +45,7 @@ mod tests {
             PlayReason::VideoRange(HdrType::Hdr10),
             PlayReason::AudioCodec("dts".to_owned()),
             PlayReason::AudioChannels(6),
+            PlayReason::Subtitle("srt".to_owned()),
             PlayReason::NoKeyframeIndex,
             PlayReason::ForcedHls,
         ]
@@ -51,7 +53,9 @@ mod tests {
 
         assert_eq!(
             transcodes,
-            [false, true, true, true, true, false, false, true, false]
+            [
+                false, true, true, true, true, false, false, false, true, false
+            ]
         );
     }
 }

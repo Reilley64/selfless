@@ -129,3 +129,8 @@ snapshot_name = "20261103_135025_snapshot.toml"
 id = 5211618882861472334
 name = "20261103_143310_video_stream_interlaced_and_bit_rate.sql"
 snapshot_name = "20261103_143310_snapshot.toml"
+
+[[migrations]]
+id = 7771172548250943811
+name = "20261103_150728_playback_tracks.sql"
+snapshot_name = "20261103_150728_snapshot.toml"

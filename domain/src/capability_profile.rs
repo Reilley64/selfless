@@ -3,6 +3,7 @@ use crate::AudioStream;
 use crate::AudioTranscode;
 use crate::AudioTranscodeCodec;
 use crate::PlayReason;
+use crate::SubtitleTrack;
 use crate::VideoCodecSupport;
 use crate::VideoStream;
 
@@ -22,6 +23,7 @@ impl CapabilityProfile {
         container: &str,
         video: Option<&VideoStream>,
         audio: Option<&AudioStream>,
+        subtitle: Option<SubtitleTrack>,
     ) -> Vec<PlayReason> {
         let mut reasons = Vec::new();
         if !self.containers.iter().any(|x| x == container) {
@@ -34,7 +36,16 @@ impl CapabilityProfile {
             }
         }
         reasons.extend(audio.and_then(|x| self.audio_reason(x)));
+        match subtitle {
+            Some(SubtitleTrack::Stream(x)) if self.subtitle_codecs.contains(&x.codec) => {}
+            Some(x) => reasons.push(PlayReason::Subtitle(x.codec())),
+            None => {}
+        }
         reasons
+    }
+
+    pub fn shows_subtitle(&self, subtitle: SubtitleTrack) -> bool {
+        subtitle.text() || self.subtitle_codecs.contains(&subtitle.codec())
     }
 
     pub fn audio_reason(&self, audio: &AudioStream) -> Option<PlayReason> {
@@ -70,6 +81,8 @@ impl CapabilityProfile {
 mod tests {
     use super::*;
     use crate::HdrType;
+    use crate::SubtitleFile;
+    use crate::SubtitleStream;
     use toasty::Deferred;
     use uuid::Uuid;
 
@@ -134,6 +147,7 @@ mod tests {
             "mp4",
             Some(&video("h264", "High", 1920, 800, HdrType::Sdr)),
             Some(&audio("aac", 2)),
+            None,
         );
 
         assert_eq!(reasons, []);
@@ -145,6 +159,7 @@ mod tests {
             "mkv",
             Some(&video("h264", "High 10", 3840, 1600, HdrType::Hdr10)),
             Some(&audio("aac", 6)),
+            None,
         );
 
         assert_eq!(
@@ -168,6 +183,7 @@ mod tests {
             "mp4",
             Some(&video("hevc", "Main", 1920, 1080, HdrType::Sdr)),
             Some(&audio("eac3", 6)),
+            None,
         );
 
         assert_eq!(
@@ -180,6 +196,50 @@ mod tests {
     }
 
     #[test]
+    fn a_direct_play_needs_the_selected_subtitle_embedded_in_a_codec_the_profile_lists() {
+        let mut profile = browser();
+        profile.subtitle_codecs = vec!["hdmv_pgs_subtitle".to_owned()];
+        let streams = ["hdmv_pgs_subtitle", "subrip"].map(|codec| SubtitleStream {
+            id: Uuid::nil(),
+            media_file_id: Uuid::nil(),
+            media_file: Deferred::default(),
+            index: 2,
+            codec: codec.to_owned(),
+            language: None,
+            title: None,
+            is_default: false,
+            forced: false,
+            hearing_impaired: false,
+            text: codec == "subrip",
+        });
+        let file = SubtitleFile {
+            id: Uuid::nil(),
+            media_file_id: Uuid::nil(),
+            media_file: Deferred::default(),
+            path: "/movies/Arrival.en.srt".to_owned(),
+            language: None,
+            hearing_impaired: false,
+            forced: false,
+        };
+
+        let reasons = [
+            SubtitleTrack::Stream(&streams[0]),
+            SubtitleTrack::Stream(&streams[1]),
+            SubtitleTrack::File(&file),
+        ]
+        .map(|x| profile.direct_play_reasons("mp4", None, None, Some(x)));
+
+        assert_eq!(
+            reasons,
+            [
+                vec![],
+                vec![PlayReason::Subtitle("subrip".to_owned())],
+                vec![PlayReason::Subtitle("srt".to_owned())],
+            ]
+        );
+    }
+
+    #[test]
     fn dolby_vision_plays_as_its_hdr10_base_layer_where_hdr10_plays() {
         let mut profile = browser();
         profile.video_codecs[0].hdr_types = vec![HdrType::Sdr, HdrType::Hdr10];
@@ -187,6 +247,7 @@ mod tests {
         let reasons = profile.direct_play_reasons(
             "mp4",
             Some(&video("h264", "High", 1920, 1080, HdrType::DolbyVision)),
+            None,
             None,
         );
 

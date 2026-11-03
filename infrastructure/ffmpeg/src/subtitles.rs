@@ -23,7 +23,10 @@ pub(crate) fn file(rendition: usize) -> String {
     format!("subtitles-{rendition}.vtt")
 }
 
-pub(crate) fn media_tags<'a>(renditions: impl Iterator<Item = Rendition<'a>>) -> String {
+pub(crate) fn media_tags<'a>(
+    renditions: impl Iterator<Item = Rendition<'a>>,
+    selected: Option<usize>,
+) -> String {
     let mut tags = String::new();
     for (index, rendition) in named(renditions).into_iter().enumerate() {
         tags.push_str(&format!(
@@ -33,7 +36,11 @@ pub(crate) fn media_tags<'a>(renditions: impl Iterator<Item = Rendition<'a>>) ->
         if let Some(language) = &rendition.language {
             tags.push_str(&format!(",LANGUAGE=\"{language}\""));
         }
-        tags.push_str(",DEFAULT=NO");
+        tags.push_str(if selected == Some(index) {
+            ",DEFAULT=YES"
+        } else {
+            ",DEFAULT=NO"
+        });
         if rendition.forced {
             tags.push_str(",FORCED=YES");
         }

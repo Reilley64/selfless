@@ -179,6 +179,7 @@ pub struct HlsSession {
     pub audio: Vec<HlsAudioTrack>,
     pub subtitle_streams: Vec<SubtitleStream>,
     pub subtitle_files: Vec<FoundSubtitleFile>,
+    pub selected_subtitle: Option<usize>,
     pub start_position: Duration,
 }
 

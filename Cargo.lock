@@ -1292,6 +1292,7 @@ name = "domain"
 version = "0.1.0"
 dependencies = [
  "email_address",
+ "isolang",
  "jiff",
  "ohno",
  "toasty",
@@ -1498,7 +1499,6 @@ version = "0.1.0"
 dependencies = [
  "application",
  "domain",
- "isolang",
  "mp4-atom",
  "ohno",
  "opentelemetry",

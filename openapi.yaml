@@ -698,7 +698,7 @@ paths:
     post:
       operationId: startPlayback
       summary: Start a playback of a media file
-      description: The server compares the capability profile with the media file and picks the play method. It plays the file directly when the profile covers its container, its video stream and the selected audio track, which is the file's default audio track, else its first. Otherwise the URL is the HLS master playlist, which lists every audio track. When only the container is wrong, or when the request forces HLS, it remuxes the file. When the profile doesn't cover the video stream, or the file has no keyframe at least every 20 seconds, it transcodes the video to H.264 at the source size up to 1080p and the source bitrate up to 10 Mbps, tone-mapping HDR to SDR and deinterlacing interlaced video. Dolby Vision plays as its HDR10 base layer where the profile lists hdr10. Audio tracks the profile covers are copied. Others become E-AC-3 when the profile lists it, otherwise AAC, with the source's channels up to the profile's maximum and up to 5.1. Any converted video or audio makes the method transcode. A file without a video stream or a known duration that the profile doesn't cover fails with the needs-transcode problem. Starting a playback ends any playback the same session has not ended. A media file is hidden when no visible movie or episode plays from it.
+      description: The server compares the capability profile with the media file and picks the play method. The request may name the audio and subtitle tracks. Otherwise the audio is the first track in the user's remembered audio language, else the file's default track, else its first. With a remembered subtitle language, the subtitle is a track in that language that the device can show, preferring one that is neither forced nor for the hearing impaired. Without one, a forced subtitle in the audio's language turns on. It plays the file directly when the profile covers its container, its video stream, the selected audio track and the selected subtitle embedded in a codec the profile lists. Otherwise the URL is the HLS master playlist, which lists every audio track. When only the container is wrong, or when the request forces HLS, it remuxes the file. When the profile doesn't cover the video stream, or the file has no keyframe at least every 20 seconds, it transcodes the video to H.264 at the source size up to 1080p and the source bitrate up to 10 Mbps, tone-mapping HDR to SDR and deinterlacing interlaced video. Dolby Vision plays as its HDR10 base layer where the profile lists hdr10. Audio tracks the profile covers are copied. Others become E-AC-3 when the profile lists it, otherwise AAC, with the source's channels up to the profile's maximum and up to 5.1. Any converted video or audio makes the method transcode. A file without a video stream or a known duration that the profile doesn't cover fails with the needs-transcode problem. Starting a playback ends any playback the same session has not ended. A media file is hidden when no visible movie or episode plays from it.
       tags: [playback]
       requestBody:
         description: The media file, the start position and the device's capability profile.
@@ -715,7 +715,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Playback"
-              example: {"playbackId":"0190f3c4-d3e4-7f5a-8b6c-7d8e9f0a1b2c","method":"directPlay","reasons":[],"url":"/api/playbacks/0190f3c4-d3e4-7f5a-8b6c-7d8e9f0a1b2c/media/Jm2vX8kQ0rH3c1yF5bR7tVw9nL4pA6sD0eG2iK8uO1M/v1/file","duration":6981.0,"movie":{"id":"0190f3c4-5b6a-7c8d-9e0f-1a2b3c4d5e6f","title":"Arrival"},"episodes":[],"audioTracks":[{"id":"0190f3c4-e4f5-7a6b-8c7d-8e9f0a1b2c3d","language":"eng","label":"Stereo","codec":"aac","channels":2,"default":true,"inStream":true}],"subtitleTracks":[]}
+              example: {"playbackId":"0190f3c4-d3e4-7f5a-8b6c-7d8e9f0a1b2c","method":"directPlay","reasons":[],"url":"/api/playbacks/0190f3c4-d3e4-7f5a-8b6c-7d8e9f0a1b2c/media/Jm2vX8kQ0rH3c1yF5bR7tVw9nL4pA6sD0eG2iK8uO1M/v1/file","duration":6981.0,"movie":{"id":"0190f3c4-5b6a-7c8d-9e0f-1a2b3c4d5e6f","title":"Arrival"},"episodes":[],"audioTrackId":"0190f3c4-e4f5-7a6b-8c7d-8e9f0a1b2c3d","subtitleTrackId":null,"audioTracks":[{"id":"0190f3c4-e4f5-7a6b-8c7d-8e9f0a1b2c3d","language":"eng","label":"Stereo","codec":"aac","channels":2,"default":true,"inStream":true}],"subtitleTracks":[]}
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -732,7 +732,7 @@ paths:
     put:
       operationId: reportPlaybackProgress
       summary: Report how far a playback has got
-      description: The player sends a report every 10 seconds while playing or paused, at once on pause, and on stop. The server stores the position and paused state with the time of the report. A stop report ends the playback, and so do 60 seconds with no report. An unknown playback, or one of another user, is not found. A report for an ended playback fails with the playback-ended problem, and the player then starts a new playback at its position, unless the report was a stop.
+      description: The player sends a report every 10 seconds while playing or paused, at once on pause, and on stop. The server stores the position, the paused state and the selected tracks with the time of the report. When the audio or subtitle track differs from the previous report, the user's remembered audio or subtitle language changes to the track's language, and turning subtitles off forgets the subtitle language. A stop report ends the playback, and so do 60 seconds with no report. An unknown playback, or one of another user, is not found. A report for an ended playback fails with the playback-ended problem, and the player then starts a new playback at its position, unless the report was a stop.
       tags: [playback]
       parameters:
         - $ref: "#/components/parameters/PlaybackId"
@@ -743,7 +743,7 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/ProgressReport"
-            example: {"position":1534.2,"paused":false,"stopped":false}
+            example: {"position":1534.2,"paused":false,"stopped":false,"audioTrackId":"0190f3c4-e4f5-7a6b-8c7d-8e9f0a1b2c3d","subtitleTrackId":null}
       responses:
         "204":
           description: The report is stored.
@@ -2154,6 +2154,16 @@ components:
           type: number
           minimum: 0
           examples: [1534.2]
+        audioTrackId:
+          description: The audio track to play. Without it, the server picks the default.
+          type: string
+          format: uuid
+          examples: ["0190f3c4-e4f5-7a6b-8c7d-8e9f0a1b2c3d"]
+        subtitleTrackId:
+          description: The subtitle track to show, or null for none. Without it, the server picks the default.
+          type: [string, "null"]
+          format: uuid
+          examples: ["0190f3c4-f5a6-7b7c-8d8e-9f0a1b2c3d4e"]
         profile:
           $ref: "#/components/schemas/CapabilityProfile"
         forceHls:
@@ -2237,7 +2247,7 @@ components:
     ProgressReport:
       description: Where a playback is, and whether it is paused or stopped.
       type: object
-      required: [position, paused, stopped]
+      required: [position, paused, stopped, audioTrackId, subtitleTrackId]
       properties:
         position:
           description: The position in seconds.
@@ -2251,10 +2261,20 @@ components:
           description: Whether the player stopped. A stop report ends the playback.
           type: boolean
           examples: [false]
+        audioTrackId:
+          description: The audio track playing, or null when the media file has none.
+          type: [string, "null"]
+          format: uuid
+          examples: ["0190f3c4-e4f5-7a6b-8c7d-8e9f0a1b2c3d"]
+        subtitleTrackId:
+          description: The subtitle track showing, or null when subtitles are off.
+          type: [string, "null"]
+          format: uuid
+          examples: [null]
     Playback:
       description: A playback the server started, with what the player needs to play it.
       type: object
-      required: [playbackId, method, reasons, url, duration, movie, episodes, audioTracks, subtitleTracks]
+      required: [playbackId, method, reasons, url, duration, movie, episodes, audioTrackId, subtitleTrackId, audioTracks, subtitleTracks]
       properties:
         playbackId:
           type: string
@@ -2290,6 +2310,16 @@ components:
           items:
             $ref: "#/components/schemas/PlaybackEpisode"
           examples: [[]]
+        audioTrackId:
+          description: The selected audio track, or null when the media file has none. An HLS stream lists it as its default.
+          type: [string, "null"]
+          format: uuid
+          examples: ["0190f3c4-e4f5-7a6b-8c7d-8e9f0a1b2c3d"]
+        subtitleTrackId:
+          description: The selected subtitle track, or null for none. An HLS stream lists it as its default.
+          type: [string, "null"]
+          format: uuid
+          examples: [null]
         audioTracks:
           description: Every audio track of the media file, in stream order.
           type: array
@@ -2315,10 +2345,10 @@ components:
       properties:
         kind:
           type: string
-          enum: [container, videoCodec, videoProfile, videoSize, videoRange, audioCodec, audioChannels, noKeyframeIndex, forcedHls]
+          enum: [container, videoCodec, videoProfile, videoSize, videoRange, audioCodec, audioChannels, subtitle, noKeyframeIndex, forcedHls]
           examples: [audioCodec]
         value:
-          description: The media file's value the profile doesn't cover, such as dts, 3840x2160, hdr10 or 6. It is null for noKeyframeIndex and forcedHls.
+          description: The media file's value the profile doesn't cover, such as dts, 3840x2160, hdr10 or 6, or the codec of the selected subtitle, such as srt. It is null for noKeyframeIndex and forcedHls.
           type: [string, "null"]
           examples: [dts]
       additionalProperties: false

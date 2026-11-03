@@ -1,4 +1,4 @@
-use crate::language::TrackLanguage;
+use domain::TrackLanguage;
 
 pub(crate) struct Rendition<'a> {
     pub(crate) language: Option<&'a str>,

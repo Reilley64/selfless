@@ -1,4 +1,5 @@
 use crate::MediaFile;
+use crate::TrackLanguage;
 use uuid::Uuid;
 
 #[derive(Debug, toasty::Model)]
@@ -19,8 +20,18 @@ pub struct AudioStream {
 }
 
 impl AudioStream {
-    pub fn selected_by_default(streams: &[Self]) -> Option<&Self> {
-        streams.iter().min_by_key(|x| (!x.is_default, x.index))
+    pub fn selected_by_default<'a>(
+        streams: &'a [Self],
+        language: Option<&str>,
+    ) -> Option<&'a Self> {
+        language
+            .and_then(|language| {
+                streams
+                    .iter()
+                    .filter(|x| TrackLanguage::matches(x.language.as_deref(), language))
+                    .min_by_key(|x| x.index)
+            })
+            .or_else(|| streams.iter().min_by_key(|x| (!x.is_default, x.index)))
     }
 }
 
@@ -30,13 +41,17 @@ mod tests {
     use toasty::Deferred;
 
     fn stream(index: i64, is_default: bool) -> AudioStream {
+        speaking(index, None, is_default)
+    }
+
+    fn speaking(index: i64, language: Option<&str>, is_default: bool) -> AudioStream {
         AudioStream {
             id: Uuid::from_u128(index as u128),
             media_file_id: Uuid::nil(),
             media_file: Deferred::default(),
             index,
             codec: "aac".to_owned(),
-            language: None,
+            language: language.map(str::to_owned),
             channels: 2,
             title: None,
             is_default,
@@ -48,7 +63,7 @@ mod tests {
         let streams = [stream(1, false), stream(3, true), stream(2, true)];
 
         assert_eq!(
-            AudioStream::selected_by_default(&streams).map(|x| x.index),
+            AudioStream::selected_by_default(&streams, None).map(|x| x.index),
             Some(2)
         );
     }
@@ -58,9 +73,36 @@ mod tests {
         let streams = [stream(3, false), stream(1, false)];
 
         assert_eq!(
-            AudioStream::selected_by_default(&streams).map(|x| x.index),
+            AudioStream::selected_by_default(&streams, None).map(|x| x.index),
             Some(1)
         );
-        assert!(AudioStream::selected_by_default(&[]).is_none());
+        assert!(AudioStream::selected_by_default(&[], None).is_none());
+    }
+
+    #[test]
+    fn the_default_audio_is_the_first_track_in_the_remembered_language() {
+        let streams = [
+            speaking(1, Some("eng"), true),
+            speaking(4, Some("jpn"), false),
+            speaking(2, Some("ja"), false),
+        ];
+
+        assert_eq!(
+            AudioStream::selected_by_default(&streams, Some("jpn")).map(|x| x.index),
+            Some(2)
+        );
+    }
+
+    #[test]
+    fn without_a_track_in_the_remembered_language_the_default_audio_is_the_files_default_track() {
+        let streams = [
+            speaking(1, Some("eng"), false),
+            speaking(2, Some("fre"), true),
+        ];
+
+        assert_eq!(
+            AudioStream::selected_by_default(&streams, Some("jpn")).map(|x| x.index),
+            Some(2)
+        );
     }
 }

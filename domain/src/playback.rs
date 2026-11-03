@@ -16,6 +16,8 @@ pub struct Playback {
     pub method: PlayMethod,
     pub position: f64,
     pub paused: bool,
+    pub audio_track_id: Option<Uuid>,
+    pub subtitle_track_id: Option<Uuid>,
     pub started_at: Timestamp,
     pub last_reported_at: Timestamp,
     pub ended_at: Option<Timestamp>,

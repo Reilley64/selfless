@@ -57,6 +57,8 @@ pub async fn call(
     session_client_kind: ClientKind,
     media_file_id: Uuid,
     start_position: f64,
+    audio_track_id: Option<Uuid>,
+    subtitle_track_id: Option<Option<Uuid>>,
     profile: &CapabilityProfile,
     force_hls: bool,
 ) -> Result<Output, Error> {
@@ -120,8 +122,34 @@ pub async fn call(
         .get()
         .iter()
         .min_by_key(|x| x.index);
-    let audio = AudioStream::selected_by_default(media_file.audio_streams.get());
-    let mut reasons = profile.direct_play_reasons(&container, video, audio);
+    let settings = db_context
+        .playback_settings()
+        .find(user_id)
+        .exec(db_context.executor_mut())
+        .await
+        .map_err(Error::caused_by)?;
+    let (audio_language, subtitle_language) =
+        settings.map_or((None, None), |x| (x.audio_language, x.subtitle_language));
+    let audio_streams = media_file.audio_streams.get();
+    let audio = audio_track_id
+        .and_then(|id| audio_streams.iter().find(|x| x.id == id))
+        .or_else(|| AudioStream::selected_by_default(audio_streams, audio_language.as_deref()));
+    let subtitle_tracks = domain::SubtitleTrack::all(
+        media_file.subtitle_streams.get(),
+        media_file.subtitle_files.get(),
+    );
+    let subtitle = match subtitle_track_id {
+        Some(id) => id.and_then(|id| subtitle_tracks.iter().copied().find(|x| x.id() == id)),
+        None => domain::SubtitleTrack::selected_by_default(
+            &subtitle_tracks,
+            profile,
+            subtitle_language.as_deref(),
+            audio,
+        ),
+    };
+    let audio_track_id = audio.map(|x| x.id);
+    let subtitle_track_id = subtitle.map(|x| x.id());
+    let mut reasons = profile.direct_play_reasons(&container, video, audio, subtitle);
     if force_hls && reasons.is_empty() {
         reasons.push(PlayReason::ForcedHls);
     }
@@ -167,7 +195,7 @@ pub async fn call(
                     default: stream.is_default,
                 },
                 transcode,
-                selected: audio.is_some_and(|x| x.id == stream.id),
+                selected: audio_track_id == Some(stream.id),
             });
         }
     }
@@ -222,6 +250,8 @@ pub async fn call(
         .method(method)
         .position(start_position)
         .paused(false)
+        .audio_track_id(audio_track_id)
+        .subtitle_track_id(subtitle_track_id)
         .started_at(now)
         .last_reported_at(now)
         .exec(transaction.executor_mut())
@@ -232,6 +262,12 @@ pub async fn call(
         end_hls_session.call(id).await;
     }
     if let Some((video, duration, keyframes, video_transcode)) = hls {
+        let selected_subtitle = subtitle_streams
+            .iter()
+            .filter(|x| x.text)
+            .map(|x| x.id)
+            .chain(subtitle_files.iter().map(|x| x.id))
+            .position(|x| Some(x) == subtitle_track_id);
         start_hls_session
             .call(HlsSession {
                 playback_id: playback.id,
@@ -274,6 +310,7 @@ pub async fn call(
                         forced: x.forced,
                     })
                     .collect(),
+                selected_subtitle,
                 start_position: Duration::try_from_secs_f64(start_position).unwrap_or_default(),
             })
             .await
@@ -305,6 +342,8 @@ pub async fn call(
             title: x.title,
         }),
         episodes,
+        audio_track_id,
+        subtitle_track_id,
         audio_tracks: audio_streams
             .into_iter()
             .map(|x| AudioTrack {
