@@ -21,7 +21,10 @@ fn subtitle(index: i64, codec: &str, language: &str, title: Option<&str>) -> Sub
 
 #[test]
 fn an_hdr10_matroska_movie_gives_every_stream_and_skips_the_cover_art() {
-    let probe = parse(include_bytes!("../fixtures/hdr10-movie.mkv.json")).unwrap();
+    let probe = parse(include_bytes!(
+        "../../../test/fixtures/ffprobe/hdr10-movie.mkv.json"
+    ))
+    .unwrap();
 
     assert_eq!(
         probe,
@@ -80,7 +83,10 @@ fn an_hdr10_matroska_movie_gives_every_stream_and_skips_the_cover_art() {
 
 #[test]
 fn an_sdr_mp4_episode_with_a_text_subtitle_has_the_sdr_hdr_type() {
-    let probe = parse(include_bytes!("../fixtures/sdr-episode.mp4.json")).unwrap();
+    let probe = parse(include_bytes!(
+        "../../../test/fixtures/ffprobe/sdr-episode.mp4.json"
+    ))
+    .unwrap();
 
     assert_eq!(
         probe,
@@ -114,7 +120,10 @@ fn an_sdr_mp4_episode_with_a_text_subtitle_has_the_sdr_hdr_type() {
 
 #[test]
 fn an_hlg_video_has_the_hlg_hdr_type_and_audio_without_a_language() {
-    let probe = parse(include_bytes!("../fixtures/hlg.mkv.json")).unwrap();
+    let probe = parse(include_bytes!(
+        "../../../test/fixtures/ffprobe/hlg.mkv.json"
+    ))
+    .unwrap();
 
     assert_eq!(probe.video_streams[0].hdr_type, HdrType::Hlg);
     assert_eq!(probe.video_streams[0].frame_rate, Some(50.0));
@@ -123,7 +132,10 @@ fn an_hlg_video_has_the_hlg_hdr_type_and_audio_without_a_language() {
 
 #[test]
 fn a_dolby_vision_video_has_the_dolby_vision_hdr_type() {
-    let probe = parse(include_bytes!("../fixtures/dolby-vision.mp4.json")).unwrap();
+    let probe = parse(include_bytes!(
+        "../../../test/fixtures/ffprobe/dolby-vision.mp4.json"
+    ))
+    .unwrap();
 
     assert_eq!(probe.video_streams[0].hdr_type, HdrType::DolbyVision);
     assert_eq!(probe.video_streams[0].width, 1920);

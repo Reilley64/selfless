@@ -246,7 +246,7 @@ impl FakeProber {
 
 pub fn fixture(path: &str) -> String {
     std::fs::read_to_string(format!(
-        "{}/tests/fixtures/{path}",
+        "{}/test/fixtures/{path}",
         env!("CARGO_MANIFEST_DIR")
     ))
     .unwrap()
