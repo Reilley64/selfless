@@ -13,30 +13,32 @@ use uuid::Uuid;
 
 pub async fn call(dependencies: impl Into<Dependencies>, season_id: Uuid) -> Result<Output, Error> {
     let mut db_context = dependencies.into().db_context;
-    let episodes = domain::Episode::filter(
-        domain::Episode::fields()
-            .season_id()
-            .eq(season_id)
-            .and(domain::Episode::fields().visible().eq(true)),
-    )
-    .order_by(domain::Episode::fields().number().asc())
-    .include(domain::Episode::fields().artwork())
-    .exec(db_context.executor_mut())
-    .await
-    .map_err(Error::caused_by)?
-    .into_iter()
-    .map(|episode| Episode {
-        id: episode.id,
-        number: episode.number,
-        title: episode.title,
-        air_date: episode.air_date,
-        overview: episode.overview,
-        added_at: episode.added_at,
-        media_file_id: episode.media_file_id,
-        rating: episode.rating,
-        artwork: artwork(episode.artwork.into_inner()),
-    })
-    .collect();
+    let episodes = db_context
+        .episodes()
+        .filter(
+            domain::Episode::fields()
+                .season_id()
+                .eq(season_id)
+                .and(domain::Episode::in_library_filter()),
+        )
+        .order_by(domain::Episode::fields().number().asc())
+        .include(domain::Episode::fields().artwork())
+        .exec(db_context.executor_mut())
+        .await
+        .map_err(Error::caused_by)?
+        .into_iter()
+        .map(|episode| Episode {
+            id: episode.id,
+            number: episode.number,
+            title: episode.title,
+            air_date: episode.air_date,
+            overview: episode.overview,
+            added_at: episode.added_at,
+            media_file_id: episode.media_file_id,
+            rating: episode.rating,
+            artwork: artwork(episode.artwork.into_inner()),
+        })
+        .collect();
     Ok(Output { episodes })
 }
 

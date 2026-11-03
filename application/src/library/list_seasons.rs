@@ -9,30 +9,31 @@ pub use output::Output;
 pub use output::Season;
 
 use crate::ports::persistence::DbScope;
-use domain::Episode;
 use uuid::Uuid;
 
 pub async fn call(dependencies: impl Into<Dependencies>, show_id: Uuid) -> Result<Output, Error> {
     let mut db_context = dependencies.into().db_context;
-    let mut seasons = domain::Season::filter(
-        domain::Season::fields().show_id().eq(show_id).and(
+    let mut seasons = db_context
+        .seasons()
+        .filter(
             domain::Season::fields()
-                .episodes()
-                .any(Episode::fields().visible().eq(true)),
-        ),
-    )
-    .include(domain::Season::fields().artwork())
-    .exec(db_context.executor_mut())
-    .await
-    .map_err(Error::caused_by)?
-    .into_iter()
-    .map(|x| Season {
-        id: x.id,
-        number: x.number,
-        artwork: artwork(x.artwork.into_inner()),
-    })
-    .collect::<Vec<_>>();
-    seasons.sort_by_key(|x| (x.number == 0, x.number));
+                .show_id()
+                .eq(show_id)
+                .and(domain::Season::in_library_filter()),
+        )
+        .include(domain::Season::fields().artwork())
+        .exec(db_context.executor_mut())
+        .await
+        .map_err(Error::caused_by)?;
+    seasons.sort_by_key(domain::Season::listing_order);
+    let seasons = seasons
+        .into_iter()
+        .map(|x| Season {
+            id: x.id,
+            number: x.number,
+            artwork: artwork(x.artwork.into_inner()),
+        })
+        .collect();
     Ok(Output { seasons })
 }
 

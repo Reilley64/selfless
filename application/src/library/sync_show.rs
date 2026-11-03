@@ -16,7 +16,6 @@ use crate::library::metadata::FoundArtwork;
 use crate::library::metadata::Nfo;
 use crate::library::metadata::Owner;
 use crate::ports::EpisodeFolder;
-use crate::ports::EpisodeNfo;
 use crate::ports::FindMediaFile;
 use crate::ports::ListSubtitleFiles;
 use crate::ports::ReadEpisodeFolder;
@@ -24,21 +23,18 @@ use crate::ports::ReadEpisodeNfo;
 use crate::ports::ReadShowFolder;
 use crate::ports::ReadShowNfo;
 use crate::ports::ShowFolder;
-use crate::ports::ShowNfo;
-use crate::ports::SonarrEpisode;
 use crate::ports::SonarrShow;
-use crate::ports::SonarrShowListing;
 use crate::ports::persistence::DbContext;
 use crate::ports::persistence::DbScope;
 use domain::ArtworkKind;
 use domain::Episode;
+use domain::EpisodeMetadata;
 use domain::MediaFile;
 use domain::Season;
 use domain::Show;
+use domain::ShowMetadata;
 use domain::Source;
 use futures_util::future::try_join_all;
-use jiff::Timestamp;
-use jiff::civil::Date;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -74,7 +70,9 @@ pub async fn call(dependencies: impl Into<Dependencies>, sonarr_id: i64) -> Resu
             .map_err(Error::caused_by)?
         {
             Some(sonarr_show) => save(&mut db_context, &files, sonarr_show).await,
-            None => match Show::filter_by_sonarr_id(sonarr_id)
+            None => match db_context
+                .shows()
+                .filter(Show::fields().sonarr_id().eq(sonarr_id))
                 .first()
                 .exec(db_context.executor_mut())
                 .await
@@ -102,130 +100,6 @@ pub(crate) struct ShowFiles {
 
 pub(crate) fn span() -> Span {
     tracing::info_span!("sync_show", otel.name = "sync sonarr show")
-}
-
-#[derive(Clone, PartialEq)]
-struct ShowMetadata {
-    title: String,
-    sort_title: Option<String>,
-    overview: Option<String>,
-    certification: Option<String>,
-    premiered: Option<Date>,
-    end_date: Option<Date>,
-    status: Option<String>,
-    network: Option<String>,
-    genres: Vec<String>,
-    rating: Option<f64>,
-    nfo_modified_at: Option<Timestamp>,
-}
-
-impl ShowMetadata {
-    fn stored(show: &Show) -> Self {
-        Self {
-            title: show.title.clone(),
-            sort_title: show.sort_title.clone(),
-            overview: show.overview.clone(),
-            certification: show.certification.clone(),
-            premiered: show.premiered,
-            end_date: show.end_date,
-            status: show.status.clone(),
-            network: show.network.clone(),
-            genres: show.genres.clone(),
-            rating: show.rating,
-            nfo_modified_at: show.nfo_modified_at,
-        }
-    }
-
-    fn of(nfo: &Nfo<ShowNfo>, listing: &SonarrShowListing, stored: Option<&Show>) -> Self {
-        match (nfo, stored) {
-            (Nfo::Unchanged, Some(show)) => Self::stored(show),
-            (Nfo::Read(nfo, modified_at), _) => Self {
-                title: nfo.title.clone().unwrap_or_else(|| listing.title.clone()),
-                sort_title: nfo.sort_title.clone(),
-                overview: nfo.plot.clone().or_else(|| listing.overview.clone()),
-                certification: nfo.certification.clone(),
-                premiered: nfo.premiered,
-                end_date: nfo.end_date,
-                status: nfo.status.clone(),
-                network: nfo.network.clone(),
-                genres: if nfo.genres.is_empty() {
-                    listing.genres.clone()
-                } else {
-                    nfo.genres.clone()
-                },
-                rating: nfo.rating,
-                nfo_modified_at: Some(*modified_at),
-            },
-            _ => Self {
-                title: listing.title.clone(),
-                sort_title: None,
-                overview: listing.overview.clone(),
-                certification: None,
-                premiered: None,
-                end_date: None,
-                status: None,
-                network: None,
-                genres: listing.genres.clone(),
-                rating: None,
-                nfo_modified_at: None,
-            },
-        }
-    }
-}
-
-#[derive(Clone, PartialEq)]
-struct EpisodeMetadata {
-    number: i64,
-    title: String,
-    air_date: Option<Date>,
-    overview: Option<String>,
-    rating: Option<f64>,
-    nfo_modified_at: Option<Timestamp>,
-}
-
-impl EpisodeMetadata {
-    fn stored(episode: &Episode) -> Self {
-        Self {
-            number: episode.number,
-            title: episode.title.clone(),
-            air_date: episode.air_date,
-            overview: episode.overview.clone(),
-            rating: episode.rating,
-            nfo_modified_at: episode.nfo_modified_at,
-        }
-    }
-
-    fn of(
-        nfo: &Nfo<EpisodeNfo>,
-        sonarr_episode: &SonarrEpisode,
-        stored: Option<&EpisodeMetadata>,
-    ) -> Self {
-        match (nfo, stored) {
-            (Nfo::Unchanged, Some(stored)) => Self {
-                number: sonarr_episode.episode_number,
-                ..stored.clone()
-            },
-            (Nfo::Read(nfo, modified_at), _) => Self {
-                number: sonarr_episode.episode_number,
-                title: nfo
-                    .title
-                    .clone()
-                    .unwrap_or_else(|| sonarr_episode.title.clone()),
-                air_date: nfo.air_date.or(sonarr_episode.air_date),
-                overview: nfo.plot.clone().or_else(|| sonarr_episode.overview.clone()),
-                rating: nfo.rating,
-                nfo_modified_at: Some(*modified_at),
-            },
-            _ => Self {
-                number: sonarr_episode.episode_number,
-                title: sonarr_episode.title.clone(),
-                air_date: sonarr_episode.air_date,
-                overview: sonarr_episode.overview.clone(),
-                rating: None,
-                nfo_modified_at: None,
-            },
-        }
-    }
 }
 
 pub(crate) async fn save(
@@ -261,17 +135,19 @@ pub(crate) async fn save(
     let stored = if episode_folders.is_empty() {
         HashMap::new()
     } else {
-        MediaFile::filter(
-            MediaFile::fields()
-                .path()
-                .in_list(episode_folders.keys().cloned().collect::<Vec<_>>()),
-        )
-        .exec(db_context.executor_mut())
-        .await
-        .map_err(Error::caused_by)?
-        .into_iter()
-        .map(|x| (x.path.clone(), x))
-        .collect::<HashMap<_, _>>()
+        db_context
+            .media_files()
+            .filter(
+                MediaFile::fields()
+                    .path()
+                    .in_list(episode_folders.keys().cloned().collect::<Vec<_>>()),
+            )
+            .exec(db_context.executor_mut())
+            .await
+            .map_err(Error::caused_by)?
+            .into_iter()
+            .map(|x| (x.path.clone(), x))
+            .collect::<HashMap<_, _>>()
     };
     let inspected = try_join_all(episode_folders.keys().map(async |path| {
         let inspected = media_files::inspect(
@@ -341,7 +217,9 @@ async fn write(
     files: &ShowFiles,
 ) -> Result<Option<Change>, Error> {
     let listing = sonarr_show.listing;
-    let stored = Show::filter_by_tvdb_id(listing.tvdb_id)
+    let stored = scope
+        .shows()
+        .filter(Show::fields().tvdb_id().eq(listing.tvdb_id))
         .first()
         .exec(scope.executor_mut())
         .await
@@ -353,12 +231,19 @@ async fn write(
     )
     .await;
     let had_nfo = stored.as_ref().is_some_and(|x| x.nfo_modified_at.is_some());
-    let metadata = ShowMetadata::of(&nfo, &listing, stored.as_ref());
+    let sonarr_metadata =
+        ShowMetadata::from_sonarr(listing.title, listing.overview, listing.genres);
+    let (metadata, nfo_modified_at) = match (&nfo, &stored) {
+        (Nfo::Unchanged, Some(show)) => (show.metadata(), show.nfo_modified_at),
+        (Nfo::Read(nfo, modified_at), _) => (sonarr_metadata.with_nfo(nfo), Some(*modified_at)),
+        _ => (sonarr_metadata, None),
+    };
     let (show, show_change) = match stored {
         Some(mut show) => {
             let changed = show.sonarr_id != listing.sonarr_id
                 || show.year != listing.year
-                || ShowMetadata::stored(&show) != metadata;
+                || show.nfo_modified_at != nfo_modified_at
+                || show.metadata() != metadata;
             if changed {
                 show.update()
                     .sonarr_id(listing.sonarr_id)
@@ -373,7 +258,7 @@ async fn write(
                     .network(metadata.network)
                     .genres(metadata.genres)
                     .rating(metadata.rating)
-                    .nfo_modified_at(metadata.nfo_modified_at)
+                    .nfo_modified_at(nfo_modified_at)
                     .exec(scope.executor_mut())
                     .await
                     .map_err(Error::caused_by)?;
@@ -381,25 +266,26 @@ async fn write(
             (show, changed.then_some(Change::Changed))
         }
         None => (
-            toasty::create!(Show {
-                tvdb_id: listing.tvdb_id,
-                sonarr_id: listing.sonarr_id,
-                year: listing.year,
-                title: metadata.title,
-                sort_title: metadata.sort_title,
-                overview: metadata.overview,
-                certification: metadata.certification,
-                premiered: metadata.premiered,
-                end_date: metadata.end_date,
-                status: metadata.status,
-                network: metadata.network,
-                genres: metadata.genres,
-                rating: metadata.rating,
-                nfo_modified_at: metadata.nfo_modified_at,
-            })
-            .exec(scope.executor_mut())
-            .await
-            .map_err(Error::caused_by)?,
+            scope
+                .shows()
+                .create()
+                .tvdb_id(listing.tvdb_id)
+                .sonarr_id(listing.sonarr_id)
+                .year(listing.year)
+                .title(metadata.title)
+                .sort_title(metadata.sort_title)
+                .overview(metadata.overview)
+                .certification(metadata.certification)
+                .premiered(metadata.premiered)
+                .end_date(metadata.end_date)
+                .status(metadata.status)
+                .network(metadata.network)
+                .genres(metadata.genres)
+                .rating(metadata.rating)
+                .nfo_modified_at(nfo_modified_at)
+                .exec(scope.executor_mut())
+                .await
+                .map_err(Error::caused_by)?,
             Some(Change::Added),
         ),
     };
@@ -446,16 +332,13 @@ async fn write(
             .episode_file
             .as_ref()
             .and_then(|x| episode_folders.get(&x.path));
-        let stored = episodes.remove(&sonarr_episode.tvdb_id).map(|x| {
-            let metadata = EpisodeMetadata::stored(&x);
-            (x, metadata)
-        });
+        let stored = episodes.remove(&sonarr_episode.tvdb_id);
         let nfo = match episode_folder.and_then(|x| x.nfo.as_ref()) {
             None => Nfo::Missing,
             Some(nfo_file)
                 if stored
                     .as_ref()
-                    .is_some_and(|(x, _)| x.nfo_modified_at == Some(nfo_file.modified_at)) =>
+                    .is_some_and(|x| x.nfo_modified_at == Some(nfo_file.modified_at)) =>
             {
                 Nfo::Unchanged
             }
@@ -485,36 +368,46 @@ async fn write(
                 }
             }
         };
-        let metadata = EpisodeMetadata::of(&nfo, &sonarr_episode, stored.as_ref().map(|(_, x)| x));
+        let sonarr_metadata = EpisodeMetadata::from_sonarr(
+            sonarr_episode.title,
+            sonarr_episode.air_date,
+            sonarr_episode.overview,
+        );
+        let (metadata, nfo_modified_at) = match (&nfo, &stored) {
+            (Nfo::Unchanged, Some(episode)) => (episode.metadata(), episode.nfo_modified_at),
+            (Nfo::Read(nfo, modified_at), _) => (sonarr_metadata.with_nfo(nfo), Some(*modified_at)),
+            _ => (sonarr_metadata, None),
+        };
         let season_number = sonarr_episode.season_number;
         let season_id = match seasons.get(&season_number) {
             Some(id) => *id,
             None => {
-                let season = toasty::create!(Season {
-                    show_id: show.id,
-                    number: season_number,
-                })
-                .exec(scope.executor_mut())
-                .await
-                .map_err(Error::caused_by)?;
+                let season = scope
+                    .seasons()
+                    .create()
+                    .show_id(show.id)
+                    .number(season_number)
+                    .exec(scope.executor_mut())
+                    .await
+                    .map_err(Error::caused_by)?;
                 changed = true;
                 seasons.insert(season_number, season.id);
                 season.id
             }
         };
         synced_seasons.insert(season_number);
-        let (media_file_id, visible) = match &sonarr_episode.episode_file {
+        let (media_file_id, file_on_disk) = match &sonarr_episode.episode_file {
             Some(sonarr_file) => {
-                let (id, visible) = match inspected.remove(&sonarr_file.path) {
+                let (id, on_disk) = match inspected.remove(&sonarr_file.path) {
                     Some(inspected) => {
-                        let visible = inspected.on_disk();
+                        let on_disk = inspected.on_disk();
                         let (id, file_changed) =
                             media_files::save(scope, &sonarr_file.path, inspected)
                                 .await
                                 .map_err(Error::caused_by)?;
                         changed |= file_changed;
-                        saved.insert(sonarr_file.path.clone(), (id, visible));
-                        (id, visible)
+                        saved.insert(sonarr_file.path.clone(), (id, on_disk));
+                        (id, on_disk)
                     }
                     None => saved[&sonarr_file.path],
                 };
@@ -522,16 +415,19 @@ async fn write(
                 if let Nfo::Unreadable(path) = &nfo {
                     unreadable_nfos.insert(id, path.clone());
                 }
-                (Some(id), visible)
+                (Some(id), on_disk)
             }
             None => (None, false),
         };
+        let visible = Episode::in_library(sonarr_episode.episode_file.is_some(), file_on_disk);
         let date_added = sonarr_episode.episode_file.map(|x| x.date_added);
         let episode_id = match stored {
-            Some((mut episode, stored_metadata)) => {
+            Some(mut episode) => {
                 let added_at = domain::first_added_at(episode.added_at, date_added);
                 if episode.season_id != season_id
-                    || stored_metadata != metadata
+                    || episode.number != sonarr_episode.episode_number
+                    || episode.nfo_modified_at != nfo_modified_at
+                    || episode.metadata() != metadata
                     || episode.added_at != added_at
                     || episode.media_file_id != media_file_id
                     || episode.visible != visible
@@ -540,12 +436,12 @@ async fn write(
                     episode
                         .update()
                         .season_id(season_id)
-                        .number(metadata.number)
+                        .number(sonarr_episode.episode_number)
                         .title(metadata.title)
                         .air_date(metadata.air_date)
                         .overview(metadata.overview)
                         .rating(metadata.rating)
-                        .nfo_modified_at(metadata.nfo_modified_at)
+                        .nfo_modified_at(nfo_modified_at)
                         .added_at(added_at)
                         .media_file_id(media_file_id)
                         .visible(visible)
@@ -557,23 +453,24 @@ async fn write(
             }
             None => {
                 changed = true;
-                toasty::create!(Episode {
-                    season_id,
-                    tvdb_id: sonarr_episode.tvdb_id,
-                    number: metadata.number,
-                    title: metadata.title,
-                    air_date: metadata.air_date,
-                    overview: metadata.overview,
-                    rating: metadata.rating,
-                    nfo_modified_at: metadata.nfo_modified_at,
-                    added_at: date_added,
-                    media_file_id,
-                    visible,
-                })
-                .exec(scope.executor_mut())
-                .await
-                .map_err(Error::caused_by)?
-                .id
+                scope
+                    .episodes()
+                    .create()
+                    .season_id(season_id)
+                    .tvdb_id(sonarr_episode.tvdb_id)
+                    .number(sonarr_episode.episode_number)
+                    .title(metadata.title)
+                    .air_date(metadata.air_date)
+                    .overview(metadata.overview)
+                    .rating(metadata.rating)
+                    .nfo_modified_at(nfo_modified_at)
+                    .added_at(date_added)
+                    .media_file_id(media_file_id)
+                    .visible(visible)
+                    .exec(scope.executor_mut())
+                    .await
+                    .map_err(Error::caused_by)?
+                    .id
             }
         };
         if let Some(thumb) = episode_folder.and_then(|x| x.thumb.clone()) {
@@ -609,14 +506,18 @@ async fn write(
         .collect::<Vec<_>>();
     changed |= !episodes.is_empty() || !seasons.is_empty() || !removed_media_files.is_empty();
     if !episodes.is_empty() {
-        Episode::filter(Episode::fields().id().in_list(episodes))
+        scope
+            .episodes()
+            .filter(Episode::fields().id().in_list(episodes))
             .delete()
             .exec(scope.executor_mut())
             .await
             .map_err(Error::caused_by)?;
     }
     if !seasons.is_empty() {
-        Season::filter(Season::fields().id().in_list(seasons))
+        scope
+            .seasons()
+            .filter(Season::fields().id().in_list(seasons))
             .delete()
             .exec(scope.executor_mut())
             .await
