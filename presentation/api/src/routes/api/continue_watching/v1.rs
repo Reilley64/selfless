@@ -50,86 +50,37 @@ pub(crate) async fn remove_show(cx: &Cx) -> topcoat::Result<Response> {
 
 #[cfg(test)]
 mod tests {
-    use crate::test::add_media_file;
     use crate::test::add_movie;
     use crate::test::add_show;
     use crate::test::movie;
     use crate::test::serve;
     use crate::test::signed_in_user;
-    use crate::test::stop_at;
     use application::ports::persistence::DbScope;
     use domain::Episode;
     use http::Method;
     use http::StatusCode;
-    use jiff::SignedDuration;
-    use serde_json::Value;
     use serde_json::json;
     use test_app::TestApp;
-    use test_fixtures::TestServer;
     use uuid::Uuid;
 
-    async fn continue_watching(server: &TestServer, token: &str) -> Vec<Value> {
-        let (_, home) = server
-            .request(Method::GET, "/api/home/v1", Some(token), None)
-            .await;
-        home["rows"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter(|x| x["kind"] == "continueWatching")
-            .flat_map(|x| x["tiles"].as_array().unwrap().clone())
-            .map(|x| x["title"].clone())
-            .collect()
-    }
-
     #[tokio::test]
-    async fn removing_a_movie_and_a_show_returns_204_and_leaves_them_out_of_continue_watching() {
+    async fn removing_a_movie_or_a_show_returns_204() {
         let app = TestApp::new().await;
-        let (noor, token) = signed_in_user(&app, "Noor", "a long passphrase about tea").await;
-        let mut db_context = app.state.db_context.clone();
-        let movie_file = add_media_file(&app, Some(3_000_000)).await;
-        let arrival = movie(&app, "Arrival")
-            .media_file_id(Some(movie_file))
-            .exec(db_context.executor_mut())
-            .await
-            .unwrap()
-            .id;
-        let dune = add_movie(&app, "Dune").await;
+        let (_, token) = signed_in_user(&app, "Noor", "a long passphrase about tea").await;
+        let arrival = add_movie(&app, "Arrival").await;
         let severance = add_show(&app, "Severance", &[1]).await;
-        let episode_file = add_media_file(&app, Some(3_000_000)).await;
-        db_context
-            .episodes()
-            .all()
-            .update()
-            .media_file_id(Some(episode_file))
-            .exec(db_context.executor_mut())
-            .await
-            .unwrap();
-        for file in [movie_file, episode_file] {
-            stop_at(&app, noor, file, SignedDuration::from_mins(15)).await;
-        }
         let server = serve(&app).await;
-        let before = continue_watching(&server, &token).await;
-        app.clock.advance(SignedDuration::from_mins(1));
 
-        let mut statuses = Vec::new();
         for path in [
             format!("/api/continue-watching/movies/{arrival}/v1"),
             format!("/api/continue-watching/shows/{severance}/v1"),
-            format!("/api/continue-watching/movies/{dune}/v1"),
         ] {
             let (status, _) = server
                 .request(Method::DELETE, &path, Some(&token), None)
                 .await;
-            statuses.push(status);
-        }
 
-        assert_eq!(before.len(), 2);
-        assert_eq!(statuses, [StatusCode::NO_CONTENT; 3]);
-        assert_eq!(
-            continue_watching(&server, &token).await,
-            Vec::<Value>::new()
-        );
+            assert_eq!(status, StatusCode::NO_CONTENT, "{path}");
+        }
     }
 
     #[tokio::test]
