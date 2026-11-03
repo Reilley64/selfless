@@ -41,6 +41,10 @@ depends = ["generate"]
 dir = "presentation/web"
 run = "bun run start"
 
+[tasks."dev:seed-users"]
+description = "Make the users Noor and Theo on a running server, http://localhost:8080 by default, and print their passwords"
+run = "scripts/seed-users"
+
 [tasks.check]
 description = "Check formatting, lints and crate direction"
 depends = ["generate"]
