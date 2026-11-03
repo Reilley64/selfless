@@ -232,6 +232,7 @@ function Video({
         }
         logic.showSubtitle(playback.subtitleTracks.find((track) => track.id === subtitleTrackId) ?? null);
         selectionShown = true;
+        logic.handle({ type: "loaded", position: position.current });
       }),
       player.addListener("availableAudioTracksChange", ({ availableAudioTracks }) => {
         available.current = { ...available.current, audio: availableAudioTracks };

@@ -20,6 +20,7 @@ import {
 import { SELFLESS_PLAYBACK } from "./telemetry/spans";
 
 export type PlayerEvent =
+  | { type: "loaded"; position: number }
   | { type: "playing"; position: number }
   | { type: "paused"; position: number }
   | { type: "seeked"; position: number }
@@ -139,6 +140,7 @@ export function createPlayerLogic({
   const { forceHls } = resume;
   let { paused, autoplayed, stillWatching } = resume;
   let position = 0;
+  let started = false;
   let stopped = false;
   let tracks: Tracks = { audioTrackId, subtitleTrackId };
   let timer: ReturnType<typeof setInterval> | undefined;
@@ -199,6 +201,12 @@ export function createPlayerLogic({
       }
       position = event.position;
       switch (event.type) {
+        case "loaded":
+          if (paused && timer === undefined) {
+            report();
+            restartTimer();
+          }
+          break;
         case "playing":
           if (paused) {
             autoplayed = 0;
@@ -208,7 +216,8 @@ export function createPlayerLogic({
             stillWatching = false;
             showStillWatching(false);
           }
-          if (timer === undefined) {
+          if (!started) {
+            started = true;
             spans.started();
             restartTimer();
           }
@@ -220,7 +229,7 @@ export function createPlayerLogic({
           restartTimer();
           break;
         case "seeked":
-          if (timer !== undefined) {
+          if (started) {
             autoplayed = 0;
             spans.seeked();
           }

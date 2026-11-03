@@ -199,6 +199,38 @@ test("a pause reports at once, then every 10 seconds while paused", () => {
   ]);
 });
 
+test("an episode loaded paused behind the prompt reports at once, then every 10 seconds while paused", () => {
+  const { reports, logic } = player(reported, { stillWatching: true });
+
+  logic.handle({ type: "loaded", position: 0 });
+  jest.advanceTimersByTime(20_000);
+
+  expect(reports).toEqual([
+    { position: 0, paused: true, stopped: false, ...tracks },
+    { position: 0, paused: true, stopped: false, ...tracks },
+    { position: 0, paused: true, stopped: false, ...tracks },
+  ]);
+});
+
+test("a playback that loads to play reports nothing until it plays", () => {
+  const { reports, logic } = player();
+
+  logic.handle({ type: "loaded", position: 0 });
+  jest.advanceTimersByTime(30_000);
+
+  expect(reports).toEqual([]);
+});
+
+test("a playback loaded paused records started when it first plays", () => {
+  const { logic } = player(reported, { stillWatching: true });
+  logic.handle({ type: "loaded", position: 0 });
+
+  logic.handle({ type: "playing", position: 0 });
+  logic.handle({ type: "stopped", position: 0 });
+
+  expect(events(playbackSpans())).toEqual([["selfless.playback.started"], ["selfless.playback.stopped"]]);
+});
+
 test("a stop reports at once and ends the reports", () => {
   const { reports, logic } = player();
   logic.handle({ type: "playing", position: 0 });

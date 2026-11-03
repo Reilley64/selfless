@@ -312,6 +312,7 @@ function Video({
             event.currentTarget.currentTime = resume.position;
             logic.applySelectedAudio();
           }
+          logic.handle({ type: "loaded", position: resume.position });
         }}
         onPlaying={(event) => logic.handle({ type: "playing", position: at(event.currentTarget) })}
         onPause={(event) => {
