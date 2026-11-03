@@ -838,8 +838,8 @@ paths:
   /api/playbacks/{playbackId}/media/{signature}/v1/{fileName}:
     get:
       operationId: getPlaybackHlsFile
-      summary: A playlist or segment of an HLS playback
-      description: The signature in the path authorizes the call, so it needs no session token. The player reaches these files from the playback's main.m3u8, whose URLs are relative. They work until the playback ends, and are not found after that. A segment that exists is sent at once. One just ahead of the running ffmpeg is sent when ffmpeg has written it. Any other segment restarts ffmpeg at that segment.
+      summary: A playlist, segment or subtitle file of an HLS playback
+      description: The signature in the path authorizes the call, so it needs no session token. The player reaches these files from the playback's main.m3u8, whose URLs are relative. They work until the playback ends, and are not found after that. A segment that exists is sent at once. One just ahead of the running ffmpeg is sent when ffmpeg has written it. Any other segment restarts ffmpeg at that segment. An embedded text subtitle has a WebVTT segment for each video segment, on the same times. A subtitle file beside the media file is converted whole to one WebVTT file when it is first asked for.
       tags: [media]
       security: []
       parameters:
@@ -848,7 +848,7 @@ paths:
         - name: fileName
           in: path
           required: true
-          description: main.m3u8, video.m3u8, init.mp4, or a segment named by its index, such as 12.m4s.
+          description: main.m3u8, video.m3u8, init.mp4, a segment named by its index, such as 12.m4s, a subtitle playlist named by its place in main.m3u8, such as subtitles-0.m3u8, a WebVTT segment of an embedded subtitle, such as subtitles-0-12.vtt, or the WebVTT file of a subtitle file beside the media file, such as subtitles-2.vtt.
           schema:
             type: string
           example: main.m3u8
@@ -865,6 +865,9 @@ paths:
             video/iso.segment:
               schema:
                 $ref: "#/components/schemas/HlsSegmentBytes"
+            text/vtt:
+              schema:
+                $ref: "#/components/schemas/WebVtt"
         "403":
           $ref: "#/components/responses/InvalidSignature"
         "404":
@@ -2430,7 +2433,7 @@ components:
           type: boolean
           examples: [true]
         inStream:
-          description: Whether the stream the player plays carries the track and the device shows it.
+          description: Whether the stream the player plays carries the track and the device shows it. An HLS stream carries every text subtitle as WebVTT and no image subtitle.
           type: boolean
           examples: [false]
       additionalProperties: false
@@ -2446,3 +2449,7 @@ components:
       description: The fMP4 init segment or a media segment.
       type: string
       contentMediaType: video/mp4
+    WebVtt:
+      description: WebVTT subtitles, whose X-TIMESTAMP-MAP puts their times on the video's timeline.
+      type: string
+      contentMediaType: text/vtt

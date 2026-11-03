@@ -18,8 +18,10 @@ use tracing::field;
 mod hls;
 mod hls_sessions;
 mod keyframes;
+mod language;
 mod matroska;
 mod mp4;
+mod subtitles;
 
 pub use hls_sessions::HlsSessions;
 

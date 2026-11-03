@@ -1,6 +1,9 @@
 use crate::hls::INIT;
 use crate::hls::Segments;
 use crate::hls::remux;
+use crate::hls::write_atomically;
+use crate::subtitles;
+use crate::subtitles::Rendition;
 use application::attributes::SELFLESS_FFMPEG_PURPOSE;
 use application::attributes::SELFLESS_FFMPEG_START_SEGMENT;
 use application::attributes::selfless_ffmpeg_purpose;
@@ -10,6 +13,7 @@ use application::ports::GetHlsFile;
 use application::ports::HlsError;
 use application::ports::HlsSession;
 use application::ports::StartHlsSession;
+use application::ports::SubtitleStream;
 use application::ports::VideoStream;
 use application::spans::SELFLESS_FFMPEG;
 use std::collections::HashMap;
@@ -19,9 +23,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
 use tokio::fs;
+use tokio::sync::OnceCell;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tracing::Instrument;
+use tracing::Span;
 use tracing::field;
 use uuid::Uuid;
 
@@ -40,8 +46,15 @@ struct Session {
     input: PathBuf,
     video: VideoStream,
     audio: Option<AudioStream>,
+    subtitle_streams: Vec<SubtitleStream>,
+    subtitle_files: Vec<SubtitleFile>,
     segments: Arc<Segments>,
     run: Option<Run>,
+}
+
+struct SubtitleFile {
+    path: PathBuf,
+    converted: Arc<OnceCell<()>>,
 }
 
 struct Run {
@@ -70,6 +83,33 @@ enum Requested {
     Playlist,
     Init,
     Segment(usize),
+    SubtitleSegment(usize, usize),
+    SubtitleFile(usize),
+}
+
+impl Requested {
+    fn parse(name: &str) -> Option<Self> {
+        if name == MAIN || name == VIDEO {
+            return Some(Self::Playlist);
+        }
+        if name == INIT {
+            return Some(Self::Init);
+        }
+        if let Some(segment) = name.strip_suffix(".m4s") {
+            return segment.parse().ok().map(Self::Segment);
+        }
+        let subtitle = name.strip_prefix("subtitles-")?;
+        if let Some(rendition) = subtitle.strip_suffix(".m3u8") {
+            return rendition.parse::<usize>().ok().map(|_| Self::Playlist);
+        }
+        let subtitle = subtitle.strip_suffix(".vtt")?;
+        Some(match subtitle.split_once('-') {
+            Some((rendition, segment)) => {
+                Self::SubtitleSegment(rendition.parse().ok()?, segment.parse().ok()?)
+            }
+            None => Self::SubtitleFile(subtitle.parse().ok()?),
+        })
+    }
 }
 
 impl HlsSessions {
@@ -125,25 +165,77 @@ impl HlsSessions {
         let segments = Segments::new(&session.keyframes, session.duration);
         let size = fs::metadata(&session.path).await?.len();
         let bandwidth = (size as f64 * 8.0 / session.duration.as_secs_f64().max(1.0)).ceil();
+        let renditions = session
+            .subtitle_streams
+            .iter()
+            .map(|x| Rendition {
+                language: x.language.as_deref(),
+                title: x.title.as_deref(),
+                forced: x.forced,
+                hearing_impaired: x.hearing_impaired,
+            })
+            .chain(session.subtitle_files.iter().map(|x| Rendition {
+                language: x.language.as_deref(),
+                title: None,
+                forced: x.forced,
+                hearing_impaired: x.hearing_impaired,
+            }));
+        let group = if session.subtitle_streams.is_empty() && session.subtitle_files.is_empty() {
+            String::new()
+        } else {
+            format!(",SUBTITLES=\"{}\"", subtitles::GROUP)
+        };
         fs::write(
             folder.join(MAIN),
             format!(
                 "#EXTM3U\n\
                  #EXT-X-VERSION:7\n\
                  #EXT-X-INDEPENDENT-SEGMENTS\n\
-                 #EXT-X-STREAM-INF:BANDWIDTH={bandwidth},RESOLUTION={}x{}\n\
+                 {}\
+                 #EXT-X-STREAM-INF:BANDWIDTH={bandwidth},RESOLUTION={}x{}{group}\n\
                  {VIDEO}\n",
-                session.video.width, session.video.height
+                subtitles::media_tags(renditions),
+                session.video.width,
+                session.video.height
             ),
         )
         .await?;
-        fs::write(folder.join(VIDEO), segments.media_playlist()).await?;
+        fs::write(
+            folder.join(VIDEO),
+            segments.media_playlist(Some(INIT), |x| format!("{x}.m4s")),
+        )
+        .await?;
+        let embedded = session.subtitle_streams.len();
+        for rendition in 0..embedded {
+            fs::write(
+                folder.join(subtitles::playlist(rendition)),
+                segments.media_playlist(None, |x| subtitles::segment(rendition, x)),
+            )
+            .await?;
+        }
+        let whole = Segments::new(&[], session.duration);
+        for rendition in embedded..embedded + session.subtitle_files.len() {
+            fs::write(
+                folder.join(subtitles::playlist(rendition)),
+                whole.media_playlist(None, |_| subtitles::file(rendition)),
+            )
+            .await?;
+        }
         let start = segments.segment_at(session.start_position);
         let mut started = Session {
             folder,
             input: PathBuf::from(session.path),
             video: session.video,
             audio: session.audio,
+            subtitle_streams: session.subtitle_streams,
+            subtitle_files: session
+                .subtitle_files
+                .into_iter()
+                .map(|x| SubtitleFile {
+                    path: PathBuf::from(x.path),
+                    converted: Arc::default(),
+                })
+                .collect(),
             segments: Arc::new(segments),
             run: None,
         };
@@ -156,15 +248,10 @@ impl HlsSessions {
     }
 
     async fn file(&self, playback_id: Uuid, name: &str) -> io::Result<Option<PathBuf>> {
-        let requested = match name {
-            MAIN | VIDEO => Requested::Playlist,
-            INIT => Requested::Init,
-            _ => match name.strip_suffix(".m4s").and_then(|x| x.parse().ok()) {
-                Some(segment) => Requested::Segment(segment),
-                None => return Ok(None),
-            },
+        let Some(requested) = Requested::parse(name) else {
+            return Ok(None);
         };
-        loop {
+        let (source, converted, path) = loop {
             let mut written = {
                 let mut sessions = self
                     .sessions
@@ -181,11 +268,28 @@ impl HlsSessions {
                 if path.exists() {
                     return Ok(Some(path));
                 }
+                let embedded = session.subtitle_streams.len();
                 let segment = match requested {
                     Requested::Playlist => return Ok(None),
                     Requested::Init => None,
-                    Requested::Segment(x) if x >= session.segments.len() => return Ok(None),
-                    Requested::Segment(x) => Some(x),
+                    Requested::Segment(x) | Requested::SubtitleSegment(_, x)
+                        if x >= session.segments.len() =>
+                    {
+                        return Ok(None);
+                    }
+                    Requested::SubtitleSegment(rendition, _) if rendition >= embedded => {
+                        return Ok(None);
+                    }
+                    Requested::Segment(x) | Requested::SubtitleSegment(_, x) => Some(x),
+                    Requested::SubtitleFile(rendition) => {
+                        let Some(file) = rendition
+                            .checked_sub(embedded)
+                            .and_then(|x| session.subtitle_files.get(x))
+                        else {
+                            return Ok(None);
+                        };
+                        break (file.path.clone(), file.converted.clone(), path);
+                    }
                 };
                 match &session.run {
                     Some(run) if run.finished() && run.start == segment.unwrap_or(run.start) => {
@@ -202,7 +306,17 @@ impl HlsSessions {
                 written.expect("a run is writing the segments")
             };
             let _ = written.changed().await;
-        }
+        };
+        converted
+            .get_or_try_init(|| {
+                async {
+                    let webvtt = subtitles::convert(&source).await?;
+                    write_atomically(&path, webvtt.as_bytes()).await
+                }
+                .instrument(ffmpeg_span(selfless_ffmpeg_purpose::SUBTITLE, 0))
+            })
+            .await?;
+        Ok(Some(path))
     }
 
     async fn end(&self, playback_id: Uuid) {
@@ -233,20 +347,10 @@ impl Session {
     fn restart(&mut self, start: usize) {
         self.run = None;
         let (sender, written) = watch::channel(start);
-        let span = tracing::info_span!(
-            "ffmpeg",
-            otel.name = SELFLESS_FFMPEG,
-            otel.kind = "internal",
-            otel.status_code = field::Empty,
-            { SELFLESS_FFMPEG_PURPOSE } = selfless_ffmpeg_purpose::REMUX,
-            { SELFLESS_FFMPEG_START_SEGMENT } = start as i64,
-            process.executable.name = "ffmpeg",
-            process.exit.code = field::Empty,
-            error.type = field::Empty,
-        );
         let input = self.input.clone();
         let video = self.video.clone();
         let audio = self.audio.clone();
+        let subtitle_streams = self.subtitle_streams.clone();
         let segments = self.segments.clone();
         let folder = self.folder.clone();
         let task = tokio::spawn(
@@ -255,6 +359,7 @@ impl Session {
                     &input,
                     &video,
                     audio.as_ref(),
+                    &subtitle_streams,
                     &segments,
                     start,
                     &folder,
@@ -268,7 +373,7 @@ impl Session {
                     );
                 }
             }
-            .instrument(span),
+            .instrument(ffmpeg_span(selfless_ffmpeg_purpose::REMUX, start)),
         );
         self.run = Some(Run {
             start,
@@ -278,10 +383,25 @@ impl Session {
     }
 }
 
+fn ffmpeg_span(purpose: &'static str, start: usize) -> Span {
+    tracing::info_span!(
+        "ffmpeg",
+        otel.name = SELFLESS_FFMPEG,
+        otel.kind = "internal",
+        otel.status_code = field::Empty,
+        { SELFLESS_FFMPEG_PURPOSE } = purpose,
+        { SELFLESS_FFMPEG_START_SEGMENT } = start as i64,
+        process.executable.name = "ffmpeg",
+        process.exit.code = field::Empty,
+        error.type = field::Empty,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::keyframes::read_keyframes;
+    use application::ports::FoundSubtitleFile;
     use domain::HdrType;
     use opentelemetry::KeyValue;
     use opentelemetry::trace::TracerProvider;
@@ -320,19 +440,79 @@ mod tests {
                 title: None,
                 default: true,
             }),
+            subtitle_streams: Vec::new(),
+            subtitle_files: Vec::new(),
             start_position,
         }
     }
 
+    fn media(name: &str) -> String {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../test/fixtures/media")
+            .join(name)
+            .to_string_lossy()
+            .into_owned()
+    }
+
+    fn subtitle_stream(index: i64, codec: &str, language: &str) -> SubtitleStream {
+        SubtitleStream {
+            index,
+            codec: codec.to_owned(),
+            language: Some(language.to_owned()),
+            title: None,
+            default: false,
+            forced: false,
+            hearing_impaired: false,
+            text: true,
+        }
+    }
+
+    async fn subtitle_session(start_position: Duration) -> HlsSession {
+        let path = media("subtitles.mkv");
+        HlsSession {
+            keyframes: read_keyframes(Path::new(&path)).await.unwrap(),
+            path,
+            subtitle_streams: vec![
+                SubtitleStream {
+                    title: Some("English".to_owned()),
+                    ..subtitle_stream(2, "subrip", "eng")
+                },
+                SubtitleStream {
+                    forced: true,
+                    ..subtitle_stream(3, "ass", "fre")
+                },
+            ],
+            subtitle_files: vec![
+                FoundSubtitleFile {
+                    path: media("subtitles.en.srt"),
+                    language: Some("en".to_owned()),
+                    hearing_impaired: false,
+                    forced: false,
+                },
+                FoundSubtitleFile {
+                    path: media("subtitles.fr.ass"),
+                    language: Some("fr".to_owned()),
+                    hearing_impaired: true,
+                    forced: false,
+                },
+            ],
+            ..session(start_position).await
+        }
+    }
+
     async fn started(start_position: Duration) -> (TempDir, HlsSessions) {
+        started_with(session(start_position).await).await
+    }
+
+    async fn started_with(session: HlsSession) -> (TempDir, HlsSessions) {
         let dir = TempDir::new().unwrap();
         let sessions = HlsSessions::new(dir.path().join("segments")).await.unwrap();
-        sessions
-            .start_hls_session()
-            .call(session(start_position).await)
-            .await
-            .unwrap();
+        sessions.start_hls_session().call(session).await.unwrap();
         (dir, sessions)
+    }
+
+    async fn read(sessions: &HlsSessions, name: &str) -> String {
+        std::fs::read_to_string(get(sessions, name).await.unwrap()).unwrap()
     }
 
     async fn get(sessions: &HlsSessions, name: &str) -> Option<String> {
@@ -366,6 +546,147 @@ mod tests {
         assert_eq!(served, [true; 7]);
         assert_eq!(get(&sessions, "6.m4s").await, None);
         assert_eq!(get(&sessions, "../segments").await, None);
+    }
+
+    #[tokio::test]
+    async fn the_main_playlist_has_a_subtitle_group_with_every_text_subtitle_named_by_language_and_title()
+     {
+        let (_dir, sessions) = started_with(subtitle_session(Duration::ZERO).await).await;
+
+        let main = read(&sessions, "main.m3u8").await;
+
+        assert_eq!(
+            main,
+            "#EXTM3U\n\
+             #EXT-X-VERSION:7\n\
+             #EXT-X-INDEPENDENT-SEGMENTS\n\
+             #EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID=\"subtitles\",NAME=\"English\",LANGUAGE=\"en\",DEFAULT=NO,URI=\"subtitles-0.m3u8\"\n\
+             #EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID=\"subtitles\",NAME=\"French (Forced)\",LANGUAGE=\"fr\",DEFAULT=NO,FORCED=YES,URI=\"subtitles-1.m3u8\"\n\
+             #EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID=\"subtitles\",NAME=\"English 2\",LANGUAGE=\"en\",DEFAULT=NO,URI=\"subtitles-2.m3u8\"\n\
+             #EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID=\"subtitles\",NAME=\"French (SDH)\",LANGUAGE=\"fr\",DEFAULT=NO,URI=\"subtitles-3.m3u8\"\n\
+             #EXT-X-STREAM-INF:BANDWIDTH=45775,RESOLUTION=160x90,SUBTITLES=\"subtitles\"\n\
+             video.m3u8\n"
+        );
+    }
+
+    fn webvtt(cues: &[&str]) -> String {
+        let mut file = "WEBVTT\nX-TIMESTAMP-MAP=MPEGTS:0,LOCAL:00:00:00.000\n".to_owned();
+        for cue in cues {
+            file.push_str(&format!("\n{cue}\n"));
+        }
+        file
+    }
+
+    async fn read_all(sessions: &HlsSessions, names: impl Iterator<Item = String>) -> Vec<String> {
+        let mut files = Vec::new();
+        for name in names {
+            files.push(read(sessions, &name).await);
+        }
+        files
+    }
+
+    #[tokio::test]
+    async fn embedded_text_subtitles_become_webvtt_segments_on_the_playlist_times_also_after_a_restart()
+     {
+        let (_dir, from_start) = started_with(subtitle_session(Duration::ZERO).await).await;
+        let (_restarted_dir, restarted) =
+            started_with(subtitle_session(Duration::from_secs(22)).await).await;
+        let lines = |playlist: &str, prefix: &str| {
+            playlist
+                .lines()
+                .filter(|x| x.starts_with(prefix))
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        };
+
+        let video = read(&from_start, "video.m3u8").await;
+        let playlist = read(&from_start, "subtitles-0.m3u8").await;
+        let segments = read_all(&from_start, (0..6).map(|x| format!("subtitles-0-{x}.vtt"))).await;
+        let after_restart =
+            read_all(&restarted, (3..6).map(|x| format!("subtitles-0-{x}.vtt"))).await;
+        let ass = read(&from_start, "subtitles-1-0.vtt").await;
+
+        assert_eq!(lines(&playlist, "#EXTINF:"), lines(&video, "#EXTINF:"));
+        assert_eq!(
+            lines(&playlist, "subtitles-"),
+            (0..6)
+                .map(|x| format!("subtitles-0-{x}.vtt"))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            segments,
+            [
+                webvtt(&[
+                    "00:01.000 --> 00:03.000\nOne",
+                    "00:05.000 --> 00:08.000\nAcross the first cut",
+                ]),
+                webvtt(&["00:05.000 --> 00:08.000\nAcross the first cut"]),
+                webvtt(&["00:14.000 --> 00:16.000\nTwo"]),
+                webvtt(&[]),
+                webvtt(&["00:31.000 --> 00:33.500\nThree"]),
+                webvtt(&["00:37.000 --> 00:39.000\nLast"]),
+            ]
+        );
+        assert_eq!(after_restart, segments[3..]);
+        assert_eq!(ass, webvtt(&["00:02.000 --> 00:04.000\nUn"]));
+    }
+
+    #[tokio::test]
+    async fn srt_and_ass_files_beside_the_video_become_one_webvtt_file_in_a_one_segment_playlist() {
+        let exporter = InMemorySpanExporter::default();
+        let provider = SdkTracerProvider::builder()
+            .with_simple_exporter(exporter.clone())
+            .build();
+        let _tracing = test_fixtures::set_default_subscriber(
+            tracing_subscriber::registry()
+                .with(LevelFilter::INFO)
+                .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("selfless"))),
+        );
+        let (_dir, sessions) = started_with(subtitle_session(Duration::ZERO).await).await;
+
+        let playlists = read_all(&sessions, (2..4).map(|x| format!("subtitles-{x}.m3u8"))).await;
+        let files = read_all(&sessions, (2..4).map(|x| format!("subtitles-{x}.vtt"))).await;
+
+        assert_eq!(
+            playlists,
+            (2..4)
+                .map(|x| format!(
+                    "#EXTM3U\n\
+                     #EXT-X-VERSION:7\n\
+                     #EXT-X-TARGETDURATION:40\n\
+                     #EXT-X-MEDIA-SEQUENCE:0\n\
+                     #EXT-X-PLAYLIST-TYPE:VOD\n\
+                     #EXT-X-INDEPENDENT-SEGMENTS\n\
+                     #EXTINF:40.000000,\n\
+                     subtitles-{x}.vtt\n\
+                     #EXT-X-ENDLIST\n"
+                ))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            files,
+            [
+                webvtt(&[
+                    "00:02.500 --> 00:04.000\nBeside the video",
+                    "00:35.000 --> 00:38.000\nNear the end",
+                ]),
+                webvtt(&["00:10.000 --> 00:12.000\nEn haut"]),
+            ]
+        );
+        assert_eq!(get(&sessions, "subtitles-4.vtt").await, None);
+        let conversions = exporter
+            .get_finished_spans()
+            .unwrap()
+            .into_iter()
+            .filter(|x| {
+                x.name == "selfless.ffmpeg"
+                    && x.attributes
+                        .contains(&KeyValue::new("selfless.ffmpeg.purpose", "subtitle"))
+                    && x.attributes
+                        .contains(&KeyValue::new("selfless.ffmpeg.start_segment", 0))
+            })
+            .count();
+        assert_eq!(conversions, 2);
     }
 
     #[tokio::test]
