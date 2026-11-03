@@ -1,8 +1,10 @@
 use crate::library::Prober;
 use crate::ports::FindMediaFile;
 use crate::ports::FoundMediaFile;
+use crate::ports::FoundSubtitleFile;
 use crate::ports::ListSubtitleFiles;
 use crate::ports::Probe;
+use crate::ports::persistence::DbScope;
 use domain::AudioStream;
 use domain::MediaFile;
 use domain::SubtitleFile;
@@ -15,7 +17,7 @@ use uuid::Uuid;
 pub(crate) struct Inspected {
     found: Option<FoundMediaFile>,
     probed: Probed,
-    subtitle_files: Vec<crate::ports::FoundSubtitleFile>,
+    subtitle_files: Vec<FoundSubtitleFile>,
 }
 
 enum Probed {
@@ -49,9 +51,7 @@ pub(crate) async fn inspect(
         });
     };
     let probed = match stored {
-        Some(x) if x.size == Some(found.size) && x.modified_at == Some(found.modified_at) => {
-            Probed::Unchanged
-        }
+        Some(x) if !x.needs_probe(found.size, found.modified_at) => Probed::Unchanged,
         _ => match prober.probe(path).await {
             Ok(probe) => Probed::Read(probe),
             Err(error) => {
@@ -76,7 +76,7 @@ pub(crate) async fn inspect(
 }
 
 pub(crate) async fn save(
-    db: &mut dyn toasty::Executor,
+    scope: &mut impl DbScope,
     path: &str,
     inspected: Inspected,
 ) -> toasty::Result<(Uuid, bool)> {
@@ -92,7 +92,13 @@ pub(crate) async fn save(
                 .and_then(|x| i64::try_from(x.as_millis()).ok()),
         )),
     };
-    let (id, mut changed) = match MediaFile::filter_by_path(path).first().exec(db).await? {
+    let (id, mut changed) = match scope
+        .media_files()
+        .filter(MediaFile::fields().path().eq(path))
+        .first()
+        .exec(scope.executor_mut())
+        .await?
+    {
         Some(mut media_file) => {
             let changed = media_file.size != size || media_file.modified_at != modified_at;
             if changed || probed.is_some() {
@@ -104,130 +110,146 @@ pub(crate) async fn save(
                     .modified_at(modified_at)
                     .container(container)
                     .duration_ms(duration_ms)
-                    .exec(db)
+                    .exec(scope.executor_mut())
                     .await?;
             }
             (media_file.id, changed)
         }
         None => {
             let (container, duration_ms) = probed.unwrap_or_default();
-            let media_file = toasty::create!(MediaFile {
-                path: path.to_owned(),
-                size,
-                modified_at,
-                container,
-                duration_ms,
-            })
-            .exec(db)
-            .await?;
+            let media_file = scope
+                .media_files()
+                .create()
+                .path(path)
+                .size(size)
+                .modified_at(modified_at)
+                .container(container)
+                .duration_ms(duration_ms)
+                .exec(scope.executor_mut())
+                .await?;
             (media_file.id, true)
         }
     };
     if changed {
-        save_file_not_found(db, id, path, inspected.found.is_some()).await?;
+        save_file_not_found(scope, id, path, inspected.found.is_some()).await?;
     }
     match inspected.probed {
         Probed::Unchanged => {}
-        Probed::Failed => save_probe(db, id, path, None).await?,
-        Probed::Read(probe) => save_probe(db, id, path, Some(probe)).await?,
+        Probed::Failed => save_probe(scope, id, path, None).await?,
+        Probed::Read(probe) => save_probe(scope, id, path, Some(probe)).await?,
     }
-    changed |= save_subtitle_files(db, id, inspected.subtitle_files).await?;
+    changed |= save_subtitle_files(scope, id, inspected.subtitle_files).await?;
     Ok((id, changed))
 }
 
 async fn save_probe(
-    db: &mut dyn toasty::Executor,
+    scope: &mut impl DbScope,
     media_file_id: Uuid,
     path: &str,
     probe: Option<Probe>,
 ) -> toasty::Result<()> {
-    VideoStream::filter_by_media_file_id(media_file_id)
+    scope
+        .video_streams()
+        .filter(VideoStream::fields().media_file_id().eq(media_file_id))
         .delete()
-        .exec(db)
+        .exec(scope.executor_mut())
         .await?;
-    AudioStream::filter_by_media_file_id(media_file_id)
+    scope
+        .audio_streams()
+        .filter(AudioStream::fields().media_file_id().eq(media_file_id))
         .delete()
-        .exec(db)
+        .exec(scope.executor_mut())
         .await?;
-    SubtitleStream::filter_by_media_file_id(media_file_id)
+    scope
+        .subtitle_streams()
+        .filter(SubtitleStream::fields().media_file_id().eq(media_file_id))
         .delete()
-        .exec(db)
+        .exec(scope.executor_mut())
         .await?;
-    SyncProblem::filter_by_media_file_id(media_file_id)
+    scope
+        .sync_problems()
         .filter(
-            SyncProblem::fields()
-                .kind()
-                .eq(SyncProblemKind::FfprobeFailed),
+            SyncProblem::fields().media_file_id().eq(media_file_id).and(
+                SyncProblem::fields()
+                    .kind()
+                    .eq(SyncProblemKind::FfprobeFailed),
+            ),
         )
         .delete()
-        .exec(db)
+        .exec(scope.executor_mut())
         .await?;
     let Some(probe) = probe else {
-        toasty::create!(SyncProblem {
-            media_file_id: Some(media_file_id),
-            kind: SyncProblemKind::FfprobeFailed,
-            path: path.to_owned(),
-        })
-        .exec(db)
-        .await?;
+        scope
+            .sync_problems()
+            .create()
+            .media_file_id(Some(media_file_id))
+            .kind(SyncProblemKind::FfprobeFailed)
+            .path(path)
+            .exec(scope.executor_mut())
+            .await?;
         return Ok(());
     };
     for stream in probe.video_streams {
-        toasty::create!(VideoStream {
-            media_file_id,
-            index: stream.index,
-            codec: stream.codec,
-            profile: stream.profile,
-            width: stream.width,
-            height: stream.height,
-            frame_rate: stream.frame_rate,
-            hdr_type: stream.hdr_type,
-        })
-        .exec(db)
-        .await?;
+        scope
+            .video_streams()
+            .create()
+            .media_file_id(media_file_id)
+            .index(stream.index)
+            .codec(stream.codec)
+            .profile(stream.profile)
+            .width(stream.width)
+            .height(stream.height)
+            .frame_rate(stream.frame_rate)
+            .hdr_type(stream.hdr_type)
+            .exec(scope.executor_mut())
+            .await?;
     }
     for stream in probe.audio_streams {
-        toasty::create!(AudioStream {
-            media_file_id,
-            index: stream.index,
-            codec: stream.codec,
-            language: stream.language,
-            channels: stream.channels,
-            title: stream.title,
-            is_default: stream.default,
-        })
-        .exec(db)
-        .await?;
+        scope
+            .audio_streams()
+            .create()
+            .media_file_id(media_file_id)
+            .index(stream.index)
+            .codec(stream.codec)
+            .language(stream.language)
+            .channels(stream.channels)
+            .title(stream.title)
+            .is_default(stream.default)
+            .exec(scope.executor_mut())
+            .await?;
     }
     for stream in probe.subtitle_streams {
-        toasty::create!(SubtitleStream {
-            media_file_id,
-            index: stream.index,
-            codec: stream.codec,
-            language: stream.language,
-            title: stream.title,
-            is_default: stream.default,
-            forced: stream.forced,
-            hearing_impaired: stream.hearing_impaired,
-            text: stream.text,
-        })
-        .exec(db)
-        .await?;
+        scope
+            .subtitle_streams()
+            .create()
+            .media_file_id(media_file_id)
+            .index(stream.index)
+            .codec(stream.codec)
+            .language(stream.language)
+            .title(stream.title)
+            .is_default(stream.default)
+            .forced(stream.forced)
+            .hearing_impaired(stream.hearing_impaired)
+            .text(stream.text)
+            .exec(scope.executor_mut())
+            .await?;
     }
     Ok(())
 }
 
 async fn save_subtitle_files(
-    db: &mut dyn toasty::Executor,
+    scope: &mut impl DbScope,
     media_file_id: Uuid,
-    mut subtitle_files: Vec<crate::ports::FoundSubtitleFile>,
+    mut subtitle_files: Vec<FoundSubtitleFile>,
 ) -> toasty::Result<bool> {
     subtitle_files.sort();
-    let mut stored = SubtitleFile::filter_by_media_file_id(media_file_id)
-        .exec(db)
+    let mut stored = scope
+        .subtitle_files()
+        .filter(SubtitleFile::fields().media_file_id().eq(media_file_id))
+        .exec(scope.executor_mut())
         .await?
         .into_iter()
-        .map(|x| crate::ports::FoundSubtitleFile {
+        .map(|x| FoundSubtitleFile {
             path: x.path,
             language: x.language,
             hearing_impaired: x.hearing_impaired,
@@ -238,62 +260,72 @@ async fn save_subtitle_files(
     if stored == subtitle_files {
         return Ok(false);
     }
-    SubtitleFile::filter_by_media_file_id(media_file_id)
+    scope
+        .subtitle_files()
+        .filter(SubtitleFile::fields().media_file_id().eq(media_file_id))
         .delete()
-        .exec(db)
+        .exec(scope.executor_mut())
         .await?;
     for file in subtitle_files {
-        toasty::create!(SubtitleFile {
-            media_file_id,
-            path: file.path,
-            language: file.language,
-            hearing_impaired: file.hearing_impaired,
-            forced: file.forced,
-        })
-        .exec(db)
-        .await?;
+        scope
+            .subtitle_files()
+            .create()
+            .media_file_id(media_file_id)
+            .path(file.path)
+            .language(file.language)
+            .hearing_impaired(file.hearing_impaired)
+            .forced(file.forced)
+            .exec(scope.executor_mut())
+            .await?;
     }
     Ok(true)
 }
 
 async fn save_file_not_found(
-    db: &mut dyn toasty::Executor,
+    scope: &mut impl DbScope,
     media_file_id: Uuid,
     path: &str,
     found: bool,
 ) -> toasty::Result<()> {
-    SyncProblem::filter(
-        SyncProblem::fields().media_file_id().eq(media_file_id).and(
-            SyncProblem::fields()
-                .kind()
-                .eq(SyncProblemKind::FileNotFound),
-        ),
-    )
-    .delete()
-    .exec(db)
-    .await?;
-    if !found {
-        toasty::create!(SyncProblem {
-            media_file_id: Some(media_file_id),
-            kind: SyncProblemKind::FileNotFound,
-            path: path.to_owned(),
-        })
-        .exec(db)
+    scope
+        .sync_problems()
+        .filter(
+            SyncProblem::fields().media_file_id().eq(media_file_id).and(
+                SyncProblem::fields()
+                    .kind()
+                    .eq(SyncProblemKind::FileNotFound),
+            ),
+        )
+        .delete()
+        .exec(scope.executor_mut())
         .await?;
+    if !found {
+        scope
+            .sync_problems()
+            .create()
+            .media_file_id(Some(media_file_id))
+            .kind(SyncProblemKind::FileNotFound)
+            .path(path)
+            .exec(scope.executor_mut())
+            .await?;
     }
     Ok(())
 }
 
-pub(crate) async fn delete(db: &mut dyn toasty::Executor, ids: Vec<Uuid>) -> toasty::Result<()> {
+pub(crate) async fn delete(scope: &mut impl DbScope, ids: Vec<Uuid>) -> toasty::Result<()> {
     if ids.is_empty() {
         return Ok(());
     }
-    SyncProblem::filter(SyncProblem::fields().media_file_id().in_list(ids.clone()))
+    scope
+        .sync_problems()
+        .filter(SyncProblem::fields().media_file_id().in_list(ids.clone()))
         .delete()
-        .exec(db)
+        .exec(scope.executor_mut())
         .await?;
-    MediaFile::filter(MediaFile::fields().id().in_list(ids))
+    scope
+        .media_files()
+        .filter(MediaFile::fields().id().in_list(ids))
         .delete()
-        .exec(db)
+        .exec(scope.executor_mut())
         .await
 }

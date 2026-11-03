@@ -13,7 +13,9 @@ use crate::ports::persistence::DbScope;
 
 pub async fn call(dependencies: impl Into<Dependencies>) -> Result<Output, Error> {
     let mut db_context = dependencies.into().db_context;
-    let mut movies = domain::Movie::filter(domain::Movie::fields().visible().eq(true))
+    let mut movies = db_context
+        .movies()
+        .filter(domain::Movie::in_library_filter())
         .include(domain::Movie::fields().actors())
         .include(domain::Movie::fields().artwork())
         .exec(db_context.executor_mut())

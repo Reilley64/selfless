@@ -20,12 +20,13 @@ pub async fn call(
     media_file_id: Uuid,
 ) -> Result<Output, Error> {
     let mut db_context = dependencies.into().db_context;
-    let Some(media_file) = domain::MediaFile::filter_by_id(media_file_id)
+    let Some(media_file) = db_context
+        .media_files()
+        .find(media_file_id)
         .include(domain::MediaFile::fields().video_streams())
         .include(domain::MediaFile::fields().audio_streams())
         .include(domain::MediaFile::fields().subtitle_streams())
         .include(domain::MediaFile::fields().subtitle_files())
-        .first()
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?
