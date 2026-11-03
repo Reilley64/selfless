@@ -31,3 +31,22 @@ jobs:
             revert
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  test-comments:
+    name: "Test: New comments"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: "Source: Check out the repository with the base branch"
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: "Policy: Reject lines that add a comment"
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: scripts/check-no-new-comments "origin/$BASE_REF"
