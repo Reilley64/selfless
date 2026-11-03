@@ -18,8 +18,6 @@ use crate::ports::Probe;
 use crate::ports::ProbeError;
 use crate::ports::ProbeMediaFile;
 use crate::ports::RadarrError;
-use crate::ports::RadarrMovie;
-use crate::ports::RadarrMovieFile;
 use crate::ports::ReadEpisodeFolder;
 use crate::ports::ReadEpisodeNfo;
 use crate::ports::ReadMovieFolder;
@@ -29,10 +27,11 @@ use crate::ports::ReadShowNfo;
 use crate::ports::SendEmail;
 use crate::ports::SendEmailError;
 use crate::ports::ShowFolder;
-use crate::ports::SonarrEpisode;
-use crate::ports::SonarrEpisodeFile;
-use crate::ports::SonarrShow;
-use crate::ports::SonarrShowListing;
+use crate::ports::SourceEpisode;
+use crate::ports::SourceMediaFile;
+use crate::ports::SourceMovie;
+use crate::ports::SourceShow;
+use crate::ports::SourceShowListing;
 use crate::ports::UnreadableFile;
 use crate::ports::UnreadableNfo;
 use crate::ports::persistence;
@@ -178,24 +177,24 @@ pub(crate) fn at(timestamp: &str) -> Timestamp {
     timestamp.parse().expect("the timestamp is valid")
 }
 
-pub(crate) fn arrival(file: Option<&str>) -> RadarrMovie {
-    RadarrMovie {
+pub(crate) fn arrival(file: Option<&str>) -> SourceMovie {
+    SourceMovie {
         radarr_id: 42,
         tmdb_id: 329_865,
         title: "Arrival".to_owned(),
         year: 2016,
         overview: Some("An expert linguist is recruited by the military.".to_owned()),
         genres: vec!["Drama".to_owned(), "Science Fiction".to_owned()],
-        movie_file: file.map(|path| RadarrMovieFile {
+        media_file: file.map(|path| SourceMediaFile {
             path: path.to_owned(),
-            date_added: at("2026-10-29T10:00:00Z"),
+            added_at: at("2026-10-29T10:00:00Z"),
         }),
     }
 }
 
 #[derive(Default)]
 pub(crate) struct MovieSources {
-    pub(crate) radarr_movie: Option<RadarrMovie>,
+    pub(crate) movie: Option<SourceMovie>,
     pub(crate) radarr_is_down: bool,
     pub(crate) files_on_disk: HashMap<String, FoundMediaFile>,
     pub(crate) unreadable_files: HashSet<String>,
@@ -222,7 +221,7 @@ impl MovieLibrary {
             source_health: SourceHealth::default(),
             sources: Arc::default(),
         };
-        library.sources().radarr_movie = Some(arrival(Some(MOVIE_FILE)));
+        library.sources().movie = Some(arrival(Some(MOVIE_FILE)));
         library.put_file(MOVIE_FILE, 1_000, "2026-10-29T09:00:00Z");
         library
     }
@@ -294,7 +293,7 @@ impl MovieLibrary {
                 let movie = if sources.radarr_is_down {
                     Err(RadarrError::caused_by("Radarr is down"))
                 } else {
-                    Ok(sources.radarr_movie.clone())
+                    Ok(sources.movie.clone())
                 };
                 Box::pin(async move { movie })
             }),
@@ -343,16 +342,16 @@ pub(crate) const S01E02_E03_FILE: &str = "/media/TV/Severance/Season 01/Severanc
 pub(crate) const S02E01_FILE: &str =
     "/media/TV/Severance/Season 02/Severance - S02E01 - Hello, Ms. Cobel WEBDL-1080p.mkv";
 
-pub(crate) fn sonarr_episode_file(path: &str, date_added: &str) -> Option<SonarrEpisodeFile> {
-    Some(SonarrEpisodeFile {
+pub(crate) fn source_media_file(path: &str, added_at: &str) -> Option<SourceMediaFile> {
+    Some(SourceMediaFile {
         path: path.to_owned(),
-        date_added: at(date_added),
+        added_at: at(added_at),
     })
 }
 
-pub(crate) fn severance() -> SonarrShow {
-    SonarrShow {
-        listing: SonarrShowListing {
+pub(crate) fn severance() -> SourceShow {
+    SourceShow {
+        listing: SourceShowListing {
             sonarr_id: 7,
             tvdb_id: 371_980,
             path: SHOW_FOLDER.to_owned(),
@@ -366,7 +365,7 @@ pub(crate) fn severance() -> SonarrShow {
             overview: Some("Mark leads a team of office workers.".to_owned()),
         },
         episodes: vec![
-            SonarrEpisode {
+            SourceEpisode {
                 sonarr_id: 1001,
                 tvdb_id: 9_094_718,
                 season_number: 0,
@@ -374,9 +373,9 @@ pub(crate) fn severance() -> SonarrShow {
                 title: "Inside the Episode".to_owned(),
                 air_date: Some(date(2022, 2, 18)),
                 overview: Some("Ben Stiller and the cast talk about the first season.".to_owned()),
-                episode_file: sonarr_episode_file(SPECIAL_FILE, "2022-03-04T11:02:19Z"),
+                media_file: source_media_file(SPECIAL_FILE, "2022-03-04T11:02:19Z"),
             },
-            SonarrEpisode {
+            SourceEpisode {
                 sonarr_id: 1011,
                 tvdb_id: 8_486_245,
                 season_number: 1,
@@ -384,9 +383,9 @@ pub(crate) fn severance() -> SonarrShow {
                 title: "Good News About Hell".to_owned(),
                 air_date: Some(date(2022, 2, 18)),
                 overview: Some("Mark's memories are divided.".to_owned()),
-                episode_file: sonarr_episode_file(S01E01_FILE, "2022-03-01T09:30:00Z"),
+                media_file: source_media_file(S01E01_FILE, "2022-03-01T09:30:00Z"),
             },
-            SonarrEpisode {
+            SourceEpisode {
                 sonarr_id: 1012,
                 tvdb_id: 8_786_934,
                 season_number: 1,
@@ -394,9 +393,9 @@ pub(crate) fn severance() -> SonarrShow {
                 title: "Half Loop".to_owned(),
                 air_date: Some(date(2022, 2, 18)),
                 overview: Some("Mark takes Helly on a tour of the office.".to_owned()),
-                episode_file: sonarr_episode_file(S01E02_E03_FILE, "2022-03-01T09:31:00Z"),
+                media_file: source_media_file(S01E02_E03_FILE, "2022-03-01T09:31:00Z"),
             },
-            SonarrEpisode {
+            SourceEpisode {
                 sonarr_id: 1013,
                 tvdb_id: 8_786_935,
                 season_number: 1,
@@ -404,9 +403,9 @@ pub(crate) fn severance() -> SonarrShow {
                 title: "In Perpetuity".to_owned(),
                 air_date: Some(date(2022, 2, 25)),
                 overview: Some("Helly takes a tour of the Perpetuity Wing.".to_owned()),
-                episode_file: sonarr_episode_file(S01E02_E03_FILE, "2022-03-01T09:31:00Z"),
+                media_file: source_media_file(S01E02_E03_FILE, "2022-03-01T09:31:00Z"),
             },
-            SonarrEpisode {
+            SourceEpisode {
                 sonarr_id: 1021,
                 tvdb_id: 10_535_541,
                 season_number: 2,
@@ -414,9 +413,9 @@ pub(crate) fn severance() -> SonarrShow {
                 title: "Hello, Ms. Cobel".to_owned(),
                 air_date: Some(date(2025, 1, 17)),
                 overview: Some("Mark leads his team on a search for answers.".to_owned()),
-                episode_file: sonarr_episode_file(S02E01_FILE, "2025-01-17T03:12:44Z"),
+                media_file: source_media_file(S02E01_FILE, "2025-01-17T03:12:44Z"),
             },
-            SonarrEpisode {
+            SourceEpisode {
                 sonarr_id: 1022,
                 tvdb_id: 10_535_542,
                 season_number: 2,
@@ -424,7 +423,7 @@ pub(crate) fn severance() -> SonarrShow {
                 title: "Goodbye, Mrs. Selvig".to_owned(),
                 air_date: Some(date(2025, 1, 24)),
                 overview: Some("Helly and Mark go looking for Ms. Casey.".to_owned()),
-                episode_file: None,
+                media_file: None,
             },
         ],
     }
@@ -432,7 +431,7 @@ pub(crate) fn severance() -> SonarrShow {
 
 #[derive(Default)]
 pub(crate) struct ShowSources {
-    pub(crate) sonarr_show: Option<SonarrShow>,
+    pub(crate) show: Option<SourceShow>,
     pub(crate) files_on_disk: HashSet<String>,
     pub(crate) unreadable_files: HashSet<String>,
     pub(crate) folder: ShowFolder,
@@ -457,7 +456,7 @@ impl ShowLibrary {
         };
         {
             let mut sources = library.sources();
-            sources.sonarr_show = Some(severance());
+            sources.show = Some(severance());
             sources.files_on_disk = [SPECIAL_FILE, S01E01_FILE, S01E02_E03_FILE, S02E01_FILE]
                 .map(str::to_owned)
                 .into();
@@ -494,7 +493,7 @@ impl ShowLibrary {
                 Box::pin(async move { found })
             }),
             get_sonarr_show: GetSonarrShow::new(move |_| {
-                let show = sonarr.lock().unwrap().sonarr_show.clone();
+                let show = sonarr.lock().unwrap().show.clone();
                 Box::pin(async move { Ok(show) })
             }),
             list_subtitle_files: no_subtitle_files(),

@@ -64,7 +64,7 @@ mod tests {
     use crate::library::SourceHealth;
     use crate::ports::ListRadarrMovies;
     use crate::ports::ListSonarrShows;
-    use crate::ports::RadarrMovie;
+    use crate::ports::SourceMovie;
     use crate::ports::persistence::DbContext;
     use crate::test::RecordingLock;
     use crate::test::arrival;
@@ -151,7 +151,7 @@ mod tests {
                             .lock()
                             .unwrap()
                             .iter()
-                            .map(|x| RadarrMovie {
+                            .map(|x| SourceMovie {
                                 tmdb_id: *x,
                                 ..arrival(None)
                             })

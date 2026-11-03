@@ -21,7 +21,7 @@ use crate::ports::AcquireLock;
 use crate::ports::GetSonarrEpisodes;
 use crate::ports::ListRadarrMovies;
 use crate::ports::ListSonarrShows;
-use crate::ports::SonarrShow;
+use crate::ports::SourceShow;
 use crate::ports::persistence::DbContext;
 use crate::ports::persistence::DbScope;
 use domain::HeldRemoval;
@@ -236,14 +236,14 @@ async fn sync_movies(
     source_health: &SourceHealth,
     progress: &Mutex<Option<Progress>>,
 ) -> Result<Listing, Error> {
-    let radarr_movies = source_health
+    let source_movies = source_health
         .api_call(Source::Radarr, list_radarr_movies.call().await)
         .map_err(Error::caused_by)?;
-    let listed = radarr_movies
+    let listed = source_movies
         .iter()
         .map(|x| x.tmdb_id)
         .collect::<HashSet<_>>();
-    set_total(progress, radarr_movies.len());
+    set_total(progress, source_movies.len());
     let stored_movies = db_context
         .movies()
         .all()
@@ -269,31 +269,31 @@ async fn sync_movies(
         .into_iter()
         .map(|x| (x.path.clone(), x))
         .collect::<HashMap<_, _>>();
-    let mut inspections = stream::iter(radarr_movies)
-        .map(|radarr_movie| {
+    let mut inspections = stream::iter(source_movies)
+        .map(|source_movie| {
             let span = sync_movie::span();
-            let stored_file = radarr_movie
-                .movie_file
+            let stored_file = source_movie
+                .media_file
                 .as_ref()
                 .and_then(|x| stored.get(&x.path));
             let stored_nfo_modified_at = nfo_modified_at
-                .get(&radarr_movie.tmdb_id)
+                .get(&source_movie.tmdb_id)
                 .copied()
                 .flatten();
             async move {
                 let inspected =
-                    sync_movie::inspect(files, stored_file, stored_nfo_modified_at, &radarr_movie)
+                    sync_movie::inspect(files, stored_file, stored_nfo_modified_at, &source_movie)
                         .instrument(span.clone())
                         .await;
-                (radarr_movie, inspected, span)
+                (source_movie, inspected, span)
             }
         })
         .buffered(CONCURRENT_PROBES);
     let mut unreadable_items = 0;
-    while let Some((radarr_movie, inspected, span)) = inspections.next().await {
+    while let Some((source_movie, inspected, span)) = inspections.next().await {
         let inspected = inspected.map_err(Error::caused_by)?;
         unreadable_items += usize::from(inspected.unreadable());
-        sync_movie::save(db_context, radarr_movie, inspected)
+        sync_movie::save(db_context, source_movie, inspected)
             .instrument(span)
             .await
             .map_err(Error::caused_by)?;
@@ -343,13 +343,13 @@ async fn sync_shows(
             .await;
         match source_health.api_call(Source::Sonarr, episodes) {
             Ok(episodes) => {
-                let sonarr_show = SonarrShow { listing, episodes };
-                let inspected = sync_show::inspect(db_context, files, &sonarr_show)
+                let source_show = SourceShow { listing, episodes };
+                let inspected = sync_show::inspect(db_context, files, &source_show)
                     .instrument(span.clone())
                     .await
                     .map_err(Error::caused_by)?;
                 unreadable_items += usize::from(inspected.unreadable());
-                sync_show::save(db_context, sonarr_show, inspected)
+                sync_show::save(db_context, source_show, inspected)
                     .instrument(span)
                     .await
                     .map_err(Error::caused_by)?;
@@ -482,12 +482,11 @@ mod tests {
     use crate::ports::FoundMediaFile;
     use crate::ports::LockGuard;
     use crate::ports::RadarrError;
-    use crate::ports::RadarrMovie;
-    use crate::ports::RadarrMovieFile;
-    use crate::ports::SonarrEpisode;
-    use crate::ports::SonarrEpisodeFile;
     use crate::ports::SonarrError;
-    use crate::ports::SonarrShowListing;
+    use crate::ports::SourceEpisode;
+    use crate::ports::SourceMediaFile;
+    use crate::ports::SourceMovie;
+    use crate::ports::SourceShowListing;
     use crate::ports::TryAcquireLock;
     use crate::ports::UnreadableFile;
     use crate::test::empty_episode_folder;
@@ -524,23 +523,23 @@ mod tests {
         }
     }
 
-    fn radarr_movie(tmdb_id: i64) -> RadarrMovie {
-        RadarrMovie {
+    fn source_movie(tmdb_id: i64) -> SourceMovie {
+        SourceMovie {
             radarr_id: tmdb_id,
             tmdb_id,
             title: title(tmdb_id).to_owned(),
             year: 2016,
             overview: None,
             genres: Vec::new(),
-            movie_file: Some(RadarrMovieFile {
+            media_file: Some(SourceMediaFile {
                 path: format!("/movies/{}.mkv", title(tmdb_id)),
-                date_added: Timestamp::UNIX_EPOCH,
+                added_at: Timestamp::UNIX_EPOCH,
             }),
         }
     }
 
-    fn sonarr_listing(sonarr_id: i64) -> SonarrShowListing {
-        SonarrShowListing {
+    fn source_show_listing(sonarr_id: i64) -> SourceShowListing {
+        SourceShowListing {
             sonarr_id,
             tvdb_id: sonarr_id,
             path: format!("/tv/{}", title(sonarr_id)),
@@ -551,8 +550,8 @@ mod tests {
         }
     }
 
-    fn sonarr_episodes(sonarr_id: i64) -> Vec<SonarrEpisode> {
-        vec![SonarrEpisode {
+    fn source_episodes(sonarr_id: i64) -> Vec<SourceEpisode> {
+        vec![SourceEpisode {
             sonarr_id,
             tvdb_id: sonarr_id,
             season_number: 1,
@@ -560,9 +559,9 @@ mod tests {
             title: "Pilot".to_owned(),
             air_date: None,
             overview: None,
-            episode_file: Some(SonarrEpisodeFile {
+            media_file: Some(SourceMediaFile {
                 path: format!("/tv/{}/S01E01.mkv", title(sonarr_id)),
-                date_added: Timestamp::UNIX_EPOCH,
+                added_at: Timestamp::UNIX_EPOCH,
             }),
         }]
     }
@@ -573,7 +572,7 @@ mod tests {
         clock: FakeClock,
         reconciles: Reconciles,
         source_health: SourceHealth,
-        radarr: Arc<Mutex<Result<Vec<RadarrMovie>, &'static str>>>,
+        radarr: Arc<Mutex<Result<Vec<SourceMovie>, &'static str>>>,
         sonarr: Arc<Mutex<Result<Vec<i64>, &'static str>>>,
         failing_episodes: Arc<Mutex<HashSet<i64>>>,
         unreadable_files: Arc<Mutex<HashSet<String>>>,
@@ -607,10 +606,10 @@ mod tests {
         }
 
         fn radarr_lists(&self, ids: &[i64]) {
-            self.radarr_lists_movies(ids.iter().copied().map(radarr_movie).collect());
+            self.radarr_lists_movies(ids.iter().copied().map(source_movie).collect());
         }
 
-        fn radarr_lists_movies(&self, movies: Vec<RadarrMovie>) {
+        fn radarr_lists_movies(&self, movies: Vec<SourceMovie>) {
             *self.radarr.lock().unwrap() = Ok(movies);
         }
 
@@ -663,7 +662,7 @@ mod tests {
                         if failing {
                             return Err(SonarrError::caused_by("500 Internal Server Error"));
                         }
-                        Ok(sonarr_episodes(sonarr_id))
+                        Ok(source_episodes(sonarr_id))
                     })
                 }),
                 list_radarr_movies: ListRadarrMovies::new(move || {
@@ -673,7 +672,7 @@ mod tests {
                 list_sonarr_shows: ListSonarrShows::new(move || {
                     let ids = sonarr.lock().unwrap().clone();
                     Box::pin(async move {
-                        ids.map(|x| x.into_iter().map(sonarr_listing).collect())
+                        ids.map(|x| x.into_iter().map(source_show_listing).collect())
                             .map_err(SonarrError::caused_by)
                     })
                 }),
@@ -843,7 +842,7 @@ mod tests {
         library.radarr_lists(&[ARRIVAL]);
         library.reconcile(Source::Radarr).await;
 
-        let mut arrival = radarr_movie(ARRIVAL);
+        let mut arrival = source_movie(ARRIVAL);
         arrival.title = "Arrival (Extended)".to_owned();
         library.radarr_lists_movies(vec![arrival]);
         library.reconcile(Source::Radarr).await;

@@ -24,8 +24,8 @@ use crate::ports::ReadNfoError;
 use crate::ports::ReadShowFolder;
 use crate::ports::ReadShowNfo;
 use crate::ports::ShowFolder;
-use crate::ports::SonarrEpisode;
-use crate::ports::SonarrShow;
+use crate::ports::SourceEpisode;
+use crate::ports::SourceShow;
 use crate::ports::UnreadableFile;
 use crate::ports::persistence::DbContext;
 use crate::ports::persistence::DbScope;
@@ -69,14 +69,14 @@ pub async fn call(dependencies: impl Into<Dependencies>, sonarr_id: i64) -> Resu
         read_show_nfo,
     };
     async {
-        let sonarr_show = get_sonarr_show.call(sonarr_id).await;
+        let source_show = get_sonarr_show.call(sonarr_id).await;
         match source_health
-            .api_call(Source::Sonarr, sonarr_show)
+            .api_call(Source::Sonarr, source_show)
             .map_err(Error::caused_by)?
         {
-            Some(sonarr_show) => {
-                let inspected = inspect(&mut db_context, &files, &sonarr_show).await?;
-                save(&mut db_context, sonarr_show, inspected).await
+            Some(source_show) => {
+                let inspected = inspect(&mut db_context, &files, &source_show).await?;
+                save(&mut db_context, source_show, inspected).await
             }
             None => match db_context
                 .shows()
@@ -132,20 +132,20 @@ impl InspectedShow {
 pub(crate) async fn inspect(
     db_context: &mut DbContext,
     files: &ShowFiles,
-    sonarr_show: &SonarrShow,
+    source_show: &SourceShow,
 ) -> Result<InspectedShow, Error> {
-    let episode_file_paths = sonarr_show
+    let media_file_paths = source_show
         .episodes
         .iter()
-        .filter_map(|x| x.episode_file.as_ref())
+        .filter_map(|x| x.media_file.as_ref())
         .map(|x| x.path.clone())
         .collect::<Vec<_>>();
-    let stored = if episode_file_paths.is_empty() {
+    let stored = if media_file_paths.is_empty() {
         HashMap::new()
     } else {
         db_context
             .media_files()
-            .filter(MediaFile::fields().path().in_list(episode_file_paths))
+            .filter(MediaFile::fields().path().in_list(media_file_paths))
             .exec(db_context.executor_mut())
             .await
             .map_err(Error::caused_by)?
@@ -155,7 +155,7 @@ pub(crate) async fn inspect(
     };
     let stored_show = db_context
         .shows()
-        .filter(Show::fields().tvdb_id().eq(sonarr_show.listing.tvdb_id))
+        .filter(Show::fields().tvdb_id().eq(source_show.listing.tvdb_id))
         .include(Show::fields().seasons().episodes())
         .first()
         .exec(db_context.executor_mut())
@@ -167,7 +167,7 @@ pub(crate) async fn inspect(
         .flat_map(|x| x.episodes.get())
         .map(|x| (x.tvdb_id, x.nfo_modified_at))
         .collect::<HashMap<_, _>>();
-    let sonarr_ids = sonarr_show
+    let sonarr_ids = source_show
         .episodes
         .iter()
         .map(|x| x.sonarr_id)
@@ -175,10 +175,10 @@ pub(crate) async fn inspect(
     let read = async {
         let mut found = HashMap::new();
         let mut episode_folders = HashMap::new();
-        for file in sonarr_show
+        for file in source_show
             .episodes
             .iter()
-            .filter_map(|x| x.episode_file.as_ref())
+            .filter_map(|x| x.media_file.as_ref())
         {
             if !episode_folders.contains_key(&file.path) {
                 found.insert(
@@ -191,7 +191,7 @@ pub(crate) async fn inspect(
                 );
             }
         }
-        let season_numbers = sonarr_show
+        let season_numbers = source_show
             .episodes
             .iter()
             .map(|x| x.season_number)
@@ -199,7 +199,7 @@ pub(crate) async fn inspect(
         let mut folder = files
             .read_show_folder
             .call(
-                &sonarr_show.listing.path,
+                &source_show.listing.path,
                 season_numbers.into_iter().collect(),
             )
             .await?;
@@ -211,16 +211,16 @@ pub(crate) async fn inspect(
         .await?;
         let mut nfo_roots = HashMap::new();
         let mut episode_nfos = Vec::new();
-        for sonarr_episode in &sonarr_show.episodes {
-            let nfo_file = sonarr_episode
-                .episode_file
+        for source_episode in &source_show.episodes {
+            let nfo_file = source_episode
+                .media_file
                 .as_ref()
                 .and_then(|x| episode_folders.get(&x.path))
                 .and_then(|x| x.nfo.as_ref());
             episode_nfos.push(match nfo_file {
                 None => Nfo::Missing,
                 Some(nfo_file)
-                    if stored_nfo_modified_at.get(&sonarr_episode.tvdb_id)
+                    if stored_nfo_modified_at.get(&source_episode.tvdb_id)
                         == Some(&Some(nfo_file.modified_at)) =>
                 {
                     Nfo::Unchanged
@@ -241,12 +241,12 @@ pub(crate) async fn inspect(
                         None => Nfo::Unreadable(nfo_file.path.clone()),
                         Some(roots) => match roots
                             .iter()
-                            .find(|x| x.sonarr_id == Some(sonarr_episode.sonarr_id))
+                            .find(|x| x.sonarr_id == Some(source_episode.sonarr_id))
                             .or_else(|| {
                                 roots.iter().find(|x| {
                                     !x.sonarr_id.is_some_and(|x| sonarr_ids.contains(&x))
-                                        && x.season_number == Some(sonarr_episode.season_number)
-                                        && x.episode_number == Some(sonarr_episode.episode_number)
+                                        && x.season_number == Some(source_episode.season_number)
+                                        && x.episode_number == Some(source_episode.episode_number)
                                 })
                             }) {
                             Some(root) => Nfo::Read(root.clone(), nfo_file.modified_at),
@@ -291,17 +291,17 @@ pub(crate) async fn inspect(
 
 pub(crate) async fn save(
     db_context: &mut DbContext,
-    sonarr_show: SonarrShow,
+    source_show: SourceShow,
     inspected: InspectedShow,
 ) -> Result<(), Error> {
     let mut transaction = db_context.transaction().await.map_err(Error::caused_by)?;
     let change = match inspected {
         InspectedShow::Read(on_disk) => {
-            write(&mut transaction, sonarr_show, *on_disk, None).await?
+            write(&mut transaction, source_show, *on_disk, None).await?
         }
         InspectedShow::Unreadable(error) => match transaction
             .shows()
-            .filter(Show::fields().tvdb_id().eq(sonarr_show.listing.tvdb_id))
+            .filter(Show::fields().tvdb_id().eq(source_show.listing.tvdb_id))
             .first()
             .exec(transaction.executor_mut())
             .await
@@ -323,20 +323,20 @@ pub(crate) async fn save(
                     media_files: HashMap::new(),
                     folder: ShowFolder::default(),
                     nfo: Nfo::Missing,
-                    episode_nfos: sonarr_show.episodes.iter().map(|_| Nfo::Missing).collect(),
+                    episode_nfos: source_show.episodes.iter().map(|_| Nfo::Missing).collect(),
                 };
-                let sonarr_show = SonarrShow {
-                    episodes: sonarr_show
+                let source_show = SourceShow {
+                    episodes: source_show
                         .episodes
                         .into_iter()
-                        .map(|x| SonarrEpisode {
-                            episode_file: None,
+                        .map(|x| SourceEpisode {
+                            media_file: None,
                             ..x
                         })
                         .collect(),
-                    ..sonarr_show
+                    ..source_show
                 };
-                write(&mut transaction, sonarr_show, on_disk, Some(error.path)).await?
+                write(&mut transaction, source_show, on_disk, Some(error.path)).await?
             }
         },
     };
@@ -376,7 +376,7 @@ pub(crate) async fn remove(db_context: &mut DbContext, show: Show) -> Result<(),
 
 async fn write(
     scope: &mut impl DbScope,
-    sonarr_show: SonarrShow,
+    source_show: SourceShow,
     on_disk: ShowOnDisk,
     unreadable: Option<String>,
 ) -> Result<Option<Change>, Error> {
@@ -387,7 +387,7 @@ async fn write(
         nfo,
         episode_nfos,
     } = on_disk;
-    let listing = sonarr_show.listing;
+    let listing = source_show.listing;
     let stored = scope
         .shows()
         .filter(Show::fields().tvdb_id().eq(listing.tvdb_id))
@@ -396,12 +396,12 @@ async fn write(
         .await
         .map_err(Error::caused_by)?;
     let had_nfo = stored.as_ref().is_some_and(|x| x.nfo_modified_at.is_some());
-    let sonarr_metadata =
+    let source_metadata =
         ShowMetadata::from_source(listing.title, listing.overview, listing.genres);
     let (metadata, nfo_modified_at) = match (&nfo, &stored) {
         (Nfo::Unchanged, Some(show)) => (show.metadata(), show.nfo_modified_at),
-        (Nfo::Read(nfo, modified_at), _) => (sonarr_metadata.with_nfo(nfo), Some(*modified_at)),
-        _ => (sonarr_metadata, None),
+        (Nfo::Read(nfo, modified_at), _) => (source_metadata.with_nfo(nfo), Some(*modified_at)),
+        _ => (source_metadata, None),
     };
     let (show, show_change) = match stored {
         Some(mut show) => {
@@ -486,23 +486,23 @@ async fn write(
     let mut media_file_ids = HashSet::new();
     let mut unreadable_nfos = HashMap::new();
     let mut saved = HashMap::new();
-    for (sonarr_episode, nfo) in sonarr_show.episodes.into_iter().zip(episode_nfos) {
-        let episode_folder = sonarr_episode
-            .episode_file
+    for (source_episode, nfo) in source_show.episodes.into_iter().zip(episode_nfos) {
+        let episode_folder = source_episode
+            .media_file
             .as_ref()
             .and_then(|x| episode_folders.get(&x.path));
-        let stored = episodes.remove(&sonarr_episode.tvdb_id);
-        let sonarr_metadata = EpisodeMetadata::from_source(
-            sonarr_episode.title,
-            sonarr_episode.air_date,
-            sonarr_episode.overview,
+        let stored = episodes.remove(&source_episode.tvdb_id);
+        let source_metadata = EpisodeMetadata::from_source(
+            source_episode.title,
+            source_episode.air_date,
+            source_episode.overview,
         );
         let (metadata, nfo_modified_at) = match (&nfo, &stored) {
             (Nfo::Unchanged, Some(episode)) => (episode.metadata(), episode.nfo_modified_at),
-            (Nfo::Read(nfo, modified_at), _) => (sonarr_metadata.with_nfo(nfo), Some(*modified_at)),
-            _ => (sonarr_metadata, None),
+            (Nfo::Read(nfo, modified_at), _) => (source_metadata.with_nfo(nfo), Some(*modified_at)),
+            _ => (source_metadata, None),
         };
-        let season_number = sonarr_episode.season_number;
+        let season_number = source_episode.season_number;
         let season_id = match seasons.get(&season_number) {
             Some(id) => *id,
             None => {
@@ -520,19 +520,19 @@ async fn write(
             }
         };
         synced_seasons.insert(season_number);
-        let (media_file_id, file_on_disk) = match &sonarr_episode.episode_file {
-            Some(sonarr_file) => {
-                let (id, on_disk) = match inspected.remove(&sonarr_file.path) {
+        let (media_file_id, file_on_disk) = match &source_episode.media_file {
+            Some(source_file) => {
+                let (id, on_disk) = match inspected.remove(&source_file.path) {
                     Some(inspected) => {
                         let on_disk = inspected.on_disk();
-                        let saved_file = media_files::save(scope, &sonarr_file.path, inspected)
+                        let saved_file = media_files::save(scope, &source_file.path, inspected)
                             .await
                             .map_err(Error::caused_by)?;
                         changed |= saved_file.changed;
-                        saved.insert(sonarr_file.path.clone(), (saved_file.id, on_disk));
+                        saved.insert(source_file.path.clone(), (saved_file.id, on_disk));
                         (saved_file.id, on_disk)
                     }
-                    None => saved[&sonarr_file.path],
+                    None => saved[&source_file.path],
                 };
                 media_file_ids.insert(id);
                 if let Nfo::Unreadable(path) = &nfo {
@@ -542,13 +542,13 @@ async fn write(
             }
             None => (None, false),
         };
-        let visible = Episode::in_library(sonarr_episode.episode_file.is_some(), file_on_disk);
-        let date_added = sonarr_episode.episode_file.map(|x| x.date_added);
+        let visible = Episode::in_library(source_episode.media_file.is_some(), file_on_disk);
+        let source_added_at = source_episode.media_file.map(|x| x.added_at);
         let episode_id = match stored {
             Some(mut episode) => {
-                let added_at = domain::first_added_at(episode.added_at, date_added);
+                let added_at = domain::first_added_at(episode.added_at, source_added_at);
                 if episode.season_id != season_id
-                    || episode.number != sonarr_episode.episode_number
+                    || episode.number != source_episode.episode_number
                     || episode.nfo_modified_at != nfo_modified_at
                     || episode.metadata() != metadata
                     || episode.added_at != added_at
@@ -559,7 +559,7 @@ async fn write(
                     episode
                         .update()
                         .season_id(season_id)
-                        .number(sonarr_episode.episode_number)
+                        .number(source_episode.episode_number)
                         .title(metadata.title)
                         .air_date(metadata.air_date)
                         .overview(metadata.overview)
@@ -580,14 +580,14 @@ async fn write(
                     .episodes()
                     .create()
                     .season_id(season_id)
-                    .tvdb_id(sonarr_episode.tvdb_id)
-                    .number(sonarr_episode.episode_number)
+                    .tvdb_id(source_episode.tvdb_id)
+                    .number(source_episode.episode_number)
                     .title(metadata.title)
                     .air_date(metadata.air_date)
                     .overview(metadata.overview)
                     .rating(metadata.rating)
                     .nfo_modified_at(nfo_modified_at)
-                    .added_at(date_added)
+                    .added_at(source_added_at)
                     .media_file_id(media_file_id)
                     .visible(visible)
                     .exec(scope.executor_mut())
@@ -680,7 +680,7 @@ async fn write(
 mod tests {
     use super::*;
     use crate::ports::FoundFile;
-    use crate::ports::SonarrEpisode;
+    use crate::ports::SourceEpisode;
     use crate::test::S01E01_FILE;
     use crate::test::S01E02_E03_FILE;
     use crate::test::S02E01_FILE;
@@ -689,7 +689,7 @@ mod tests {
     use crate::test::ShowLibrary;
     use crate::test::at;
     use crate::test::severance;
-    use crate::test::sonarr_episode_file;
+    use crate::test::source_media_file;
     use domain::Actor;
     use domain::Artwork;
     use domain::EpisodeNfo;
@@ -898,26 +898,20 @@ mod tests {
         };
     }
 
-    fn with_sonarr_episodes(library: &ShowLibrary, change: impl FnOnce(&mut Vec<SonarrEpisode>)) {
+    fn with_source_episodes(library: &ShowLibrary, change: impl FnOnce(&mut Vec<SourceEpisode>)) {
         let mut sources = library.sources();
-        change(&mut sources.sonarr_show.as_mut().unwrap().episodes);
+        change(&mut sources.show.as_mut().unwrap().episodes);
     }
 
-    fn severance_episodes(library: &ShowLibrary) -> Vec<SonarrEpisode> {
-        library
-            .sources()
-            .sonarr_show
-            .as_ref()
-            .unwrap()
-            .episodes
-            .clone()
+    fn severance_episodes(library: &ShowLibrary) -> Vec<SourceEpisode> {
+        library.sources().show.as_ref().unwrap().episodes.clone()
     }
 
-    fn sonarr_episode(
-        episodes: &mut [SonarrEpisode],
+    fn source_episode(
+        episodes: &mut [SourceEpisode],
         season: i64,
         number: i64,
-    ) -> &mut SonarrEpisode {
+    ) -> &mut SourceEpisode {
         episodes
             .iter_mut()
             .find(|x| x.season_number == season && x.episode_number == number)
@@ -934,13 +928,7 @@ mod tests {
     }
 
     fn retitle_show(library: &ShowLibrary) {
-        library
-            .sources()
-            .sonarr_show
-            .as_mut()
-            .unwrap()
-            .listing
-            .title = "Severance (2022)".to_owned();
+        library.sources().show.as_mut().unwrap().listing.title = "Severance (2022)".to_owned();
     }
 
     #[tokio::test]
@@ -1149,7 +1137,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_sonarr_show_is_stored_with_sonarrs_fields_and_only_episodes_with_a_file_are_visible()
+    async fn a_show_is_stored_with_sonarrs_fields_and_only_episodes_with_a_media_file_are_visible()
     {
         let library = ShowLibrary::new().await;
 
@@ -1265,14 +1253,14 @@ mod tests {
             .collect::<Vec<_>>();
 
         let with_files = severance_episodes(&library);
-        with_sonarr_episodes(&library, |episodes| {
+        with_source_episodes(&library, |episodes| {
             for episode in episodes {
-                episode.episode_file = None;
+                episode.media_file = None;
             }
         });
         library.sync_show().await.unwrap();
         let hidden = episodes(&library).await;
-        with_sonarr_episodes(&library, |episodes| *episodes = with_files);
+        with_source_episodes(&library, |episodes| *episodes = with_files);
         library.sync_show().await.unwrap();
 
         assert!(hidden.iter().all(|(_, x)| !x.visible));
@@ -1295,9 +1283,9 @@ mod tests {
             .sources()
             .files_on_disk
             .insert(UPGRADED_S02E01_FILE.to_owned());
-        with_sonarr_episodes(&library, |episodes| {
-            sonarr_episode(episodes, 2, 1).episode_file =
-                sonarr_episode_file(UPGRADED_S02E01_FILE, "2026-10-31T10:00:00Z");
+        with_source_episodes(&library, |episodes| {
+            source_episode(episodes, 2, 1).media_file =
+                source_media_file(UPGRADED_S02E01_FILE, "2026-10-31T10:00:00Z");
         });
         library.sync_show().await.unwrap();
 
@@ -1320,7 +1308,7 @@ mod tests {
         library.sync_show().await.unwrap();
         let before = show(&library).await;
 
-        library.sources().sonarr_show = None;
+        library.sources().show = None;
         library.sync_show().await.unwrap();
 
         assert!(shows(&library).await.is_empty());
@@ -1330,7 +1318,7 @@ mod tests {
         assert!(artwork(&library).await.is_empty());
         assert!(problems(&library).await.is_empty());
         assert!(media_files(&library).await.is_empty());
-        library.sources().sonarr_show = Some(severance());
+        library.sources().show = Some(severance());
         library.sync_show().await.unwrap();
         assert_ne!(show(&library).await.id, before.id);
     }
@@ -1525,8 +1513,8 @@ mod tests {
         );
         library.sync_show().await.unwrap();
 
-        with_sonarr_episodes(&library, |episodes| {
-            sonarr_episode(episodes, 1, 1).episode_number = 4;
+        with_source_episodes(&library, |episodes| {
+            source_episode(episodes, 1, 1).episode_number = 4;
         });
         library.sync_show().await.unwrap();
 
@@ -1553,7 +1541,7 @@ mod tests {
             ]),
             "2026-10-29T11:00:00Z",
         );
-        with_sonarr_episodes(&library, |episodes| {
+        with_source_episodes(&library, |episodes| {
             for episode in episodes {
                 episode.sonarr_id += 10_000;
             }
@@ -1584,9 +1572,9 @@ mod tests {
             ]),
             "2026-10-29T11:00:00Z",
         );
-        with_sonarr_episodes(&library, |episodes| {
-            sonarr_episode(episodes, 1, 2).episode_number = 4;
-            let in_perpetuity = sonarr_episode(episodes, 1, 3);
+        with_source_episodes(&library, |episodes| {
+            source_episode(episodes, 1, 2).episode_number = 4;
+            let in_perpetuity = source_episode(episodes, 1, 3);
             in_perpetuity.episode_number = 2;
             in_perpetuity.sonarr_id = 1014;
         });
@@ -1721,7 +1709,7 @@ mod tests {
         library.sync_show().await.unwrap();
         let kept_while_listed = artwork(&library).await.len();
 
-        with_sonarr_episodes(&library, |episodes| {
+        with_source_episodes(&library, |episodes| {
             episodes.retain(|x| x.season_number != 2)
         });
         library.sync_show().await.unwrap();

@@ -7,10 +7,10 @@ use application::ports::GetRadarrMovie;
 use application::ports::ListSubtitleFiles;
 use application::ports::Probe;
 use application::ports::ProbeMediaFile;
-use application::ports::RadarrMovie;
-use application::ports::RadarrMovieFile;
 use application::ports::ReadMovieFolder;
 use application::ports::ReadMovieNfo;
+use application::ports::SourceMediaFile;
+use application::ports::SourceMovie;
 use application::ports::UnreadableNfo;
 use application::ports::persistence;
 use application::ports::persistence::DbContext;
@@ -42,17 +42,17 @@ fn at(timestamp: &str) -> Timestamp {
     timestamp.parse().expect("the timestamp is valid")
 }
 
-fn arrival() -> RadarrMovie {
-    RadarrMovie {
+fn arrival() -> SourceMovie {
+    SourceMovie {
         radarr_id: 42,
         tmdb_id: 329_865,
         title: "Arrival".to_owned(),
         year: 2016,
         overview: None,
         genres: Vec::new(),
-        movie_file: Some(RadarrMovieFile {
+        media_file: Some(SourceMediaFile {
             path: FILE.to_owned(),
-            date_added: at("2026-10-29T10:00:00Z"),
+            added_at: at("2026-10-29T10:00:00Z"),
         }),
     }
 }
@@ -65,13 +65,13 @@ async fn movie_syncs_count_movies_added_changed_and_removed_by_source() {
         .build();
     global::set_meter_provider(provider.clone());
     let db_context = db_context().await;
-    let radarr_movie = Arc::new(Mutex::new(Some(arrival())));
+    let source_movie = Arc::new(Mutex::new(Some(arrival())));
     let file_on_disk = Arc::new(Mutex::new(FoundMediaFile {
         size: 1_000,
         modified_at: at("2026-10-29T09:00:00Z"),
     }));
     let sync = async || {
-        let radarr_movie = radarr_movie.clone();
+        let source_movie = source_movie.clone();
         let file_on_disk = file_on_disk.clone();
         sync_movie::call(
             sync_movie::Dependencies {
@@ -81,7 +81,7 @@ async fn movie_syncs_count_movies_added_changed_and_removed_by_source() {
                     Box::pin(async move { Ok(Some(found)) })
                 }),
                 get_radarr_movie: GetRadarrMovie::new(move |_| {
-                    let movie = radarr_movie.lock().unwrap().clone();
+                    let movie = source_movie.lock().unwrap().clone();
                     Box::pin(async move { Ok(movie) })
                 }),
                 list_subtitle_files: ListSubtitleFiles::new(|_| Box::pin(async { Ok(Vec::new()) })),
@@ -139,7 +139,7 @@ async fn movie_syncs_count_movies_added_changed_and_removed_by_source() {
     file_on_disk.lock().unwrap().size = 2_000;
     sync().await;
     assert_eq!(count("selfless.library.items.changed"), Some(1));
-    *radarr_movie.lock().unwrap() = None;
+    *source_movie.lock().unwrap() = None;
     sync().await;
 
     assert_eq!(count("selfless.library.items.removed"), Some(1));

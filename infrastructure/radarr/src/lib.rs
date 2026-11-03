@@ -6,8 +6,8 @@ use application::ports::CheckRadarrKodiMetadata;
 use application::ports::GetRadarrMovie;
 use application::ports::ListRadarrMovies;
 use application::ports::RadarrError;
-use application::ports::RadarrMovie;
-use application::ports::RadarrMovieFile;
+use application::ports::SourceMediaFile;
+use application::ports::SourceMovie;
 use jiff::Timestamp;
 use reqwest::StatusCode;
 use serde::Deserialize;
@@ -66,7 +66,7 @@ pub fn list_movies(api: Api) -> ListRadarrMovies {
                 .await
                 .map_err(RadarrError::caused_by)?
                 .into_iter()
-                .map(RadarrMovie::from)
+                .map(SourceMovie::from)
                 .collect())
         })
     })
@@ -99,18 +99,18 @@ struct MovieFile {
     date_added: Timestamp,
 }
 
-impl From<Movie> for RadarrMovie {
+impl From<Movie> for SourceMovie {
     fn from(movie: Movie) -> Self {
-        RadarrMovie {
+        SourceMovie {
             radarr_id: movie.id,
             tmdb_id: movie.tmdb_id,
             title: movie.title,
             year: movie.year,
             overview: movie.overview,
             genres: movie.genres,
-            movie_file: movie.movie_file.map(|x| RadarrMovieFile {
+            media_file: movie.movie_file.map(|x| SourceMediaFile {
                 path: x.path,
-                date_added: x.date_added,
+                added_at: x.date_added,
             }),
         }
     }
@@ -177,19 +177,19 @@ mod tests {
                  recruited by the military to determine whether they come in peace or are a threat."
             )
         );
-        let movie_file = movie.movie_file.unwrap();
+        let media_file = movie.media_file.unwrap();
         assert_eq!(
-            movie_file.path,
+            media_file.path,
             "/mnt/media/Movies/Arrival (2016)/Arrival (2016) Bluray-1080p.mkv"
         );
         assert_eq!(
-            movie_file.date_added,
+            media_file.added_at,
             "2026-10-29T10:00:00Z".parse::<Timestamp>().unwrap()
         );
     }
 
     #[tokio::test]
-    async fn a_movie_without_a_file_has_no_movie_file() {
+    async fn a_movie_without_a_file_has_no_media_file() {
         let (_server, api) = radarr(
             "/api/v3/movie/42",
             json(
@@ -201,7 +201,7 @@ mod tests {
 
         let movie = get_movie(api).call(42).await.unwrap().unwrap();
 
-        assert!(movie.movie_file.is_none());
+        assert!(movie.media_file.is_none());
     }
 
     #[tokio::test]
@@ -255,7 +255,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            movies[1].movie_file.as_ref().unwrap().path,
+            movies[1].media_file.as_ref().unwrap().path,
             "/mnt/media/Movies/Dune (2021)/Dune (2021) Bluray-2160p.mkv"
         );
     }

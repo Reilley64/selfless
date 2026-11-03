@@ -6,11 +6,11 @@ use application::ports::CheckSonarrKodiMetadata;
 use application::ports::GetSonarrEpisodes;
 use application::ports::GetSonarrShow;
 use application::ports::ListSonarrShows;
-use application::ports::SonarrEpisode;
-use application::ports::SonarrEpisodeFile;
 use application::ports::SonarrError;
-use application::ports::SonarrShow;
-use application::ports::SonarrShowListing;
+use application::ports::SourceEpisode;
+use application::ports::SourceMediaFile;
+use application::ports::SourceShow;
+use application::ports::SourceShowListing;
 use jiff::Timestamp;
 use jiff::civil::Date;
 use reqwest::StatusCode;
@@ -59,7 +59,7 @@ pub fn list_shows(api: Api) -> ListSonarrShows {
                 .await
                 .map_err(SonarrError::caused_by)?
                 .into_iter()
-                .map(SonarrShowListing::from)
+                .map(SourceShowListing::from)
                 .collect())
         })
     })
@@ -116,7 +116,7 @@ struct EpisodeFile {
     date_added: Timestamp,
 }
 
-async fn show(api: &Api, sonarr_id: i64) -> Result<Option<SonarrShow>, reqwest::Error> {
+async fn show(api: &Api, sonarr_id: i64) -> Result<Option<SourceShow>, reqwest::Error> {
     let series = match api
         .get::<Series>(
             "/api/v3/series/{id}",
@@ -128,13 +128,13 @@ async fn show(api: &Api, sonarr_id: i64) -> Result<Option<SonarrShow>, reqwest::
         Err(error) if error.status() == Some(StatusCode::NOT_FOUND) => return Ok(None),
         series => series?,
     };
-    Ok(Some(SonarrShow {
+    Ok(Some(SourceShow {
         listing: series.into(),
         episodes: episodes(api, sonarr_id).await?,
     }))
 }
 
-async fn episodes(api: &Api, sonarr_id: i64) -> Result<Vec<SonarrEpisode>, reqwest::Error> {
+async fn episodes(api: &Api, sonarr_id: i64) -> Result<Vec<SourceEpisode>, reqwest::Error> {
     let id = sonarr_id.to_string();
     let query = Some(("seriesId", id.as_str()));
     let episodes = api
@@ -148,7 +148,7 @@ async fn episodes(api: &Api, sonarr_id: i64) -> Result<Vec<SonarrEpisode>, reqwe
         .collect::<HashMap<_, _>>();
     Ok(episodes
         .into_iter()
-        .map(|x| SonarrEpisode {
+        .map(|x| SourceEpisode {
             sonarr_id: x.id,
             tvdb_id: x.tvdb_id,
             season_number: x.season_number,
@@ -156,17 +156,17 @@ async fn episodes(api: &Api, sonarr_id: i64) -> Result<Vec<SonarrEpisode>, reqwe
             title: x.title,
             air_date: x.air_date,
             overview: x.overview,
-            episode_file: files.get(&x.episode_file_id).map(|x| SonarrEpisodeFile {
+            media_file: files.get(&x.episode_file_id).map(|x| SourceMediaFile {
                 path: x.path.clone(),
-                date_added: x.date_added,
+                added_at: x.date_added,
             }),
         })
         .collect())
 }
 
-impl From<Series> for SonarrShowListing {
+impl From<Series> for SourceShowListing {
     fn from(series: Series) -> Self {
-        SonarrShowListing {
+        SourceShowListing {
             sonarr_id: series.id,
             tvdb_id: series.tvdb_id,
             path: series.path,
@@ -269,7 +269,7 @@ mod tests {
                     x.season_number,
                     x.episode_number,
                     x.title.as_str(),
-                    x.episode_file.as_ref().map(|x| x.path.as_str()),
+                    x.media_file.as_ref().map(|x| x.path.as_str()),
                 ))
                 .collect::<Vec<_>>(),
             [
@@ -317,7 +317,7 @@ mod tests {
             )
         );
         assert_eq!(
-            first.episode_file.as_ref().unwrap().date_added,
+            first.media_file.as_ref().unwrap().added_at,
             "2022-03-01T09:30:00Z".parse::<Timestamp>().unwrap()
         );
         let unaired = &show.episodes[6];
@@ -420,7 +420,7 @@ mod tests {
                 .map(|x| (
                     x.sonarr_id,
                     x.title.as_str(),
-                    x.episode_file.as_ref().map(|x| x.path.as_str()),
+                    x.media_file.as_ref().map(|x| x.path.as_str()),
                 ))
                 .collect::<Vec<_>>(),
             [

@@ -17,9 +17,9 @@ use crate::library::metadata::Nfo;
 use crate::library::metadata::Owner;
 use crate::ports::FindMediaFile;
 use crate::ports::ListSubtitleFiles;
-use crate::ports::RadarrMovie;
 use crate::ports::ReadMovieFolder;
 use crate::ports::ReadMovieNfo;
+use crate::ports::SourceMovie;
 use crate::ports::UnreadableFile;
 use crate::ports::persistence::DbContext;
 use crate::ports::persistence::DbScope;
@@ -52,13 +52,13 @@ pub async fn call(dependencies: impl Into<Dependencies>, radarr_id: i64) -> Resu
         read_movie_nfo,
     };
     async {
-        let radarr_movie = get_radarr_movie.call(radarr_id).await;
+        let source_movie = get_radarr_movie.call(radarr_id).await;
         match source_health
-            .api_call(Source::Radarr, radarr_movie)
+            .api_call(Source::Radarr, source_movie)
             .map_err(Error::caused_by)?
         {
-            Some(radarr_movie) => {
-                let stored_file = match &radarr_movie.movie_file {
+            Some(source_movie) => {
+                let stored_file = match &source_movie.media_file {
                     Some(file) => db_context
                         .media_files()
                         .filter(MediaFile::fields().path().eq(&file.path))
@@ -70,7 +70,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, radarr_id: i64) -> Resu
                 };
                 let stored_nfo_modified_at = db_context
                     .movies()
-                    .filter(Movie::fields().tmdb_id().eq(radarr_movie.tmdb_id))
+                    .filter(Movie::fields().tmdb_id().eq(source_movie.tmdb_id))
                     .first()
                     .exec(db_context.executor_mut())
                     .await
@@ -80,10 +80,10 @@ pub async fn call(dependencies: impl Into<Dependencies>, radarr_id: i64) -> Resu
                     &files,
                     stored_file.as_ref(),
                     stored_nfo_modified_at,
-                    &radarr_movie,
+                    &source_movie,
                 )
                 .await?;
-                save(&mut db_context, radarr_movie, inspected).await
+                save(&mut db_context, source_movie, inspected).await
             }
             None => {
                 let movies = db_context
@@ -134,9 +134,9 @@ pub(crate) async fn inspect(
     files: &MovieFiles,
     stored_file: Option<&MediaFile>,
     stored_nfo_modified_at: Option<Timestamp>,
-    radarr_movie: &RadarrMovie,
+    source_movie: &SourceMovie,
 ) -> Result<InspectedMovie, Error> {
-    let Some(file) = &radarr_movie.movie_file else {
+    let Some(file) = &source_movie.media_file else {
         return Ok(InspectedMovie::Read(Box::new(MovieOnDisk {
             media_file: None,
             artwork: Vec::new(),
@@ -177,13 +177,13 @@ pub(crate) async fn inspect(
 
 pub(crate) async fn save(
     db_context: &mut DbContext,
-    mut radarr_movie: RadarrMovie,
+    mut source_movie: SourceMovie,
     inspected: InspectedMovie,
 ) -> Result<(), Error> {
     let mut transaction = db_context.transaction().await.map_err(Error::caused_by)?;
     let stored = transaction
         .movies()
-        .filter(Movie::fields().tmdb_id().eq(radarr_movie.tmdb_id))
+        .filter(Movie::fields().tmdb_id().eq(source_movie.tmdb_id))
         .first()
         .exec(transaction.executor_mut())
         .await
@@ -207,14 +207,14 @@ pub(crate) async fn save(
             transaction.commit().await.map_err(Error::caused_by)?;
             return Ok(());
         }
-        radarr_movie.movie_file = None;
+        source_movie.media_file = None;
     }
     let visible = Movie::in_library(
-        radarr_movie.movie_file.is_some(),
+        source_movie.media_file.is_some(),
         media_file.as_ref().is_some_and(Inspected::on_disk),
     );
-    let date_added = radarr_movie.movie_file.as_ref().map(|x| x.date_added);
-    let (media_file_id, media_file_changed) = match (&radarr_movie.movie_file, media_file) {
+    let source_added_at = source_movie.media_file.as_ref().map(|x| x.added_at);
+    let (media_file_id, media_file_changed) = match (&source_movie.media_file, media_file) {
         (Some(file), Some(inspected)) => {
             let saved = media_files::save(&mut transaction, &file.path, inspected)
                 .await
@@ -223,24 +223,24 @@ pub(crate) async fn save(
         }
         _ => (None, false),
     };
-    let radarr_metadata = MovieMetadata::from_source(
-        radarr_movie.title,
-        radarr_movie.year,
-        radarr_movie.overview,
-        radarr_movie.genres,
+    let source_metadata = MovieMetadata::from_source(
+        source_movie.title,
+        source_movie.year,
+        source_movie.overview,
+        source_movie.genres,
     );
     let (metadata, nfo_modified_at) = match (&nfo, &stored) {
         (Nfo::Unchanged, Some(movie)) => (movie.metadata(), movie.nfo_modified_at),
-        (Nfo::Read(nfo, modified_at), _) => (radarr_metadata.with_nfo(nfo), Some(*modified_at)),
-        _ => (radarr_metadata, None),
+        (Nfo::Read(nfo, modified_at), _) => (source_metadata.with_nfo(nfo), Some(*modified_at)),
+        _ => (source_metadata, None),
     };
     let had_nfo = stored.as_ref().is_some_and(|x| x.nfo_modified_at.is_some());
     let (movie_id, change) = match stored {
         Some(mut movie) => {
-            let added_at = domain::first_added_at(movie.added_at, date_added);
+            let added_at = domain::first_added_at(movie.added_at, source_added_at);
             let old_media_file_id = movie.media_file_id;
             let changed = media_file_changed
-                || movie.radarr_id != radarr_movie.radarr_id
+                || movie.radarr_id != source_movie.radarr_id
                 || movie.added_at != added_at
                 || movie.media_file_id != media_file_id
                 || movie.visible != visible
@@ -249,7 +249,7 @@ pub(crate) async fn save(
             if changed {
                 movie
                     .update()
-                    .radarr_id(radarr_movie.radarr_id)
+                    .radarr_id(source_movie.radarr_id)
                     .title(metadata.title)
                     .sort_title(metadata.sort_title)
                     .original_title(metadata.original_title)
@@ -283,8 +283,8 @@ pub(crate) async fn save(
             let movie = transaction
                 .movies()
                 .create()
-                .tmdb_id(radarr_movie.tmdb_id)
-                .radarr_id(radarr_movie.radarr_id)
+                .tmdb_id(source_movie.tmdb_id)
+                .radarr_id(source_movie.radarr_id)
                 .title(metadata.title)
                 .sort_title(metadata.sort_title)
                 .original_title(metadata.original_title)
@@ -298,7 +298,7 @@ pub(crate) async fn save(
                 .rating(metadata.rating)
                 .directors(metadata.directors)
                 .nfo_modified_at(nfo_modified_at)
-                .added_at(date_added)
+                .added_at(source_added_at)
                 .media_file_id(media_file_id)
                 .visible(visible)
                 .exec(transaction.executor_mut())
@@ -360,7 +360,7 @@ mod tests {
     use super::*;
     use crate::library::source_health::ApiCallResult;
     use crate::ports::FoundFile;
-    use crate::ports::RadarrMovieFile;
+    use crate::ports::SourceMediaFile;
     use crate::test::MOVIE_FILE;
     use crate::test::MovieLibrary;
     use crate::test::arrival;
@@ -491,7 +491,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_radarr_movie_whose_file_is_on_disk_is_stored_visible_with_radarrs_fields() {
+    async fn a_movie_whose_media_file_is_on_disk_is_stored_visible_with_radarrs_fields() {
         let library = MovieLibrary::new().await;
 
         library.sync_movie().await.unwrap();
@@ -516,10 +516,10 @@ mod tests {
         library.sync_movie().await.unwrap();
         let before = movie(&library).await;
 
-        library.sources().radarr_movie = Some(arrival(None));
+        library.sources().movie = Some(arrival(None));
         library.sync_movie().await.unwrap();
         let hidden = movie(&library).await;
-        library.sources().radarr_movie = Some(arrival(Some(MOVIE_FILE)));
+        library.sources().movie = Some(arrival(Some(MOVIE_FILE)));
         library.sync_movie().await.unwrap();
 
         assert!(!hidden.visible);
@@ -545,10 +545,10 @@ mod tests {
         let before = movie(&library).await;
 
         library.put_file(UPGRADED_FILE, 2_000, "2026-10-31T09:00:00Z");
-        library.sources().radarr_movie = Some(RadarrMovie {
-            movie_file: Some(RadarrMovieFile {
+        library.sources().movie = Some(SourceMovie {
+            media_file: Some(SourceMediaFile {
                 path: UPGRADED_FILE.to_owned(),
-                date_added: at("2026-10-31T10:00:00Z"),
+                added_at: at("2026-10-31T10:00:00Z"),
             }),
             ..arrival(None)
         });
@@ -581,7 +581,7 @@ mod tests {
             .await
             .unwrap();
 
-        library.sources().radarr_movie = None;
+        library.sources().movie = None;
         library.sync_movie().await.unwrap();
 
         assert!(movies(&library).await.is_empty());
@@ -589,7 +589,7 @@ mod tests {
         assert!(artwork(&library).await.is_empty());
         assert!(problems(&library).await.is_empty());
         assert!(media_files(&library).await.is_empty());
-        library.sources().radarr_movie = Some(arrival(Some(MOVIE_FILE)));
+        library.sources().movie = Some(arrival(Some(MOVIE_FILE)));
         library.sync_movie().await.unwrap();
         assert_ne!(movie(&library).await.id, before.id);
     }
@@ -796,8 +796,8 @@ mod tests {
             .collect()
     }
 
-    fn arrival_extended() -> RadarrMovie {
-        RadarrMovie {
+    fn arrival_extended() -> SourceMovie {
+        SourceMovie {
             title: "Arrival (Extended)".to_owned(),
             ..arrival(Some(MOVIE_FILE))
         }
@@ -816,7 +816,7 @@ mod tests {
             let mut sources = library.sources();
             sources.unreadable_files.insert(MOVIE_FILE.to_owned());
             sources.folder.poster = None;
-            sources.radarr_movie = Some(arrival_extended());
+            sources.movie = Some(arrival_extended());
         }
         library.sync_movie().await.unwrap();
         let kept = movie(&library).await;
@@ -846,7 +846,7 @@ mod tests {
             let mut sources = library.sources();
             sources.unreadable_files.insert(poster.clone());
             sources.folder.poster = found(&poster, "2026-10-30T08:00:00Z");
-            sources.radarr_movie = Some(arrival_extended());
+            sources.movie = Some(arrival_extended());
         }
         library.sync_movie().await.unwrap();
 
