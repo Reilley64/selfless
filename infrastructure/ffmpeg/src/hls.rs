@@ -132,6 +132,7 @@ pub async fn write_segments(
                 &transcode.channels.to_string(),
             ]),
         };
+        command.args(["-bsf:a", "noise=drop=lt(pts\\,0)"]);
         let rendition = audio_rendition(position);
         segment_output(&mut command, &rendition);
         progress.insert(rendition, segment);
@@ -244,7 +245,7 @@ mod tests {
     use tempfile::TempDir;
 
     const FIXTURE_DURATION: Duration = Duration::from_secs(40);
-    const AUDIO_FRAME_MS: u64 = 32;
+    const TWO_E_AC_3_FRAMES_MS: u64 = 64;
 
     fn seconds(values: &[f64]) -> Vec<Duration> {
         values.iter().map(|x| Duration::from_secs_f64(*x)).collect()
@@ -500,12 +501,13 @@ mod tests {
                 .max()
                 .unwrap()
         };
+        assert!(times[0][0].0 >= 0, "{times:?}");
         assert!(
-            off_by(&times[0], &playlist) <= AUDIO_FRAME_MS,
+            off_by(&times[0], &playlist) <= TWO_E_AC_3_FRAMES_MS,
             "{times:?} {playlist:?}"
         );
         assert!(
-            off_by(&times[1], &playlist[3..]) <= AUDIO_FRAME_MS,
+            off_by(&times[1], &playlist[3..]) <= TWO_E_AC_3_FRAMES_MS,
             "{times:?} {playlist:?}"
         );
         assert_eq!(codec, decoded_as);
