@@ -210,11 +210,12 @@ function Video({
   }, [player, playback, resume, restart, spans, router, titleHref]);
   useEffect(() => {
     let selectionShown = false;
+    let status = player.status;
     const subscriptions = [
       player.addListener("playingChange", ({ isPlaying }) => {
         if (isPlaying) {
           logic.handle({ type: "playing", position: position.current });
-        } else if (player.status === "readyToPlay") {
+        } else if (status === "readyToPlay") {
           logic.handle({ type: "paused", position: position.current });
         }
       }),
@@ -259,7 +260,8 @@ function Video({
           logic.selectSubtitle(track);
         }
       }),
-      player.addListener("statusChange", ({ status }) => {
+      player.addListener("statusChange", (change) => {
+        status = change.status;
         if (status === "error") {
           logic.handle({ type: "failed", position: position.current, errorType: "_OTHER" });
         }
