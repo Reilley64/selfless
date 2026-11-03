@@ -99,3 +99,57 @@ impl Api {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::Api;
+    use wiremock::Mock;
+    use wiremock::MockServer;
+    use wiremock::ResponseTemplate;
+    use wiremock::matchers::method;
+    use wiremock::matchers::path;
+
+    const METADATA: &str = include_str!("../../../test/fixtures/radarr/api/metadata.json");
+
+    async fn serve_metadata(response: ResponseTemplate) -> (MockServer, Api) {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v3/metadata"))
+            .respond_with(response)
+            .mount(&server)
+            .await;
+        let api = Api::new(server.uri().parse().unwrap(), "api-key".to_owned());
+        (server, api)
+    }
+
+    #[tokio::test]
+    async fn kodi_metadata_is_on_only_for_an_enabled_kodi_consumer() {
+        let (_server, api) =
+            serve_metadata(ResponseTemplate::new(200).set_body_raw(METADATA, "application/json"))
+                .await;
+        assert!(api.kodi_metadata().await.unwrap());
+
+        let (_server, api) = serve_metadata(ResponseTemplate::new(200).set_body_raw(
+            r#"[
+                {"implementation": "MediaBrowserMetadata", "enable": true},
+                {"implementation": "XbmcMetadata", "enable": false}
+            ]"#,
+            "application/json",
+        ))
+        .await;
+        assert!(!api.kodi_metadata().await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn a_failed_call_names_the_response_status() {
+        for status in [401, 500] {
+            let (_server, api) = serve_metadata(ResponseTemplate::new(status)).await;
+
+            let error = api.kodi_metadata().await.unwrap_err();
+
+            assert!(
+                error.to_string().contains(&status.to_string()),
+                "the error names {status}: {error}"
+            );
+        }
+    }
+}
