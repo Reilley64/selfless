@@ -13,6 +13,7 @@ mod outbox;
 mod outbox_data;
 mod password;
 mod session;
+mod sort_title;
 mod user;
 
 pub use admin::Admin;
@@ -30,6 +31,7 @@ pub use outbox::Outbox;
 pub use outbox_data::OutboxData;
 pub use password::Password;
 pub use session::Session;
+pub use sort_title::sort_key;
 pub use user::User;
 
 use jiff::Timestamp;

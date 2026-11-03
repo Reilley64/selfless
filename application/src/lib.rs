@@ -3,6 +3,7 @@ mod tokens;
 
 pub mod actuator;
 pub mod admins;
+pub mod browsing;
 pub mod invites;
 pub mod library;
 pub mod ports;

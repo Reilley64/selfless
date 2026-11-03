@@ -311,6 +311,50 @@ paths:
           $ref: "#/components/responses/InternalError"
         "502":
           $ref: "#/components/responses/CollectorFailed"
+  /api/movies/v1:
+    get:
+      operationId: listMovies
+      summary: A page of the movies grid
+      description: Every visible movie, sorted by sort title, then by ID. A movie is visible when its file is on disk.
+      tags: [browsing]
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: Up to 60 movie tiles, and the cursor for the next page.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TilePage"
+              example: {"tiles":[{"id":"0190f3c4-5b6a-7c8d-9e0f-1a2b3c4d5e6f","kind":"movie","title":"Arrival","year":2016,"certification":"PG-13","runtimeMinutes":116,"seasonCount":null,"genres":["Drama","Science Fiction"],"plot":"A linguist works with the military to talk to aliens.","images":{"fanart":null,"logo":null,"thumb":null},"progress":null,"watched":false,"episode":null}],"nextCursor":"MDE5MGYzYzQtNWI2YS03YzhkLTllMGYtMWEyYjNjNGQ1ZTZmYXJyaXZhbA"}
+        "400":
+          $ref: "#/components/responses/InvalidCursor"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/shows/v1:
+    get:
+      operationId: listShows
+      summary: A page of the shows grid
+      description: Every visible show, sorted by sort title, then by ID. A show is visible when one of its episodes has its file on disk.
+      tags: [browsing]
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: Up to 60 show tiles, and the cursor for the next page.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TilePage"
+              example: {"tiles":[{"id":"0190f3c4-6c7d-7e8f-9a0b-1c2d3e4f5a6b","kind":"show","title":"Severance","year":2022,"certification":"TV-MA","runtimeMinutes":null,"seasonCount":2,"genres":["Drama","Mystery"],"plot":"Office workers have their memories split.","images":{"fanart":null,"logo":null,"thumb":null},"progress":null,"watched":false,"episode":null}],"nextCursor":null}
+        "400":
+          $ref: "#/components/responses/InvalidCursor"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "500":
+          $ref: "#/components/responses/InternalError"
 tags:
   - name: actuator
     description: Health and info endpoints in the shape of Spring Boot Actuator.
@@ -322,12 +366,23 @@ tags:
     description: The invites that add users to the household.
   - name: telemetry
     description: The relay that forwards OTLP from the web and TV apps to the server's collector.
+  - name: browsing
+    description: The movies, shows and episodes a user browses in the web and TV apps.
 components:
   securitySchemes:
     sessionToken:
       description: A session token from POST /api/sessions/v1, sent as Authorization Bearer.
       type: http
       scheme: bearer
+  parameters:
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: The nextCursor of the previous page. Leave it out for the first page.
+      schema:
+        type: string
+      example: MDE5MGYzYzQtNWI2YS03YzhkLTllMGYtMWEyYjNjNGQ1ZTZmYXJyaXZhbA
   responses:
     MalformedTelemetry:
       description: The body is not a valid OTLP protobuf request for this signal.
@@ -441,6 +496,19 @@ components:
                   status:
                     const: 404
           example: {"type":"urn:selfless:problem:invite-not-found","title":"The invite link no longer works.","status":404}
+    InvalidCursor:
+      description: The cursor is not a nextCursor the server returned.
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Problem"
+              - properties:
+                  type:
+                    const: urn:selfless:problem:bad-request
+                  status:
+                    const: 400
+          example: {"type":"urn:selfless:problem:bad-request","title":"The request body is not valid.","status":400}
     InternalError:
       description: The server failed. The body holds no error details, and the server logs the error.
       content:
@@ -680,4 +748,158 @@ components:
                   examples: ["2026-10-29T06:12:00Z"]
               additionalProperties: false
           additionalProperties: false
+      additionalProperties: false
+    TilePage:
+      description: One page of tiles, in order.
+      type: object
+      required: [tiles, nextCursor]
+      properties:
+        tiles:
+          description: Up to 60 tiles.
+          type: array
+          maxItems: 60
+          items:
+            $ref: "#/components/schemas/Tile"
+          examples:
+            - [{"id":"0190f3c4-5b6a-7c8d-9e0f-1a2b3c4d5e6f","kind":"movie","title":"Arrival","year":2016,"certification":"PG-13","runtimeMinutes":116,"seasonCount":null,"genres":["Drama","Science Fiction"],"plot":"A linguist works with the military to talk to aliens.","images":{"fanart":null,"logo":null,"thumb":null},"progress":null,"watched":false,"episode":null}]
+        nextCursor:
+          description: Pass it as the cursor query parameter to get the next page. It is null on the last page.
+          type: [string, "null"]
+          examples: [MDE5MGYzYzQtNWI2YS03YzhkLTllMGYtMWEyYjNjNGQ1ZTZmYXJyaXZhbA]
+      additionalProperties: false
+    TileKind:
+      description: What a tile shows.
+      type: string
+      enum: [movie, show, episode]
+      examples: [movie]
+    Tile:
+      description: A movie, show or episode with everything the TV's focused details show, so focusing a tile makes no request. For an episode, the id, title, year, runtimeMinutes and plot are the episode's, and the certification and genres are its show's.
+      type: object
+      required: [id, kind, title, year, certification, runtimeMinutes, seasonCount, genres, plot, images, progress, watched, episode]
+      properties:
+        id:
+          description: The ID of the movie, show or episode.
+          type: string
+          format: uuid
+          examples: ["0190f3c4-5b6a-7c8d-9e0f-1a2b3c4d5e6f"]
+        kind:
+          $ref: "#/components/schemas/TileKind"
+        title:
+          type: string
+          examples: [Arrival]
+        year:
+          type: [integer, "null"]
+          examples: [2016]
+        certification:
+          description: The age rating from the NFO file, such as PG-13.
+          type: [string, "null"]
+          examples: [PG-13]
+        runtimeMinutes:
+          description: The runtime of a movie or episode. It is null for a show.
+          type: [integer, "null"]
+          examples: [116]
+        seasonCount:
+          description: The number of numbered seasons of a show with a visible episode, without Specials. It is null for a movie or episode.
+          type: [integer, "null"]
+          examples: [2]
+        genres:
+          type: array
+          items:
+            type: string
+          examples: [[Drama, Science Fiction]]
+        plot:
+          type: [string, "null"]
+          examples: [A linguist works with the military to talk to aliens.]
+        images:
+          $ref: "#/components/schemas/TileImages"
+        progress:
+          description: How far the user got, from 0 to 1, when they have a resume position. Otherwise null.
+          type: [number, "null"]
+          minimum: 0
+          maximum: 1
+          examples: [0.42]
+        watched:
+          description: Whether the user has watched the movie or episode, or every episode of the show.
+          type: boolean
+          examples: [false]
+        episode:
+          description: The episode's show and numbers. It is null for a movie or show.
+          anyOf:
+            - $ref: "#/components/schemas/TileEpisode"
+            - type: "null"
+      additionalProperties: false
+    TileImages:
+      description: The artwork a tile draws. A missing image is null, and the app draws a placeholder.
+      type: object
+      required: [fanart, logo, thumb]
+      properties:
+        fanart:
+          description: The fanart of the movie or show, or of an episode's show.
+          anyOf:
+            - $ref: "#/components/schemas/Image"
+            - type: "null"
+        logo:
+          description: The clearlogo of the movie or show. It is null for an episode, whose show's logo is in episode.show.
+          anyOf:
+            - $ref: "#/components/schemas/Image"
+            - type: "null"
+        thumb:
+          description: The thumb of an episode. It is null for a movie or show.
+          anyOf:
+            - $ref: "#/components/schemas/Image"
+            - type: "null"
+      additionalProperties: false
+    TileEpisode:
+      description: Where an episode belongs.
+      type: object
+      required: [show, seasonNumber, episodeNumber]
+      properties:
+        show:
+          type: object
+          required: [id, title, logo]
+          properties:
+            id:
+              type: string
+              format: uuid
+              examples: ["0190f3c4-6c7d-7e8f-9a0b-1c2d3e4f5a6b"]
+            title:
+              type: string
+              examples: [Severance]
+            logo:
+              anyOf:
+                - $ref: "#/components/schemas/Image"
+                - type: "null"
+          additionalProperties: false
+        seasonNumber:
+          description: The season number. Specials are 0.
+          type: integer
+          examples: [2]
+        episodeNumber:
+          type: integer
+          examples: [4]
+      additionalProperties: false
+    Image:
+      description: One artwork image, with a URL for each width it comes in.
+      type: object
+      required: [urls]
+      properties:
+        urls:
+          type: array
+          items:
+            $ref: "#/components/schemas/ImageUrl"
+      additionalProperties: false
+    ImageUrl:
+      description: The image at one width.
+      type: object
+      required: [width, url]
+      properties:
+        width:
+          description: The width in pixels.
+          type: integer
+          examples: [480]
+        url:
+          description: A signed URL that needs no Authorization header.
+          type: string
+          format: uri-reference
+          examples: ["/api/images/0190f3c4-7d8e-7f90-a1b2-c3d4e5f6a7b8/480/v1?expires=1793750400&signature=3q2-7w"]
       additionalProperties: false

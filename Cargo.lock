@@ -228,6 +228,7 @@ name = "api"
 version = "0.1.0"
 dependencies = [
  "application",
+ "base64 0.22.1",
  "domain",
  "http",
  "infrastructure",

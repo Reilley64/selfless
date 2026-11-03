@@ -39,6 +39,16 @@ pub(crate) async fn invite() -> topcoat::Result<Response> {
     app()
 }
 
+#[route(GET "/(web)/movies")]
+pub(crate) async fn movies() -> topcoat::Result<Response> {
+    app()
+}
+
+#[route(GET "/(web)/shows")]
+pub(crate) async fn shows() -> topcoat::Result<Response> {
+    app()
+}
+
 fn app() -> topcoat::Result<Response> {
     Err(rewrite("/index.html", Body::empty()).into())
 }
@@ -104,6 +114,21 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert!(html.contains("<title>selfless</title>"), "{html}");
         assert!(headers.contains_key(CONTENT_SECURITY_POLICY));
+        std::fs::remove_dir_all(web_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn the_movies_and_shows_grids_load_from_their_own_addresses() {
+        let app = TestApp::new().await;
+        let (server, web_dir) = serve_web_app(&app).await;
+
+        for path in ["/movies", "/shows"] {
+            let (status, headers, html) = server.get_text(path).await;
+
+            assert_eq!(status, StatusCode::OK, "{path}");
+            assert!(html.contains("<title>selfless</title>"), "{path}: {html}");
+            assert!(headers.contains_key(CONTENT_SECURITY_POLICY), "{path}");
+        }
         std::fs::remove_dir_all(web_dir).unwrap();
     }
 

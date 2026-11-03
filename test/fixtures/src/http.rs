@@ -86,7 +86,7 @@ impl TestServer {
         let text = response.text().await.unwrap();
         let body = openapi::check_response(
             method.as_str(),
-            path,
+            path.split('?').next().unwrap(),
             status.as_u16(),
             content_type.as_deref(),
             &text,

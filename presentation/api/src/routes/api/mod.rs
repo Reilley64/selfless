@@ -1,5 +1,8 @@
 pub(crate) mod invites;
 pub(crate) mod me;
+pub(crate) mod movies;
 pub(crate) mod sessions;
+pub(crate) mod shows;
 pub(crate) mod telemetry;
+pub(crate) mod tile;
 pub(crate) mod user;

@@ -1,9 +1,14 @@
 use crate::Availability;
+use application::ports::persistence::DbScope;
 use application::sessions::sign_in;
 use application::users::create_user;
 use domain::ClientKind;
 use domain::EmailAddress;
+use domain::Episode;
+use domain::Movie;
 use domain::Password;
+use domain::Season;
+use domain::Show;
 use std::path::PathBuf;
 use test_app::TestApp;
 use test_fixtures::TestServer;
@@ -56,4 +61,59 @@ pub(crate) async fn signed_in_user(app: &TestApp, name: &str, password: &str) ->
         panic!("wrong name or password");
     };
     (user_id, token)
+}
+
+pub(crate) async fn add_movie(app: &TestApp, title: &str) -> Uuid {
+    let mut db_context = app.state.db_context.clone();
+    Movie::create()
+        .tmdb_id(Uuid::new_v4().as_u64_pair().0 as i64)
+        .radarr_id(42)
+        .title(title)
+        .year(2016)
+        .certification(Some("PG-13".to_owned()))
+        .runtime_minutes(Some(116))
+        .genres(vec!["Drama".to_owned(), "Science Fiction".to_owned()])
+        .overview(Some(
+            "A linguist works with the military to talk to aliens.".to_owned(),
+        ))
+        .directors(Vec::<String>::new())
+        .visible(true)
+        .exec(db_context.executor_mut())
+        .await
+        .unwrap()
+        .id
+}
+
+pub(crate) async fn add_show(app: &TestApp, title: &str, season_numbers: &[i64]) -> Uuid {
+    let mut db_context = app.state.db_context.clone();
+    let tvdb_id = Uuid::new_v4().as_u64_pair().0 as i64;
+    let show = Show::create()
+        .tvdb_id(tvdb_id)
+        .sonarr_id(tvdb_id)
+        .title(title)
+        .year(Some(2022))
+        .certification(Some("TV-MA".to_owned()))
+        .genres(vec!["Drama".to_owned(), "Mystery".to_owned()])
+        .overview(Some("Office workers have their memories split.".to_owned()))
+        .exec(db_context.executor_mut())
+        .await
+        .unwrap();
+    for number in season_numbers {
+        let season = Season::create()
+            .show_id(show.id)
+            .number(*number)
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap();
+        Episode::create()
+            .season_id(season.id)
+            .tvdb_id(Uuid::new_v4().as_u64_pair().0 as i64)
+            .number(1)
+            .title("Good News About Hell")
+            .visible(true)
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap();
+    }
+    show.id
 }
