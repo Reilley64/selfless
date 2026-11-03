@@ -44,6 +44,7 @@ image = { version = "0.25.10", default-features = false, features = ["jpeg", "pn
 jiff = "0.2.38"
 jsonschema = { version = "0.60.2", default-features = false }
 lettre = { version = "0.11.23", default-features = false }
+mp4-atom = "0.17.0"
 ohno = "0.5.3"
 opentelemetry = "0.33.1"
 opentelemetry-appender-tracing = "0.33.1"
