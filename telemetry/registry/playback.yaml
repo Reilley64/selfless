@@ -1,0 +1,101 @@
+groups:
+  - id: registry.selfless.playback
+    type: attribute_group
+    display_name: Playback attributes
+    brief: Attributes of playbacks, from the play request to the player's events.
+    attributes:
+      - id: selfless.playback.method
+        type:
+          members:
+            - id: direct_play
+              value: directPlay
+              brief: The device plays the media file as it is on disk.
+              stability: development
+            - id: remux
+              value: remux
+              brief: selfless copies the media file's video and audio into a format the device can open.
+              stability: development
+            - id: transcode
+              value: transcode
+              brief: selfless converts the video or audio into a format the device can play.
+              stability: development
+        stability: development
+        brief: How the server chose to play a media file.
+      - id: selfless.playback.reason_kinds
+        type: string[]
+        stability: development
+        brief: The kinds of the reasons a playback is not a direct play, in the order the server found them.
+        note: >
+          The kinds are container, videoCodec, videoProfile, videoLevel, videoSize, videoBitDepth, videoRange,
+          interlaced, audioCodec, audioChannels, subtitle, noKeyframeIndex and forcedHls. A direct play has none.
+        examples: [["container", "audioCodec"]]
+  - id: registry.selfless.media_file
+    type: attribute_group
+    display_name: Media file attributes
+    brief: Attributes of the media file a movie or episode plays from.
+    attributes:
+      - id: selfless.media_file.id
+        type: string
+        stability: development
+        brief: The ID of the media file.
+        examples: ["01890a5d-ac96-774b-bcce-b302099a8057"]
+  - id: metric.selfless.playback.active
+    type: metric
+    metric_name: selfless.playback.active
+    brief: Playbacks that have not ended.
+    instrument: gauge
+    unit: "{playback}"
+    stability: development
+    attributes:
+      - ref: selfless.playback.method
+        requirement_level: required
+  - id: metric.selfless.playback.decisions
+    type: metric
+    metric_name: selfless.playback.decisions
+    brief: Play requests that started a playback, by how the server chose to play the media file.
+    instrument: counter
+    unit: "{decision}"
+    stability: development
+    attributes:
+      - ref: selfless.playback.method
+        requirement_level: required
+      - ref: selfless.auth.client_kind
+        requirement_level: required
+      - ref: selfless.playback.reason_kinds
+        requirement_level:
+          conditionally_required: When the playback is not a direct play.
+  - id: span.selfless.playback
+    type: span
+    span_kind: internal
+    brief: >
+      A player's span for one moment of a playback. The first lasts from the play request until the playback
+      starts, fails or stops. Each later one holds one event and is a child of the first.
+    stability: development
+    attributes:
+      - ref: selfless.media_file.id
+        requirement_level: required
+  - id: event.selfless.playback.started
+    type: event
+    name: selfless.playback.started
+    brief: The player started playing.
+    stability: development
+  - id: event.selfless.playback.paused
+    type: event
+    name: selfless.playback.paused
+    brief: The player paused.
+    stability: development
+  - id: event.selfless.playback.seeked
+    type: event
+    name: selfless.playback.seeked
+    brief: The player finished a seek.
+    stability: development
+  - id: event.selfless.playback.stopped
+    type: event
+    name: selfless.playback.stopped
+    brief: The player stopped, because the user left it or the media file ended.
+    stability: development
+  - id: event.selfless.playback.failed
+    type: event
+    name: selfless.playback.failed
+    brief: The play request failed or the player could not play the media file.
+    stability: development

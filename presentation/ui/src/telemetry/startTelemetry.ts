@@ -1,4 +1,4 @@
-import { logs, metrics, propagation, trace } from "@opentelemetry/api";
+import { context, logs, metrics, propagation, trace } from "@opentelemetry/api";
 import { type ExportResult, ExportResultCode, W3CTraceContextPropagator } from "@opentelemetry/core";
 import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-proto";
 import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-proto";
@@ -6,7 +6,7 @@ import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
 import { defaultResource, resourceFromAttributes } from "@opentelemetry/resources";
 import { BatchLogRecordProcessor, LoggerProvider } from "@opentelemetry/sdk-logs";
 import { MeterProvider, PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
-import { BatchSpanProcessor, TracerProvider } from "@opentelemetry/sdk-trace";
+import { BatchSpanProcessor, StackContextManager, TracerProvider } from "@opentelemetry/sdk-trace";
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
 import { authorizationHeaders, type Session } from "@selfless/api-client";
 
@@ -97,6 +97,7 @@ export function startTelemetry(serviceName: string, session: TelemetrySession) {
   };
   const resource = defaultResource().merge(resourceFromAttributes({ [ATTR_SERVICE_NAME]: serviceName }));
   propagation.setGlobalPropagator(new W3CTraceContextPropagator());
+  context.setGlobalContextManager(new StackContextManager().enable());
   const tracerProvider = new TracerProvider({
     resource,
     spanProcessors: [

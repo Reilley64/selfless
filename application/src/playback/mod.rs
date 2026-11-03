@@ -3,6 +3,7 @@ pub mod delete_old_playbacks;
 pub mod end_silent_playbacks;
 pub mod get_playback_file;
 pub mod get_playback_settings;
+pub mod record_active_playbacks;
 pub mod report_progress;
 pub mod start_playback;
 

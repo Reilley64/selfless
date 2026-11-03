@@ -1,2 +1,4 @@
 /src/telemetry/attributes.ts
+/src/telemetry/events.ts
+/src/telemetry/spans.ts
 /theme/

@@ -44,6 +44,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, token: &str) -> Result<
     Ok(user.map_or(Output::NotSignedIn, |user| Output::SignedIn {
         id: user.id,
         session_id: session.id,
+        client_kind: session.client_kind,
         colour: user.colour(),
         name: user.name,
     }))
