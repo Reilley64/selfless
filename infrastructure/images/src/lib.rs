@@ -7,6 +7,7 @@ pub use cache::read_cached_image;
 pub use cache::save_cached_image;
 pub use resize::resize_image;
 
+use application::ports::ImageFormat;
 use serde::Deserialize;
 use std::path::PathBuf;
 
@@ -27,4 +28,12 @@ impl ImagesSettings {
 #[display("missing setting: {name}")]
 pub struct MissingSetting {
     name: &'static str,
+}
+
+fn image_format(format: image::ImageFormat) -> Option<ImageFormat> {
+    match format {
+        image::ImageFormat::Jpeg => Some(ImageFormat::Jpeg),
+        image::ImageFormat::Png => Some(ImageFormat::Png),
+        _ => None,
+    }
 }
