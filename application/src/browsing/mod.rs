@@ -4,11 +4,14 @@ mod resizer;
 mod tile;
 
 pub mod clean_image_cache;
+pub mod get_episode;
 pub mod get_home;
 pub mod get_image;
 pub mod get_movie;
+pub mod get_show;
 pub mod list_genres;
 pub mod list_movies;
+pub mod list_season_episodes;
 pub mod list_shows;
 
 pub use image::Image;

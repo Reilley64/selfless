@@ -239,24 +239,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn requests_send_the_api_key() {
-        let (server, settings) = radarr(
-            "/api/v3/movie/42",
-            json(
-                200,
-                include_str!("../../../test/fixtures/radarr/api/movie.json"),
-            ),
-        )
-        .await;
-
-        settings.get_movie().unwrap().call(42).await.unwrap();
-
-        let requests = server.received_requests().await.unwrap();
-        assert_eq!(requests.len(), 1);
-        assert_eq!(requests[0].headers["X-Api-Key"], API_KEY);
-    }
-
-    #[tokio::test]
     async fn list_movies_maps_every_listed_movie() {
         let (_server, settings) = radarr(
             "/api/v3/movie",

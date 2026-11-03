@@ -388,6 +388,93 @@ paths:
           $ref: "#/components/responses/Unauthenticated"
         "500":
           $ref: "#/components/responses/InternalError"
+  /api/shows/{showId}/v1:
+    get:
+      operationId: getShow
+      summary: The show page
+      description: A visible show with its details, cast, artwork, its visible seasons with Specials last, the Play target and the More like this row. A show is visible when one of its episodes has its file on disk, and a season is listed only when it has a visible episode.
+      tags: [browsing]
+      parameters:
+        - name: showId
+          in: path
+          required: true
+          description: The show's ID.
+          schema:
+            type: string
+            format: uuid
+          example: 0190f3c4-6c7d-7e8f-9a0b-1c2d3e4f5a6b
+      responses:
+        "200":
+          description: The show page.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShowPage"
+              example: {"id":"0190f3c4-6c7d-7e8f-9a0b-1c2d3e4f5a6b","title":"Severance","year":2022,"certification":"TV-MA","status":"Continuing","network":"Apple TV+","seasonCount":2,"genres":["Drama","Mystery"],"rating":8.7,"plot":"Office workers have their memories split.","cast":[{"name":"Adam Scott","role":"Mark Scout"}],"images":{"fanart":null,"logo":null},"seasons":[{"id":"0190f3c4-7d8e-7f90-a1b2-c3d4e5f6a7b8","number":1,"name":"Season 1","episodeCount":9},{"id":"0190f3c4-8e9f-7a01-b2c3-d4e5f6a7b8c9","number":2,"name":"Season 2","episodeCount":10},{"id":"0190f3c4-9a0b-7c1d-8e2f-3a4b5c6d7e8f","number":0,"name":"Specials","episodeCount":1}],"play":{"verb":"play","resumePosition":null,"season":{"id":"0190f3c4-7d8e-7f90-a1b2-c3d4e5f6a7b8","number":1},"episode":{"id":"0190f3c4-ab1c-7d2e-8f3a-4b5c6d7e8f9a","number":1,"title":"Good News About Hell"}},"moreLikeThis":[]}
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/seasons/{seasonId}/episodes/v1:
+    get:
+      operationId: listSeasonEpisodes
+      summary: The episodes of a season
+      description: Every visible episode of a season, by episode number, unpaged. An episode is visible when its file is on disk. A season with no visible episode is not found.
+      tags: [browsing]
+      parameters:
+        - name: seasonId
+          in: path
+          required: true
+          description: The season's ID.
+          schema:
+            type: string
+            format: uuid
+          example: 0190f3c4-7d8e-7f90-a1b2-c3d4e5f6a7b8
+      responses:
+        "200":
+          description: The season's episodes.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EpisodeList"
+              example: {"episodes":[{"id":"0190f3c4-ab1c-7d2e-8f3a-4b5c6d7e8f9a","number":1,"title":"Good News About Hell","runtimeMinutes":57,"plot":"Mark leads a team of office workers.","thumb":null,"progress":null,"watched":false}]}
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/episodes/{episodeId}/v1:
+    get:
+      operationId: getEpisode
+      summary: The episode page
+      description: A visible episode with its details, thumb, its show, and the audio and subtitle languages of its media file. An episode is visible when its file is on disk. The two episodes of a file that holds both share its languages and runtime.
+      tags: [browsing]
+      parameters:
+        - name: episodeId
+          in: path
+          required: true
+          description: The episode's ID.
+          schema:
+            type: string
+            format: uuid
+          example: 0190f3c4-ab1c-7d2e-8f3a-4b5c6d7e8f9a
+      responses:
+        "200":
+          description: The episode page.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EpisodePage"
+              example: {"id":"0190f3c4-ab1c-7d2e-8f3a-4b5c6d7e8f9a","title":"Half Loop","seasonNumber":1,"episodeNumber":2,"airDate":"2022-02-18","runtimeMinutes":57,"rating":8.1,"plot":"Mark takes Helly to the break room.","thumb":null,"show":{"id":"0190f3c4-6c7d-7e8f-9a0b-1c2d3e4f5a6b","title":"Severance","logo":null},"audioLanguages":["eng"],"subtitleLanguages":[{"language":"eng","hearingImpaired":false,"forced":true},{"language":"en","hearingImpaired":true,"forced":false}],"progress":null,"watched":false,"play":{"resumePosition":null}}
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /api/genres/v1:
     get:
       operationId: listGenres
@@ -1310,6 +1397,316 @@ components:
       additionalProperties: false
     MoviePlay:
       description: What the movie's Play button plays. The web app plays a movie at /play/movies/{movieId}.
+      type: object
+      required: [resumePosition]
+      properties:
+        resumePosition:
+          description: The user's resume position in seconds. With one, the page offers Resume and Start over. Otherwise it offers Play from the start.
+          type: [number, "null"]
+          minimum: 0
+          examples: [1534.2]
+      additionalProperties: false
+    ShowPage:
+      description: Everything the show page shows.
+      type: object
+      required: [id, title, year, certification, status, network, seasonCount, genres, rating, plot, cast, images, seasons, play, moreLikeThis]
+      properties:
+        id:
+          type: string
+          format: uuid
+          examples: ["0190f3c4-6c7d-7e8f-9a0b-1c2d3e4f5a6b"]
+        title:
+          type: string
+          examples: [Severance]
+        year:
+          description: The year the show first aired, from Sonarr.
+          type: [integer, "null"]
+          examples: [2022]
+        certification:
+          description: The age rating from the show's NFO file.
+          type: [string, "null"]
+          examples: [TV-MA]
+        status:
+          description: Whether the show is still airing, from the NFO file, such as Continuing or Ended.
+          type: [string, "null"]
+          examples: [Continuing]
+        network:
+          type: [string, "null"]
+          examples: [Apple TV+]
+        seasonCount:
+          description: The number of numbered seasons with a visible episode. Specials don't count.
+          type: integer
+          minimum: 0
+          examples: [2]
+        genres:
+          type: array
+          items:
+            type: string
+          examples: [[Drama, Mystery]]
+        rating:
+          description: The rating from the NFO file, from 0 to 10.
+          type: [number, "null"]
+          examples: [8.7]
+        plot:
+          type: [string, "null"]
+          examples: [Office workers have their memories split.]
+        cast:
+          description: Up to 10 members of the show's cast in billing order.
+          type: array
+          items:
+            $ref: "#/components/schemas/CastMember"
+          examples: [[{name: Adam Scott, role: Mark Scout}]]
+        images:
+          $ref: "#/components/schemas/TitleImages"
+          examples: [{fanart: null, logo: null}]
+        seasons:
+          description: The seasons with a visible episode, numbered seasons first and Specials last.
+          type: array
+          items:
+            $ref: "#/components/schemas/ShowSeason"
+          examples: [[{id: "0190f3c4-7d8e-7f90-a1b2-c3d4e5f6a7b8", number: 1, name: Season 1, episodeCount: 9}]]
+        play:
+          $ref: "#/components/schemas/ShowPlay"
+        moreLikeThis:
+          description: Up to 20 movies and shows that share a genre with the show, most shared genres first.
+          type: array
+          maxItems: 20
+          items:
+            $ref: "#/components/schemas/Tile"
+          examples: [[]]
+      additionalProperties: false
+    ShowSeason:
+      description: A season of the show page's season list.
+      type: object
+      required: [id, number, name, episodeCount]
+      properties:
+        id:
+          type: string
+          format: uuid
+          examples: ["0190f3c4-7d8e-7f90-a1b2-c3d4e5f6a7b8"]
+        number:
+          description: The number of the season. Specials are 0.
+          type: integer
+          minimum: 0
+          examples: [1]
+        name:
+          description: The name the apps show, such as Season 1 or Specials.
+          type: string
+          examples: [Season 1]
+        episodeCount:
+          description: The number of visible episodes in the season.
+          type: integer
+          minimum: 1
+          examples: [9]
+      additionalProperties: false
+    ShowPlayVerb:
+      description: What the show's Play button does. The apps label it with the verb and the episode, such as "Play S1:E1" or "Resume S2:E4".
+      type: string
+      enum: [play, resume]
+      examples: [play]
+    ShowPlay:
+      description: The episode the show's Play button plays, and the season the show page opens on. The web app plays an episode at /play/episodes/{episodeId}.
+      type: object
+      required: [verb, resumePosition, season, episode]
+      properties:
+        verb:
+          $ref: "#/components/schemas/ShowPlayVerb"
+        resumePosition:
+          description: The user's resume position in the episode in seconds when the verb is resume. Otherwise null.
+          type: [number, "null"]
+          minimum: 0
+          examples: [1534.2]
+        season:
+          $ref: "#/components/schemas/ShowPlaySeason"
+        episode:
+          $ref: "#/components/schemas/ShowPlayEpisode"
+      additionalProperties: false
+    ShowPlaySeason:
+      description: The season of the episode Play plays.
+      type: object
+      required: [id, number]
+      properties:
+        id:
+          type: string
+          format: uuid
+          examples: ["0190f3c4-7d8e-7f90-a1b2-c3d4e5f6a7b8"]
+        number:
+          type: integer
+          minimum: 0
+          examples: [1]
+      additionalProperties: false
+    ShowPlayEpisode:
+      description: The episode Play plays.
+      type: object
+      required: [id, number, title]
+      properties:
+        id:
+          type: string
+          format: uuid
+          examples: ["0190f3c4-ab1c-7d2e-8f3a-4b5c6d7e8f9a"]
+        number:
+          type: integer
+          examples: [1]
+        title:
+          type: string
+          examples: [Good News About Hell]
+      additionalProperties: false
+    EpisodeList:
+      description: The visible episodes of one season.
+      type: object
+      required: [episodes]
+      properties:
+        episodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/EpisodeListItem"
+          examples:
+            - [{"id":"0190f3c4-ab1c-7d2e-8f3a-4b5c6d7e8f9a","number":1,"title":"Good News About Hell","runtimeMinutes":57,"plot":"Mark leads a team of office workers.","thumb":null,"progress":null,"watched":false}]
+      additionalProperties: false
+    EpisodeListItem:
+      description: One episode of a season's episode list.
+      type: object
+      required: [id, number, title, runtimeMinutes, plot, thumb, progress, watched]
+      properties:
+        id:
+          type: string
+          format: uuid
+          examples: ["0190f3c4-ab1c-7d2e-8f3a-4b5c6d7e8f9a"]
+        number:
+          type: integer
+          examples: [1]
+        title:
+          type: string
+          examples: [Good News About Hell]
+        runtimeMinutes:
+          description: The length of the episode's media file, from probing it. A media file that holds two episodes gives both its whole length. Null until the file is probed.
+          type: [integer, "null"]
+          examples: [57]
+        plot:
+          type: [string, "null"]
+          examples: [Mark leads a team of office workers.]
+        thumb:
+          description: The episode's thumb. A missing thumb is null, and the app draws a placeholder.
+          anyOf:
+            - $ref: "#/components/schemas/Artwork"
+            - type: "null"
+        progress:
+          description: How far the user got in the episode, from 0 to 1, when they have a resume position. Otherwise null.
+          type: [number, "null"]
+          minimum: 0
+          maximum: 1
+          examples: [0.42]
+        watched:
+          description: Whether the user has watched the episode.
+          type: boolean
+          examples: [false]
+      additionalProperties: false
+    EpisodePage:
+      description: Everything the episode page shows.
+      type: object
+      required: [id, title, seasonNumber, episodeNumber, airDate, runtimeMinutes, rating, plot, thumb, show, audioLanguages, subtitleLanguages, progress, watched, play]
+      properties:
+        id:
+          type: string
+          format: uuid
+          examples: ["0190f3c4-ab1c-7d2e-8f3a-4b5c6d7e8f9a"]
+        title:
+          type: string
+          examples: [Half Loop]
+        seasonNumber:
+          description: The season number. Specials are 0.
+          type: integer
+          minimum: 0
+          examples: [1]
+        episodeNumber:
+          type: integer
+          examples: [2]
+        airDate:
+          description: The day the episode first aired.
+          type: [string, "null"]
+          format: date
+          examples: ["2022-02-18"]
+        runtimeMinutes:
+          description: The length of the episode's media file, from probing it. A media file that holds two episodes gives both its whole length. Null until the file is probed.
+          type: [integer, "null"]
+          examples: [57]
+        rating:
+          description: The rating from the episode's metadata, from 0 to 10.
+          type: [number, "null"]
+          examples: [8.1]
+        plot:
+          type: [string, "null"]
+          examples: [Mark takes Helly to the break room.]
+        thumb:
+          description: The episode's thumb, the page's backdrop. A missing thumb is null, and the app draws a placeholder.
+          anyOf:
+            - $ref: "#/components/schemas/Artwork"
+            - type: "null"
+          examples: [null]
+        show:
+          $ref: "#/components/schemas/EpisodeShow"
+        audioLanguages:
+          description: The languages of the file's audio streams in stream order, each once, as the file tags them (ISO 639-2, such as eng). Untagged streams are left out.
+          type: array
+          items:
+            type: string
+          examples: [[eng, jpn]]
+        subtitleLanguages:
+          description: The text subtitles in the file in stream order, then the subtitle files beside it by file name, each language and flag pair once. Image subtitles, such as PGS, are left out, and so are subtitles with no language. Streams carry ISO 639-2 codes, such as eng, and subtitle files the code in their name, such as en.
+          type: array
+          items:
+            $ref: "#/components/schemas/SubtitleLanguage"
+          examples: [[{language: eng, hearingImpaired: false, forced: true}]]
+        progress:
+          description: How far the user got in the episode, from 0 to 1, when they have a resume position. Otherwise null.
+          type: [number, "null"]
+          minimum: 0
+          maximum: 1
+          examples: [0.42]
+        watched:
+          description: Whether the user has watched the episode.
+          type: boolean
+          examples: [false]
+        play:
+          $ref: "#/components/schemas/EpisodePlay"
+      additionalProperties: false
+    EpisodeShow:
+      description: The show an episode belongs to.
+      type: object
+      required: [id, title, logo]
+      properties:
+        id:
+          type: string
+          format: uuid
+          examples: ["0190f3c4-6c7d-7e8f-9a0b-1c2d3e4f5a6b"]
+        title:
+          type: string
+          examples: [Severance]
+        logo:
+          description: The show's clearlogo. A missing logo is null, and the app draws the show's title instead.
+          anyOf:
+            - $ref: "#/components/schemas/Artwork"
+            - type: "null"
+      additionalProperties: false
+    SubtitleLanguage:
+      description: One subtitle language of an episode.
+      type: object
+      required: [language, hearingImpaired, forced]
+      properties:
+        language:
+          type: string
+          examples: [eng]
+        hearingImpaired:
+          description: Whether the subtitles are for the deaf and hard of hearing (SDH).
+          type: boolean
+          examples: [false]
+        forced:
+          description: Whether the subtitles cover only foreign or hard to hear lines.
+          type: boolean
+          examples: [true]
+      additionalProperties: false
+    EpisodePlay:
+      description: What the episode's Play button plays. The web app plays an episode at /play/episodes/{episodeId}.
       type: object
       required: [resumePosition]
       properties:

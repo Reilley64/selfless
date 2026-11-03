@@ -1,5 +1,4 @@
-use crate::library::sync_status::ReconcileProgress;
-use crate::webhooks::BySource;
+use crate::by_source::BySource;
 use domain::Source;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -14,7 +13,13 @@ pub struct Reconciles {
 #[derive(Clone, Default)]
 pub(crate) struct SourceReconcile {
     pub(crate) running: Arc<tokio::sync::Mutex<()>>,
-    pub(crate) progress: Arc<Mutex<Option<ReconcileProgress>>>,
+    pub(crate) progress: Arc<Mutex<Option<Progress>>>,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct Progress {
+    pub(crate) imported: usize,
+    pub(crate) total: Option<usize>,
 }
 
 impl Reconciles {
@@ -30,7 +35,7 @@ impl Reconciles {
         self.sources.get(source)
     }
 
-    pub(crate) fn progress(&self, source: Source) -> Option<ReconcileProgress> {
+    pub(crate) fn progress(&self, source: Source) -> Option<Progress> {
         *self.source(source).progress.lock().unwrap()
     }
 }

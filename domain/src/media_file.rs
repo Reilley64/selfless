@@ -39,6 +39,10 @@ impl MediaFile {
     pub fn needs_probe(&self, size: i64, modified_at: Timestamp) -> bool {
         self.size != Some(size) || self.modified_at != Some(modified_at)
     }
+
+    pub fn runtime_minutes(&self) -> Option<i64> {
+        self.duration_ms.map(|x| (x + 30_000) / 60_000)
+    }
 }
 
 #[cfg(test)]
@@ -68,6 +72,21 @@ mod tests {
             subtitle_files: Deferred::default(),
             sync_problems: Deferred::default(),
         }
+    }
+
+    #[test]
+    fn the_runtime_is_the_probed_duration_rounded_to_the_nearest_minute() {
+        let runtime = |duration_ms| {
+            MediaFile {
+                duration_ms,
+                ..media_file(None, None)
+            }
+            .runtime_minutes()
+        };
+
+        assert_eq!(runtime(Some(2_829_999)), Some(47));
+        assert_eq!(runtime(Some(2_850_000)), Some(48));
+        assert_eq!(runtime(None), None);
     }
 
     #[test]

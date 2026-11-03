@@ -29,51 +29,45 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<Output, Error
         .await
         .map_err(Error::caused_by)?
         .into_iter()
-        .map(|show| Show {
-            id: show.id,
-            title: show.title,
-            sort_title: show.sort_title,
-            year: show.year,
-            genres: show.genres,
-            overview: show.overview,
-            certification: show.certification,
-            premiered: show.premiered,
-            end_date: show.end_date,
-            status: show.status,
-            network: show.network,
-            rating: show.rating,
-            actors: actors(show.actors.into_inner()),
-            artwork: artwork(show.artwork.into_inner()),
+        .map(|show| {
+            let mut actors = show.actors.into_inner();
+            actors.sort_by_key(domain::Actor::listing_order);
+            let mut artwork = show.artwork.into_inner();
+            artwork.sort_by_cached_key(domain::Artwork::listing_order);
+            Show {
+                id: show.id,
+                title: show.title,
+                sort_title: show.sort_title,
+                year: show.year,
+                genres: show.genres,
+                overview: show.overview,
+                certification: show.certification,
+                premiered: show.premiered,
+                end_date: show.end_date,
+                status: show.status,
+                network: show.network,
+                rating: show.rating,
+                actors: actors
+                    .into_iter()
+                    .map(|x| Actor {
+                        name: x.name,
+                        role: x.role,
+                        order: x.order,
+                    })
+                    .collect(),
+                artwork: artwork
+                    .into_iter()
+                    .map(|x| Artwork {
+                        kind: x.kind,
+                        path: x.path,
+                        modified_at: x.modified_at,
+                    })
+                    .collect(),
+            }
         })
         .collect::<Vec<_>>();
     shows.sort_by_cached_key(|x| domain::sort_key(x.sort_title.as_deref(), &x.title));
     Ok(Output { shows })
-}
-
-fn actors(stored: Vec<domain::Actor>) -> Vec<Actor> {
-    let mut actors = stored
-        .into_iter()
-        .map(|x| Actor {
-            name: x.name,
-            role: x.role,
-            order: x.order,
-        })
-        .collect::<Vec<_>>();
-    actors.sort_by_key(|x| x.order);
-    actors
-}
-
-fn artwork(stored: Vec<domain::Artwork>) -> Vec<Artwork> {
-    let mut artwork = stored
-        .into_iter()
-        .map(|x| Artwork {
-            kind: x.kind,
-            path: x.path,
-            modified_at: x.modified_at,
-        })
-        .collect::<Vec<_>>();
-    artwork.sort_by(|a, b| a.path.cmp(&b.path));
-    artwork
 }
 
 #[cfg(test)]

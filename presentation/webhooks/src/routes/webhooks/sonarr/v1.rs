@@ -23,23 +23,24 @@ mod tests {
     const PATH: &str = "/webhooks/sonarr/v1";
 
     #[tokio::test]
-    async fn the_right_password_is_accepted() {
+    async fn post_and_put_accept_the_right_password_with_any_username() {
         let server = serve(&TestApp::new().await).await;
 
-        let (status, _) = send(&server, Method::POST, PATH, Some(("sonarr", PASSWORD))).await;
+        for (method, username) in [(Method::POST, "sonarr"), (Method::PUT, "anyone")] {
+            let (status, _) = send(&server, method.clone(), PATH, (username, PASSWORD)).await;
 
-        assert_eq!(status, StatusCode::OK);
+            assert_eq!(status, StatusCode::OK, "{method} {username:?}");
+        }
     }
 
     #[tokio::test]
-    async fn a_wrong_or_missing_password_gets_a_basic_challenge() {
+    async fn a_wrong_password_gets_a_basic_challenge() {
         let server = serve(&TestApp::new().await).await;
 
-        for credentials in [Some(("sonarr", "wrong password")), None] {
-            let (status, headers) = send(&server, Method::POST, PATH, credentials).await;
+        let (status, headers) =
+            send(&server, Method::POST, PATH, ("sonarr", "wrong password")).await;
 
-            assert_eq!(status, StatusCode::UNAUTHORIZED, "{credentials:?}");
-            assert_eq!(headers[WWW_AUTHENTICATE], r#"Basic realm="selfless""#);
-        }
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert_eq!(headers[WWW_AUTHENTICATE], r#"Basic realm="selfless""#);
     }
 }

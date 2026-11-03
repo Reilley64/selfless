@@ -27,32 +27,30 @@ pub async fn call(dependencies: impl Into<Dependencies>, season_id: Uuid) -> Res
         .await
         .map_err(Error::caused_by)?
         .into_iter()
-        .map(|episode| Episode {
-            id: episode.id,
-            number: episode.number,
-            title: episode.title,
-            air_date: episode.air_date,
-            overview: episode.overview,
-            added_at: episode.added_at,
-            media_file_id: episode.media_file_id,
-            rating: episode.rating,
-            artwork: artwork(episode.artwork.into_inner()),
+        .map(|episode| {
+            let mut artwork = episode.artwork.into_inner();
+            artwork.sort_by_cached_key(domain::Artwork::listing_order);
+            Episode {
+                id: episode.id,
+                number: episode.number,
+                title: episode.title,
+                air_date: episode.air_date,
+                overview: episode.overview,
+                added_at: episode.added_at,
+                media_file_id: episode.media_file_id,
+                rating: episode.rating,
+                artwork: artwork
+                    .into_iter()
+                    .map(|x| Artwork {
+                        kind: x.kind,
+                        path: x.path,
+                        modified_at: x.modified_at,
+                    })
+                    .collect(),
+            }
         })
         .collect();
     Ok(Output { episodes })
-}
-
-fn artwork(stored: Vec<domain::Artwork>) -> Vec<Artwork> {
-    let mut artwork = stored
-        .into_iter()
-        .map(|x| Artwork {
-            kind: x.kind,
-            path: x.path,
-            modified_at: x.modified_at,
-        })
-        .collect::<Vec<_>>();
-    artwork.sort_by(|a, b| a.path.cmp(&b.path));
-    artwork
 }
 
 #[cfg(test)]
