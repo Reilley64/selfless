@@ -144,22 +144,21 @@ pub(crate) async fn inspect(
         })));
     };
     let read = async {
-        Ok::<_, UnreadableFile>((
-            files.find_media_file.call(&file.path).await?,
-            files.read_movie_folder.call(&file.path).await?,
-        ))
+        let found = files.find_media_file.call(&file.path).await?;
+        let mut folder = files.read_movie_folder.call(&file.path).await?;
+        let nfo = Nfo::read(folder.nfo.take(), stored_nfo_modified_at, |path| {
+            files.read_movie_nfo.call(path)
+        })
+        .await?;
+        Ok::<_, UnreadableFile>((found, folder, nfo))
     };
-    let (found, folder) = match read.await {
+    let (found, folder, nfo) = match read.await {
         Ok(read) => read,
         Err(error) => {
             metadata::warn_unreadable_file(&error);
             return Ok(InspectedMovie::Unreadable(error));
         }
     };
-    let nfo = Nfo::read(folder.nfo, stored_nfo_modified_at, |path| {
-        files.read_movie_nfo.call(path)
-    })
-    .await;
     let media_file = media_files::inspect(
         &files.list_subtitle_files,
         &files.prober,
@@ -882,6 +881,40 @@ mod tests {
         assert_eq!(
             unreadable_file_problems(&library).await,
             [(Some(movie.id), MOVIE_FILE.to_owned())]
+        );
+    }
+
+    #[tokio::test]
+    async fn an_nfo_that_cannot_be_read_keeps_the_stored_nfo_metadata_and_records_an_unreadable_file()
+     {
+        let library = MovieLibrary::new().await;
+        with_nfo(&library, Some(nfo()), "2026-10-29T11:00:00Z");
+        library.sync_movie().await.unwrap();
+
+        let directors_cut = MovieNfo {
+            title: Some("Arrival (Director's Cut)".to_owned()),
+            ..nfo()
+        };
+        with_nfo(&library, Some(directors_cut), "2026-10-30T08:00:00Z");
+        library.sources().unreadable_files.insert(NFO.to_owned());
+        library.sync_movie().await.unwrap();
+
+        let movie = movie(&library).await;
+        assert_eq!(movie.title, "Arrival");
+        assert_eq!(movie.sort_title.as_deref(), Some("arrival"));
+        assert_eq!(movie.nfo_modified_at, Some(at("2026-10-29T11:00:00Z")));
+        assert_eq!(actors(&library).await.len(), 3);
+        assert_eq!(
+            problems(&library)
+                .await
+                .into_iter()
+                .map(|x| (x.kind, x.movie_id, x.path))
+                .collect::<Vec<_>>(),
+            [(
+                SyncProblemKind::UnreadableFile,
+                Some(movie.id),
+                NFO.to_owned()
+            )]
         );
     }
 

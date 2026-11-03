@@ -1,6 +1,7 @@
 use crate::ports::FoundFile;
 use crate::ports::NfoActor;
 use crate::ports::PortFuture;
+use crate::ports::ReadNfoError;
 use crate::ports::UnreadableFile;
 use crate::ports::UnreadableNfo;
 use crate::ports::persistence::DbScope;
@@ -46,17 +47,18 @@ impl<T> Nfo<T> {
     pub(crate) async fn read(
         found: Option<FoundFile>,
         stored_modified_at: Option<Timestamp>,
-        read: impl FnOnce(&str) -> PortFuture<Result<T, UnreadableNfo>>,
-    ) -> Self {
+        read: impl FnOnce(&str) -> PortFuture<Result<T, ReadNfoError>>,
+    ) -> Result<Self, UnreadableFile> {
         match found {
-            None => Nfo::Missing,
-            Some(file) if stored_modified_at == Some(file.modified_at) => Nfo::Unchanged,
+            None => Ok(Nfo::Missing),
+            Some(file) if stored_modified_at == Some(file.modified_at) => Ok(Nfo::Unchanged),
             Some(file) => match read(&file.path).await {
-                Ok(nfo) => Nfo::Read(nfo, file.modified_at),
-                Err(error) => {
+                Ok(nfo) => Ok(Nfo::Read(nfo, file.modified_at)),
+                Err(ReadNfoError::UnreadableNfo(error)) => {
                     warn_unreadable(&error, &file.path);
-                    Nfo::Unreadable(file.path)
+                    Ok(Nfo::Unreadable(file.path))
                 }
+                Err(ReadNfoError::UnreadableFile(error)) => Err(error),
             },
         }
     }

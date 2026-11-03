@@ -140,7 +140,7 @@ pub(crate) fn empty_episode_folder() -> ReadEpisodeFolder {
 }
 
 pub(crate) fn unreadable_episode_nfo() -> ReadEpisodeNfo {
-    ReadEpisodeNfo::new(|_| Box::pin(async { Err(UnreadableNfo::default()) }))
+    ReadEpisodeNfo::new(|_| Box::pin(async { Err(UnreadableNfo::default().into()) }))
 }
 
 pub(crate) fn empty_movie_folder() -> ReadMovieFolder {
@@ -148,7 +148,7 @@ pub(crate) fn empty_movie_folder() -> ReadMovieFolder {
 }
 
 pub(crate) fn unreadable_movie_nfo() -> ReadMovieNfo {
-    ReadMovieNfo::new(|_| Box::pin(async { Err(UnreadableNfo::default()) }))
+    ReadMovieNfo::new(|_| Box::pin(async { Err(UnreadableNfo::default().into()) }))
 }
 
 pub(crate) fn empty_show_folder() -> ReadShowFolder {
@@ -156,7 +156,7 @@ pub(crate) fn empty_show_folder() -> ReadShowFolder {
 }
 
 pub(crate) fn unreadable_show_nfo() -> ReadShowNfo {
-    ReadShowNfo::new(|_| Box::pin(async { Err(UnreadableNfo::default()) }))
+    ReadShowNfo::new(|_| Box::pin(async { Err(UnreadableNfo::default().into()) }))
 }
 
 fn readable<'a>(
@@ -305,22 +305,24 @@ impl MovieLibrary {
                 let folder = &sources.folder;
                 let folder = readable(
                     &sources.unreadable_files,
-                    [
-                        &folder.nfo,
-                        &folder.poster,
-                        &folder.fanart,
-                        &folder.clearlogo,
-                    ]
-                    .into_iter()
-                    .flatten(),
+                    [&folder.poster, &folder.fanart, &folder.clearlogo]
+                        .into_iter()
+                        .flatten(),
                 )
                 .map(|()| folder.clone());
                 Box::pin(async move { folder })
             }),
-            read_movie_nfo: ReadMovieNfo::new(move |_| {
+            read_movie_nfo: ReadMovieNfo::new(move |path| {
                 let mut sources = nfo.lock().unwrap();
                 sources.nfo_reads += 1;
-                let nfo = sources.nfo.clone().ok_or_else(UnreadableNfo::default);
+                let nfo = if sources.unreadable_files.contains(&path) {
+                    Err(UnreadableFile::new(path).into())
+                } else {
+                    sources
+                        .nfo
+                        .clone()
+                        .ok_or_else(|| UnreadableNfo::default().into())
+                };
                 Box::pin(async move { nfo })
             }),
             source_health: self.source_health.clone(),
@@ -504,21 +506,22 @@ impl ShowLibrary {
                     .get(&path)
                     .cloned()
                     .unwrap_or_default();
-                let folder = readable(
-                    &sources.unreadable_files,
-                    [&folder.nfo, &folder.thumb].into_iter().flatten(),
-                )
-                .map(|()| folder);
+                let folder =
+                    readable(&sources.unreadable_files, folder.thumb.iter()).map(|()| folder);
                 Box::pin(async move { folder })
             }),
             read_episode_nfo: ReadEpisodeNfo::new(move |path| {
                 let mut sources = episode_nfos.lock().unwrap();
                 sources.episode_nfo_reads += 1;
-                let roots = sources
-                    .episode_nfos
-                    .get(&path)
-                    .cloned()
-                    .ok_or_else(UnreadableNfo::default);
+                let roots = if sources.unreadable_files.contains(&path) {
+                    Err(UnreadableFile::new(path).into())
+                } else {
+                    sources
+                        .episode_nfos
+                        .get(&path)
+                        .cloned()
+                        .ok_or_else(|| UnreadableNfo::default().into())
+                };
                 Box::pin(async move { roots })
             }),
             read_show_folder: ReadShowFolder::new(move |_, _| {
@@ -526,23 +529,25 @@ impl ShowLibrary {
                 let folder = &sources.folder;
                 let folder = readable(
                     &sources.unreadable_files,
-                    [
-                        &folder.nfo,
-                        &folder.poster,
-                        &folder.fanart,
-                        &folder.clearlogo,
-                    ]
-                    .into_iter()
-                    .flatten()
-                    .chain(folder.season_posters.iter().map(|(_, x)| x)),
+                    [&folder.poster, &folder.fanart, &folder.clearlogo]
+                        .into_iter()
+                        .flatten()
+                        .chain(folder.season_posters.iter().map(|(_, x)| x)),
                 )
                 .map(|()| folder.clone());
                 Box::pin(async move { folder })
             }),
-            read_show_nfo: ReadShowNfo::new(move |_| {
+            read_show_nfo: ReadShowNfo::new(move |path| {
                 let mut sources = nfo.lock().unwrap();
                 sources.nfo_reads += 1;
-                let nfo = sources.nfo.clone().ok_or_else(UnreadableNfo::default);
+                let nfo = if sources.unreadable_files.contains(&path) {
+                    Err(UnreadableFile::new(path).into())
+                } else {
+                    sources
+                        .nfo
+                        .clone()
+                        .ok_or_else(|| UnreadableNfo::default().into())
+                };
                 Box::pin(async move { nfo })
             }),
             source_health: SourceHealth::default(),

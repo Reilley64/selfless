@@ -102,17 +102,19 @@ impl TestApp {
                 Box::pin(async { Ok(Default::default()) })
             }),
             read_episode_nfo: ReadEpisodeNfo::new(|_| {
-                Box::pin(async { Err(UnreadableNfo::default()) })
+                Box::pin(async { Err(UnreadableNfo::default().into()) })
             }),
             read_movie_folder: ReadMovieFolder::new(|_| Box::pin(async { Ok(Default::default()) })),
             read_movie_nfo: ReadMovieNfo::new(|_| {
-                Box::pin(async { Err(UnreadableNfo::default()) })
+                Box::pin(async { Err(UnreadableNfo::default().into()) })
             }),
             read_radarr_webhook: ReadRadarrWebhook::new(|_| Err(UnreadableWebhook::default())),
             read_show_folder: ReadShowFolder::new(|_, _| {
                 Box::pin(async { Ok(Default::default()) })
             }),
-            read_show_nfo: ReadShowNfo::new(|_| Box::pin(async { Err(UnreadableNfo::default()) })),
+            read_show_nfo: ReadShowNfo::new(|_| {
+                Box::pin(async { Err(UnreadableNfo::default().into()) })
+            }),
             read_sonarr_webhook: ReadSonarrWebhook::new(|_| Err(UnreadableWebhook::default())),
             read_webhook_event_type: ReadWebhookEventType::new(|_| None),
             reconciles: Reconciles::default(),

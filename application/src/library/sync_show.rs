@@ -20,6 +20,7 @@ use crate::ports::FindMediaFile;
 use crate::ports::ListSubtitleFiles;
 use crate::ports::ReadEpisodeFolder;
 use crate::ports::ReadEpisodeNfo;
+use crate::ports::ReadNfoError;
 use crate::ports::ReadShowFolder;
 use crate::ports::ReadShowNfo;
 use crate::ports::ShowFolder;
@@ -133,6 +134,44 @@ pub(crate) async fn inspect(
     files: &ShowFiles,
     sonarr_show: &SonarrShow,
 ) -> Result<InspectedShow, Error> {
+    let episode_file_paths = sonarr_show
+        .episodes
+        .iter()
+        .filter_map(|x| x.episode_file.as_ref())
+        .map(|x| x.path.clone())
+        .collect::<Vec<_>>();
+    let stored = if episode_file_paths.is_empty() {
+        HashMap::new()
+    } else {
+        db_context
+            .media_files()
+            .filter(MediaFile::fields().path().in_list(episode_file_paths))
+            .exec(db_context.executor_mut())
+            .await
+            .map_err(Error::caused_by)?
+            .into_iter()
+            .map(|x| (x.path.clone(), x))
+            .collect::<HashMap<_, _>>()
+    };
+    let stored_show = db_context
+        .shows()
+        .filter(Show::fields().tvdb_id().eq(sonarr_show.listing.tvdb_id))
+        .include(Show::fields().seasons().episodes())
+        .first()
+        .exec(db_context.executor_mut())
+        .await
+        .map_err(Error::caused_by)?;
+    let stored_nfo_modified_at = stored_show
+        .iter()
+        .flat_map(|x| x.seasons.get())
+        .flat_map(|x| x.episodes.get())
+        .map(|x| (x.tvdb_id, x.nfo_modified_at))
+        .collect::<HashMap<_, _>>();
+    let sonarr_ids = sonarr_show
+        .episodes
+        .iter()
+        .map(|x| x.sonarr_id)
+        .collect::<HashSet<_>>();
     let read = async {
         let mut found = HashMap::new();
         let mut episode_folders = HashMap::new();
@@ -157,107 +196,75 @@ pub(crate) async fn inspect(
             .iter()
             .map(|x| x.season_number)
             .collect::<BTreeSet<_>>();
-        let folder = files
+        let mut folder = files
             .read_show_folder
             .call(
                 &sonarr_show.listing.path,
                 season_numbers.into_iter().collect(),
             )
             .await?;
-        Ok::<_, UnreadableFile>((found, episode_folders, folder))
+        let nfo = Nfo::read(
+            folder.nfo.take(),
+            stored_show.as_ref().and_then(|x| x.nfo_modified_at),
+            |path| files.read_show_nfo.call(path),
+        )
+        .await?;
+        let mut nfo_roots = HashMap::new();
+        let mut episode_nfos = Vec::new();
+        for sonarr_episode in &sonarr_show.episodes {
+            let nfo_file = sonarr_episode
+                .episode_file
+                .as_ref()
+                .and_then(|x| episode_folders.get(&x.path))
+                .and_then(|x| x.nfo.as_ref());
+            episode_nfos.push(match nfo_file {
+                None => Nfo::Missing,
+                Some(nfo_file)
+                    if stored_nfo_modified_at.get(&sonarr_episode.tvdb_id)
+                        == Some(&Some(nfo_file.modified_at)) =>
+                {
+                    Nfo::Unchanged
+                }
+                Some(nfo_file) => {
+                    if !nfo_roots.contains_key(&nfo_file.path) {
+                        let roots = match files.read_episode_nfo.call(&nfo_file.path).await {
+                            Ok(roots) => Some(roots),
+                            Err(ReadNfoError::UnreadableNfo(error)) => {
+                                metadata::warn_unreadable(&error, &nfo_file.path);
+                                None
+                            }
+                            Err(ReadNfoError::UnreadableFile(error)) => return Err(error),
+                        };
+                        nfo_roots.insert(nfo_file.path.clone(), roots);
+                    }
+                    match &nfo_roots[&nfo_file.path] {
+                        None => Nfo::Unreadable(nfo_file.path.clone()),
+                        Some(roots) => match roots
+                            .iter()
+                            .find(|x| x.sonarr_id == Some(sonarr_episode.sonarr_id))
+                            .or_else(|| {
+                                roots.iter().find(|x| {
+                                    !x.sonarr_id.is_some_and(|x| sonarr_ids.contains(&x))
+                                        && x.season_number == Some(sonarr_episode.season_number)
+                                        && x.episode_number == Some(sonarr_episode.episode_number)
+                                })
+                            }) {
+                            Some(root) => Nfo::Read(root.clone(), nfo_file.modified_at),
+                            None => Nfo::Missing,
+                        },
+                    }
+                }
+            });
+        }
+        Ok::<_, UnreadableFile>((found, episode_folders, folder, nfo, episode_nfos))
     };
-    let (found, episode_folders, mut folder) = match read.await {
+    let (found, episode_folders, folder, nfo, episode_nfos) = match read.await {
         Ok(read) => read,
         Err(error) => {
             metadata::warn_unreadable_file(&error);
             return Ok(InspectedShow::Unreadable(error));
         }
     };
-    let stored = if episode_folders.is_empty() {
-        HashMap::new()
-    } else {
-        db_context
-            .media_files()
-            .filter(
-                MediaFile::fields()
-                    .path()
-                    .in_list(episode_folders.keys().cloned().collect::<Vec<_>>()),
-            )
-            .exec(db_context.executor_mut())
-            .await
-            .map_err(Error::caused_by)?
-            .into_iter()
-            .map(|x| (x.path.clone(), x))
-            .collect::<HashMap<_, _>>()
-    };
-    let stored_show = db_context
-        .shows()
-        .filter(Show::fields().tvdb_id().eq(sonarr_show.listing.tvdb_id))
-        .include(Show::fields().seasons().episodes())
-        .first()
-        .exec(db_context.executor_mut())
-        .await
-        .map_err(Error::caused_by)?;
-    let nfo = Nfo::read(
-        folder.nfo.take(),
-        stored_show.as_ref().and_then(|x| x.nfo_modified_at),
-        |path| files.read_show_nfo.call(path),
-    )
-    .await;
-    let stored_nfo_modified_at = stored_show
-        .iter()
-        .flat_map(|x| x.seasons.get())
-        .flat_map(|x| x.episodes.get())
-        .map(|x| (x.tvdb_id, x.nfo_modified_at))
-        .collect::<HashMap<_, _>>();
-    let sonarr_ids = sonarr_show
-        .episodes
-        .iter()
-        .map(|x| x.sonarr_id)
-        .collect::<HashSet<_>>();
-    let mut nfo_roots = HashMap::new();
-    let mut episode_nfos = Vec::new();
-    for sonarr_episode in &sonarr_show.episodes {
-        let nfo_file = sonarr_episode
-            .episode_file
-            .as_ref()
-            .and_then(|x| episode_folders.get(&x.path))
-            .and_then(|x| x.nfo.as_ref());
-        episode_nfos.push(match nfo_file {
-            None => Nfo::Missing,
-            Some(nfo_file)
-                if stored_nfo_modified_at.get(&sonarr_episode.tvdb_id)
-                    == Some(&Some(nfo_file.modified_at)) =>
-            {
-                Nfo::Unchanged
-            }
-            Some(nfo_file) => {
-                if !nfo_roots.contains_key(&nfo_file.path) {
-                    let roots = files.read_episode_nfo.call(&nfo_file.path).await;
-                    if let Err(error) = &roots {
-                        metadata::warn_unreadable(error, &nfo_file.path);
-                    }
-                    nfo_roots.insert(nfo_file.path.clone(), roots.ok());
-                }
-                match &nfo_roots[&nfo_file.path] {
-                    None => Nfo::Unreadable(nfo_file.path.clone()),
-                    Some(roots) => match roots
-                        .iter()
-                        .find(|x| x.sonarr_id == Some(sonarr_episode.sonarr_id))
-                        .or_else(|| {
-                            roots.iter().find(|x| {
-                                !x.sonarr_id.is_some_and(|x| sonarr_ids.contains(&x))
-                                    && x.season_number == Some(sonarr_episode.season_number)
-                                    && x.episode_number == Some(sonarr_episode.episode_number)
-                            })
-                        }) {
-                        Some(root) => Nfo::Read(root.clone(), nfo_file.modified_at),
-                        None => Nfo::Missing,
-                    },
-                }
-            }
-        });
-    }
     let media_files = try_join_all(found.into_iter().map(async |(path, found)| {
         let inspected = media_files::inspect(
             &files.list_subtitle_files,
@@ -1028,6 +1035,96 @@ mod tests {
         assert_eq!(
             unreadable_file_problems(&library).await,
             [(Some(show.id), poster)]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_show_nfo_that_cannot_be_read_keeps_the_stored_nfo_metadata_and_records_an_unreadable_file()
+     {
+        let library = ShowLibrary::new().await;
+        with_show_nfo(&library, Some(show_nfo()), "2026-10-29T11:00:00Z");
+        library.sync_show().await.unwrap();
+
+        let retitled = ShowNfo {
+            title: Some("Severance (NFO)".to_owned()),
+            ..show_nfo()
+        };
+        with_show_nfo(&library, Some(retitled), "2026-10-30T08:00:00Z");
+        library
+            .sources()
+            .unreadable_files
+            .insert(SHOW_NFO.to_owned());
+        library.sync_show().await.unwrap();
+
+        let show = show(&library).await;
+        assert_eq!(show.title, "Severance");
+        assert_eq!(show.sort_title.as_deref(), Some("severance"));
+        assert_eq!(show.nfo_modified_at, Some(at("2026-10-29T11:00:00Z")));
+        assert_eq!(actors(&library).await.len(), 3);
+        assert_eq!(
+            problems(&library)
+                .await
+                .into_iter()
+                .map(|x| (x.kind, x.show_id, x.path))
+                .collect::<Vec<_>>(),
+            [(
+                SyncProblemKind::UnreadableFile,
+                Some(show.id),
+                SHOW_NFO.to_owned()
+            )]
+        );
+    }
+
+    #[tokio::test]
+    async fn an_episode_nfo_that_cannot_be_read_keeps_the_stored_nfo_metadata_and_records_an_unreadable_file()
+     {
+        let library = ShowLibrary::new().await;
+        with_episode_nfo(
+            &library,
+            S01E01_FILE,
+            Some(vec![episode_nfo(
+                Some(1011),
+                1,
+                1,
+                "Good News About Hell",
+                8.1,
+            )]),
+            "2026-10-29T11:00:00Z",
+        );
+        library.sync_show().await.unwrap();
+
+        with_episode_nfo(
+            &library,
+            S01E01_FILE,
+            Some(vec![episode_nfo(
+                Some(1011),
+                1,
+                1,
+                "Good News About Hell",
+                9.0,
+            )]),
+            "2026-10-30T08:00:00Z",
+        );
+        library
+            .sources()
+            .unreadable_files
+            .insert(nfo_path(S01E01_FILE));
+        library.sync_show().await.unwrap();
+
+        let episode = episode(&library, 1, 1).await;
+        assert_eq!(episode.rating, Some(8.1));
+        assert_eq!(episode.nfo_modified_at, Some(at("2026-10-29T11:00:00Z")));
+        assert_eq!(
+            problems(&library)
+                .await
+                .into_iter()
+                .map(|x| (x.kind, x.show_id, x.path))
+                .collect::<Vec<_>>(),
+            [(
+                SyncProblemKind::UnreadableFile,
+                Some(show(&library).await.id),
+                nfo_path(S01E01_FILE)
+            )]
         );
     }
 
