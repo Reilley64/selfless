@@ -1,5 +1,7 @@
+use application::library::wait_for_reconcile_request;
 use domain::Source;
 use infrastructure::AppState;
+use std::collections::HashMap;
 use std::error::Error;
 use std::time::Duration;
 use tokio::task::JoinSet;
@@ -16,19 +18,36 @@ async fn reconcile(state: AppState, interval: Duration) {
     let mut ticks = tokio::time::interval(interval);
     ticks.set_missed_tick_behavior(MissedTickBehavior::Delay);
     let mut running = JoinSet::new();
+    let mut sources = HashMap::new();
     loop {
         tokio::select! {
             _ = ticks.tick() => {}
-            () = state.reconciles.requested() => {}
+            Ok(_) = wait_for_reconcile_request::call(&state) => {}
+            Some(joined) = running.join_next_with_id() => {
+                match joined {
+                    Ok((id, ())) => {
+                        sources.remove(&id);
+                    }
+                    Err(error) => {
+                        let source = sources.remove(&error.id()).map(Source::name);
+                        tracing::error!(
+                            error = &error as &dyn Error,
+                            selfless.library.source = source,
+                            "a reconcile panicked"
+                        );
+                    }
+                }
+                continue;
+            }
         }
-        while running.try_join_next().is_some() {}
         for source in [Source::Radarr, Source::Sonarr] {
             let state = state.clone();
-            running.spawn(async move {
+            let task = running.spawn(async move {
                 if let Err(error) = application::library::reconcile::call(&state, source).await {
                     tracing::error!(error = &error as &dyn Error, "failed to record a reconcile");
                 }
             });
+            sources.insert(task.id(), source);
         }
     }
 }
@@ -42,6 +61,9 @@ mod tests {
     use std::sync::atomic::AtomicUsize;
     use std::sync::atomic::Ordering;
     use test_app::TestApp;
+    use test_fixtures::Logs;
+    use tracing_subscriber::filter::LevelFilter;
+    use tracing_subscriber::layer::SubscriberExt;
 
     const INTERVAL: Duration = Duration::from_secs(3600);
 
@@ -97,6 +119,41 @@ mod tests {
         serving.await.unwrap();
 
         assert_eq!(after_sync_now, 2);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_panicking_reconcile_is_logged_with_its_source() {
+        let mut app = TestApp::new().await;
+        app.state.list_radarr_movies =
+            ListRadarrMovies::new(|| panic!("an unloaded relation was read"));
+        let logs = Logs::default();
+        let writer = logs.clone();
+        let _logging = test_fixtures::set_default_subscriber(
+            tracing_subscriber::registry()
+                .with(LevelFilter::ERROR)
+                .with(
+                    tracing_subscriber::fmt::layer()
+                        .with_ansi(false)
+                        .with_writer(move || writer.clone()),
+                ),
+        );
+        let cancellation = CancellationToken::new();
+        let serving = tokio::spawn(serve(app.state.clone(), INTERVAL, cancellation.clone()));
+
+        for _ in 0..100 {
+            if logs.text().contains("a reconcile panicked") {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        cancellation.cancel();
+        serving.await.unwrap();
+
+        let logs = logs.text();
+        assert_eq!(logs.matches(" ERROR ").count(), 1, "{logs}");
+        assert!(logs.contains("a reconcile panicked"), "{logs}");
+        assert!(logs.contains("an unloaded relation was read"), "{logs}");
+        assert!(logs.contains("radarr"), "{logs}");
     }
 
     #[tokio::test(start_paused = true)]

@@ -30,6 +30,7 @@ use application::ports::ReadSonarrWebhook;
 use application::ports::ReadWebhookEventType;
 use application::ports::SendEmail;
 use application::ports::SonarrError;
+use application::ports::TryAcquireLock;
 use application::ports::UnreadableNfo;
 use application::ports::UnreadableWebhook;
 use application::ports::persistence;
@@ -117,6 +118,7 @@ impl TestApp {
             reconciles: Reconciles::default(),
             send_email: SendEmail::new(mailer.sender()),
             source_health: SourceHealth::default(),
+            try_acquire_lock: TryAcquireLock::new(|_| Box::pin(async { Some(LockGuard::new(())) })),
             webhook_passwords: WebhookPasswords::default(),
         };
         Self {

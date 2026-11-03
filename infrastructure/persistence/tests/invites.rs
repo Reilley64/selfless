@@ -34,7 +34,7 @@ impl Invites {
             db_context: db_context(database).await,
             clock: FakeClock::new(),
             mailer: FakeMailer::default(),
-            acquire_lock: locking::acquire_lock(),
+            acquire_lock: locking::Locks::default().acquire_lock(),
         }
     }
 

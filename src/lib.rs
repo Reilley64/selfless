@@ -48,8 +48,9 @@ pub async fn start(
     let sonarr_api = settings.sonarr.api(client)?;
     let db = persistence::connect(&settings.database).await?;
     persistence::migrate(&db).await?;
+    let locks = locking::Locks::default();
     let state = AppState::builder()
-        .acquire_lock(|_| locking::acquire_lock())
+        .acquire_lock(|_| locks.acquire_lock())
         .build_info(|_| BuildInfo {
             name: env!("CARGO_PKG_NAME"),
             version: env!("CARGO_PKG_VERSION"),
@@ -82,6 +83,7 @@ pub async fn start(
         .reconciles(|_| Reconciles::default())
         .send_email(|_| send_email.clone())
         .source_health(|_| SourceHealth::default())
+        .try_acquire_lock(|_| locks.try_acquire_lock())
         .webhook_passwords(|_| webhook_passwords.clone())
         .build();
     let first_admin = match (

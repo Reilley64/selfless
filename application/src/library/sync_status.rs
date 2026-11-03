@@ -26,7 +26,6 @@ use domain::Show;
 use domain::Source;
 use domain::SourceState;
 use domain::SyncProblem;
-use std::time::Duration;
 
 pub async fn call(dependencies: impl Into<Dependencies>) -> Result<Output, Error> {
     let Dependencies {
@@ -112,12 +111,10 @@ async fn source_status(
             imported: x.imported,
             total: x.total,
         }),
-        last_reconcile: state.and_then(|x| {
-            Some(LastReconcile {
-                started_at: x.last_reconcile_started_at?,
-                duration: Duration::from_millis(u64::try_from(x.last_reconcile_duration_ms?).ok()?),
-                result: x.last_reconcile_result?,
-            })
+        last_reconcile: state.and_then(|x| x.last_reconcile).map(|x| LastReconcile {
+            started_at: x.started_at(),
+            duration: x.duration(),
+            result: x.result(),
         }),
         held_removal: held_removal.map(|x| HeldRemoval {
             count: x.items.get().len(),
@@ -189,9 +186,11 @@ mod tests {
     use super::*;
     use crate::ports::RadarrError;
     use crate::test::mock_db_context;
+    use domain::LastReconcile as StoredLastReconcile;
     use domain::ReconcileResult;
     use domain::SyncProblemKind;
     use jiff::Timestamp;
+    use std::time::Duration;
     use uuid::Uuid;
 
     struct Seeded {
@@ -538,9 +537,11 @@ mod tests {
             .source(Source::Sonarr)
             .last_webhook_at(Some(webhook_at))
             .rejected_webhooks(3)
-            .last_reconcile_started_at(Some(reconcile_at))
-            .last_reconcile_duration_ms(Some(1500))
-            .last_reconcile_result(Some(ReconcileResult::Failed))
+            .last_reconcile(Some(StoredLastReconcile::new(
+                reconcile_at,
+                Duration::from_millis(1500),
+                ReconcileResult::Failed,
+            )))
             .exec(db_context.executor_mut())
             .await
             .unwrap();

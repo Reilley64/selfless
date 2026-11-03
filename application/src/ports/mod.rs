@@ -817,3 +817,20 @@ impl EmailRefused {
         }
     }
 }
+
+type TryAcquireLockFn = dyn Fn(String) -> PortFuture<Option<LockGuard>> + Send + Sync;
+
+#[derive(Clone)]
+pub struct TryAcquireLock(Arc<TryAcquireLockFn>);
+
+impl TryAcquireLock {
+    pub fn new(
+        f: impl Fn(String) -> PortFuture<Option<LockGuard>> + Send + Sync + 'static,
+    ) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn call(&self, key: String) -> PortFuture<Option<LockGuard>> {
+        (self.0)(key)
+    }
+}

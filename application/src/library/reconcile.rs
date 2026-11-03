@@ -17,6 +17,7 @@ use crate::library::sync_movie::MovieFiles;
 use crate::library::sync_show;
 use crate::library::sync_show::ShowFiles;
 use crate::metrics::SELFLESS_RECONCILE_DURATION;
+use crate::ports::AcquireLock;
 use crate::ports::GetSonarrEpisodes;
 use crate::ports::ListRadarrMovies;
 use crate::ports::ListSonarrShows;
@@ -25,21 +26,29 @@ use crate::ports::persistence::DbContext;
 use crate::ports::persistence::DbScope;
 use domain::HeldRemoval;
 use domain::HeldRemovalItem;
+use domain::LastReconcile;
 use domain::Movie;
 use domain::ReconcileResult;
 use domain::Show;
 use domain::Source;
+use futures_util::FutureExt;
 use futures_util::StreamExt;
 use futures_util::stream;
 use opentelemetry::KeyValue;
 use opentelemetry::global;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::panic;
+use std::panic::AssertUnwindSafe;
 use std::sync::Mutex;
 use std::time::Instant;
 use tracing::Instrument;
 use tracing::field;
 use uuid::Uuid;
+
+pub(crate) fn lock_key(source: Source) -> String {
+    AcquireLock::key("library", "reconcile", 1, [source.name().to_owned()])
+}
 
 pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Result<Output, Error> {
     let Dependencies {
@@ -61,12 +70,12 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
         read_show_nfo,
         reconciles,
         source_health,
+        try_acquire_lock,
     } = dependencies.into();
-    let reconcile = reconciles.source(source);
-    let Ok(_running) = reconcile.running.clone().try_lock_owned() else {
+    let Some(_running) = try_acquire_lock.call(lock_key(source)).await else {
         return Ok(Output);
     };
-    let progress = &reconcile.progress;
+    let progress = &reconciles.source(source).progress;
     *progress.lock().unwrap() = Some(Progress {
         imported: 0,
         total: None,
@@ -143,16 +152,17 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
         }
         remove_or_hold(&mut db_context, source, &listing).await
     }
-    .instrument(span.clone())
-    .await;
+    .instrument(span.clone());
+    let reconciled = AssertUnwindSafe(reconciled).catch_unwind().await;
     *progress.lock().unwrap() = None;
     let duration = start.elapsed();
-    let result = match reconciled {
-        Ok(()) => ReconcileResult::Succeeded,
-        Err(error) => {
+    let result = match &reconciled {
+        Ok(Ok(())) => ReconcileResult::Succeeded,
+        Err(_) => ReconcileResult::Failed,
+        Ok(Err(error)) => {
             span.in_scope(|| {
                 tracing::warn!(
-                    error = &error as &dyn std::error::Error,
+                    error = error as &dyn std::error::Error,
                     selfless.library.source = source.name(),
                     "failed to reconcile the library"
                 );
@@ -172,21 +182,22 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
                 KeyValue::new(SELFLESS_RECONCILE_RESULT, result.name()),
             ],
         );
-    source_states::upsert(&mut db_context, source)
-        .instrument(span.clone())
-        .await
-        .map_err(Error::caused_by)?
-        .update()
-        .last_reconcile_started_at(Some(started_at))
-        .last_reconcile_duration_ms(Some(
-            i64::try_from(duration.as_millis()).unwrap_or(i64::MAX),
-        ))
-        .last_reconcile_result(Some(result))
-        .exec(db_context.executor_mut())
-        .instrument(span)
-        .await
-        .map_err(Error::caused_by)?;
-    Ok(Output)
+    let recorded = async {
+        source_states::upsert(&mut db_context, source)
+            .await
+            .map_err(Error::caused_by)?
+            .update()
+            .last_reconcile(Some(LastReconcile::new(started_at, duration, result)))
+            .exec(db_context.executor_mut())
+            .await
+            .map_err(Error::caused_by)
+    }
+    .instrument(span)
+    .await;
+    if let Err(panic) = reconciled {
+        panic::resume_unwind(panic);
+    }
+    recorded.map(|()| Output)
 }
 
 fn record_kodi_metadata(
@@ -469,6 +480,7 @@ mod tests {
     use crate::ports::Clock;
     use crate::ports::FindMediaFile;
     use crate::ports::FoundMediaFile;
+    use crate::ports::LockGuard;
     use crate::ports::RadarrError;
     use crate::ports::RadarrMovie;
     use crate::ports::RadarrMovieFile;
@@ -476,6 +488,7 @@ mod tests {
     use crate::ports::SonarrEpisodeFile;
     use crate::ports::SonarrError;
     use crate::ports::SonarrShowListing;
+    use crate::ports::TryAcquireLock;
     use crate::ports::UnreadableFile;
     use crate::test::empty_episode_folder;
     use crate::test::empty_movie_folder;
@@ -674,6 +687,9 @@ mod tests {
                 read_show_nfo: unreadable_show_nfo(),
                 reconciles: self.reconciles.clone(),
                 source_health: self.source_health.clone(),
+                try_acquire_lock: TryAcquireLock::new(|_| {
+                    Box::pin(async { Some(LockGuard::new(())) })
+                }),
             }
         }
 
@@ -687,7 +703,8 @@ mod tests {
                 .exec(db_context.executor_mut())
                 .await
                 .unwrap()
-                .last_reconcile_result
+                .last_reconcile
+                .map(|x| x.result())
         }
 
         async fn status(&self) -> sync_status::Output {
@@ -771,6 +788,53 @@ mod tests {
         let last_reconcile = library.status().await.radarr.last_reconcile.unwrap();
         assert_eq!(last_reconcile.started_at, library.clock.now());
         assert_eq!(last_reconcile.result, ReconcileResult::Succeeded);
+    }
+
+    #[tokio::test]
+    async fn a_reconcile_does_nothing_while_its_source_is_locked_by_another_reconcile() {
+        let library = Library::new().await;
+        library.radarr_lists(&[ARRIVAL]);
+        let locked = lock_key(Source::Radarr);
+
+        call(
+            Dependencies {
+                try_acquire_lock: TryAcquireLock::new(move |key| {
+                    let free = key != locked;
+                    Box::pin(async move { free.then(|| LockGuard::new(())) })
+                }),
+                ..library.dependencies()
+            },
+            Source::Radarr,
+        )
+        .await
+        .unwrap();
+
+        assert!(movie_titles(&library.db_context).await.is_empty());
+        assert!(library.status().await.radarr.last_reconcile.is_none());
+    }
+
+    #[tokio::test]
+    async fn a_panicking_reconcile_is_recorded_as_failed_and_shows_no_progress() {
+        let library = Library::new().await;
+        let reconciling = tokio::spawn(call(
+            Dependencies {
+                list_radarr_movies: ListRadarrMovies::new(|| {
+                    panic!("an unloaded relation was read")
+                }),
+                ..library.dependencies()
+            },
+            Source::Radarr,
+        ));
+
+        let reconciled = reconciling.await;
+
+        assert!(reconciled.unwrap_err().is_panic());
+        let status = library.status().await.radarr;
+        assert_eq!(
+            status.last_reconcile.map(|x| x.result),
+            Some(ReconcileResult::Failed)
+        );
+        assert_eq!(status.reconcile_progress, None);
     }
 
     #[tokio::test]

@@ -17,6 +17,7 @@ pub mod sync_movie;
 pub mod sync_now;
 pub mod sync_show;
 pub mod sync_status;
+pub mod wait_for_reconcile_request;
 
 pub use prober::Prober;
 pub use reconciles::Reconciles;

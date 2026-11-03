@@ -12,7 +12,6 @@ pub struct Reconciles {
 
 #[derive(Clone, Default)]
 pub(crate) struct SourceReconcile {
-    pub(crate) running: Arc<tokio::sync::Mutex<()>>,
     pub(crate) progress: Arc<Mutex<Option<Progress>>>,
 }
 
@@ -23,7 +22,7 @@ pub(crate) struct Progress {
 }
 
 impl Reconciles {
-    pub async fn requested(&self) {
+    pub(crate) async fn requested(&self) {
         self.requested.notified().await;
     }
 
