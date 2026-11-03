@@ -94,6 +94,7 @@ async fn source_status(
     let held_removal = db_context
         .held_removals()
         .filter(StoredHeldRemoval::fields().source().eq(source))
+        .include(StoredHeldRemoval::fields().items())
         .first()
         .exec(db_context.executor_mut())
         .await
@@ -119,7 +120,7 @@ async fn source_status(
             })
         }),
         held_removal: held_removal.map(|x| HeldRemoval {
-            count: x.item_ids.len(),
+            count: x.items.get().len(),
         }),
         visible,
     })

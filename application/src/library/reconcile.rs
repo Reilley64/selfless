@@ -368,14 +368,25 @@ async fn remove_or_hold(
             selfless.library.source = source.name(),
             "held a removal of more than half of a source's items"
         );
-        db_context
+        let mut transaction = db_context.transaction().await.map_err(Error::caused_by)?;
+        transaction
             .held_removals()
             .create()
             .source(source)
-            .item_ids(listing.absent.clone())
-            .exec(db_context.executor_mut())
+            .exec(transaction.executor_mut())
             .await
             .map_err(Error::caused_by)?;
+        for item_id in &listing.absent {
+            transaction
+                .held_removal_items()
+                .create()
+                .source(source)
+                .item_id(*item_id)
+                .exec(transaction.executor_mut())
+                .await
+                .map_err(Error::caused_by)?;
+        }
+        transaction.commit().await.map_err(Error::caused_by)?;
         return Ok(());
     }
     remove(db_context, source, listing.absent.clone(), &listing.listed).await

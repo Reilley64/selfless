@@ -24,6 +24,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
     let Some(held_removal) = db_context
         .held_removals()
         .filter(HeldRemoval::fields().source().eq(source))
+        .include(HeldRemoval::fields().items())
         .first()
         .exec(db_context.executor_mut())
         .await
@@ -45,14 +46,10 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
             .map(|x| x.tvdb_id)
             .collect(),
     };
-    reconcile::remove(
-        &mut db_context,
-        source,
-        held_removal.item_ids.clone(),
-        &listed,
-    )
-    .await
-    .map_err(Error::caused_by)?;
+    let item_ids = held_removal.items.get().iter().map(|x| x.item_id).collect();
+    reconcile::remove(&mut db_context, source, item_ids, &listed)
+        .await
+        .map_err(Error::caused_by)?;
     held_removal
         .delete()
         .exec(db_context.executor_mut())
