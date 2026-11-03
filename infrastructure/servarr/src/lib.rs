@@ -68,7 +68,7 @@ impl Api {
             url.full = url.as_str(),
             url.template = template,
             server.address = url.host_str(),
-            server.port = url.port_or_known_default(),
+            server.port = url.port_or_known_default().map(i64::from),
             http.response.status_code = field::Empty,
             error.type = field::Empty,
         );
@@ -79,7 +79,10 @@ impl Api {
                 .header("X-Api-Key", &self.api_key)
                 .send()
                 .await?;
-            span.record("http.response.status_code", response.status().as_u16());
+            span.record(
+                "http.response.status_code",
+                i64::from(response.status().as_u16()),
+            );
             response.error_for_status()?.json::<T>().await
         }
         .instrument(span.clone())
@@ -95,3 +98,4 @@ impl Api {
         })
     }
 }
+
