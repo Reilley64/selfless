@@ -51,7 +51,9 @@ impl<T> Nfo<T> {
     ) -> Result<Self, UnreadableFile> {
         match found {
             None => Ok(Nfo::Missing),
-            Some(file) if stored_modified_at == Some(file.modified_at) => Ok(Nfo::Unchanged),
+            Some(file) if !domain::needs_reread(stored_modified_at, file.modified_at) => {
+                Ok(Nfo::Unchanged)
+            }
             Some(file) => match read(&file.path).await {
                 Ok(nfo) => Ok(Nfo::Read(nfo, file.modified_at)),
                 Err(ReadNfoError::UnreadableNfo(error)) => {
@@ -158,7 +160,6 @@ pub(crate) async fn save_actors<T>(
     Ok(())
 }
 
-#[derive(PartialEq)]
 pub(crate) struct FoundArtwork {
     pub(crate) season_id: Option<Uuid>,
     pub(crate) episode_id: Option<Uuid>,
@@ -197,19 +198,18 @@ pub(crate) async fn save_artwork(
         .artwork()
         .filter(artwork_owner(owner))
         .exec(scope.executor_mut())
-        .await?
-        .into_iter()
-        .map(|x| FoundArtwork {
-            season_id: x.season_id,
-            episode_id: x.episode_id,
-            kind: x.kind,
-            file: FoundFile {
-                path: x.path,
-                modified_at: x.modified_at,
-            },
-        })
-        .collect::<Vec<_>>();
-    if stored.len() == found.len() && found.iter().all(|x| stored.contains(x)) {
+        .await?;
+    let unchanged = stored.len() == found.len()
+        && found.iter().all(|found| {
+            stored.iter().any(|x| {
+                x.season_id == found.season_id
+                    && x.episode_id == found.episode_id
+                    && x.kind == found.kind
+                    && x.path == found.file.path
+                    && !domain::needs_reread(Some(x.modified_at), found.file.modified_at)
+            })
+        });
+    if unchanged {
         return Ok(false);
     }
     scope

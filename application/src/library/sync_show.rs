@@ -220,8 +220,13 @@ pub(crate) async fn inspect(
             episode_nfos.push(match nfo_file {
                 None => Nfo::Missing,
                 Some(nfo_file)
-                    if stored_nfo_modified_at.get(&source_episode.tvdb_id)
-                        == Some(&Some(nfo_file.modified_at)) =>
+                    if !domain::needs_reread(
+                        stored_nfo_modified_at
+                            .get(&source_episode.tvdb_id)
+                            .copied()
+                            .flatten(),
+                        nfo_file.modified_at,
+                    ) =>
                 {
                     Nfo::Unchanged
                 }

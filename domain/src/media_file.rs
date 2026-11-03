@@ -5,6 +5,7 @@ use crate::SubtitleFile;
 use crate::SubtitleStream;
 use crate::SyncProblem;
 use crate::VideoStream;
+use crate::needs_reread;
 use jiff::Timestamp;
 use uuid::Uuid;
 
@@ -37,7 +38,7 @@ pub struct MediaFile {
 
 impl MediaFile {
     pub fn needs_probe(&self, size: i64, modified_at: Timestamp) -> bool {
-        self.size != Some(size) || self.modified_at != Some(modified_at)
+        self.size != Some(size) || needs_reread(self.modified_at, modified_at)
     }
 }
 
