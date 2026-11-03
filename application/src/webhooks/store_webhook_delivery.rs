@@ -30,7 +30,7 @@ pub async fn call(
         webhook_passwords,
     } = dependencies.into();
     if password.as_ref() != Some(webhook_passwords.get(source)) {
-        source_states::upsert(db_context.executor_mut(), source)
+        source_states::upsert(&mut db_context, source)
             .await
             .map_err(Error::caused_by)?;
         toasty::sql::statement(
@@ -61,7 +61,7 @@ pub async fn call(
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?;
-    source_states::upsert(db_context.executor_mut(), source)
+    source_states::upsert(&mut db_context, source)
         .await
         .map_err(Error::caused_by)?
         .update()

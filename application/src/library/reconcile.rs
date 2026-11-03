@@ -168,7 +168,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
                 KeyValue::new(SELFLESS_RECONCILE_RESULT, result.name()),
             ],
         );
-    source_states::upsert(db_context.executor_mut(), source)
+    source_states::upsert(&mut db_context, source)
         .instrument(span.clone())
         .await
         .map_err(Error::caused_by)?

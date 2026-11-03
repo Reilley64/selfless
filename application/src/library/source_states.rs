@@ -1,16 +1,20 @@
+use crate::ports::persistence::DbScope;
 use domain::Source;
 use domain::SourceState;
 
 pub(crate) async fn upsert(
-    db: &mut dyn toasty::Executor,
+    scope: &mut impl DbScope,
     source: Source,
 ) -> toasty::Result<SourceState> {
-    toasty::sql::statement(
-        "INSERT INTO source_states (source, rejected_webhooks) VALUES ($1, 0) \
-         ON CONFLICT (source) DO NOTHING",
-    )
-    .bind(source.name())
-    .exec(db)
-    .await?;
-    SourceState::get_by_source(db, &source).await
+    SourceState::upsert_by_source(source)
+        .rejected_webhooks(0)
+        .or_ignore()
+        .exec(scope.executor_mut())
+        .await?;
+    scope
+        .source_states()
+        .filter(SourceState::fields().source().eq(source))
+        .one()
+        .exec(scope.executor_mut())
+        .await
 }
