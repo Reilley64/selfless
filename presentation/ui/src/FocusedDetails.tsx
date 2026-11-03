@@ -1,5 +1,6 @@
 import type { Tile } from "@selfless/api-client";
 import { Text, View } from "react-native-css/components";
+import { episodeLabel } from "./episodeLabel";
 import { ArtworkImage } from "./Tile";
 import { TitleMeta } from "./TitleMeta";
 
@@ -33,7 +34,7 @@ export function FocusedDetails({ tile }: { tile: Tile }) {
         <TitleMeta tile={tile} />
         {episode && (
           <Text className="font-sans text-tv-body text-text-primary" numberOfLines={1}>
-            <Text className="font-bold">{`S${episode.seasonNumber}:E${episode.episodeNumber}`}</Text> {tile.title}
+            <Text className="font-bold">{episodeLabel(episode.seasonNumber, episode.episodeNumber)}</Text> {tile.title}
           </Text>
         )}
         {progress != null && (
