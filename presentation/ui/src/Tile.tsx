@@ -4,6 +4,9 @@ import { type ImageResizeMode, PixelRatio, Platform } from "react-native";
 import { Image, Pressable, Text, View } from "react-native-css/components";
 import { imageUrl } from "./imageUrl";
 
+const pixelWidth = (layoutWidth: number) =>
+  Platform.isTV ? layoutWidth : PixelRatio.getPixelSizeForLayoutSize(layoutWidth);
+
 export function ArtworkImage({
   artwork,
   className,
@@ -22,7 +25,7 @@ export function ArtworkImage({
       className={className}
       resizeMode={resizeMode}
       onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
-      source={width > 0 ? { uri: imageUrl(artwork, PixelRatio.getPixelSizeForLayoutSize(width)) } : undefined}
+      source={width > 0 ? { uri: imageUrl(artwork, pixelWidth(width)) } : undefined}
     />
   );
 }

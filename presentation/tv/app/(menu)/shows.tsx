@@ -1,5 +1,3 @@
-import { Placeholder } from "../../components/Placeholder";
+import { ShowsGrid } from "@selfless/ui";
 
-export default function Shows() {
-  return <Placeholder title="Shows" />;
-}
+export default ShowsGrid;

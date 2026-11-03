@@ -1,5 +1,3 @@
-import { Placeholder } from "../../components/Placeholder";
+import { MoviesGrid } from "@selfless/ui";
 
-export default function Movies() {
-  return <Placeholder title="Movies" />;
-}
+export default MoviesGrid;

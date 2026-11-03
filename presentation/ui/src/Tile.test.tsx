@@ -1,5 +1,6 @@
 import type { Tile as TileData } from "@selfless/api-client";
 import { fireEvent, render, screen } from "@testing-library/react-native";
+import { PixelRatio, Platform } from "react-native";
 import { Tile } from "./Tile";
 
 const arrival: TileData = {
@@ -17,6 +18,10 @@ const arrival: TileData = {
   watched: false,
   episode: null,
 };
+
+afterEach(() => {
+  jest.restoreAllMocks();
+});
 
 const image = (id: string, widths: number[]) => ({
   urls: widths.map((width) => ({ width, url: `/api/images/${id}/${width}/v1?expires=1793836800&signature=s` })),
@@ -50,4 +55,12 @@ test("a tile without a logo shows the title as text over the fanart", async () =
   expect(screen.getByTestId("tile-fanart")).toBeOnTheScreen();
   expect(screen.queryByTestId("tile-logo")).toBeNull();
   expect(screen.getByText("Arrival")).toBeOnTheScreen();
+});
+
+test("on TV, a tile asks for the image width of its layout in design pixels", async () => {
+  jest.spyOn(Platform, "isTV", "get").mockReturnValue(true);
+  jest.spyOn(PixelRatio, "get").mockReturnValue(2);
+  await render(<Tile tile={{ ...arrival, images: { fanart, logo: null, thumb: null } }} />);
+
+  expect(await drawnAt("tile-fanart", 480)).toContain("/480/v1");
 });

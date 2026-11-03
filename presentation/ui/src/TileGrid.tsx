@@ -5,6 +5,8 @@ import { Platform } from "react-native";
 import { View } from "react-native-css/components";
 import { Tile } from "./Tile";
 
+const FOCUS_ROWS_BEFORE_END = 2;
+
 export function TileGrid({
   tiles,
   numColumns,
@@ -26,9 +28,17 @@ export function TileGrid({
       onEndReached={onEndReached}
       onEndReachedThreshold={0.5}
       ListHeaderComponent={header}
-      renderItem={({ item }) => (
+      renderItem={({ item, index }) => (
         <View className={Platform.isTV ? "px-[10px] pb-tile-tv-gap" : "px-2 pb-8"}>
-          <Tile tile={item} onPress={onPressTile && (() => onPressTile(item))} />
+          <Tile
+            tile={item}
+            onPress={onPressTile && (() => onPressTile(item))}
+            onFocus={() => {
+              if (index >= tiles.length - FOCUS_ROWS_BEFORE_END * numColumns) {
+                onEndReached();
+              }
+            }}
+          />
         </View>
       )}
     />

@@ -6,6 +6,7 @@ export { EpisodeList } from "./EpisodeList";
 export { episodeLabel } from "./episodeLabel";
 export { FeaturedTitle } from "./FeaturedTitle";
 export { FocusGuide, type FocusGuideInstance } from "./FocusGuide";
+export { MoviesGrid, ShowsGrid } from "./GridPage";
 export { GridSelectors, useGridQuery } from "./GridSelectors";
 export { Home, rowTitle } from "./Home";
 export { initials } from "./initials";
