@@ -15,3 +15,12 @@ pub struct SubtitleFile {
     pub hearing_impaired: bool,
     pub forced: bool,
 }
+
+impl SubtitleFile {
+    pub fn codec(&self) -> String {
+        self.path
+            .rsplit_once('.')
+            .map(|(_, x)| x.to_lowercase())
+            .unwrap_or_default()
+    }
+}

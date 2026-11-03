@@ -5,6 +5,7 @@ use uuid::Uuid;
 pub enum Output {
     SignedIn {
         id: Uuid,
+        session_id: Uuid,
         name: String,
         colour: Colour,
     },

@@ -21,6 +21,7 @@ pub struct Movie {
     pub studio: Option<String>,
     pub original_title: Option<String>,
     pub directors: Vec<String>,
+    pub media_file_id: Option<Uuid>,
     pub cast: Vec<CastMember>,
     pub images: TileImages,
     pub more_like_this: Vec<Tile>,

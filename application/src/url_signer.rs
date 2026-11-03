@@ -28,8 +28,12 @@ impl UrlSigner {
         let expires = signed_url_expiry(now);
         SignedUrl {
             expires,
-            signature: URL_SAFE_NO_PAD.encode(self.mac(resource, expires).finalize().into_bytes()),
+            signature: self.signature(&expiring(resource, expires)),
         }
+    }
+
+    pub fn signature(&self, resource: &str) -> String {
+        URL_SAFE_NO_PAD.encode(self.mac(resource).finalize().into_bytes())
     }
 
     pub fn verify(
@@ -39,18 +43,25 @@ impl UrlSigner {
         signature: &str,
         now: Timestamp,
     ) -> bool {
-        now < expires
-            && URL_SAFE_NO_PAD
-                .decode(signature)
-                .is_ok_and(|x| self.mac(resource, expires).verify_slice(&x).is_ok())
+        now < expires && self.verify_signature(&expiring(resource, expires), signature)
     }
 
-    fn mac(&self, resource: &str, expires: Timestamp) -> Hmac<Sha256> {
+    pub fn verify_signature(&self, resource: &str, signature: &str) -> bool {
+        URL_SAFE_NO_PAD
+            .decode(signature)
+            .is_ok_and(|x| self.mac(resource).verify_slice(&x).is_ok())
+    }
+
+    fn mac(&self, message: &str) -> Hmac<Sha256> {
         let mut mac =
             Hmac::<Sha256>::new_from_slice(&self.key).expect("HMAC takes a key of any length");
-        mac.update(format!("{resource}\n{}", expires.as_second()).as_bytes());
+        mac.update(message.as_bytes());
         mac
     }
+}
+
+fn expiring(resource: &str, expires: Timestamp) -> String {
+    format!("{resource}\n{}", expires.as_second())
 }
 
 #[cfg(test)]
@@ -105,5 +116,18 @@ mod tests {
             now
         ));
         assert!(!signer.verify(RESOURCE, url.expires, "not base64url!", now));
+    }
+
+    #[test]
+    fn a_signature_without_an_expiry_signs_the_resource_with_the_key() {
+        let signer = UrlSigner::new(b"a household secret");
+        let resource = "playbacks/0190f3c4-7d8e-7f90-a1b2-c3d4e5f6a7b8";
+
+        let signature = signer.signature(resource);
+
+        assert!(signer.verify_signature(resource, &signature));
+        assert!(!signer.verify_signature(&format!("{resource}0"), &signature));
+        assert!(!UrlSigner::new(b"another secret").verify_signature(resource, &signature));
+        assert!(!signer.verify_signature(resource, "not base64url!"));
     }
 }

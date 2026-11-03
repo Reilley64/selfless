@@ -20,6 +20,7 @@ const amelie: MoviePage = {
   studio: "UGC",
   originalTitle: "Le Fabuleux Destin d'Amélie Poulain",
   directors: ["Jean-Pierre Jeunet"],
+  mediaFileId: "0190f3c4-c2d3-7e4f-8a5b-6c7d8e9f0a1b",
   cast: [
     { name: "Audrey Tautou", role: "Amélie Poulain" },
     { name: "Mathieu Kassovitz", role: "Nino Quincampoix" },

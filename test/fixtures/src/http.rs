@@ -116,7 +116,20 @@ impl TestServer {
     }
 
     pub async fn get_bytes(&self, path: &str) -> (StatusCode, HeaderMap, Vec<u8>) {
-        let response = reqwest::get(self.url(path)).await.unwrap();
+        self.get_bytes_with_headers(path, HeaderMap::new()).await
+    }
+
+    pub async fn get_bytes_with_headers(
+        &self,
+        path: &str,
+        headers: HeaderMap,
+    ) -> (StatusCode, HeaderMap, Vec<u8>) {
+        let response = reqwest::Client::new()
+            .get(self.url(path))
+            .headers(headers)
+            .send()
+            .await
+            .unwrap();
         let status = response.status();
         let headers = response.headers().clone();
         let content_type = media_type(&response);
