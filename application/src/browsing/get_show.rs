@@ -105,7 +105,7 @@ pub async fn call(
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?;
-    actors.sort_by_key(|x| (x.order.is_none(), x.order));
+    actors.sort_by_key(Actor::listing_order);
     let images = title_images(
         &mut db_context,
         |x| x.show_id,
