@@ -1,11 +1,11 @@
 #[path = "../test/library.rs"]
 mod library_test;
 
-use application::sync_status::HeldRemoval;
-use application::sync_status::ReconcileProgress;
-use application::sync_status::SourceStatus;
-use application::sync_status::SyncStatus;
-use application::sync_status::VisibleCounts;
+use application::library::sync_status::HeldRemoval;
+use application::library::sync_status::ReconcileProgress;
+use application::library::sync_status::SourceStatus;
+use application::library::sync_status::SyncStatus;
+use application::library::sync_status::VisibleCounts;
 use domain::ReconcileResult;
 use domain::Source;
 use jiff::SignedDuration;
@@ -64,7 +64,7 @@ impl Fixture {
     }
 
     async fn status(&self) -> SyncStatus {
-        application::sync_status::call(&self.server.state)
+        application::library::sync_status::call(&self.server.state)
             .await
             .unwrap()
     }
@@ -91,18 +91,18 @@ impl Fixture {
 
     async fn sync_now(&self, source: Source) -> SourceStatus {
         self.server.clock.advance(SignedDuration::from_mins(1));
-        application::sync_now::call(&self.server.state);
+        application::library::sync_now::call(&self.server.state);
         self.reconciled(source).await
     }
 
     async fn confirm_held_removal(&self, source: Source) {
-        application::confirm_held_removal::call(&self.server.state, source)
+        application::library::confirm_held_removal::call(&self.server.state, source)
             .await
             .unwrap();
     }
 
     async fn movie_titles(&self) -> Vec<String> {
-        application::list_movies::call(&self.server.state)
+        application::library::list_movies::call(&self.server.state)
             .await
             .unwrap()
             .into_iter()
@@ -111,7 +111,7 @@ impl Fixture {
     }
 
     async fn show_titles(&self) -> Vec<String> {
-        application::list_shows::call(&self.server.state)
+        application::library::list_shows::call(&self.server.state)
             .await
             .unwrap()
             .into_iter()
@@ -441,7 +441,7 @@ async fn the_sync_status_shows_imported_n_of_m_while_a_reconcile_runs() {
         .await;
 
     fixture.server.clock.advance(SignedDuration::from_mins(1));
-    application::sync_now::call(&fixture.server.state);
+    application::library::sync_now::call(&fixture.server.state);
 
     eventually(async || {
         (fixture.status().await.sonarr.reconcile_progress

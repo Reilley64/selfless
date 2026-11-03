@@ -1,14 +1,14 @@
 #[path = "../test/library.rs"]
 mod library_test;
 
-use application::get_media_file::MediaFileDetails;
+use application::library::get_media_file::MediaFileDetails;
+use application::library::sync_status::SyncStatus;
 use application::ports::AudioStream;
 use application::ports::FoundSubtitleFile;
 use application::ports::HdrType;
 use application::ports::Probe;
 use application::ports::SubtitleStream;
 use application::ports::VideoStream;
-use application::sync_status::SyncStatus;
 use domain::Source;
 use jiff::SignedDuration;
 use library_test::FakeProber;
@@ -116,7 +116,7 @@ impl Setup {
 
 impl Fixture {
     async fn status(&self) -> SyncStatus {
-        application::sync_status::call(&self.server.state)
+        application::library::sync_status::call(&self.server.state)
             .await
             .unwrap()
     }
@@ -139,18 +139,18 @@ impl Fixture {
 
     async fn sync_now(&self) {
         self.server.clock.advance(SignedDuration::from_mins(1));
-        application::sync_now::call(&self.server.state);
+        application::library::sync_now::call(&self.server.state);
         self.reconciled(Source::Radarr).await;
         self.reconciled(Source::Sonarr).await;
     }
 
     async fn movie_file(&self) -> MediaFileDetails {
-        let movie = application::list_movies::call(&self.server.state)
+        let movie = application::library::list_movies::call(&self.server.state)
             .await
             .unwrap()
             .pop()
             .unwrap();
-        application::get_media_file::call(&self.server.state, movie.media_file_id.unwrap())
+        application::library::get_media_file::call(&self.server.state, movie.media_file_id.unwrap())
             .await
             .unwrap()
             .unwrap()

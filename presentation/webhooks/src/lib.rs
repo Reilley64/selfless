@@ -1,4 +1,4 @@
-use application::store_webhook_delivery::Delivery;
+use application::webhooks::store_webhook_delivery::Delivery;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use domain::Source;
@@ -38,7 +38,7 @@ async fn store(cx: &Cx, source: Source, body: Bytes) -> topcoat::Result<Response
         .and_then(|x| STANDARD.decode(x).ok())
         .and_then(|x| String::from_utf8(x).ok())
         .and_then(|x| x.split_once(':').map(|(_, password)| password.to_owned()));
-    match application::store_webhook_delivery::call(
+    match application::webhooks::store_webhook_delivery::call(
         app_context::<AppState>(cx),
         source,
         password,

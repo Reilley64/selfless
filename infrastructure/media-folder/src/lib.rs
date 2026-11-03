@@ -1,7 +1,7 @@
 mod subtitle_files;
 
-use application::MediaFolder;
-use application::Prober;
+use application::library::MediaFolder;
+use application::library::Prober;
 use application::ports::EpisodeFolder;
 use application::ports::EpisodeNfo;
 use application::ports::FindMediaFile;

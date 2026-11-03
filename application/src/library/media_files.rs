@@ -1,6 +1,14 @@
-use crate::MediaFolder;
+use crate::library::Prober;
+use crate::ports::FindMediaFile;
 use crate::ports::FoundMediaFile;
+use crate::ports::ListSubtitleFiles;
 use crate::ports::Probe;
+use crate::ports::ReadEpisodeFolder;
+use crate::ports::ReadEpisodeNfo;
+use crate::ports::ReadMovieFolder;
+use crate::ports::ReadMovieNfo;
+use crate::ports::ReadShowFolder;
+use crate::ports::ReadShowNfo;
 use domain::AudioStream;
 use domain::MediaFile;
 use domain::SubtitleFile;
@@ -26,6 +34,19 @@ impl Inspected {
     pub(crate) fn on_disk(&self) -> bool {
         self.found.is_some()
     }
+}
+
+#[derive(Clone)]
+pub struct MediaFolder {
+    pub find_media_file: FindMediaFile,
+    pub list_subtitle_files: ListSubtitleFiles,
+    pub prober: Prober,
+    pub read_episode_folder: ReadEpisodeFolder,
+    pub read_episode_nfo: ReadEpisodeNfo,
+    pub read_movie_folder: ReadMovieFolder,
+    pub read_movie_nfo: ReadMovieNfo,
+    pub read_show_folder: ReadShowFolder,
+    pub read_show_nfo: ReadShowNfo,
 }
 
 #[ohno::error]

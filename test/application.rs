@@ -1,5 +1,5 @@
-use crate::MediaFolder;
-use crate::Prober;
+use crate::library::MediaFolder;
+use crate::library::Prober;
 use crate::ports::AcquireLock;
 use crate::ports::EmailRefused;
 use crate::ports::FindMediaFile;

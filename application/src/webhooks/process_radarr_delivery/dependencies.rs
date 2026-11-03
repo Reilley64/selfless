@@ -1,5 +1,5 @@
-use crate::MediaFolder;
-use crate::SourceHealth;
+use crate::library::MediaFolder;
+use crate::library::SourceHealth;
 use crate::ports::GetRadarrMovie;
 use crate::ports::ReadRadarrWebhook;
 use crate::ports::persistence::DbContext;

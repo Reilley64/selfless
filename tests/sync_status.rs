@@ -1,12 +1,12 @@
 #[path = "../test/library.rs"]
 mod library_test;
 
+use application::library::sync_status::ApiCall;
+use application::library::sync_status::Problem;
+use application::library::sync_status::ProblemItem;
+use application::library::sync_status::SourceStatus;
+use application::library::sync_status::SyncStatus;
 use application::ports::Probe;
-use application::sync_status::ApiCall;
-use application::sync_status::Problem;
-use application::sync_status::ProblemItem;
-use application::sync_status::SourceStatus;
-use application::sync_status::SyncStatus;
 use domain::SyncProblemKind;
 use jiff::SignedDuration;
 use library_test::LibraryServer;
@@ -65,7 +65,7 @@ impl Fixture {
     }
 
     async fn status(&self) -> SyncStatus {
-        application::sync_status::call(&self.server.state)
+        application::library::sync_status::call(&self.server.state)
             .await
             .unwrap()
     }
@@ -87,7 +87,7 @@ impl Fixture {
 
     async fn sync_now(&self) -> SyncStatus {
         self.server.clock.advance(SignedDuration::from_mins(1));
-        application::sync_now::call(&self.server.state);
+        application::library::sync_now::call(&self.server.state);
         self.reconciled().await
     }
 

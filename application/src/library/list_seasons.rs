@@ -1,5 +1,5 @@
-use crate::list_movies::Artwork;
-use crate::list_movies::artwork;
+use crate::library::list_movies::Artwork;
+use crate::library::list_movies::artwork;
 use crate::ports::persistence::DbContext;
 use crate::ports::persistence::DbScope;
 use domain::Episode;

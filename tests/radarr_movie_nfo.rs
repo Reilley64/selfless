@@ -1,10 +1,10 @@
 #[path = "../test/library.rs"]
 mod library_test;
 
-use application::list_movies::Actor;
-use application::list_movies::Movie;
-use application::sync_status::Problem;
-use application::sync_status::ProblemItem;
+use application::library::list_movies::Actor;
+use application::library::list_movies::Movie;
+use application::library::sync_status::Problem;
+use application::library::sync_status::ProblemItem;
 use domain::ArtworkKind;
 use domain::SyncProblemKind;
 use jiff::SignedDuration;
@@ -69,7 +69,7 @@ impl Fixture {
     }
 
     async fn movies(&self) -> Vec<Movie> {
-        application::list_movies::call(&self.server.state)
+        application::library::list_movies::call(&self.server.state)
             .await
             .unwrap()
     }
@@ -83,9 +83,9 @@ impl Fixture {
             .await;
         self.server.clock.advance(SignedDuration::from_mins(1));
         let started_at = self.server.clock.now();
-        application::sync_now::call(&self.server.state);
+        application::library::sync_now::call(&self.server.state);
         eventually(async || {
-            application::sync_status::call(&self.server.state)
+            application::library::sync_status::call(&self.server.state)
                 .await
                 .unwrap()
                 .radarr
@@ -105,7 +105,7 @@ impl Fixture {
     }
 
     async fn problems(&self) -> Vec<Problem> {
-        application::sync_status::call(&self.server.state)
+        application::library::sync_status::call(&self.server.state)
             .await
             .unwrap()
             .problems

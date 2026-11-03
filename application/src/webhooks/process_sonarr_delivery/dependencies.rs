@@ -1,5 +1,5 @@
-use crate::MediaFolder;
-use crate::SourceHealth;
+use crate::library::MediaFolder;
+use crate::library::SourceHealth;
 use crate::ports::GetSonarrShow;
 use crate::ports::ReadSonarrWebhook;
 use crate::ports::persistence::DbContext;

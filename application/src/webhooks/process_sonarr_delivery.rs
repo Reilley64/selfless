@@ -9,10 +9,10 @@ pub use output::Output;
 use crate::attributes::SELFLESS_WEBHOOK_EVENT_TYPE;
 use crate::attributes::SELFLESS_WEBHOOK_OUTCOME;
 use crate::attributes::SELFLESS_WEBHOOK_SOURCE;
+use crate::library::sync_show;
 use crate::ports::SonarrWebhook;
-use crate::sync_show;
-use crate::webhook_deliveries;
-use crate::webhook_deliveries::Outcome;
+use crate::webhooks::webhook_deliveries;
+use crate::webhooks::webhook_deliveries::Outcome;
 use domain::Source;
 use tracing::Span;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
@@ -68,7 +68,7 @@ pub async fn call(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::SourceHealth;
+    use crate::library::SourceHealth;
     use crate::ports::GetSonarrShow;
     use crate::ports::ReadSonarrWebhook;
     use crate::ports::SonarrError;
