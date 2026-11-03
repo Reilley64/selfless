@@ -12,6 +12,7 @@ use uuid::Uuid;
 pub(crate) struct MovieWatch {
     pub(crate) state: WatchState,
     pub(crate) progress: Option<f64>,
+    pub(crate) minutes_left: Option<i64>,
 }
 
 pub(crate) async fn movie_watches<'a>(
@@ -61,8 +62,12 @@ pub(crate) async fn movie_watches<'a>(
             let duration_ms = media_file_of
                 .get(&movie_id)
                 .and_then(|x| durations.get(x).copied().flatten());
-            let progress = state.progress(duration_ms);
-            (movie_id, MovieWatch { state, progress })
+            let watch = MovieWatch {
+                progress: state.progress(duration_ms),
+                minutes_left: state.minutes_left(duration_ms),
+                state,
+            };
+            (movie_id, watch)
         })
         .collect())
 }

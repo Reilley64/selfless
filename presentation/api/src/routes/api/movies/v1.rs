@@ -77,6 +77,7 @@ struct MoviePageBody {
     cast: Vec<CastMemberBody>,
     images: TitleImagesBody,
     progress: Option<f64>,
+    minutes_left: Option<i64>,
     watched: bool,
     play: MoviePlayBody,
     more_like_this: Vec<TileBody>,
@@ -118,6 +119,7 @@ impl From<get_movie::Movie> for MoviePageBody {
                 .collect(),
             images: TitleImagesBody::from(page.images),
             progress: page.progress,
+            minutes_left: page.minutes_left,
             watched: page.watched,
             play: MoviePlayBody {
                 resume_position: page.resume_position_seconds.map(|x| x as f64),
@@ -260,6 +262,7 @@ mod tests {
                 "cast": [{ "name": "Amy Adams", "role": "Louise Banks" }],
                 "images": { "fanart": null, "logo": null },
                 "progress": null,
+                "minutesLeft": null,
                 "watched": false,
                 "play": { "resumePosition": null },
                 "moreLikeThis": null,

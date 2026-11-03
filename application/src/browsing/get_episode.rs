@@ -64,6 +64,7 @@ pub async fn call(
             .map_err(Error::caused_by)?,
         None => None,
     };
+    let duration_ms = media_file.as_ref().and_then(|x| x.duration_ms);
     let state = episode_watch_states(&mut db_context, user_id, vec![episode.id])
         .await
         .map_err(Error::caused_by)?
@@ -121,7 +122,8 @@ pub async fn call(
             .map(MediaFile::subtitle_languages)
             .unwrap_or_default(),
         resume_position_seconds: state.resume_position_seconds,
-        progress: state.progress(media_file.as_ref().and_then(|x| x.duration_ms)),
+        progress: state.progress(duration_ms),
+        minutes_left: state.minutes_left(duration_ms),
         watched: state.watched,
     })))
 }
@@ -382,7 +384,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn each_user_sees_their_own_resume_position_progress_and_watched_state() {
+    async fn each_user_sees_their_own_resume_position_progress_minutes_left_and_watched_state() {
         let mut db_context = mock_db_context().await;
         let (episodes, media_file) = add_episode_with_file(&mut db_context, &[2]).await;
         let (noor, ravi, mina) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
@@ -405,15 +407,20 @@ mod tests {
                 panic!("the episode is not found");
             };
             let percent = page.progress.map(|x| (x * 100.0).round());
-            views.push((page.resume_position_seconds, percent, page.watched));
+            views.push((
+                page.resume_position_seconds,
+                percent,
+                page.minutes_left,
+                page.watched,
+            ));
         }
 
         assert_eq!(
             views,
             [
-                (Some(1415), Some(50.0), false),
-                (None, None, true),
-                (None, None, false),
+                (Some(1415), Some(50.0), Some(24), false),
+                (None, None, None, true),
+                (None, None, None, false),
             ]
         );
     }

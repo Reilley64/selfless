@@ -17,6 +17,11 @@ impl WatchState {
         Some((position_ms as f64 / duration_ms as f64).min(1.0))
     }
 
+    pub fn minutes_left(&self, duration_ms: Option<i64>) -> Option<i64> {
+        let position_ms = self.resume_position_seconds? * 1000;
+        Some(((duration_ms? - position_ms).max(0) + 30_000) / 60_000)
+    }
+
     pub fn after_report(
         &self,
         position: SignedDuration,
@@ -82,6 +87,18 @@ mod tests {
     #[test]
     fn the_progress_of_a_resume_position_past_the_probed_duration_is_whole() {
         assert_eq!(resuming_at(3000).progress(Some(2_400_000)), Some(1.0));
+    }
+
+    #[test]
+    fn the_minutes_left_are_the_rest_of_the_duration_to_the_nearest_minute() {
+        let state = resuming_at(1200);
+
+        assert_eq!(state.minutes_left(Some(2_400_000)), Some(20));
+        assert_eq!(state.minutes_left(Some(2_429_999)), Some(20));
+        assert_eq!(state.minutes_left(Some(2_430_000)), Some(21));
+        assert_eq!(resuming_at(3000).minutes_left(Some(2_400_000)), Some(0));
+        assert_eq!(state.minutes_left(None), None);
+        assert_eq!(WatchState::default().minutes_left(Some(2_400_000)), None);
     }
 
     #[test]

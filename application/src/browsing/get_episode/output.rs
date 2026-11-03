@@ -25,6 +25,7 @@ pub struct Episode {
     pub subtitle_languages: Vec<SubtitleLanguage>,
     pub resume_position_seconds: Option<i64>,
     pub progress: Option<f64>,
+    pub minutes_left: Option<i64>,
     pub watched: bool,
 }
 

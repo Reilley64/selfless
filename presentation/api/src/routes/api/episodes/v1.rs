@@ -44,6 +44,7 @@ struct EpisodePageBody {
     audio_languages: Vec<String>,
     subtitle_languages: Vec<SubtitleLanguageBody>,
     progress: Option<f64>,
+    minutes_left: Option<i64>,
     watched: bool,
     play: EpisodePlayBody,
 }
@@ -97,6 +98,7 @@ impl From<get_episode::Episode> for EpisodePageBody {
                 })
                 .collect(),
             progress: page.progress,
+            minutes_left: page.minutes_left,
             watched: page.watched,
             play: EpisodePlayBody {
                 resume_position: page.resume_position_seconds.map(|x| x as f64),
@@ -255,6 +257,7 @@ mod tests {
                     { "language": "en", "hearingImpaired": true, "forced": false },
                 ],
                 "progress": 0.5,
+                "minutesLeft": 29,
                 "watched": false,
                 "play": { "resumePosition": 1710.0 },
             })

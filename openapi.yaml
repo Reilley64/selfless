@@ -357,7 +357,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/MoviePage"
-              example: {"id":"0190f3c4-5b6a-7c8d-9e0f-1a2b3c4d5e6f","title":"Arrival","year":2016,"certification":"PG-13","runtimeMinutes":116,"genres":["Drama","Science Fiction"],"rating":7.6,"plot":"A linguist works with the military to talk to aliens.","studio":"Paramount","originalTitle":"Arrival","directors":["Denis Villeneuve"],"cast":[{"name":"Amy Adams","role":"Louise Banks"}],"images":{"fanart":null,"logo":null},"progress":null,"watched":false,"play":{"resumePosition":null},"moreLikeThis":[{"id":"0190f3c4-6c7d-7e8f-9a0b-1c2d3e4f5a6b","kind":"movie","title":"Dune","year":2021,"certification":"PG-13","runtimeMinutes":155,"seasonCount":null,"genres":["Science Fiction"],"plot":"A noble family becomes embroiled in a war for control of a desert planet.","images":{"fanart":null,"logo":null,"thumb":null},"progress":null,"watched":false,"episode":null}]}
+              example: {"id":"0190f3c4-5b6a-7c8d-9e0f-1a2b3c4d5e6f","title":"Arrival","year":2016,"certification":"PG-13","runtimeMinutes":116,"genres":["Drama","Science Fiction"],"rating":7.6,"plot":"A linguist works with the military to talk to aliens.","studio":"Paramount","originalTitle":"Arrival","directors":["Denis Villeneuve"],"cast":[{"name":"Amy Adams","role":"Louise Banks"}],"images":{"fanart":null,"logo":null},"progress":null,"minutesLeft":null,"watched":false,"play":{"resumePosition":null},"moreLikeThis":[{"id":"0190f3c4-6c7d-7e8f-9a0b-1c2d3e4f5a6b","kind":"movie","title":"Dune","year":2021,"certification":"PG-13","runtimeMinutes":155,"seasonCount":null,"genres":["Science Fiction"],"plot":"A noble family becomes embroiled in a war for control of a desert planet.","images":{"fanart":null,"logo":null,"thumb":null},"progress":null,"watched":false,"episode":null}]}
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "404":
@@ -468,7 +468,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/EpisodePage"
-              example: {"id":"0190f3c4-ab1c-7d2e-8f3a-4b5c6d7e8f9a","title":"Half Loop","seasonNumber":1,"episodeNumber":2,"airDate":"2022-02-18","runtimeMinutes":57,"rating":8.1,"plot":"Mark takes Helly to the break room.","thumb":null,"show":{"id":"0190f3c4-6c7d-7e8f-9a0b-1c2d3e4f5a6b","title":"Severance","logo":null},"audioLanguages":["eng"],"subtitleLanguages":[{"language":"eng","hearingImpaired":false,"forced":true},{"language":"en","hearingImpaired":true,"forced":false}],"progress":null,"watched":false,"play":{"resumePosition":null}}
+              example: {"id":"0190f3c4-ab1c-7d2e-8f3a-4b5c6d7e8f9a","title":"Half Loop","seasonNumber":1,"episodeNumber":2,"airDate":"2022-02-18","runtimeMinutes":57,"rating":8.1,"plot":"Mark takes Helly to the break room.","thumb":null,"show":{"id":"0190f3c4-6c7d-7e8f-9a0b-1c2d3e4f5a6b","title":"Severance","logo":null},"audioLanguages":["eng"],"subtitleLanguages":[{"language":"eng","hearingImpaired":false,"forced":true},{"language":"en","hearingImpaired":true,"forced":false}],"progress":null,"minutesLeft":null,"watched":false,"play":{"resumePosition":null}}
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "404":
@@ -1343,7 +1343,7 @@ components:
     MoviePage:
       description: Everything the movie page shows.
       type: object
-      required: [id, title, year, certification, runtimeMinutes, genres, rating, plot, studio, originalTitle, directors, cast, images, progress, watched, play, moreLikeThis]
+      required: [id, title, year, certification, runtimeMinutes, genres, rating, plot, studio, originalTitle, directors, cast, images, progress, minutesLeft, watched, play, moreLikeThis]
       properties:
         id:
           type: string
@@ -1401,6 +1401,11 @@ components:
           minimum: 0
           maximum: 1
           examples: [0.42]
+        minutesLeft:
+          description: The minutes from the user's resume position to the end of the movie's media file, to the nearest minute, when they have a resume position. Otherwise null.
+          type: [integer, "null"]
+          minimum: 0
+          examples: [38]
         watched:
           description: Whether the user has watched the movie.
           type: boolean
@@ -1652,7 +1657,7 @@ components:
     EpisodePage:
       description: Everything the episode page shows.
       type: object
-      required: [id, title, seasonNumber, episodeNumber, airDate, runtimeMinutes, rating, plot, thumb, show, audioLanguages, subtitleLanguages, progress, watched, play]
+      required: [id, title, seasonNumber, episodeNumber, airDate, runtimeMinutes, rating, plot, thumb, show, audioLanguages, subtitleLanguages, progress, minutesLeft, watched, play]
       properties:
         id:
           type: string
@@ -1711,6 +1716,11 @@ components:
           minimum: 0
           maximum: 1
           examples: [0.42]
+        minutesLeft:
+          description: The minutes from the user's resume position to the end of the episode's media file, to the nearest minute, when they have a resume position. Otherwise null.
+          type: [integer, "null"]
+          minimum: 0
+          examples: [38]
         watched:
           description: Whether the user has watched the episode.
           type: boolean

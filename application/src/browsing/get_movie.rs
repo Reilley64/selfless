@@ -99,6 +99,7 @@ pub async fn call(
         images,
         resume_position_seconds: watch.state.resume_position_seconds,
         progress: watch.progress,
+        minutes_left: watch.minutes_left,
         watched: watch.state.watched,
         more_like_this,
     })))
@@ -301,7 +302,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn each_user_sees_their_own_resume_position_progress_and_watched_state() {
+    async fn each_user_sees_their_own_resume_position_progress_minutes_left_and_watched_state() {
         let mut db_context = mock_db_context().await;
         let arrival_file = add_media_file(&db_context, Some(2_400_000)).await;
         let arrival = movie(&db_context, "Arrival")
@@ -348,6 +349,7 @@ mod tests {
             views.push((
                 page.resume_position_seconds,
                 page.progress,
+                page.minutes_left,
                 page.watched,
                 sicario.progress,
             ));
@@ -356,9 +358,9 @@ mod tests {
         assert_eq!(
             views,
             [
-                (Some(1200), Some(0.5), false, Some(0.25)),
-                (None, None, true, None),
-                (None, None, false, None),
+                (Some(1200), Some(0.5), Some(20), false, Some(0.25)),
+                (None, None, None, true, None),
+                (None, None, None, false, None),
             ]
         );
     }
