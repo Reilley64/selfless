@@ -1,8 +1,8 @@
-mod radarr;
-mod sonarr;
-
+use application::webhooks::process_radarr_delivery;
+use application::webhooks::process_sonarr_delivery;
 use domain::Source;
 use infrastructure::AppState;
+use persistence::HandleInboxError;
 use persistence::QueuePauses;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
@@ -19,8 +19,14 @@ pub(super) async fn serve(state: AppState, cancellation: CancellationToken) {
             let state = state.clone();
             async move {
                 match source {
-                    Source::Radarr => radarr::process_delivery(&state, id, body).await,
-                    Source::Sonarr => sonarr::process_delivery(&state, id, body).await,
+                    Source::Radarr => process_radarr_delivery::call(&state, id, body)
+                        .await
+                        .map(drop)
+                        .map_err(HandleInboxError::caused_by),
+                    Source::Sonarr => process_sonarr_delivery::call(&state, id, body)
+                        .await
+                        .map(drop)
+                        .map_err(HandleInboxError::caused_by),
                 }
             }
         },
