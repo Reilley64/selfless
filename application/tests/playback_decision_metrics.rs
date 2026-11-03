@@ -1,8 +1,8 @@
 use application::playback::start_playback;
 use application::ports::Clock;
-use application::ports::EndHlsSession;
+use application::ports::EndHlsOutput;
 use application::ports::ReadKeyframes;
-use application::ports::StartHlsSession;
+use application::ports::StartHlsOutput;
 use application::ports::persistence;
 use application::ports::persistence::DbContext;
 use application::ports::persistence::DbLocation;
@@ -79,8 +79,8 @@ fn dependencies(db_context: &DbContext) -> start_playback::Dependencies {
         read_keyframes: ReadKeyframes::new(|_| {
             Box::pin(async { Ok((0..10).map(|x| Duration::from_secs(x * 6)).collect()) })
         }),
-        start_hls_session: StartHlsSession::new(|_| Box::pin(async { Ok(()) })),
-        end_hls_session: EndHlsSession::new(|_| Box::pin(async {})),
+        start_hls_output: StartHlsOutput::new(|_| Box::pin(async { Ok(()) })),
+        end_hls_output: EndHlsOutput::new(|_| Box::pin(async {})),
     }
 }
 

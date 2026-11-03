@@ -8,7 +8,7 @@ use application::ports::CheckRadarrKodiMetadata;
 use application::ports::CheckSonarrKodiMetadata;
 use application::ports::Clock;
 use application::ports::DeleteCachedImage;
-use application::ports::EndHlsSession;
+use application::ports::EndHlsOutput;
 use application::ports::ExportTelemetry;
 use application::ports::ExportTelemetryError;
 use application::ports::FindMediaFile;
@@ -17,7 +17,7 @@ use application::ports::GetRadarrMovie;
 use application::ports::GetSonarrEpisodes;
 use application::ports::GetSonarrShow;
 use application::ports::HlsError;
-use application::ports::HlsSession;
+use application::ports::HlsOutput;
 use application::ports::ListCachedImages;
 use application::ports::ListRadarrMovies;
 use application::ports::ListSonarrShows;
@@ -42,7 +42,7 @@ use application::ports::ResizeImageError;
 use application::ports::SaveCachedImage;
 use application::ports::SendEmail;
 use application::ports::SonarrError;
-use application::ports::StartHlsSession;
+use application::ports::StartHlsOutput;
 use application::ports::TryAcquireLock;
 use application::ports::UnreadableNfo;
 use application::ports::UnreadableWebhook;
@@ -76,7 +76,7 @@ pub struct TestApp {
 #[derive(Clone)]
 pub struct FakeHls {
     segments_dir: Arc<TempDir>,
-    sessions: Arc<Mutex<Vec<HlsSession>>>,
+    outputs: Arc<Mutex<Vec<HlsOutput>>>,
 }
 
 impl FakeHls {
@@ -84,21 +84,21 @@ impl FakeHls {
         self.segments_dir.path().join(playback_id.to_string())
     }
 
-    pub fn sessions(&self) -> Vec<HlsSession> {
-        self.sessions
+    pub fn outputs(&self) -> Vec<HlsOutput> {
+        self.outputs
             .lock()
-            .expect("no test panics while holding the HLS sessions")
+            .expect("no test panics while holding the HLS outputs")
             .clone()
     }
 
-    fn start_hls_session(&self) -> StartHlsSession {
+    fn start_hls_output(&self) -> StartHlsOutput {
         let hls = self.clone();
-        StartHlsSession::new(move |session| {
-            let folder = hls.folder(session.playback_id);
-            hls.sessions
+        StartHlsOutput::new(move |output| {
+            let folder = hls.folder(output.playback_id);
+            hls.outputs
                 .lock()
-                .expect("no test panics while holding the HLS sessions")
-                .push(session);
+                .expect("no test panics while holding the HLS outputs")
+                .push(output);
             Box::pin(async move {
                 std::fs::create_dir_all(&folder).map_err(HlsError::caused_by)?;
                 std::fs::write(folder.join("main.m3u8"), MAIN_PLAYLIST)
@@ -117,9 +117,9 @@ impl FakeHls {
         })
     }
 
-    fn end_hls_session(&self) -> EndHlsSession {
+    fn end_hls_output(&self) -> EndHlsOutput {
         let hls = self.clone();
-        EndHlsSession::new(move |playback_id| {
+        EndHlsOutput::new(move |playback_id| {
             let _ = std::fs::remove_dir_all(hls.folder(playback_id));
             Box::pin(async {})
         })
@@ -132,7 +132,7 @@ impl TestApp {
         let mailer = FakeMailer::default();
         let hls = FakeHls {
             segments_dir: Arc::new(TempDir::new().unwrap()),
-            sessions: Arc::default(),
+            outputs: Arc::default(),
         };
         let state = AppState {
             acquire_lock: AcquireLock::new(|_| Box::pin(async { LockGuard::new(()) })),
@@ -159,7 +159,7 @@ impl TestApp {
                 },
             ),
             delete_cached_image: DeleteCachedImage::new(|_| Box::pin(async { Ok(()) })),
-            end_hls_session: hls.end_hls_session(),
+            end_hls_output: hls.end_hls_output(),
             export_telemetry: ExportTelemetry::new(|_, _| {
                 Box::pin(async { Err(ExportTelemetryError::default()) })
             }),
@@ -215,7 +215,7 @@ impl TestApp {
             save_cached_image: SaveCachedImage::new(|_, _| Box::pin(async { Ok(()) })),
             send_email: SendEmail::new(mailer.sender()),
             source_health: SourceHealth::default(),
-            start_hls_session: hls.start_hls_session(),
+            start_hls_output: hls.start_hls_output(),
             try_acquire_lock: TryAcquireLock::new(|_| Box::pin(async { Some(LockGuard::new(())) })),
             url_signer: UrlSigner::new(b"a household secret"),
             webhook_passwords: WebhookPasswords::default(),

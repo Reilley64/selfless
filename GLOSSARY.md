@@ -196,3 +196,31 @@ _Avoid_: Direct stream, repackage
 **Transcode**:
 A playback where selfless converts the video or audio into a format the device can play.
 _Avoid_: Convert, encode
+
+**Capability profile**:
+What a device sends with each play request about what it plays: the containers, the video codecs with their profiles, maximum level, size, bit depths and HDR types, the audio codecs with their channels, and the subtitle codecs it shows. selfless picks direct play, remux or transcode from it.
+_Avoid_: Device profile, codec support
+
+**HLS output**:
+The playlists and segments selfless writes for a remux or transcode, and the ffmpeg run that writes them. They are deleted when the playback ends.
+_Avoid_: HLS session, stream, transcode job
+
+**Next episode**:
+The episode the player goes to after an episode ends: the first one after the last episode in its media file, across seasons and skipping Specials. It follows what is playing, where next up follows what the user has watched.
+_Avoid_: Up next
+
+**Autoplay**:
+Playing the next episode when an episode ends, after the Next episode button counts down. A user turns it off with "Autoplay next episode".
+_Avoid_: Auto-advance, binge mode
+
+**Still watching prompt**:
+The "Are you still watching?" screen. With "Ask if I'm still watching" on, the next episode loads paused behind it after three autoplayed episodes in a row with no pause, seek, track change or press of Next episode.
+_Avoid_: Idle check, sleep timer
+
+**Playback settings**:
+A user's "Autoplay next episode" and "Ask if I'm still watching" choices and their remembered languages. They follow the user to every device.
+_Avoid_: Player preferences
+
+**Remembered language**:
+The audio or subtitle language a user last picked during a playback. The next playback starts with a track in it. Turning subtitles off forgets the subtitle language.
+_Avoid_: Preferred language, default language

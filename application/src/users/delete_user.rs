@@ -20,7 +20,7 @@ use uuid::Uuid;
 pub async fn call(dependencies: impl Into<Dependencies>, id: Uuid) -> Result<Output, Error> {
     let Dependencies {
         mut db_context,
-        end_hls_session,
+        end_hls_output,
     } = dependencies.into();
     let mut transaction = db_context.transaction().await.map_err(Error::caused_by)?;
     let open = transaction
@@ -92,7 +92,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, id: Uuid) -> Result<Out
         .map_err(Error::caused_by)?;
     transaction.commit().await.map_err(Error::caused_by)?;
     for playback in open {
-        end_hls_session.call(playback.id).await;
+        end_hls_output.call(playback.id).await;
     }
     Ok(Output)
 }
@@ -101,7 +101,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, id: Uuid) -> Result<Out
 mod tests {
     use super::*;
     use crate::ports::persistence::DbContext;
-    use crate::test::EndedHlsSessions;
+    use crate::test::EndedHlsOutputs;
     use crate::test::add_season;
     use crate::test::episode;
     use crate::test::mock_db_context;
@@ -158,7 +158,7 @@ mod tests {
         call(
             Dependencies {
                 db_context: db_context.clone(),
-                end_hls_session: EndedHlsSessions::default().port(),
+                end_hls_output: EndedHlsOutputs::default().port(),
             },
             noor,
         )
@@ -205,7 +205,7 @@ mod tests {
         call(
             Dependencies {
                 db_context: db_context.clone(),
-                end_hls_session: EndedHlsSessions::default().port(),
+                end_hls_output: EndedHlsOutputs::default().port(),
             },
             noor,
         )
@@ -225,7 +225,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn deleting_a_user_deletes_their_playbacks_and_ends_their_hls_sessions() {
+    async fn deleting_a_user_deletes_their_playbacks_and_ends_their_hls_outputs() {
         let mut db_context = mock_db_context().await;
         let noor = create_user(&db_context, "Noor").await;
         let ravi = create_user(&db_context, "Ravi").await;
@@ -240,12 +240,12 @@ mod tests {
                     .id,
             );
         }
-        let ended = EndedHlsSessions::default();
+        let ended = EndedHlsOutputs::default();
 
         call(
             Dependencies {
                 db_context: db_context.clone(),
-                end_hls_session: ended.port(),
+                end_hls_output: ended.port(),
             },
             noor,
         )
@@ -303,7 +303,7 @@ mod tests {
         call(
             Dependencies {
                 db_context: db_context.clone(),
-                end_hls_session: EndedHlsSessions::default().port(),
+                end_hls_output: EndedHlsOutputs::default().port(),
             },
             noor,
         )
@@ -363,7 +363,7 @@ mod tests {
         call(
             Dependencies {
                 db_context: db_context.clone(),
-                end_hls_session: EndedHlsSessions::default().port(),
+                end_hls_output: EndedHlsOutputs::default().port(),
             },
             noor,
         )

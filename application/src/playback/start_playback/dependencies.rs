@@ -1,7 +1,7 @@
 use crate::ports::Clock;
-use crate::ports::EndHlsSession;
+use crate::ports::EndHlsOutput;
 use crate::ports::ReadKeyframes;
-use crate::ports::StartHlsSession;
+use crate::ports::StartHlsOutput;
 use crate::ports::persistence::DbContext;
 use crate::url_signer::UrlSigner;
 
@@ -11,6 +11,6 @@ pub struct Dependencies {
     pub clock: Clock,
     pub url_signer: UrlSigner,
     pub read_keyframes: ReadKeyframes,
-    pub start_hls_session: StartHlsSession,
-    pub end_hls_session: EndHlsSession,
+    pub start_hls_output: StartHlsOutput,
+    pub end_hls_output: EndHlsOutput,
 }

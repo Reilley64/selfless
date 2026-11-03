@@ -8,7 +8,7 @@ use crate::ports::CachedImage;
 use crate::ports::Clock;
 use crate::ports::DeleteCachedImage;
 use crate::ports::EmailRefused;
-use crate::ports::EndHlsSession;
+use crate::ports::EndHlsOutput;
 use crate::ports::EpisodeFolder;
 use crate::ports::FindMediaFile;
 use crate::ports::FoundFile;
@@ -126,14 +126,14 @@ impl RecordingLock {
 }
 
 #[derive(Clone, Default)]
-pub(crate) struct EndedHlsSessions {
+pub(crate) struct EndedHlsOutputs {
     playback_ids: Arc<Mutex<Vec<Uuid>>>,
 }
 
-impl EndedHlsSessions {
-    pub(crate) fn port(&self) -> EndHlsSession {
+impl EndedHlsOutputs {
+    pub(crate) fn port(&self) -> EndHlsOutput {
         let playback_ids = self.playback_ids.clone();
-        EndHlsSession::new(move |playback_id| {
+        EndHlsOutput::new(move |playback_id| {
             playback_ids.lock().unwrap().push(playback_id);
             Box::pin(async {})
         })

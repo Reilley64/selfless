@@ -169,7 +169,7 @@ impl DeleteCachedImage {
 }
 
 #[derive(Clone, Debug)]
-pub struct HlsSession {
+pub struct HlsOutput {
     pub playback_id: Uuid,
     pub path: String,
     pub duration: Duration,
@@ -192,7 +192,7 @@ pub struct HlsAudioTrack {
 
 #[derive(ohno::Error, Default)]
 #[no_constructors]
-#[display("failed to run an HLS session")]
+#[display("failed to run an HLS output")]
 pub struct HlsError {
     core: ohno::OhnoCore,
 }
@@ -205,12 +205,12 @@ impl HlsError {
     }
 }
 
-type EndHlsSessionFn = dyn Fn(Uuid) -> PortFuture<()> + Send + Sync;
+type EndHlsOutputFn = dyn Fn(Uuid) -> PortFuture<()> + Send + Sync;
 
 #[derive(Clone)]
-pub struct EndHlsSession(Arc<EndHlsSessionFn>);
+pub struct EndHlsOutput(Arc<EndHlsOutputFn>);
 
-impl EndHlsSession {
+impl EndHlsOutput {
     pub fn new(f: impl Fn(Uuid) -> PortFuture<()> + Send + Sync + 'static) -> Self {
         Self(Arc::new(f))
     }
@@ -1117,19 +1117,19 @@ impl EmailRefused {
     }
 }
 
-type StartHlsSessionFn = dyn Fn(HlsSession) -> PortFuture<Result<(), HlsError>> + Send + Sync;
+type StartHlsOutputFn = dyn Fn(HlsOutput) -> PortFuture<Result<(), HlsError>> + Send + Sync;
 
 #[derive(Clone)]
-pub struct StartHlsSession(Arc<StartHlsSessionFn>);
+pub struct StartHlsOutput(Arc<StartHlsOutputFn>);
 
-impl StartHlsSession {
+impl StartHlsOutput {
     pub fn new(
-        f: impl Fn(HlsSession) -> PortFuture<Result<(), HlsError>> + Send + Sync + 'static,
+        f: impl Fn(HlsOutput) -> PortFuture<Result<(), HlsError>> + Send + Sync + 'static,
     ) -> Self {
         Self(Arc::new(f))
     }
 
-    pub fn call(&self, session: HlsSession) -> PortFuture<Result<(), HlsError>> {
+    pub fn call(&self, session: HlsOutput) -> PortFuture<Result<(), HlsError>> {
         (self.0)(session)
     }
 }

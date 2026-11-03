@@ -13,7 +13,7 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<Output, Error
     let Dependencies {
         mut db_context,
         clock,
-        end_hls_session,
+        end_hls_output,
     } = dependencies.into();
     let now = clock.call();
     let silent = db_context
@@ -29,7 +29,7 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<Output, Error
             .exec(db_context.executor_mut())
             .await
             .map_err(Error::caused_by)?;
-        end_hls_session.call(playback.id).await;
+        end_hls_output.call(playback.id).await;
     }
     Ok(Output)
 }
@@ -39,7 +39,7 @@ mod tests {
     use super::*;
     use crate::ports::Clock;
     use crate::ports::persistence::DbContext;
-    use crate::test::EndedHlsSessions;
+    use crate::test::EndedHlsOutputs;
     use crate::test::at;
     use crate::test::mock_db_context;
     use crate::test::playback;
@@ -49,11 +49,11 @@ mod tests {
     const NOW: &str = "2026-06-01T12:00:00Z";
 
     async fn end_silent_playbacks(db_context: &DbContext) -> Vec<Uuid> {
-        let ended = EndedHlsSessions::default();
+        let ended = EndedHlsOutputs::default();
         call(Dependencies {
             db_context: db_context.clone(),
             clock: Clock::new(|| at(NOW)),
-            end_hls_session: ended.port(),
+            end_hls_output: ended.port(),
         })
         .await
         .unwrap();
@@ -72,7 +72,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_playback_with_no_report_for_60_seconds_ends_with_its_hls_session() {
+    async fn a_playback_with_no_report_for_60_seconds_ends_with_its_hls_output() {
         let mut db_context = mock_db_context().await;
         let silent = playback(&db_context, at("2026-06-01T11:59:00Z"))
             .exec(db_context.executor_mut())
@@ -85,11 +85,11 @@ mod tests {
             .unwrap()
             .id;
 
-        let ended_hls_sessions = end_silent_playbacks(&db_context).await;
+        let ended_hls_outputs = end_silent_playbacks(&db_context).await;
 
         assert_eq!(ended_at(&mut db_context, silent).await, Some(at(NOW)));
         assert_eq!(ended_at(&mut db_context, reporting).await, None);
-        assert_eq!(ended_hls_sessions, [silent]);
+        assert_eq!(ended_hls_outputs, [silent]);
     }
 
     #[tokio::test]
@@ -103,9 +103,9 @@ mod tests {
             .unwrap()
             .id;
 
-        let ended_hls_sessions = end_silent_playbacks(&db_context).await;
+        let ended_hls_outputs = end_silent_playbacks(&db_context).await;
 
         assert_eq!(ended_at(&mut db_context, stopped).await, Some(stopped_at));
-        assert_eq!(ended_hls_sessions, Vec::<Uuid>::new());
+        assert_eq!(ended_hls_outputs, Vec::<Uuid>::new());
     }
 }

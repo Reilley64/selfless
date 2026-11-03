@@ -11,12 +11,12 @@ use crate::subtitles;
 use application::attributes::SELFLESS_FFMPEG_PURPOSE;
 use application::attributes::SELFLESS_FFMPEG_START_SEGMENT;
 use application::attributes::selfless_ffmpeg_purpose;
-use application::ports::EndHlsSession;
+use application::ports::EndHlsOutput;
 use application::ports::GetHlsFile;
 use application::ports::HlsAudioTrack;
 use application::ports::HlsError;
-use application::ports::HlsSession;
-use application::ports::StartHlsSession;
+use application::ports::HlsOutput;
+use application::ports::StartHlsOutput;
 use application::ports::SubtitleStream;
 use application::ports::VideoStream;
 use application::spans::SELFLESS_FFMPEG;
@@ -42,12 +42,12 @@ const AUDIO_GROUP: &str = "audio";
 const JUST_AHEAD: usize = 4;
 
 #[derive(Clone)]
-pub struct HlsSessions {
+pub struct HlsOutputs {
     segments_dir: PathBuf,
-    sessions: Arc<Mutex<HashMap<Uuid, Session>>>,
+    outputs: Arc<Mutex<HashMap<Uuid, Output>>>,
 }
 
-struct Session {
+struct Output {
     folder: PathBuf,
     input: PathBuf,
     video: VideoStream,
@@ -134,7 +134,7 @@ impl Requested {
     }
 }
 
-impl HlsSessions {
+impl HlsOutputs {
     pub async fn new(segments_dir: PathBuf) -> io::Result<Self> {
         fs::create_dir_all(&segments_dir).await?;
         let mut entries = fs::read_dir(&segments_dir).await?;
@@ -147,24 +147,24 @@ impl HlsSessions {
         }
         Ok(Self {
             segments_dir,
-            sessions: Arc::default(),
+            outputs: Arc::default(),
         })
     }
 
-    pub fn start_hls_session(&self) -> StartHlsSession {
-        let sessions = self.clone();
-        StartHlsSession::new(move |session| {
-            let sessions = sessions.clone();
-            Box::pin(async move { sessions.start(session).await.map_err(HlsError::caused_by) })
+    pub fn start_hls_output(&self) -> StartHlsOutput {
+        let outputs = self.clone();
+        StartHlsOutput::new(move |output| {
+            let outputs = outputs.clone();
+            Box::pin(async move { outputs.start(output).await.map_err(HlsError::caused_by) })
         })
     }
 
     pub fn get_hls_file(&self) -> GetHlsFile {
-        let sessions = self.clone();
+        let outputs = self.clone();
         GetHlsFile::new(move |playback_id, name| {
-            let sessions = sessions.clone();
+            let outputs = outputs.clone();
             Box::pin(async move {
-                sessions
+                outputs
                     .file(playback_id, &name)
                     .await
                     .map(|x| x.map(|x| x.to_string_lossy().into_owned()))
@@ -173,35 +173,35 @@ impl HlsSessions {
         })
     }
 
-    pub fn end_hls_session(&self) -> EndHlsSession {
-        let sessions = self.clone();
-        EndHlsSession::new(move |playback_id| {
-            let sessions = sessions.clone();
-            Box::pin(async move { sessions.end(playback_id).await })
+    pub fn end_hls_output(&self) -> EndHlsOutput {
+        let outputs = self.clone();
+        EndHlsOutput::new(move |playback_id| {
+            let outputs = outputs.clone();
+            Box::pin(async move { outputs.end(playback_id).await })
         })
     }
 
-    async fn start(&self, session: HlsSession) -> io::Result<()> {
-        let folder = self.segments_dir.join(session.playback_id.to_string());
+    async fn start(&self, output: HlsOutput) -> io::Result<()> {
+        let folder = self.segments_dir.join(output.playback_id.to_string());
         fs::create_dir_all(&folder).await?;
-        let (segments, bandwidth, width, height) = match &session.video_transcode {
+        let (segments, bandwidth, width, height) = match &output.video_transcode {
             Some(transcode) => (
-                Segments::fixed(session.video.frame_rate, session.duration),
+                Segments::fixed(output.video.frame_rate, output.duration),
                 transcode.bit_rate as f64,
                 transcode.width,
                 transcode.height,
             ),
             None => {
-                let size = fs::metadata(&session.path).await?.len();
+                let size = fs::metadata(&output.path).await?.len();
                 (
-                    Segments::new(&session.keyframes, session.duration),
-                    (size as f64 * 8.0 / session.duration.as_secs_f64().max(1.0)).ceil(),
-                    session.video.width,
-                    session.video.height,
+                    Segments::new(&output.keyframes, output.duration),
+                    (size as f64 * 8.0 / output.duration.as_secs_f64().max(1.0)).ceil(),
+                    output.video.width,
+                    output.video.height,
                 )
             }
         };
-        let renditions = session
+        let renditions = output
             .subtitle_streams
             .iter()
             .map(|x| Rendition {
@@ -210,20 +210,20 @@ impl HlsSessions {
                 forced: x.forced,
                 hearing_impaired: x.hearing_impaired,
             })
-            .chain(session.subtitle_files.iter().map(|x| Rendition {
+            .chain(output.subtitle_files.iter().map(|x| Rendition {
                 language: x.language.as_deref(),
                 title: None,
                 forced: x.forced,
                 hearing_impaired: x.hearing_impaired,
             }));
         let mut audio_tags = String::new();
-        let audio_renditions = named(session.audio.iter().map(|x| Rendition {
+        let audio_renditions = named(output.audio.iter().map(|x| Rendition {
             language: x.stream.language.as_deref(),
             title: x.stream.title.as_deref(),
             forced: false,
             hearing_impaired: false,
         }));
-        for (index, (track, rendition)) in session.audio.iter().zip(audio_renditions).enumerate() {
+        for (index, (track, rendition)) in output.audio.iter().zip(audio_renditions).enumerate() {
             audio_tags.push_str(&format!(
                 "#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"{AUDIO_GROUP}\",NAME=\"{}\"",
                 rendition.name
@@ -241,10 +241,10 @@ impl HlsSessions {
             ));
         }
         let mut groups = String::new();
-        if !session.audio.is_empty() {
+        if !output.audio.is_empty() {
             groups.push_str(&format!(",AUDIO=\"{AUDIO_GROUP}\""));
         }
-        if !session.subtitle_streams.is_empty() || !session.subtitle_files.is_empty() {
+        if !output.subtitle_streams.is_empty() || !output.subtitle_files.is_empty() {
             groups.push_str(&format!(",SUBTITLES=\"{}\"", subtitles::GROUP));
         }
         fs::write(
@@ -257,7 +257,7 @@ impl HlsSessions {
                  {}\
                  #EXT-X-STREAM-INF:BANDWIDTH={bandwidth},RESOLUTION={width}x{height}{groups}\n\
                  {VIDEO}\n",
-                subtitles::media_tags(renditions, session.selected_subtitle),
+                subtitles::media_tags(renditions, output.selected_subtitle),
             ),
         )
         .await?;
@@ -266,7 +266,7 @@ impl HlsSessions {
             segments.media_playlist(Some(INIT), |x| format!("{x}.m4s")),
         )
         .await?;
-        for rendition in 0..session.audio.len() {
+        for rendition in 0..output.audio.len() {
             fs::write(
                 folder.join(audio_playlist(rendition)),
                 segments.media_playlist(Some(&audio_init(rendition)), |x| {
@@ -275,7 +275,7 @@ impl HlsSessions {
             )
             .await?;
         }
-        let embedded = session.subtitle_streams.len();
+        let embedded = output.subtitle_streams.len();
         for rendition in 0..embedded {
             fs::write(
                 folder.join(subtitles::playlist(rendition)),
@@ -283,23 +283,23 @@ impl HlsSessions {
             )
             .await?;
         }
-        let whole = Segments::new(&[], session.duration);
-        for rendition in embedded..embedded + session.subtitle_files.len() {
+        let whole = Segments::new(&[], output.duration);
+        for rendition in embedded..embedded + output.subtitle_files.len() {
             fs::write(
                 folder.join(subtitles::playlist(rendition)),
                 whole.media_playlist(None, |_| subtitles::file(rendition)),
             )
             .await?;
         }
-        let start = segments.segment_at(session.start_position);
-        let mut started = Session {
+        let start = segments.segment_at(output.start_position);
+        let mut started = Output {
             folder,
-            input: PathBuf::from(session.path),
-            video: session.video,
-            video_transcode: session.video_transcode,
-            audio: session.audio,
-            subtitle_streams: session.subtitle_streams,
-            subtitle_files: session
+            input: PathBuf::from(output.path),
+            video: output.video,
+            video_transcode: output.video_transcode,
+            audio: output.audio,
+            subtitle_streams: output.subtitle_streams,
+            subtitle_files: output
                 .subtitle_files
                 .into_iter()
                 .map(|x| SubtitleFile {
@@ -311,10 +311,10 @@ impl HlsSessions {
             run: None,
         };
         started.restart(start);
-        self.sessions
+        self.outputs
             .lock()
-            .expect("no thread panics while holding the HLS sessions")
-            .insert(session.playback_id, started);
+            .expect("no thread panics while holding the HLS outputs")
+            .insert(output.playback_id, started);
         Ok(())
     }
 
@@ -324,26 +324,26 @@ impl HlsSessions {
         };
         let (source, converted, path) = loop {
             let mut written = {
-                let mut sessions = self
-                    .sessions
+                let mut outputs = self
+                    .outputs
                     .lock()
-                    .expect("no thread panics while holding the HLS sessions");
-                let Some(session) = sessions.get_mut(&playback_id) else {
+                    .expect("no thread panics while holding the HLS outputs");
+                let Some(output) = outputs.get_mut(&playback_id) else {
                     return Ok(None);
                 };
-                let mut written = session.run.as_ref().map(|x| x.written.clone());
+                let mut written = output.run.as_ref().map(|x| x.written.clone());
                 if let Some(written) = &mut written {
                     written.borrow_and_update();
                 }
-                let path = session.folder.join(name);
+                let path = output.folder.join(name);
                 if path.exists() {
                     return Ok(Some(path));
                 }
-                let embedded = session.subtitle_streams.len();
+                let embedded = output.subtitle_streams.len();
                 let segment = match requested {
                     Requested::Playlist => return Ok(None),
                     Requested::AudioInit(rendition) | Requested::AudioSegment(rendition, _)
-                        if rendition >= session.audio.len() =>
+                        if rendition >= output.audio.len() =>
                     {
                         return Ok(None);
                     }
@@ -351,7 +351,7 @@ impl HlsSessions {
                     Requested::Segment(x)
                     | Requested::AudioSegment(_, x)
                     | Requested::SubtitleSegment(_, x)
-                        if x >= session.segments.len() =>
+                        if x >= output.segments.len() =>
                     {
                         return Ok(None);
                     }
@@ -364,14 +364,14 @@ impl HlsSessions {
                     Requested::SubtitleFile(rendition) => {
                         let Some(file) = rendition
                             .checked_sub(embedded)
-                            .and_then(|x| session.subtitle_files.get(x))
+                            .and_then(|x| output.subtitle_files.get(x))
                         else {
                             return Ok(None);
                         };
                         break (file.path.clone(), file.converted.clone(), path);
                     }
                 };
-                match &session.run {
+                match &output.run {
                     Some(run) if run.finished() && run.start == segment.unwrap_or(run.start) => {
                         return Err(io::Error::other(format!(
                             "ffmpeg exited without writing {name}"
@@ -379,8 +379,8 @@ impl HlsSessions {
                     }
                     Some(run) if !run.finished() && run.covers(segment) => {}
                     _ => {
-                        session.restart(segment.unwrap_or_default());
-                        written = session.run.as_ref().map(|x| x.written.clone());
+                        output.restart(segment.unwrap_or_default());
+                        written = output.run.as_ref().map(|x| x.written.clone());
                     }
                 }
                 written.expect("a run is writing the segments")
@@ -400,30 +400,30 @@ impl HlsSessions {
     }
 
     async fn end(&self, playback_id: Uuid) {
-        let Some(mut session) = self
-            .sessions
+        let Some(mut output) = self
+            .outputs
             .lock()
-            .expect("no thread panics while holding the HLS sessions")
+            .expect("no thread panics while holding the HLS outputs")
             .remove(&playback_id)
         else {
             return;
         };
-        if let Some(mut run) = session.run.take() {
+        if let Some(mut run) = output.run.take() {
             run.task.abort();
             let _ = (&mut run.task).await;
         }
-        if let Err(error) = fs::remove_dir_all(&session.folder).await
+        if let Err(error) = fs::remove_dir_all(&output.folder).await
             && error.kind() != ErrorKind::NotFound
         {
             tracing::warn!(
                 error = &error as &dyn std::error::Error,
-                "failed to delete the segments of an HLS session"
+                "failed to delete the segments of an HLS output"
             );
         }
     }
 }
 
-impl Session {
+impl Output {
     fn restart(&mut self, start: usize) {
         self.run = None;
         let purpose =
@@ -506,10 +506,10 @@ mod tests {
 
     const PLAYBACK_ID: Uuid = Uuid::from_u128(0x0190_f3c4_d3e4_7f5a_8b6c_7d8e_9f0a_1b2c);
 
-    async fn session(start_position: Duration) -> HlsSession {
+    async fn output(start_position: Duration) -> HlsOutput {
         let path =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test/fixtures/media/keyframes.mkv");
-        HlsSession {
+        HlsOutput {
             playback_id: PLAYBACK_ID,
             keyframes: read_keyframes(&path).await.unwrap(),
             video_transcode: None,
@@ -575,9 +575,9 @@ mod tests {
         }
     }
 
-    async fn subtitle_session(start_position: Duration) -> HlsSession {
+    async fn subtitle_session(start_position: Duration) -> HlsOutput {
         let path = media("subtitles.mkv");
-        HlsSession {
+        HlsOutput {
             keyframes: read_keyframes(Path::new(&path)).await.unwrap(),
             path,
             subtitle_streams: vec![
@@ -604,27 +604,27 @@ mod tests {
                     forced: false,
                 },
             ],
-            ..session(start_position).await
+            ..output(start_position).await
         }
     }
 
-    async fn started(start_position: Duration) -> (TempDir, HlsSessions) {
-        started_with(session(start_position).await).await
+    async fn started(start_position: Duration) -> (TempDir, HlsOutputs) {
+        started_with(output(start_position).await).await
     }
 
-    async fn started_with(session: HlsSession) -> (TempDir, HlsSessions) {
+    async fn started_with(output: HlsOutput) -> (TempDir, HlsOutputs) {
         let dir = TempDir::new().unwrap();
-        let sessions = HlsSessions::new(dir.path().join("segments")).await.unwrap();
-        sessions.start_hls_session().call(session).await.unwrap();
-        (dir, sessions)
+        let outputs = HlsOutputs::new(dir.path().join("segments")).await.unwrap();
+        outputs.start_hls_output().call(output).await.unwrap();
+        (dir, outputs)
     }
 
-    async fn read(sessions: &HlsSessions, name: &str) -> String {
-        std::fs::read_to_string(get(sessions, name).await.unwrap()).unwrap()
+    async fn read(outputs: &HlsOutputs, name: &str) -> String {
+        std::fs::read_to_string(get(outputs, name).await.unwrap()).unwrap()
     }
 
-    async fn get(sessions: &HlsSessions, name: &str) -> Option<String> {
-        sessions
+    async fn get(outputs: &HlsOutputs, name: &str) -> Option<String> {
+        outputs
             .get_hls_file()
             .call(PLAYBACK_ID, name)
             .await
@@ -633,18 +633,18 @@ mod tests {
 
     #[tokio::test]
     async fn a_session_serves_its_playlists_and_every_segment_of_its_media_playlists() {
-        let (_dir, sessions) = started(Duration::ZERO).await;
+        let (_dir, outputs) = started(Duration::ZERO).await;
 
-        let main = read(&sessions, "main.m3u8").await;
-        let video = read(&sessions, "video.m3u8").await;
-        let audio = read(&sessions, "audio-0.m3u8").await;
+        let main = read(&outputs, "main.m3u8").await;
+        let video = read(&outputs, "video.m3u8").await;
+        let audio = read(&outputs, "audio-0.m3u8").await;
         let mut files = vec!["init.mp4".to_owned(), "audio-0.mp4".to_owned()];
         files.extend((0..6).map(|x| format!("{x}.m4s")));
         files.extend((0..6).map(|x| format!("audio-0-{x}.m4s")));
         let mut served = Vec::new();
         for name in &files {
             served.push(
-                get(&sessions, name)
+                get(&outputs, name)
                     .await
                     .is_some_and(|x| Path::new(&x).exists()),
             );
@@ -669,15 +669,15 @@ mod tests {
             "audio-1-0.m4s",
             "../segments",
         ] {
-            assert_eq!(get(&sessions, name).await, None, "{name}");
+            assert_eq!(get(&outputs, name).await, None, "{name}");
         }
     }
 
     #[tokio::test]
     async fn the_main_playlist_has_an_audio_group_with_every_audio_track_and_the_selected_one_as_default()
      {
-        let mut session = session(Duration::ZERO).await;
-        session.audio = vec![
+        let mut output = output(Duration::ZERO).await;
+        output.audio = vec![
             audio_track(Some("eng"), Some("Surround 5.1"), None, false),
             audio_track(
                 Some("fre"),
@@ -691,10 +691,10 @@ mod tests {
             audio_track(Some("eng"), Some("Surround 5.1"), None, false),
             audio_track(None, None, None, false),
         ];
-        let (_dir, sessions) = started_with(session).await;
+        let (_dir, outputs) = started_with(output).await;
 
-        let main = read(&sessions, "main.m3u8").await;
-        let playlists = read_all(&sessions, (0..4).map(|x| format!("audio-{x}.m3u8"))).await;
+        let main = read(&outputs, "main.m3u8").await;
+        let playlists = read_all(&outputs, (0..4).map(|x| format!("audio-{x}.m3u8"))).await;
 
         assert_eq!(
             main,
@@ -720,8 +720,8 @@ mod tests {
     #[tokio::test]
     async fn a_transcode_writes_playlists_of_6_second_gops_at_the_transcoded_size() {
         let dir = TempDir::new().unwrap();
-        let sessions = HlsSessions::new(dir.path().join("segments")).await.unwrap();
-        let mut transcode = session(Duration::ZERO).await;
+        let outputs = HlsOutputs::new(dir.path().join("segments")).await.unwrap();
+        let mut transcode = output(Duration::ZERO).await;
         transcode.keyframes = Vec::new();
         transcode.video.frame_rate = Some(24000.0 / 1001.0);
         transcode.video_transcode = Some(VideoTranscode {
@@ -732,10 +732,10 @@ mod tests {
             deinterlace: false,
         });
 
-        sessions.start_hls_session().call(transcode).await.unwrap();
-        let main = std::fs::read_to_string(get(&sessions, "main.m3u8").await.unwrap()).unwrap();
-        let video = std::fs::read_to_string(get(&sessions, "video.m3u8").await.unwrap()).unwrap();
-        sessions.end_hls_session().call(PLAYBACK_ID).await;
+        outputs.start_hls_output().call(transcode).await.unwrap();
+        let main = std::fs::read_to_string(get(&outputs, "main.m3u8").await.unwrap()).unwrap();
+        let video = std::fs::read_to_string(get(&outputs, "video.m3u8").await.unwrap()).unwrap();
+        outputs.end_hls_output().call(PLAYBACK_ID).await;
 
         assert!(
             main.ends_with(
@@ -752,13 +752,13 @@ mod tests {
 
     #[tokio::test]
     async fn the_selected_subtitle_is_the_default_of_the_subtitle_group() {
-        let session = HlsSession {
+        let output = HlsOutput {
             selected_subtitle: Some(2),
             ..subtitle_session(Duration::ZERO).await
         };
-        let (_dir, sessions) = started_with(session).await;
+        let (_dir, outputs) = started_with(output).await;
 
-        let main = read(&sessions, "main.m3u8").await;
+        let main = read(&outputs, "main.m3u8").await;
 
         let defaults = main
             .lines()
@@ -771,9 +771,9 @@ mod tests {
     #[tokio::test]
     async fn the_main_playlist_has_a_subtitle_group_with_every_text_subtitle_named_by_language_and_title()
      {
-        let (_dir, sessions) = started_with(subtitle_session(Duration::ZERO).await).await;
+        let (_dir, outputs) = started_with(subtitle_session(Duration::ZERO).await).await;
 
-        let main = read(&sessions, "main.m3u8").await;
+        let main = read(&outputs, "main.m3u8").await;
 
         assert_eq!(
             main,
@@ -798,10 +798,10 @@ mod tests {
         file
     }
 
-    async fn read_all(sessions: &HlsSessions, names: impl Iterator<Item = String>) -> Vec<String> {
+    async fn read_all(outputs: &HlsOutputs, names: impl Iterator<Item = String>) -> Vec<String> {
         let mut files = Vec::new();
         for name in names {
-            files.push(read(sessions, &name).await);
+            files.push(read(outputs, &name).await);
         }
         files
     }
@@ -863,10 +863,10 @@ mod tests {
                 .with(LevelFilter::INFO)
                 .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("selfless"))),
         );
-        let (_dir, sessions) = started_with(subtitle_session(Duration::ZERO).await).await;
+        let (_dir, outputs) = started_with(subtitle_session(Duration::ZERO).await).await;
 
-        let playlists = read_all(&sessions, (2..4).map(|x| format!("subtitles-{x}.m3u8"))).await;
-        let files = read_all(&sessions, (2..4).map(|x| format!("subtitles-{x}.vtt"))).await;
+        let playlists = read_all(&outputs, (2..4).map(|x| format!("subtitles-{x}.m3u8"))).await;
+        let files = read_all(&outputs, (2..4).map(|x| format!("subtitles-{x}.vtt"))).await;
 
         assert_eq!(
             playlists,
@@ -894,7 +894,7 @@ mod tests {
                 webvtt(&["00:10.000 --> 00:12.000\nEn haut"]),
             ]
         );
-        assert_eq!(get(&sessions, "subtitles-4.vtt").await, None);
+        assert_eq!(get(&outputs, "subtitles-4.vtt").await, None);
         let conversions = exporter
             .get_finished_spans()
             .unwrap()
@@ -921,15 +921,15 @@ mod tests {
                 .with(LevelFilter::INFO)
                 .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("selfless"))),
         );
-        let (dir, sessions) = started(Duration::from_secs(22)).await;
+        let (dir, outputs) = started(Duration::from_secs(22)).await;
         let folder = dir.path().join("segments").join(PLAYBACK_ID.to_string());
 
-        let last = get(&sessions, "5.m4s").await;
+        let last = get(&outputs, "5.m4s").await;
         let before_restart = folder.join("0.m4s").exists();
-        let first = get(&sessions, "0.m4s")
+        let first = get(&outputs, "0.m4s")
             .await
             .is_some_and(|x| Path::new(&x).exists());
-        sessions.end_hls_session().call(PLAYBACK_ID).await;
+        outputs.end_hls_output().call(PLAYBACK_ID).await;
 
         assert!(last.is_some());
         assert!(!before_restart);
@@ -953,15 +953,15 @@ mod tests {
 
     #[tokio::test]
     async fn ending_a_session_stops_ffmpeg_and_deletes_its_folder() {
-        let (dir, sessions) = started(Duration::ZERO).await;
+        let (dir, outputs) = started(Duration::ZERO).await;
         let folder = dir.path().join("segments").join(PLAYBACK_ID.to_string());
         let existed = folder.exists();
 
-        sessions.end_hls_session().call(PLAYBACK_ID).await;
+        outputs.end_hls_output().call(PLAYBACK_ID).await;
 
         assert!(existed);
         assert!(!folder.exists());
-        assert_eq!(get(&sessions, "main.m3u8").await, None);
+        assert_eq!(get(&outputs, "main.m3u8").await, None);
     }
 
     #[tokio::test]
@@ -972,7 +972,7 @@ mod tests {
         std::fs::write(segments_dir.join("an old playback/0.m4s"), b"old").unwrap();
         std::fs::write(segments_dir.join("stray file"), b"old").unwrap();
 
-        HlsSessions::new(segments_dir.clone()).await.unwrap();
+        HlsOutputs::new(segments_dir.clone()).await.unwrap();
 
         assert_eq!(std::fs::read_dir(&segments_dir).unwrap().count(), 0);
     }

@@ -1260,7 +1260,7 @@ mod tests {
 
     fn audio_targets(app: &TestApp) -> Vec<(i64, Option<AudioTranscode>, bool)> {
         app.hls
-            .sessions()
+            .outputs()
             .last()
             .unwrap()
             .audio
@@ -1662,7 +1662,7 @@ mod tests {
             track_id(&playback, "audioTracks", 0)
         );
         assert_eq!(playback["subtitleTrackId"], Value::Null);
-        assert_eq!(app.hls.sessions().last().unwrap().selected_subtitle, None);
+        assert_eq!(app.hls.outputs().last().unwrap().selected_subtitle, None);
     }
 
     #[tokio::test]
@@ -1728,10 +1728,7 @@ mod tests {
         let (_, playback) = start(&server, &token, media_file_id).await;
 
         assert_eq!(playback["subtitleTrackId"], json!(ids[3]));
-        assert_eq!(
-            app.hls.sessions().last().unwrap().selected_subtitle,
-            Some(2)
-        );
+        assert_eq!(app.hls.outputs().last().unwrap().selected_subtitle, Some(2));
     }
 
     #[tokio::test]

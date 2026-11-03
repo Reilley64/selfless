@@ -20,7 +20,7 @@ use crate::metrics::SELFLESS_PLAYBACK_DECISIONS;
 use crate::playback::resource;
 use crate::ports;
 use crate::ports::HlsAudioTrack;
-use crate::ports::HlsSession;
+use crate::ports::HlsOutput;
 use crate::ports::ReadKeyframes;
 use crate::ports::persistence::DbScope;
 use crate::telemetry::attribute_values::client_kind;
@@ -74,8 +74,8 @@ pub async fn call(
         clock,
         url_signer,
         read_keyframes,
-        start_hls_session,
-        end_hls_session,
+        start_hls_output,
+        end_hls_output,
     } = dependencies.into();
     let Some(media_file) = db_context
         .media_files()
@@ -295,7 +295,7 @@ pub async fn call(
         .map_err(Error::caused_by)?;
     transaction.commit().await.map_err(Error::caused_by)?;
     for id in ended {
-        end_hls_session.call(id).await;
+        end_hls_output.call(id).await;
     }
     if let Some((video, duration, keyframes, video_transcode)) = hls {
         let selected_subtitle = subtitle_streams
@@ -304,8 +304,8 @@ pub async fn call(
             .map(|x| x.id)
             .chain(subtitle_files.iter().map(|x| x.id))
             .position(|x| Some(x) == subtitle_track_id);
-        start_hls_session
-            .call(HlsSession {
+        start_hls_output
+            .call(HlsOutput {
                 playback_id: playback.id,
                 path: media_file.path.clone(),
                 duration,

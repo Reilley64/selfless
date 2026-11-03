@@ -16,14 +16,14 @@ use tracing::Instrument;
 use tracing::field;
 
 mod hls;
-mod hls_sessions;
+mod hls_outputs;
 mod keyframes;
 mod matroska;
 mod mp4;
 mod rendition;
 mod subtitles;
 
-pub use hls_sessions::HlsSessions;
+pub use hls_outputs::HlsOutputs;
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(120);
 
