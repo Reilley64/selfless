@@ -2716,6 +2716,7 @@ dependencies = [
  "jiff",
  "quick-xml",
  "serde",
+ "tempfile",
  "tokio",
 ]
 
@@ -3591,7 +3592,9 @@ dependencies = [
  "serde",
  "serde_json",
  "servarr",
+ "tokio",
  "url",
+ "wiremock",
 ]
 
 [[package]]
@@ -4255,8 +4258,10 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "tokio",
  "tracing",
  "url",
+ "wiremock",
 ]
 
 [[package]]
@@ -4465,7 +4470,9 @@ dependencies = [
  "serde",
  "serde_json",
  "servarr",
+ "tokio",
  "url",
+ "wiremock",
 ]
 
 [[package]]

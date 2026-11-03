@@ -117,3 +117,173 @@ impl From<Movie> for RadarrMovie {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::RadarrSettings;
+    use jiff::Timestamp;
+    use wiremock::Mock;
+    use wiremock::MockServer;
+    use wiremock::ResponseTemplate;
+    use wiremock::matchers::method;
+    use wiremock::matchers::path;
+
+    const API_KEY: &str = "radarr-api-key";
+
+    async fn radarr(url_path: &str, response: ResponseTemplate) -> (MockServer, RadarrSettings) {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path(url_path))
+            .respond_with(response)
+            .mount(&server)
+            .await;
+        let settings = RadarrSettings {
+            url: Some(server.uri().parse().unwrap()),
+            api_key: Some(API_KEY.to_owned()),
+            webhook_password: None,
+        };
+        (server, settings)
+    }
+
+    fn json(status: u16, body: &str) -> ResponseTemplate {
+        ResponseTemplate::new(status).set_body_raw(body.to_owned(), "application/json")
+    }
+
+    #[tokio::test]
+    async fn get_movie_maps_radarrs_movie_and_its_file() {
+        let (_server, settings) = radarr(
+            "/api/v3/movie/42",
+            json(
+                200,
+                include_str!("../../../test/fixtures/radarr/api/movie.json"),
+            ),
+        )
+        .await;
+
+        let movie = settings
+            .get_movie()
+            .unwrap()
+            .call(42)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(movie.radarr_id, 42);
+        assert_eq!(movie.tmdb_id, 329865);
+        assert_eq!(movie.title, "Arrival");
+        assert_eq!(movie.year, 2016);
+        assert_eq!(movie.genres, ["Drama", "Science Fiction", "Mystery"]);
+        assert_eq!(
+            movie.overview.as_deref(),
+            Some(
+                "Taking place after alien crafts land around the world, an expert linguist is \
+                 recruited by the military to determine whether they come in peace or are a threat."
+            )
+        );
+        let movie_file = movie.movie_file.unwrap();
+        assert_eq!(
+            movie_file.path,
+            "/mnt/media/Movies/Arrival (2016)/Arrival (2016) Bluray-1080p.mkv"
+        );
+        assert_eq!(
+            movie_file.date_added,
+            "2026-10-29T10:00:00Z".parse::<Timestamp>().unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn a_movie_without_a_file_has_no_movie_file() {
+        let (_server, settings) = radarr(
+            "/api/v3/movie/42",
+            json(
+                200,
+                include_str!("../../../test/fixtures/radarr/api/movie-without-file.json"),
+            ),
+        )
+        .await;
+
+        let movie = settings
+            .get_movie()
+            .unwrap()
+            .call(42)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert!(movie.movie_file.is_none());
+    }
+
+    #[tokio::test]
+    async fn a_movie_radarr_does_not_have_is_none() {
+        let (_server, settings) = radarr(
+            "/api/v3/movie/42",
+            json(
+                404,
+                include_str!("../../../test/fixtures/radarr/api/movie-not-found.json"),
+            ),
+        )
+        .await;
+
+        let movie = settings.get_movie().unwrap().call(42).await.unwrap();
+
+        assert!(movie.is_none());
+    }
+
+    #[tokio::test]
+    async fn a_server_error_from_radarr_is_an_error() {
+        let (_server, settings) = radarr("/api/v3/movie/42", ResponseTemplate::new(500)).await;
+
+        let movie = settings.get_movie().unwrap().call(42).await;
+
+        assert!(movie.is_err());
+    }
+
+    #[tokio::test]
+    async fn requests_send_the_api_key() {
+        let (server, settings) = radarr(
+            "/api/v3/movie/42",
+            json(
+                200,
+                include_str!("../../../test/fixtures/radarr/api/movie.json"),
+            ),
+        )
+        .await;
+
+        settings.get_movie().unwrap().call(42).await.unwrap();
+
+        let requests = server.received_requests().await.unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].headers["X-Api-Key"], API_KEY);
+    }
+
+    #[tokio::test]
+    async fn list_movies_maps_every_listed_movie() {
+        let (_server, settings) = radarr(
+            "/api/v3/movie",
+            json(
+                200,
+                include_str!("../../../test/fixtures/radarr/api/movies.json"),
+            ),
+        )
+        .await;
+
+        let movies = settings.list_movies().unwrap().call().await.unwrap();
+
+        assert_eq!(
+            movies
+                .iter()
+                .map(|x| (x.radarr_id, x.tmdb_id, x.title.as_str(), x.year))
+                .collect::<Vec<_>>(),
+            [
+                (42, 329865, "Arrival", 2016),
+                (43, 438631, "Dune", 2021),
+                (44, 335984, "Blade Runner 2049", 2017),
+                (45, 273481, "Sicario", 2015),
+            ]
+        );
+        assert_eq!(
+            movies[1].movie_file.as_ref().unwrap().path,
+            "/mnt/media/Movies/Dune (2021)/Dune (2021) Bluray-2160p.mkv"
+        );
+    }
+}

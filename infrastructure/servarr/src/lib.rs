@@ -72,7 +72,7 @@ impl Api {
             url.full = url.as_str(),
             url.template = template,
             server.address = url.host_str(),
-            server.port = url.port_or_known_default(),
+            server.port = url.port_or_known_default().map(i64::from),
             http.response.status_code = field::Empty,
             error.type = field::Empty,
         );
@@ -83,7 +83,10 @@ impl Api {
                 .header("X-Api-Key", &self.api_key)
                 .send()
                 .await?;
-            span.record("http.response.status_code", response.status().as_u16());
+            span.record(
+                "http.response.status_code",
+                i64::from(response.status().as_u16()),
+            );
             response.error_for_status()?.json::<T>().await
         }
         .instrument(span.clone())
@@ -97,5 +100,60 @@ impl Api {
                     .map_or_else(|| "_OTHER".to_owned(), |x| x.as_u16().to_string()),
             );
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Api;
+    use wiremock::Mock;
+    use wiremock::MockServer;
+    use wiremock::ResponseTemplate;
+    use wiremock::matchers::method;
+    use wiremock::matchers::path;
+
+    const METADATA: &str = include_str!("../../../test/fixtures/radarr/api/metadata.json");
+
+    async fn serve_metadata(response: ResponseTemplate) -> (MockServer, Api) {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v3/metadata"))
+            .respond_with(response)
+            .mount(&server)
+            .await;
+        let api = Api::new(server.uri().parse().unwrap(), "api-key".to_owned());
+        (server, api)
+    }
+
+    #[tokio::test]
+    async fn kodi_metadata_is_on_only_for_an_enabled_kodi_consumer() {
+        let (_server, api) =
+            serve_metadata(ResponseTemplate::new(200).set_body_raw(METADATA, "application/json"))
+                .await;
+        assert!(api.kodi_metadata().await.unwrap());
+
+        let (_server, api) = serve_metadata(ResponseTemplate::new(200).set_body_raw(
+            r#"[
+                {"implementation": "MediaBrowserMetadata", "enable": true},
+                {"implementation": "XbmcMetadata", "enable": false}
+            ]"#,
+            "application/json",
+        ))
+        .await;
+        assert!(!api.kodi_metadata().await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn a_failed_call_names_the_response_status() {
+        for status in [401, 500] {
+            let (_server, api) = serve_metadata(ResponseTemplate::new(status)).await;
+
+            let error = api.kodi_metadata().await.unwrap_err();
+
+            assert!(
+                error.to_string().contains(&status.to_string()),
+                "the error names {status}: {error}"
+            );
+        }
     }
 }
