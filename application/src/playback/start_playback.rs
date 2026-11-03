@@ -16,6 +16,9 @@ use crate::attributes::SELFLESS_PLAYBACK_METHOD;
 use crate::attributes::SELFLESS_PLAYBACK_REASON_KINDS;
 use crate::metrics::SELFLESS_PLAYBACK_DECISIONS;
 use crate::playback::resource;
+use crate::ports;
+use crate::ports::HlsSession;
+use crate::ports::ReadKeyframes;
 use crate::ports::persistence::DbScope;
 use crate::telemetry::attribute_values::client_kind;
 use crate::telemetry::attribute_values::play_method;
@@ -23,8 +26,11 @@ use crate::telemetry::attribute_values::reason_kinds;
 use domain::AudioStream;
 use domain::CapabilityProfile;
 use domain::ClientKind;
+use domain::KeyframeIndex;
 use domain::MediaFile;
 use domain::PlayMethod;
+use domain::PlayReason;
+use domain::usable_keyframe_index;
 use opentelemetry::KeyValue;
 use opentelemetry::global;
 use opentelemetry::metrics::Counter;
@@ -42,6 +48,7 @@ static DECISIONS: LazyLock<Counter<u64>> = LazyLock::new(|| {
         .build()
 });
 
+#[allow(clippy::too_many_arguments)]
 pub async fn call(
     dependencies: impl Into<Dependencies>,
     user_id: Uuid,
@@ -50,11 +57,15 @@ pub async fn call(
     media_file_id: Uuid,
     start_position: f64,
     profile: &CapabilityProfile,
+    force_hls: bool,
 ) -> Result<Output, Error> {
     let Dependencies {
         mut db_context,
         clock,
         url_signer,
+        read_keyframes,
+        start_hls_session,
+        end_hls_session,
     } = dependencies.into();
     let Some(media_file) = db_context
         .media_files()
@@ -63,6 +74,7 @@ pub async fn call(
         .include(MediaFile::fields().audio_streams())
         .include(MediaFile::fields().subtitle_streams())
         .include(MediaFile::fields().subtitle_files())
+        .include(MediaFile::fields().keyframe_index())
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?
@@ -102,24 +114,47 @@ pub async fn call(
         .duration_ms
         .and_then(|x| u64::try_from(x).ok())
         .map(Duration::from_millis);
-    let video_streams = media_file.video_streams.into_inner();
-    let mut audio_streams = media_file.audio_streams.into_inner();
-    let mut subtitle_streams = media_file.subtitle_streams.into_inner();
-    let mut subtitle_files = media_file.subtitle_files.into_inner();
-    let reasons = profile.direct_play_reasons(
-        &container,
-        video_streams.iter().min_by_key(|x| x.index),
-        AudioStream::selected_by_default(&audio_streams),
-    );
+    let video = media_file
+        .video_streams
+        .get()
+        .iter()
+        .min_by_key(|x| x.index);
+    let audio = AudioStream::selected_by_default(media_file.audio_streams.get());
+    let mut reasons = profile.direct_play_reasons(&container, video, audio);
+    if force_hls && reasons.is_empty() {
+        reasons.push(PlayReason::ForcedHls);
+    }
+    let remux = match (video, duration) {
+        (Some(video), Some(duration))
+            if !reasons.is_empty() && reasons.iter().all(PlayReason::allows_remux) =>
+        {
+            let keyframes = keyframes(&mut db_context, &read_keyframes, &media_file).await?;
+            if usable_keyframe_index(&keyframes) {
+                Some((video, duration, keyframes))
+            } else {
+                reasons.push(PlayReason::NoKeyframeIndex);
+                None
+            }
+        }
+        _ => None,
+    };
     if !reasons.is_empty() {
         Span::current().set_attribute(SELFLESS_PLAYBACK_REASON_KINDS, reason_kinds(&reasons));
-        return Ok(Output::NeedsHls);
+        if remux.is_none() {
+            return Ok(Output::NeedsTranscode);
+        }
     }
+    let method = if remux.is_some() {
+        PlayMethod::Remux
+    } else {
+        PlayMethod::DirectPlay
+    };
     let episodes = player_episodes(&mut db_context, episodes)
         .await
         .map_err(Error::caused_by)?;
     let now = clock.call();
     let mut transaction = db_context.transaction().await.map_err(Error::caused_by)?;
+    let mut ended = Vec::new();
     for mut open in transaction
         .playbacks()
         .filter(
@@ -137,6 +172,7 @@ pub async fn call(
             .exec(transaction.executor_mut())
             .await
             .map_err(Error::caused_by)?;
+        ended.push(open.id);
     }
     let playback = transaction
         .playbacks()
@@ -144,7 +180,7 @@ pub async fn call(
         .user_id(user_id)
         .session_id(session_id)
         .media_file_id(media_file_id)
-        .method(PlayMethod::DirectPlay)
+        .method(method)
         .position(start_position)
         .paused(false)
         .started_at(now)
@@ -153,6 +189,38 @@ pub async fn call(
         .await
         .map_err(Error::caused_by)?;
     transaction.commit().await.map_err(Error::caused_by)?;
+    for id in ended {
+        end_hls_session.call(id).await;
+    }
+    if let Some((video, duration, keyframes)) = remux {
+        start_hls_session
+            .call(HlsSession {
+                playback_id: playback.id,
+                path: media_file.path.clone(),
+                duration,
+                keyframes,
+                video: ports::VideoStream {
+                    index: video.index,
+                    codec: video.codec.clone(),
+                    profile: video.profile.clone(),
+                    width: video.width,
+                    height: video.height,
+                    frame_rate: video.frame_rate,
+                    hdr_type: video.hdr_type,
+                },
+                audio: audio.map(|x| ports::AudioStream {
+                    index: x.index,
+                    codec: x.codec.clone(),
+                    language: x.language.clone(),
+                    channels: x.channels,
+                    title: x.title.clone(),
+                    default: x.is_default,
+                }),
+                start_position: Duration::try_from_secs_f64(start_position).unwrap_or_default(),
+            })
+            .await
+            .map_err(Error::caused_by)?;
+    }
     Span::current().set_attribute(SELFLESS_PLAYBACK_METHOD, play_method(playback.method));
     let mut decision = vec![
         KeyValue::new(SELFLESS_PLAYBACK_METHOD, play_method(playback.method)),
@@ -165,6 +233,9 @@ pub async fn call(
         ));
     }
     DECISIONS.add(1, &decision);
+    let mut audio_streams = media_file.audio_streams.into_inner();
+    let mut subtitle_streams = media_file.subtitle_streams.into_inner();
+    let mut subtitle_files = media_file.subtitle_files.into_inner();
     audio_streams.sort_by_key(|x| x.index);
     subtitle_streams.sort_by_key(|x| x.index);
     subtitle_files.sort_by(|a, b| a.path.cmp(&b.path));
@@ -219,6 +290,40 @@ pub async fn call(
             }))
             .collect(),
     })))
+}
+
+async fn keyframes(
+    db_context: &mut impl DbScope,
+    read_keyframes: &ReadKeyframes,
+    media_file: &MediaFile,
+) -> Result<Vec<Duration>, Error> {
+    if let Some(index) = media_file
+        .keyframe_index
+        .get()
+        .as_ref()
+        .filter(|x| x.is_current_for(media_file))
+    {
+        return Ok(index.keyframes());
+    }
+    let keyframes = match read_keyframes.call(&media_file.path).await {
+        Ok(keyframes) => keyframes,
+        Err(error) => {
+            tracing::warn!(
+                error = &error as &dyn std::error::Error,
+                file.path = media_file.path,
+                "failed to read the keyframes of a media file"
+            );
+            return Ok(Vec::new());
+        }
+    };
+    KeyframeIndex::upsert_by_media_file_id(media_file.id)
+        .size(media_file.size)
+        .modified_at(media_file.modified_at)
+        .keyframes_ns(KeyframeIndex::nanoseconds(&keyframes))
+        .exec(db_context.executor_mut())
+        .await
+        .map_err(Error::caused_by)?;
+    Ok(keyframes)
 }
 
 async fn player_episodes(

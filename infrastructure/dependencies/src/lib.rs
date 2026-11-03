@@ -8,8 +8,10 @@ use application::ports::CheckRadarrKodiMetadata;
 use application::ports::CheckSonarrKodiMetadata;
 use application::ports::Clock;
 use application::ports::DeleteCachedImage;
+use application::ports::EndHlsSession;
 use application::ports::ExportTelemetry;
 use application::ports::FindMediaFile;
+use application::ports::GetHlsFile;
 use application::ports::GetRadarrMovie;
 use application::ports::GetSonarrEpisodes;
 use application::ports::GetSonarrShow;
@@ -20,6 +22,7 @@ use application::ports::ListSubtitleFiles;
 use application::ports::ReadCachedImage;
 use application::ports::ReadEpisodeFolder;
 use application::ports::ReadEpisodeNfo;
+use application::ports::ReadKeyframes;
 use application::ports::ReadMovieFolder;
 use application::ports::ReadMovieNfo;
 use application::ports::ReadRadarrWebhook;
@@ -29,6 +32,7 @@ use application::ports::ReadSonarrWebhook;
 use application::ports::ReadWebhookEventType;
 use application::ports::SaveCachedImage;
 use application::ports::SendEmail;
+use application::ports::StartHlsSession;
 use application::ports::TryAcquireLock;
 use application::ports::persistence::DbContext;
 use application::url_signer::UrlSigner;
@@ -45,8 +49,10 @@ pub struct AppState {
     pub clock: Clock,
     pub db_context: DbContext,
     pub delete_cached_image: DeleteCachedImage,
+    pub end_hls_session: EndHlsSession,
     pub export_telemetry: ExportTelemetry,
     pub find_media_file: FindMediaFile,
+    pub get_hls_file: GetHlsFile,
     pub get_radarr_movie: GetRadarrMovie,
     pub get_sonarr_episodes: GetSonarrEpisodes,
     pub get_sonarr_show: GetSonarrShow,
@@ -58,6 +64,7 @@ pub struct AppState {
     pub read_cached_image: ReadCachedImage,
     pub read_episode_folder: ReadEpisodeFolder,
     pub read_episode_nfo: ReadEpisodeNfo,
+    pub read_keyframes: ReadKeyframes,
     pub read_movie_folder: ReadMovieFolder,
     pub read_movie_nfo: ReadMovieNfo,
     pub read_radarr_webhook: ReadRadarrWebhook,
@@ -70,6 +77,7 @@ pub struct AppState {
     pub save_cached_image: SaveCachedImage,
     pub send_email: SendEmail,
     pub source_health: SourceHealth,
+    pub start_hls_session: StartHlsSession,
     pub try_acquire_lock: TryAcquireLock,
     pub url_signer: UrlSigner,
     pub webhook_passwords: WebhookPasswords,

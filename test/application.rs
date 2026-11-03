@@ -7,6 +7,7 @@ use crate::ports::AcquireLock;
 use crate::ports::CachedImage;
 use crate::ports::DeleteCachedImage;
 use crate::ports::EmailRefused;
+use crate::ports::EndHlsSession;
 use crate::ports::EpisodeFolder;
 use crate::ports::FindMediaFile;
 use crate::ports::FoundFile;
@@ -117,6 +118,25 @@ impl RecordingLock {
 
     pub(crate) fn keys(&self) -> Vec<String> {
         self.keys.lock().unwrap().clone()
+    }
+}
+
+#[derive(Clone, Default)]
+pub(crate) struct EndedHlsSessions {
+    playback_ids: Arc<Mutex<Vec<Uuid>>>,
+}
+
+impl EndedHlsSessions {
+    pub(crate) fn port(&self) -> EndHlsSession {
+        let playback_ids = self.playback_ids.clone();
+        EndHlsSession::new(move |playback_id| {
+            playback_ids.lock().unwrap().push(playback_id);
+            Box::pin(async {})
+        })
+    }
+
+    pub(crate) fn playback_ids(&self) -> Vec<Uuid> {
+        self.playback_ids.lock().unwrap().clone()
     }
 }
 

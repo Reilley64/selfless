@@ -8,7 +8,7 @@ pub enum Output {
     Playback(Box<Playback>),
     NotFound,
     UnreadableMediaFile,
-    NeedsHls,
+    NeedsTranscode,
 }
 
 #[derive(Debug)]

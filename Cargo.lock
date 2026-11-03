@@ -1499,11 +1499,18 @@ dependencies = [
  "application",
  "domain",
  "mp4-atom",
+ "ohno",
+ "opentelemetry",
+ "opentelemetry_sdk",
  "serde",
  "serde_json",
  "tempfile",
+ "test-fixtures",
  "tokio",
  "tracing",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
@@ -4407,6 +4414,7 @@ version = "0.1.0"
 dependencies = [
  "config",
  "email",
+ "ffmpeg",
  "images",
  "jiff",
  "ohno",
@@ -4865,7 +4873,9 @@ version = "0.1.0"
 dependencies = [
  "application",
  "infrastructure",
+ "tempfile",
  "test-fixtures",
+ "uuid",
 ]
 
 [[package]]

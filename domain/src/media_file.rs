@@ -1,5 +1,6 @@
 use crate::AudioStream;
 use crate::Episode;
+use crate::KeyframeIndex;
 use crate::Movie;
 use crate::SubtitleFile;
 use crate::SubtitleStream;
@@ -34,6 +35,8 @@ pub struct MediaFile {
     pub subtitle_files: toasty::Deferred<Vec<SubtitleFile>>,
     #[has_many]
     pub sync_problems: toasty::Deferred<Vec<SyncProblem>>,
+    #[has_one]
+    pub keyframe_index: toasty::Deferred<Option<KeyframeIndex>>,
 }
 
 impl MediaFile {
@@ -87,6 +90,7 @@ mod tests {
             subtitle_streams: Deferred::default(),
             subtitle_files: Deferred::default(),
             sync_problems: Deferred::default(),
+            keyframe_index: Deferred::default(),
         }
     }
 

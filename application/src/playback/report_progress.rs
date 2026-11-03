@@ -21,6 +21,7 @@ pub async fn call(
     let Dependencies {
         mut db_context,
         clock,
+        end_hls_session,
     } = dependencies.into();
     let Some(mut playback) = db_context
         .playbacks()
@@ -50,5 +51,8 @@ pub async fn call(
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?;
+    if stopped {
+        end_hls_session.call(playback_id).await;
+    }
     Ok(Output::Reported)
 }

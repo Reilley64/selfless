@@ -1,9 +1,10 @@
 use crate::problem::INVALID_SIGNATURE;
-use crate::problem::NEEDS_HLS;
+use crate::problem::NEEDS_TRANSCODE;
 use crate::problem::NOT_FOUND;
 use crate::problem::PLAYBACK_ENDED;
 use crate::problem::UNREADABLE_MEDIA_FILE;
 use crate::user_auth::CurrentSession;
+use application::playback::get_hls_file;
 use application::playback::get_playback_file;
 use application::playback::report_progress;
 use application::playback::start_playback;
@@ -13,6 +14,8 @@ use domain::HdrType;
 use domain::PlayMethod;
 use domain::PlayReason;
 use domain::VideoCodecSupport;
+use http::HeaderValue;
+use http::header::CONTENT_TYPE;
 use infrastructure::AppState;
 use serde::Deserialize;
 use serde::Serialize;
@@ -37,6 +40,8 @@ struct StartPlayback {
     media_file_id: Uuid,
     start_position: f64,
     profile: ProfileBody,
+    #[serde(default)]
+    force_hls: bool,
 }
 
 #[derive(Deserialize)]
@@ -138,7 +143,7 @@ enum MethodBody {
 #[derive(Serialize)]
 struct ReasonBody {
     kind: &'static str,
-    value: String,
+    value: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -187,22 +192,28 @@ struct SubtitleTrackBody {
 impl From<PlayReason> for ReasonBody {
     fn from(reason: PlayReason) -> Self {
         let (kind, value) = match reason {
-            PlayReason::Container(x) => ("container", x),
-            PlayReason::VideoCodec(x) => ("videoCodec", x),
-            PlayReason::VideoProfile(x) => ("videoProfile", x),
-            PlayReason::VideoSize { width, height } => ("videoSize", format!("{width}x{height}")),
+            PlayReason::Container(x) => ("container", Some(x)),
+            PlayReason::VideoCodec(x) => ("videoCodec", Some(x)),
+            PlayReason::VideoProfile(x) => ("videoProfile", Some(x)),
+            PlayReason::VideoSize { width, height } => {
+                ("videoSize", Some(format!("{width}x{height}")))
+            }
             PlayReason::VideoRange(x) => (
                 "videoRange",
-                match x {
-                    HdrType::Sdr => "sdr",
-                    HdrType::Hdr10 => "hdr10",
-                    HdrType::Hlg => "hlg",
-                    HdrType::DolbyVision => "dolbyVision",
-                }
-                .to_owned(),
+                Some(
+                    match x {
+                        HdrType::Sdr => "sdr",
+                        HdrType::Hdr10 => "hdr10",
+                        HdrType::Hlg => "hlg",
+                        HdrType::DolbyVision => "dolbyVision",
+                    }
+                    .to_owned(),
+                ),
             ),
-            PlayReason::AudioCodec(x) => ("audioCodec", x),
-            PlayReason::AudioChannels(x) => ("audioChannels", x.to_string()),
+            PlayReason::AudioCodec(x) => ("audioCodec", Some(x)),
+            PlayReason::AudioChannels(x) => ("audioChannels", Some(x.to_string())),
+            PlayReason::NoKeyframeIndex => ("noKeyframeIndex", None),
+            PlayReason::ForcedHls => ("forcedHls", None),
         };
         Self { kind, value }
     }
@@ -219,8 +230,13 @@ impl From<start_playback::Playback> for PlaybackBody {
             },
             reasons: playback.reasons.into_iter().map(ReasonBody::from).collect(),
             url: format!(
-                "/api/playbacks/{}/media/{}/v1/file",
-                playback.id, playback.signature
+                "/api/playbacks/{}/media/{}/v1/{}",
+                playback.id,
+                playback.signature,
+                match playback.method {
+                    PlayMethod::DirectPlay => "file",
+                    PlayMethod::Remux | PlayMethod::Transcode => "main.m3u8",
+                }
             ),
             duration: playback.duration.map(|x| x.as_secs_f64()),
             movie: playback.movie.map(|x| MovieBody {
@@ -285,6 +301,7 @@ pub(crate) async fn start(
         request.media_file_id,
         request.start_position,
         &request.profile.into(),
+        request.force_hls,
     )
     .await?
     {
@@ -293,7 +310,7 @@ pub(crate) async fn start(
         }
         start_playback::Output::NotFound => NOT_FOUND.into_response(cx),
         start_playback::Output::UnreadableMediaFile => UNREADABLE_MEDIA_FILE.into_response(cx),
-        start_playback::Output::NeedsHls => NEEDS_HLS.into_response(cx),
+        start_playback::Output::NeedsTranscode => NEEDS_TRANSCODE.into_response(cx),
     }
 }
 
@@ -306,6 +323,7 @@ struct ProgressReport {
 
 path_param!(playback_id: Uuid);
 path_param!(signature: String);
+path_param!(file_name: String);
 
 #[route(PUT "/api/(user)/playbacks/{playback_id}/progress/v1")]
 pub(crate) async fn progress(
@@ -353,15 +371,56 @@ pub(crate) async fn file(cx: &Cx) -> topcoat::Result<Response> {
     Ok(ServeFile::new(path).try_call(request).await?.map(Body::new))
 }
 
+#[route(GET "/api/(public)/playbacks/{playback_id}/media/{signature}/v1/{file_name}")]
+pub(crate) async fn hls_file(cx: &Cx) -> topcoat::Result<Response> {
+    let (Ok(playback_id), Ok(signature), Ok(file_name)) = (
+        path_param::<PlaybackId>(cx),
+        path_param::<Signature>(cx),
+        path_param::<FileName>(cx),
+    ) else {
+        return NOT_FOUND.into_response(cx);
+    };
+    let path = match get_hls_file::call(
+        app_context::<AppState>(cx),
+        *playback_id,
+        signature,
+        file_name,
+    )
+    .await?
+    {
+        get_hls_file::Output::File { path } => path,
+        get_hls_file::Output::NotFound => return NOT_FOUND.into_response(cx),
+        get_hls_file::Output::InvalidSignature => {
+            return INVALID_SIGNATURE.into_response(cx);
+        }
+    };
+    let content_type = match file_name.rsplit_once('.').map(|(_, x)| x) {
+        Some("m3u8") => "application/vnd.apple.mpegurl",
+        Some("m4s") => "video/iso.segment",
+        _ => "video/mp4",
+    };
+    let mut request = http::Request::new(());
+    *request.method_mut() = method(cx).clone();
+    *request.headers_mut() = headers(cx).clone();
+    let mut response = ServeFile::new(path).try_call(request).await?;
+    response
+        .headers_mut()
+        .insert(CONTENT_TYPE, HeaderValue::from_static(content_type));
+    Ok(response.map(Body::new))
+}
+
 #[cfg(test)]
 mod tests {
     use crate::test::add_show;
     use crate::test::movie;
     use crate::test::serve;
     use crate::test::signed_in_user;
+    use application::ports::ReadKeyframes;
     use application::ports::persistence::DbScope;
+    use domain::AudioStream;
     use domain::Episode;
     use domain::HdrType;
+    use domain::MediaFile;
     use domain::Season;
     use http::HeaderMap;
     use http::HeaderValue;
@@ -380,6 +439,12 @@ mod tests {
     use serde_json::Value;
     use serde_json::json;
     use std::path::PathBuf;
+    use std::sync::Arc;
+    use std::sync::atomic::AtomicUsize;
+    use std::sync::atomic::Ordering;
+    use std::time::Duration;
+    use test_app::MAIN_PLAYLIST;
+    use test_app::SEGMENT;
     use test_app::TestApp;
     use test_fixtures::TestServer;
     use tracing::level_filters::LevelFilter;
@@ -651,18 +716,182 @@ mod tests {
         );
     }
 
+    async fn start_with(
+        server: &TestServer,
+        token: &str,
+        media_file_id: Uuid,
+        force_hls: bool,
+    ) -> (StatusCode, Value) {
+        server
+            .request(
+                Method::POST,
+                "/api/playbacks/v1",
+                Some(token),
+                Some(json!({
+                    "mediaFileId": media_file_id,
+                    "startPosition": 0,
+                    "profile": browser_profile(),
+                    "forceHls": force_hls,
+                })),
+            )
+            .await
+    }
+
+    fn sibling(playback: &Value, file_name: &str) -> String {
+        let url = playback["url"].as_str().unwrap();
+        format!("{}/{file_name}", url.rsplit_once('/').unwrap().0)
+    }
+
+    fn playback_id(playback: &Value) -> Uuid {
+        playback["playbackId"].as_str().unwrap().parse().unwrap()
+    }
+
     #[tokio::test]
-    async fn a_file_that_needs_hls_returns_the_needs_hls_problem() {
+    async fn a_file_whose_container_alone_is_wrong_remuxes_to_hls_with_a_container_reason() {
         let app = TestApp::new().await;
         let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;
         let (media_file_id, _file) = add_media_file(&app, "mkv", Some("matroska,webm")).await;
         add_movie_playing(&app, media_file_id, true).await;
         let server = serve(&app).await;
 
-        let (status, problem) = start(&server, &token, media_file_id).await;
+        let (status, playback) = start(&server, &token, media_file_id).await;
+        let (main_status, main_headers, main) =
+            server.get_bytes(playback["url"].as_str().unwrap()).await;
+        let (segment_status, segment_headers, segment) =
+            server.get_bytes(&sibling(&playback, "0.m4s")).await;
 
-        assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
-        assert_eq!(problem["type"], "urn:selfless:problem:needs-hls");
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(playback["method"], "remux");
+        assert_eq!(
+            playback["reasons"],
+            json!([{ "kind": "container", "value": "mkv" }])
+        );
+        assert!(
+            playback["url"].as_str().unwrap().ends_with("/v1/main.m3u8"),
+            "{}",
+            playback["url"]
+        );
+        assert_eq!(main_status, StatusCode::OK);
+        assert_eq!(main_headers[CONTENT_TYPE], "application/vnd.apple.mpegurl");
+        assert_eq!(main, MAIN_PLAYLIST.as_bytes());
+        assert_eq!(segment_status, StatusCode::OK);
+        assert_eq!(segment_headers[CONTENT_TYPE], "video/iso.segment");
+        assert_eq!(segment, SEGMENT);
+    }
+
+    #[tokio::test]
+    async fn force_hls_remuxes_a_file_the_profile_plays_directly_with_a_forced_hls_reason() {
+        let app = TestApp::new().await;
+        let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;
+        let (media_file_id, _file) = add_media_file(&app, "mp4", Some(MP4)).await;
+        add_movie_playing(&app, media_file_id, true).await;
+        let server = serve(&app).await;
+
+        let (status, playback) = start_with(&server, &token, media_file_id, true).await;
+
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(playback["method"], "remux");
+        assert_eq!(
+            playback["reasons"],
+            json!([{ "kind": "forcedHls", "value": null }])
+        );
+        assert!(
+            app.hls
+                .folder(playback_id(&playback))
+                .join("main.m3u8")
+                .exists()
+        );
+    }
+
+    #[tokio::test]
+    async fn a_file_that_needs_a_transcode_returns_the_needs_transcode_problem() {
+        let mut app = TestApp::new().await;
+        app.state.read_keyframes = ReadKeyframes::new(|_| {
+            Box::pin(async { Ok(vec![Duration::ZERO, Duration::from_secs(30)]) })
+        });
+        let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;
+        let (sparse_keyframes, _sparse_file) =
+            add_media_file(&app, "mkv", Some("matroska,webm")).await;
+        add_movie_playing(&app, sparse_keyframes, true).await;
+        let (dts, _dts_file) = add_media_file(&app, "mp4", Some(MP4)).await;
+        add_movie_playing(&app, dts, true).await;
+        let mut db_context = app.state.db_context.clone();
+        AudioStream::filter_by_media_file_id(dts)
+            .update()
+            .codec("dts")
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap();
+        let server = serve(&app).await;
+
+        for media_file_id in [sparse_keyframes, dts] {
+            let (status, problem) = start(&server, &token, media_file_id).await;
+
+            assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
+            assert_eq!(problem["type"], "urn:selfless:problem:needs-transcode");
+        }
+    }
+
+    #[tokio::test]
+    async fn the_keyframes_are_read_on_the_first_remux_and_again_once_the_file_changes() {
+        let mut app = TestApp::new().await;
+        let reads = Arc::new(AtomicUsize::new(0));
+        let counted = reads.clone();
+        app.state.read_keyframes = ReadKeyframes::new(move |_| {
+            counted.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async { Ok(vec![Duration::ZERO, Duration::from_secs(6)]) })
+        });
+        let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;
+        let (media_file_id, _file) = add_media_file(&app, "mkv", Some("matroska,webm")).await;
+        add_movie_playing(&app, media_file_id, true).await;
+        let server = serve(&app).await;
+
+        start(&server, &token, media_file_id).await;
+        start(&server, &token, media_file_id).await;
+        let before_change = reads.load(Ordering::SeqCst);
+        let mut db_context = app.state.db_context.clone();
+        MediaFile::filter_by_id(media_file_id)
+            .update()
+            .size(Some(11))
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap();
+        let (status, playback) = start(&server, &token, media_file_id).await;
+
+        assert_eq!(before_change, 1);
+        assert_eq!(reads.load(Ordering::SeqCst), 2);
+        assert_eq!(
+            (status, &playback["method"]),
+            (StatusCode::CREATED, &json!("remux"))
+        );
+    }
+
+    #[tokio::test]
+    async fn ending_an_hls_playback_deletes_its_segments_and_its_urls_return_404() {
+        let app = TestApp::new().await;
+        let (_, token) = signed_in_user(&app, NAME, PASSWORD).await;
+        let (media_file_id, _file) = add_media_file(&app, "mkv", Some("matroska,webm")).await;
+        add_movie_playing(&app, media_file_id, true).await;
+        let server = serve(&app).await;
+        let (_, stopped) = start(&server, &token, media_file_id).await;
+        report(&server, &token, &stopped, true).await;
+        let (_, replaced) = start(&server, &token, media_file_id).await;
+        let (_, current) = start(&server, &token, media_file_id).await;
+
+        for playback in [&stopped, &replaced] {
+            for file_name in ["main.m3u8", "0.m4s"] {
+                let (status, _, problem) = server.get_bytes(&sibling(playback, file_name)).await;
+
+                assert_eq!(status, StatusCode::NOT_FOUND, "{file_name}");
+                let problem = serde_json::from_slice::<Value>(&problem).unwrap();
+                assert_eq!(problem["type"], "urn:selfless:problem:not-found");
+            }
+            assert!(!app.hls.folder(playback_id(playback)).exists());
+        }
+        assert_eq!(
+            server.get_bytes(&sibling(&current, "0.m4s")).await.0,
+            StatusCode::OK
+        );
     }
 
     #[tokio::test]
@@ -710,7 +939,7 @@ mod tests {
             [
                 (Some(OtelValue::from("directPlay")), None),
                 (
-                    None,
+                    Some(OtelValue::from("remux")),
                     Some(OtelValue::Array(Array::String(vec!["container".into()])))
                 ),
             ]
@@ -899,6 +1128,7 @@ mod tests {
         for url in [
             first["url"].as_str().unwrap().replace(first_id, second_id),
             format!("/api/playbacks/{first_id}/media/not-the-signature/v1/file"),
+            format!("/api/playbacks/{first_id}/media/not-the-signature/v1/main.m3u8"),
         ] {
             let (status, _, problem) = server.get_bytes(&url).await;
 

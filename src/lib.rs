@@ -50,6 +50,7 @@ pub async fn start(
     let sonarr_api = settings.sonarr.api(client)?;
     let url_signer = UrlSigner::new(settings.signed_urls.key()?.as_bytes());
     let image_cache_dir = settings.images.cache_dir()?;
+    let hls_sessions = ffmpeg::HlsSessions::new(settings.playback.segments_dir()?).await?;
     let db = persistence::connect(&settings.database).await?;
     persistence::migrate(&db).await?;
     let locks = locking::Locks::default();
@@ -67,8 +68,10 @@ pub async fn start(
         .clock(|_| clock.clone())
         .db_context(|_| DbContext::new(db.clone(), settings.database.location()))
         .delete_cached_image(|_| images::delete_cached_image(image_cache_dir.clone()))
+        .end_hls_session(|_| hls_sessions.end_hls_session())
         .export_telemetry_try(|_| telemetry::export_telemetry(&settings.otlp))?
         .find_media_file(|_| media_folder::find_media_file())
+        .get_hls_file(|_| hls_sessions.get_hls_file())
         .get_radarr_movie(|_| radarr::get_movie(radarr_api.clone()))
         .get_sonarr_episodes(|_| sonarr::get_episodes(sonarr_api.clone()))
         .get_sonarr_show(|_| sonarr::get_show(sonarr_api.clone()))
@@ -80,6 +83,7 @@ pub async fn start(
         .read_cached_image(|_| images::read_cached_image(image_cache_dir.clone()))
         .read_episode_folder(|_| media_folder::read_episode_folder())
         .read_episode_nfo(|_| media_folder::read_episode_nfo())
+        .read_keyframes(|_| ffmpeg::read_keyframes())
         .read_movie_folder(|_| media_folder::read_movie_folder())
         .read_movie_nfo(|_| media_folder::read_movie_nfo())
         .read_radarr_webhook(|_| radarr::read_webhook())
@@ -92,6 +96,7 @@ pub async fn start(
         .save_cached_image(|_| images::save_cached_image(image_cache_dir.clone()))
         .send_email(|_| send_email.clone())
         .source_health(|_| SourceHealth::default())
+        .start_hls_session(|_| hls_sessions.start_hls_session())
         .try_acquire_lock(|_| locks.try_acquire_lock())
         .url_signer(|_| url_signer.clone())
         .webhook_passwords(|_| webhook_passwords.clone())

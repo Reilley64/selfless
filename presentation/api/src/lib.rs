@@ -67,6 +67,7 @@ pub fn router(
         .route(routes::api::playbacks::v1::start)
         .route(routes::api::playbacks::v1::progress)
         .route(routes::api::playbacks::v1::file)
+        .route(routes::api::playbacks::v1::hls_file)
         .route(routes::api::invites::v1::accept)
         .route(routes::api::telemetry::v1::traces)
         .route(routes::api::telemetry::v1::metrics)

@@ -105,9 +105,9 @@ pub(crate) const UNREADABLE_MEDIA_FILE: Problem = Problem {
     status: StatusCode::UNPROCESSABLE_ENTITY,
 };
 
-pub(crate) const NEEDS_HLS: Problem = Problem {
-    problem_type: "urn:selfless:problem:needs-hls",
-    title: "The media file needs HLS, which the server can't serve yet.",
+pub(crate) const NEEDS_TRANSCODE: Problem = Problem {
+    problem_type: "urn:selfless:problem:needs-transcode",
+    title: "The media file needs a transcode, which the server can't do yet.",
     status: StatusCode::NOT_IMPLEMENTED,
 };
 

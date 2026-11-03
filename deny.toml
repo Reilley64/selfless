@@ -11,7 +11,7 @@ deny = [
     { name = "application", wrappers = ["selfless", "infrastructure", "email", "ffmpeg", "images", "locking", "media-folder", "persistence", "radarr", "servarr", "sonarr", "telemetry", "api", "admin", "webhooks", "workers"] },
 
     { name = "email", wrappers = ["selfless", "settings"] },
-    { name = "ffmpeg", wrappers = ["selfless"] },
+    { name = "ffmpeg", wrappers = ["selfless", "settings"] },
     { name = "images", wrappers = ["selfless", "settings"] },
     { name = "locking", wrappers = ["selfless"] },
     { name = "media-folder", wrappers = ["selfless"] },
