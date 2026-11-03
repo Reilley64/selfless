@@ -2,4 +2,5 @@
 pub enum Output {
     Reported,
     NotFound,
+    Ended,
 }

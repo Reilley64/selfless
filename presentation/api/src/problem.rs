@@ -93,6 +93,12 @@ pub(crate) const NOT_FOUND: Problem = Problem {
     status: StatusCode::NOT_FOUND,
 };
 
+pub(crate) const PLAYBACK_ENDED: Problem = Problem {
+    problem_type: "urn:selfless:problem:playback-ended",
+    title: "The playback has ended.",
+    status: StatusCode::NOT_FOUND,
+};
+
 pub(crate) const UNREADABLE_MEDIA_FILE: Problem = Problem {
     problem_type: "urn:selfless:problem:unreadable-media-file",
     title: "selfless can't read this media file.",
