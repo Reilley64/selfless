@@ -41,7 +41,7 @@ struct ConsumeQueueError;
 enum Claim {
     Empty,
     Delivered,
-    Failed(Uuid),
+    Failed,
 }
 
 pub(crate) async fn consume_queue<T, F, E>(
@@ -59,18 +59,7 @@ pub(crate) async fn consume_queue<T, F, E>(
         let pause = match claim(&mut db_context, table, load, &handle).await {
             Ok(Claim::Empty) => pauses.idle,
             Ok(Claim::Delivered) => Duration::ZERO,
-            Ok(Claim::Failed(id)) => {
-                if let Err(error) = toasty::sql::statement(format!(
-                    "UPDATE {table} SET updated_at = statement_timestamp() WHERE id = $1"
-                ))
-                .bind(id)
-                .exec(db_context.executor_mut())
-                .await
-                {
-                    tracing::error!(error = &error as &dyn Error, "failed to consume a queue");
-                }
-                pauses.after_failure
-            }
+            Ok(Claim::Failed) => pauses.after_failure,
             Err(error) => {
                 tracing::error!(error = &error as &dyn Error, "failed to consume a queue");
                 pauses.after_failure
@@ -177,14 +166,27 @@ where
         };
         record_failure(&Span::current(), error_type);
         transaction.rollback().await?;
-        Ok(Claim::Failed(id))
+        Ok(Claim::Failed)
     }
     .instrument(span.clone())
     .await;
-    if processed.is_err() {
-        record_failure(&span, "database_error");
+    match processed {
+        Ok(Claim::Failed) => {
+            toasty::sql::statement(format!(
+                "UPDATE {table} SET updated_at = statement_timestamp() WHERE id = $1"
+            ))
+            .bind(id)
+            .exec(db_context.executor_mut())
+            .instrument(span)
+            .await?;
+            Ok(Claim::Failed)
+        }
+        Err(error) => {
+            record_failure(&span, "database_error");
+            Err(error)
+        }
+        processed => processed,
     }
-    processed
 }
 
 fn record_failure(span: &Span, error_type: &'static str) {

@@ -198,9 +198,10 @@ async fn a_processed_row_exports_one_consumer_span_linked_to_its_traceparent() {
 }
 
 #[tokio::test]
-async fn a_failed_row_records_an_error_on_its_span() {
+async fn a_failed_row_records_an_error_on_its_span_and_exports_no_other_trace() {
     let database = TestDatabase::create().await;
     let db_context = db_context(&database).await;
+    enqueue(&db_context).await;
     let exporter = InMemorySpanExporter::default();
     let _tracing = trace(&exporter);
     let attempts = Arc::new(AtomicUsize::new(0));
@@ -221,8 +222,6 @@ async fn a_failed_row_records_an_error_on_its_span() {
         cancellation.clone(),
     ));
 
-    exporter.reset();
-    enqueue(&db_context).await;
     let spans = process_spans(&exporter, 3).await;
     cancellation.cancel();
     consumer.await.unwrap();
@@ -239,6 +238,18 @@ async fn a_failed_row_records_an_error_on_its_span() {
             (Status::Unset, None),
         ]
     );
+    let traces = spans
+        .iter()
+        .map(|x| x.span_context.trace_id())
+        .collect::<Vec<_>>();
+    let other_traces = exporter
+        .get_finished_spans()
+        .unwrap()
+        .into_iter()
+        .filter(|x| !traces.contains(&x.span_context.trace_id()))
+        .map(|x| x.name)
+        .collect::<Vec<_>>();
+    assert_eq!(other_traces, Vec::<&str>::new());
     drop(db_context);
     database.drop().await;
 }
