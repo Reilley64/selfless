@@ -2,9 +2,9 @@ mod active_playbacks;
 mod image_cache_cleanup;
 mod inbox;
 mod inbox_cleanup;
+mod open_playbacks;
 mod outbox;
 mod playback_cleanup;
-mod playback_sweep;
 mod reconcile;
 mod session_cleanup;
 
@@ -15,7 +15,7 @@ use tokio_util::sync::CancellationToken;
 
 pub async fn start(state: &AppState) -> Result<(), Box<dyn Error + Send + Sync>> {
     session_cleanup::start(state).await?;
-    playback_sweep::start(state).await?;
+    open_playbacks::start(state).await?;
     Ok(())
 }
 
@@ -27,7 +27,7 @@ pub async fn serve(state: AppState, reconcile_interval: Duration, cancellation: 
         inbox::serve(state.clone(), cancellation.clone()),
         inbox_cleanup::serve(state.clone(), cancellation.clone()),
         image_cache_cleanup::serve(state.clone(), cancellation.clone()),
-        playback_sweep::serve(state.clone(), cancellation.clone()),
+        open_playbacks::serve(state.clone(), cancellation.clone()),
         playback_cleanup::serve(state.clone(), cancellation.clone()),
         reconcile::serve(state, reconcile_interval, cancellation),
     );
