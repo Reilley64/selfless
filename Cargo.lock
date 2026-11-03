@@ -2718,6 +2718,7 @@ dependencies = [
  "jiff",
  "quick-xml",
  "serde",
+ "tempfile",
  "tokio",
 ]
 
