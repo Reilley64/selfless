@@ -23,7 +23,7 @@ The `code-review` step applies these rules to each diff. Each rule is a judgemen
 - Use case Outputs carry plain data, never Toasty models. Each use case defines its own Output. Outputs are never shared between use cases.
 - Settings come only from environment variables, with no prefix and `__` for nesting. Each adapter crate owns its settings type, and `AppSettings::load()` in `infrastructure/settings` composes them.
 - Every database call goes through the `DbContext`, including hand-written SQL through `toasty::sql`. Hand-written SQL runs on PostgreSQL 14, the homelab's version.
-- An insert that must not fail on a unique clash uses Toasty's upsert, `Model::upsert_by_*()`, with `.or_ignore()` when the existing row must stay, because Toasty's `DbSet` has no upsert. Every other insert starts from a `DbSet` root, such as `db_context.users().create()`. Bulk upserts stay in `toasty::sql`, as ADR 0001 says.
+- An insert that must not fail on a unique clash uses Toasty's upsert, `Model::upsert_by_*()`, with `.or_ignore()` when the existing row must stay, because Toasty's `DbSet` has no upsert. `.or_ignore()` returns `None` only for a clash on the upsert's own key. A clash on another unique column is still an error. Every other insert starts from a `DbSet` root, such as `db_context.users().create()`. Bulk upserts stay in `toasty::sql`, as ADR 0001 says.
 - Rustls is the only TLS stack. A dependency with a choice of TLS backend sets `default-features = false` and picks Rustls by name.
 
 ## Files
@@ -38,6 +38,7 @@ The `code-review` step applies these rules to each diff. Each rule is a judgemen
 - Log an error once, where it is handled, as `error = &error as &dyn Error` with a constant message.
 - Use OpenTelemetry semantic convention names. A name they lack gets a `selfless.*` entry in `telemetry/registry`, and code uses the generated constant.
 - User and media IDs go on spans and events, never on metric attributes. Usernames, passwords, session tokens and signed URLs never appear in telemetry.
+- An integer span or event field is recorded as `i64`. tracing-opentelemetry records `u16` and `u64` values as strings.
 
 ## Use cases and adapters
 
@@ -56,6 +57,16 @@ The `code-review` step applies these rules to each diff. Each rule is a judgemen
 ## API
 
 - `openapi.yaml` is written by hand and describes every endpoint the server serves. Each resource's version is at the end of its path.
+- Every `/api` operation lists the `InternalError` response, and every operation with a JSON body also lists `BadRequest`.
+- Response schemas set `additionalProperties: false`, except `Problem`, which each problem response extends with `allOf`. Request schemas leave it out, so a client may send a field the server ignores. With `true`, orval adds an index signature to the generated type.
+- A schema is never named after a JavaScript global such as `Symbol`, because orval emits a `const` with the schema's name.
+
+## Apps
+
+- The web app runs under a Content Security Policy that allows no inline script or style (`presentation/api/src/web.rs`). Styles go in class names or `global.css`.
+- Each client-side route of the web app has a server route in `presentation/api/src/web.rs` that rewrites to `/index.html`.
+- Tailwind finds only class names written out in full. Code maps a value to a whole class name, such as `bg-user-amber`, and never builds one from parts.
+- Every admin page that needs an admin session calls `require_admin`. Every admin form renders `csrf_field()`, and its handler calls `verify_csrf`.
 
 ## Tests
 
@@ -67,3 +78,4 @@ The `code-review` step applies these rules to each diff. Each rule is a judgemen
 - Fixtures live in `test/`. `test-fixtures` depends on no workspace crate. `test-app` builds an `AppState` for presentation tests. Each crate's glue is a file in `test/` included with `#[path]`.
 - An app module or component is tested with Jest in a `*.test.ts` file next to it, with a fake storage or a mocked fetch.
 - Each test checks behaviour a spec asks for, and its name says which.
+- A test of a lock, a race or a timer fails when the code it guards is removed.
