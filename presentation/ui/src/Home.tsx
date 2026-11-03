@@ -17,6 +17,7 @@ import { FeaturedTitle } from "./FeaturedTitle";
 import { FocusedDetails } from "./FocusedDetails";
 import type { FocusGuideInstance } from "./FocusGuide";
 import { serverUnreachable } from "./messages";
+import { playHref } from "./playHref";
 import { TileRow } from "./TileRow";
 import { tilePath } from "./tilePath";
 
@@ -87,7 +88,7 @@ export function Home({ autoFocus = true }: { autoFocus?: boolean }) {
         <TileRow
           title={rowTitle(row)}
           tiles={row.tiles}
-          onPressTile={(tile) => router.push(tilePath(tile))}
+          onPressTile={(tile) => router.push(row.kind === "continueWatching" ? playHref(tile) : tilePath(tile))}
           menu={
             row.kind === "continueWatching"
               ? (tile) => [{ label: "Remove from Continue watching", onPress: () => removeFromContinueWatching(tile) }]

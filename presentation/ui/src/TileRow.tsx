@@ -8,6 +8,7 @@ import { episodeLabel } from "./episodeLabel";
 import { playHref } from "./playHref";
 import { ArtworkImage, Tile } from "./Tile";
 import { TileMenu, type TileMenuItem } from "./TileMenu";
+import { tilePath } from "./tilePath";
 import { TitleMeta } from "./TitleMeta";
 
 const HOVER_DELAY = 400;
@@ -49,10 +50,10 @@ function TileCard({ tile, onPress, onMenu }: { tile: TileData; onPress?: () => v
             label="Play"
             primary
             small
-            onPress={() => router.push(playHref(episode ? { episodeId: tile.id } : { movieId: tile.id }))}
+            onPress={() => router.push(playHref(tile))}
           />
         )}
-        {onPress && <ActionButton label="More info" small onPress={onPress} />}
+        {onPress && <ActionButton label="More info" small onPress={() => router.push(tilePath(tile))} />}
         {onMenu && (
           <Pressable
             className="ml-auto h-[34px] w-[34px] items-center justify-center rounded-full bg-button-background hover:bg-button-focus"

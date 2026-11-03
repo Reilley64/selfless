@@ -1,5 +1,6 @@
 import type { Home as HomeData, Tile } from "@selfless/api-client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { router } from "expo-router";
 import { act, fireEvent, renderRouter, screen, waitFor } from "expo-router/testing-library";
 import { Platform } from "react-native";
 import { Home } from "./Home";
@@ -56,6 +57,8 @@ async function renderHome(response: HomeData = home) {
       ),
       "movies/[movieId]": () => null,
       "shows/[showId]": () => null,
+      "episodes/[episodeId]": () => null,
+      "play/movies/[movieId]": () => null,
       "play/episodes/[episodeId]": () => null,
     },
     { initialUrl: "/" },
@@ -223,6 +226,33 @@ describe("the Continue watching tile menu", () => {
     await waitFor(() => expect(screen.queryByLabelText("Half Loop")).not.toBeOnTheScreen());
     expect(screen.getByLabelText("Arrival")).toBeOnTheScreen();
     expect(deletes()).toEqual([`/api/continue-watching/shows/${severance.id}/v1`]);
+  });
+
+  test.each([
+    ["on the web", false],
+    ["on TV", true],
+  ])("%s pressing a Continue watching tile plays its movie or episode", async (_, tv) => {
+    jest.spyOn(Platform, "isTV", "get").mockReturnValue(tv);
+    await renderHome(withContinueWatching);
+
+    await fireEvent.press(screen.getByLabelText("Arrival"));
+    expect(screen).toHavePathname(`/play/movies/${arrival.id}`);
+
+    await act(() => router.back());
+    await fireEvent.press(screen.getByLabelText("Half Loop"));
+    expect(screen).toHavePathname(`/play/episodes/${halfLoop.id}`);
+  });
+
+  test("More info on a hovered Continue watching tile opens its page", async () => {
+    await renderHome(withContinueWatching);
+    jest.useFakeTimers();
+    await fireEvent(screen.getByLabelText("Half Loop"), "pointerEnter");
+    await act(() => jest.advanceTimersByTime(400));
+    jest.useRealTimers();
+
+    await fireEvent.press(screen.getByText("More info"));
+
+    expect(screen).toHavePathname(`/episodes/${halfLoop.id}`);
   });
 
   test("tiles in other rows have no menu", async () => {
