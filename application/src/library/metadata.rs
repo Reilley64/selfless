@@ -1,6 +1,7 @@
 use crate::ports::FoundFile;
 use crate::ports::NfoActor;
 use crate::ports::PortFuture;
+use crate::ports::UnreadableFile;
 use crate::ports::UnreadableNfo;
 use crate::ports::persistence::DbScope;
 use domain::Actor;
@@ -74,6 +75,50 @@ pub(crate) fn warn_unreadable(error: &UnreadableNfo, path: &str) {
         file.path = path,
         "failed to read an NFO file"
     );
+}
+
+pub(crate) fn warn_unreadable_file(error: &UnreadableFile) {
+    tracing::warn!(
+        error = error as &dyn std::error::Error,
+        file.path = error.path,
+        "failed to read a file"
+    );
+}
+
+pub(crate) async fn save_unreadable_file(
+    scope: &mut impl DbScope,
+    owner: Owner,
+    path: Option<String>,
+) -> toasty::Result<()> {
+    let stored = scope
+        .sync_problems()
+        .filter(
+            problem_owner(owner).and(
+                SyncProblem::fields()
+                    .kind()
+                    .eq(SyncProblemKind::UnreadableFile),
+            ),
+        )
+        .exec(scope.executor_mut())
+        .await?;
+    if stored.iter().map(|x| &x.path).eq(path.iter()) {
+        return Ok(());
+    }
+    for problem in stored {
+        problem.delete().exec(scope.executor_mut()).await?;
+    }
+    if let Some(path) = path {
+        scope
+            .sync_problems()
+            .create()
+            .movie_id(owner.movie_id())
+            .show_id(owner.show_id())
+            .kind(SyncProblemKind::UnreadableFile)
+            .path(path)
+            .exec(scope.executor_mut())
+            .await?;
+    }
+    Ok(())
 }
 
 pub(crate) async fn save_actors<T>(

@@ -78,7 +78,7 @@ async fn movie_syncs_count_movies_added_changed_and_removed_by_source() {
                 db_context: db_context.clone(),
                 find_media_file: FindMediaFile::new(move |_| {
                     let found = *file_on_disk.lock().unwrap();
-                    Box::pin(async move { Some(found) })
+                    Box::pin(async move { Ok(Some(found)) })
                 }),
                 get_radarr_movie: GetRadarrMovie::new(move |_| {
                     let movie = radarr_movie.lock().unwrap().clone();
@@ -96,7 +96,9 @@ async fn movie_syncs_count_movies_added_changed_and_removed_by_source() {
                         })
                     })
                 })),
-                read_movie_folder: ReadMovieFolder::new(|_| Box::pin(async { Default::default() })),
+                read_movie_folder: ReadMovieFolder::new(|_| {
+                    Box::pin(async { Ok(Default::default()) })
+                }),
                 read_movie_nfo: ReadMovieNfo::new(|_| {
                     Box::pin(async { Err(UnreadableNfo::default()) })
                 }),

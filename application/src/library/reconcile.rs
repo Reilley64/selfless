@@ -128,16 +128,20 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
             ),
         };
         let failed_calls = failed_metadata_calls + listing.failed_calls;
-        if failed_calls == 0 {
-            remove_or_hold(&mut db_context, source, &listing).await?;
-        }
         if failed_calls > 0 {
             return Err(Error::caused_by(format!(
                 "{failed_calls} calls to {} failed, so nothing was removed",
                 source.name()
             )));
         }
-        Ok(())
+        if listing.unreadable_items > 0 {
+            return Err(Error::caused_by(format!(
+                "{} items from {} had unreadable files, so nothing was removed",
+                listing.unreadable_items,
+                source.name()
+            )));
+        }
+        remove_or_hold(&mut db_context, source, &listing).await
     }
     .instrument(span.clone())
     .await;
@@ -211,6 +215,7 @@ struct Listing {
     total: usize,
     absent: Vec<Uuid>,
     failed_calls: usize,
+    unreadable_items: usize,
 }
 
 async fn sync_movies(
@@ -235,6 +240,10 @@ async fn sync_movies(
         .await
         .map_err(Error::caused_by)?;
     let total = stored_movies.len();
+    let nfo_modified_at = stored_movies
+        .iter()
+        .map(|x| (x.tmdb_id, x.nfo_modified_at))
+        .collect::<HashMap<_, _>>();
     let absent = stored_movies
         .into_iter()
         .filter(|x| !listed.contains(&x.tmdb_id))
@@ -252,21 +261,28 @@ async fn sync_movies(
     let mut inspections = stream::iter(radarr_movies)
         .map(|radarr_movie| {
             let span = sync_movie::span();
-            let stored = radarr_movie
+            let stored_file = radarr_movie
                 .movie_file
                 .as_ref()
                 .and_then(|x| stored.get(&x.path));
+            let stored_nfo_modified_at = nfo_modified_at
+                .get(&radarr_movie.tmdb_id)
+                .copied()
+                .flatten();
             async move {
-                let inspected = sync_movie::inspect(files, stored, &radarr_movie)
-                    .instrument(span.clone())
-                    .await;
+                let inspected =
+                    sync_movie::inspect(files, stored_file, stored_nfo_modified_at, &radarr_movie)
+                        .instrument(span.clone())
+                        .await;
                 (radarr_movie, inspected, span)
             }
         })
         .buffered(CONCURRENT_PROBES);
+    let mut unreadable_items = 0;
     while let Some((radarr_movie, inspected, span)) = inspections.next().await {
         let inspected = inspected.map_err(Error::caused_by)?;
-        sync_movie::save(db_context, files, radarr_movie, inspected)
+        unreadable_items += usize::from(inspected.unreadable());
+        sync_movie::save(db_context, radarr_movie, inspected)
             .instrument(span)
             .await
             .map_err(Error::caused_by)?;
@@ -277,6 +293,7 @@ async fn sync_movies(
         total,
         absent,
         failed_calls: 0,
+        unreadable_items,
     })
 }
 
@@ -306,6 +323,7 @@ async fn sync_shows(
         .map(|x| x.id)
         .collect();
     let mut failed_calls = 0;
+    let mut unreadable_items = 0;
     for listing in listings {
         let span = sync_show::span();
         let episodes = get_sonarr_episodes
@@ -314,7 +332,13 @@ async fn sync_shows(
             .await;
         match source_health.api_call(Source::Sonarr, episodes) {
             Ok(episodes) => {
-                sync_show::save(db_context, files, SonarrShow { listing, episodes })
+                let sonarr_show = SonarrShow { listing, episodes };
+                let inspected = sync_show::inspect(db_context, files, &sonarr_show)
+                    .instrument(span.clone())
+                    .await
+                    .map_err(Error::caused_by)?;
+                unreadable_items += usize::from(inspected.unreadable());
+                sync_show::save(db_context, sonarr_show, inspected)
                     .instrument(span)
                     .await
                     .map_err(Error::caused_by)?;
@@ -336,6 +360,7 @@ async fn sync_shows(
         total,
         absent,
         failed_calls,
+        unreadable_items,
     })
 }
 
@@ -451,6 +476,7 @@ mod tests {
     use crate::ports::SonarrEpisodeFile;
     use crate::ports::SonarrError;
     use crate::ports::SonarrShowListing;
+    use crate::ports::UnreadableFile;
     use crate::test::empty_episode_folder;
     use crate::test::empty_movie_folder;
     use crate::test::empty_show_folder;
@@ -537,6 +563,7 @@ mod tests {
         radarr: Arc<Mutex<Result<Vec<RadarrMovie>, &'static str>>>,
         sonarr: Arc<Mutex<Result<Vec<i64>, &'static str>>>,
         failing_episodes: Arc<Mutex<HashSet<i64>>>,
+        unreadable_files: Arc<Mutex<HashSet<String>>>,
         held_episodes: Arc<Mutex<Option<HeldEpisodes>>>,
         radarr_kodi: Arc<Mutex<Result<bool, &'static str>>>,
         sonarr_kodi: Arc<Mutex<Result<bool, &'static str>>>,
@@ -559,6 +586,7 @@ mod tests {
                 radarr: Arc::new(Mutex::new(Ok(Vec::new()))),
                 sonarr: Arc::new(Mutex::new(Ok(Vec::new()))),
                 failing_episodes: Arc::default(),
+                unreadable_files: Arc::default(),
                 held_episodes: Arc::default(),
                 radarr_kodi: Arc::new(Mutex::new(Ok(true))),
                 sonarr_kodi: Arc::new(Mutex::new(Ok(true))),
@@ -584,6 +612,7 @@ mod tests {
             let held_episodes = self.held_episodes.clone();
             let radarr_kodi = self.radarr_kodi.clone();
             let sonarr_kodi = self.sonarr_kodi.clone();
+            let unreadable_files = self.unreadable_files.clone();
             Dependencies {
                 check_radarr_kodi_metadata: CheckRadarrKodiMetadata::new(move || {
                     let enabled = *radarr_kodi.lock().unwrap();
@@ -595,13 +624,16 @@ mod tests {
                 }),
                 clock: Clock::new(self.clock.reader()),
                 db_context: self.db_context.clone(),
-                find_media_file: FindMediaFile::new(|_| {
-                    Box::pin(async {
-                        Some(FoundMediaFile {
+                find_media_file: FindMediaFile::new(move |path| {
+                    let found = if unreadable_files.lock().unwrap().contains(&path) {
+                        Err(UnreadableFile::new(path))
+                    } else {
+                        Ok(Some(FoundMediaFile {
                             size: 1,
                             modified_at: Timestamp::UNIX_EPOCH,
-                        })
-                    })
+                        }))
+                    };
+                    Box::pin(async move { found })
                 }),
                 get_sonarr_episodes: GetSonarrEpisodes::new(move |sonarr_id| {
                     let failing = failing_episodes.lock().unwrap().contains(&sonarr_id);
@@ -799,6 +831,52 @@ mod tests {
         let failed = library.reconcile(Source::Sonarr).await;
         let after_failure = library.show_titles().await;
         library.failing_episodes.lock().unwrap().clear();
+        let succeeded = library.reconcile(Source::Sonarr).await;
+
+        assert_eq!(failed, Some(ReconcileResult::Failed));
+        assert_eq!(after_failure, ["Andor", "Severance"]);
+        assert_eq!(succeeded, Some(ReconcileResult::Succeeded));
+        assert_eq!(library.show_titles().await, ["Severance"]);
+    }
+
+    #[tokio::test]
+    async fn an_unreadable_movie_file_removes_no_movie_until_it_can_be_read() {
+        let library = Library::new().await;
+        library.radarr_lists(&[ARRIVAL, DUNE, SICARIO]);
+        library.reconcile(Source::Radarr).await;
+
+        library.radarr_lists(&[ARRIVAL, DUNE]);
+        library
+            .unreadable_files
+            .lock()
+            .unwrap()
+            .insert("/movies/Arrival.mkv".to_owned());
+        let failed = library.reconcile(Source::Radarr).await;
+        let after_failure = movie_titles(&library.db_context).await;
+        library.unreadable_files.lock().unwrap().clear();
+        let succeeded = library.reconcile(Source::Radarr).await;
+
+        assert_eq!(failed, Some(ReconcileResult::Failed));
+        assert_eq!(after_failure, ["Arrival", "Dune", "Sicario"]);
+        assert_eq!(succeeded, Some(ReconcileResult::Succeeded));
+        assert_eq!(movie_titles(&library.db_context).await, ["Arrival", "Dune"]);
+    }
+
+    #[tokio::test]
+    async fn an_unreadable_episode_file_removes_no_show_until_it_can_be_read() {
+        let library = Library::new().await;
+        library.sonarr_lists(&[SEVERANCE, ANDOR]);
+        library.reconcile(Source::Sonarr).await;
+
+        library.sonarr_lists(&[SEVERANCE]);
+        library
+            .unreadable_files
+            .lock()
+            .unwrap()
+            .insert("/tv/Severance/S01E01.mkv".to_owned());
+        let failed = library.reconcile(Source::Sonarr).await;
+        let after_failure = library.show_titles().await;
+        library.unreadable_files.lock().unwrap().clear();
         let succeeded = library.reconcile(Source::Sonarr).await;
 
         assert_eq!(failed, Some(ReconcileResult::Failed));

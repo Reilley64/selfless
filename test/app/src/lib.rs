@@ -77,7 +77,7 @@ impl TestApp {
             export_telemetry: ExportTelemetry::new(|_, _| {
                 Box::pin(async { Err(ExportTelemetryError::default()) })
             }),
-            find_media_file: FindMediaFile::new(|_| Box::pin(async { None })),
+            find_media_file: FindMediaFile::new(|_| Box::pin(async { Ok(None) })),
             get_radarr_movie: GetRadarrMovie::new(|_| {
                 Box::pin(async { Err(RadarrError::default()) })
             }),
@@ -97,16 +97,20 @@ impl TestApp {
             prober: Prober::new(ProbeMediaFile::new(|_| {
                 Box::pin(async { Err(ProbeError::default()) })
             })),
-            read_episode_folder: ReadEpisodeFolder::new(|_| Box::pin(async { Default::default() })),
+            read_episode_folder: ReadEpisodeFolder::new(|_| {
+                Box::pin(async { Ok(Default::default()) })
+            }),
             read_episode_nfo: ReadEpisodeNfo::new(|_| {
                 Box::pin(async { Err(UnreadableNfo::default()) })
             }),
-            read_movie_folder: ReadMovieFolder::new(|_| Box::pin(async { Default::default() })),
+            read_movie_folder: ReadMovieFolder::new(|_| Box::pin(async { Ok(Default::default()) })),
             read_movie_nfo: ReadMovieNfo::new(|_| {
                 Box::pin(async { Err(UnreadableNfo::default()) })
             }),
             read_radarr_webhook: ReadRadarrWebhook::new(|_| Err(UnreadableWebhook::default())),
-            read_show_folder: ReadShowFolder::new(|_, _| Box::pin(async { Default::default() })),
+            read_show_folder: ReadShowFolder::new(|_, _| {
+                Box::pin(async { Ok(Default::default()) })
+            }),
             read_show_nfo: ReadShowNfo::new(|_| Box::pin(async { Err(UnreadableNfo::default()) })),
             read_sonarr_webhook: ReadSonarrWebhook::new(|_| Err(UnreadableWebhook::default())),
             read_webhook_event_type: ReadWebhookEventType::new(|_| None),

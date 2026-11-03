@@ -186,19 +186,23 @@ pub struct FoundMediaFile {
     pub modified_at: Timestamp,
 }
 
-type FindMediaFileFn = dyn Fn(String) -> PortFuture<Option<FoundMediaFile>> + Send + Sync;
+type FindMediaFileFn =
+    dyn Fn(String) -> PortFuture<Result<Option<FoundMediaFile>, UnreadableFile>> + Send + Sync;
 
 #[derive(Clone)]
 pub struct FindMediaFile(Arc<FindMediaFileFn>);
 
 impl FindMediaFile {
     pub fn new(
-        f: impl Fn(String) -> PortFuture<Option<FoundMediaFile>> + Send + Sync + 'static,
+        f: impl Fn(String) -> PortFuture<Result<Option<FoundMediaFile>, UnreadableFile>>
+        + Send
+        + Sync
+        + 'static,
     ) -> Self {
         Self(Arc::new(f))
     }
 
-    pub fn call(&self, path: &str) -> PortFuture<Option<FoundMediaFile>> {
+    pub fn call(&self, path: &str) -> PortFuture<Result<Option<FoundMediaFile>, UnreadableFile>> {
         (self.0)(path.to_owned())
     }
 }
@@ -503,17 +507,20 @@ pub struct EpisodeFolder {
     pub thumb: Option<FoundFile>,
 }
 
-type ReadEpisodeFolderFn = dyn Fn(String) -> PortFuture<EpisodeFolder> + Send + Sync;
+type ReadEpisodeFolderFn =
+    dyn Fn(String) -> PortFuture<Result<EpisodeFolder, UnreadableFile>> + Send + Sync;
 
 #[derive(Clone)]
 pub struct ReadEpisodeFolder(Arc<ReadEpisodeFolderFn>);
 
 impl ReadEpisodeFolder {
-    pub fn new(f: impl Fn(String) -> PortFuture<EpisodeFolder> + Send + Sync + 'static) -> Self {
+    pub fn new(
+        f: impl Fn(String) -> PortFuture<Result<EpisodeFolder, UnreadableFile>> + Send + Sync + 'static,
+    ) -> Self {
         Self(Arc::new(f))
     }
 
-    pub fn call(&self, media_file_path: &str) -> PortFuture<EpisodeFolder> {
+    pub fn call(&self, media_file_path: &str) -> PortFuture<Result<EpisodeFolder, UnreadableFile>> {
         (self.0)(media_file_path.to_owned())
     }
 }
@@ -550,17 +557,20 @@ pub struct MovieFolder {
     pub clearlogo: Option<FoundFile>,
 }
 
-type ReadMovieFolderFn = dyn Fn(String) -> PortFuture<MovieFolder> + Send + Sync;
+type ReadMovieFolderFn =
+    dyn Fn(String) -> PortFuture<Result<MovieFolder, UnreadableFile>> + Send + Sync;
 
 #[derive(Clone)]
 pub struct ReadMovieFolder(Arc<ReadMovieFolderFn>);
 
 impl ReadMovieFolder {
-    pub fn new(f: impl Fn(String) -> PortFuture<MovieFolder> + Send + Sync + 'static) -> Self {
+    pub fn new(
+        f: impl Fn(String) -> PortFuture<Result<MovieFolder, UnreadableFile>> + Send + Sync + 'static,
+    ) -> Self {
         Self(Arc::new(f))
     }
 
-    pub fn call(&self, media_file_path: &str) -> PortFuture<MovieFolder> {
+    pub fn call(&self, media_file_path: &str) -> PortFuture<Result<MovieFolder, UnreadableFile>> {
         (self.0)(media_file_path.to_owned())
     }
 }
@@ -592,6 +602,30 @@ pub struct UnreadableNfo {
 impl UnreadableNfo {
     pub fn caused_by(source: impl Into<Box<dyn Error + Send + Sync>>) -> Self {
         Self {
+            core: ohno::OhnoCore::from(source),
+        }
+    }
+}
+
+#[derive(ohno::Error)]
+#[no_constructors]
+#[display("failed to read a file")]
+pub struct UnreadableFile {
+    pub path: String,
+    core: ohno::OhnoCore,
+}
+
+impl UnreadableFile {
+    pub fn new(path: String) -> Self {
+        Self {
+            path,
+            core: ohno::OhnoCore::default(),
+        }
+    }
+
+    pub fn caused_by(path: String, source: impl Into<Box<dyn Error + Send + Sync>>) -> Self {
+        Self {
+            path,
             core: ohno::OhnoCore::from(source),
         }
     }
@@ -644,19 +678,27 @@ pub struct ShowFolder {
     pub season_posters: Vec<(i64, FoundFile)>,
 }
 
-type ReadShowFolderFn = dyn Fn(String, Vec<i64>) -> PortFuture<ShowFolder> + Send + Sync;
+type ReadShowFolderFn =
+    dyn Fn(String, Vec<i64>) -> PortFuture<Result<ShowFolder, UnreadableFile>> + Send + Sync;
 
 #[derive(Clone)]
 pub struct ReadShowFolder(Arc<ReadShowFolderFn>);
 
 impl ReadShowFolder {
     pub fn new(
-        f: impl Fn(String, Vec<i64>) -> PortFuture<ShowFolder> + Send + Sync + 'static,
+        f: impl Fn(String, Vec<i64>) -> PortFuture<Result<ShowFolder, UnreadableFile>>
+        + Send
+        + Sync
+        + 'static,
     ) -> Self {
         Self(Arc::new(f))
     }
 
-    pub fn call(&self, show_path: &str, season_numbers: Vec<i64>) -> PortFuture<ShowFolder> {
+    pub fn call(
+        &self,
+        show_path: &str,
+        season_numbers: Vec<i64>,
+    ) -> PortFuture<Result<ShowFolder, UnreadableFile>> {
         (self.0)(show_path.to_owned(), season_numbers)
     }
 }

@@ -4,4 +4,5 @@ pub enum SyncProblemKind {
     UnreadableNfo,
     FileNotFound,
     FfprobeFailed,
+    UnreadableFile,
 }

@@ -1,5 +1,4 @@
 use crate::library::Prober;
-use crate::ports::FindMediaFile;
 use crate::ports::FoundMediaFile;
 use crate::ports::FoundSubtitleFile;
 use crate::ports::ListSubtitleFiles;
@@ -42,13 +41,13 @@ pub(crate) struct Saved {
 pub(crate) struct Error;
 
 pub(crate) async fn inspect(
-    find_media_file: &FindMediaFile,
     list_subtitle_files: &ListSubtitleFiles,
     prober: &Prober,
     stored: Option<&MediaFile>,
     path: &str,
+    found: Option<FoundMediaFile>,
 ) -> Result<Inspected, Error> {
-    let Some(found) = find_media_file.call(path).await else {
+    let Some(found) = found else {
         return Ok(Inspected {
             found: None,
             probed: Probed::Unchanged,
@@ -544,12 +543,13 @@ mod tests {
             .exec(db_context.executor_mut())
             .await
             .unwrap();
+        let found = library.find_media_file().call(MOVIE_FILE).await.unwrap();
         let inspected = inspect(
-            &library.find_media_file(),
             &library.list_subtitle_files(),
             &library.prober(),
             stored.as_ref(),
             MOVIE_FILE,
+            found,
         )
         .await
         .unwrap();
