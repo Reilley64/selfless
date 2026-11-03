@@ -33,6 +33,8 @@ export type Resume = { position: number; paused: boolean; forceHls: boolean; tra
 
 export type PlaybackSpans = ReturnType<typeof startPlaybackSpans>;
 
+export type PlayerTrack = { language: string; label: string };
+
 export const reportInterval = 10_000;
 
 export function startPlaybackSpans(userId: string, mediaFileId: string) {
@@ -208,4 +210,40 @@ export function createPlayerLogic({
       }
     },
   };
+}
+
+function canonicalLanguage(language: string | null) {
+  try {
+    return language ? Intl.getCanonicalLocales(language.replaceAll("_", "-"))[0] : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function matchTrack<T extends PlaybackAudioTrack | PlaybackSubtitleTrack>(
+  track: PlayerTrack,
+  playerTracks: PlayerTrack[],
+  tracks: T[],
+) {
+  const language = canonicalLanguage(track.language);
+  if (language === undefined) {
+    return undefined;
+  }
+  const peers = playerTracks.filter((x) => canonicalLanguage(x.language) === language);
+  const candidates = tracks.filter((x) => x.inStream && canonicalLanguage(x.language) === language);
+  return candidates[peers.findIndex((x) => x.label === track.label)] as T | undefined;
+}
+
+export function playerTrackFor<P extends PlayerTrack, T extends PlaybackAudioTrack | PlaybackSubtitleTrack>(
+  track: T,
+  playerTracks: P[],
+  tracks: T[],
+) {
+  const language = canonicalLanguage(track.language);
+  if (language === undefined) {
+    return undefined;
+  }
+  const peers = playerTracks.filter((x) => canonicalLanguage(x.language) === language);
+  const candidates = tracks.filter((x) => x.inStream && canonicalLanguage(x.language) === language);
+  return peers[candidates.indexOf(track)];
 }

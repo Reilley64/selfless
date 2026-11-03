@@ -18,8 +18,11 @@ export { PlayActions } from "./PlayActions";
 export { playHref } from "./playHref";
 export {
   createPlayerLogic,
+  matchTrack,
   type PlaybackSpans,
   type PlayerEvent,
+  type PlayerTrack,
+  playerTrackFor,
   type ProgressReport,
   type Resume,
   startPlaybackSpans,

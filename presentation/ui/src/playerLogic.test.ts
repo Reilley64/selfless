@@ -7,12 +7,12 @@ import {
   TracerProvider,
 } from "@opentelemetry/sdk-trace";
 import type {
+  PlayMethod,
   PlaybackAudioTrack,
   PlaybackSubtitleTrack,
-  PlayMethod,
   reportPlaybackProgressResponse,
 } from "@selfless/api-client";
-import { type ProgressReport, type Resume, createPlayerLogic, startPlaybackSpans } from "./playerLogic";
+import { type ProgressReport, type Resume, createPlayerLogic, matchTrack, playerTrackFor, startPlaybackSpans } from "./playerLogic";
 
 const userId = "01890a5d-ac96-774b-bcce-b302099a8057";
 const mediaFileId = "01890a5d-ac96-774b-bcce-b302099a8060";
@@ -398,4 +398,52 @@ test("a direct play of a selected audio track that is not the file's default swi
     { position: 0, paused: false, forceHls: true, tracks: { audioTrackId: "japanese", subtitleTrackId: null } },
   ]);
   expect(theDefault.restarts).toEqual([]);
+});
+
+test("a player track matches the API track in its language, whether the language has two or three letters", () => {
+  const french = { language: "fr", label: "French" };
+  const brazilian = { language: "pt_BR", label: "Portuguese (BR)" };
+  const players = [french, brazilian];
+  const tracks = [audioTrack("eng", { label: "Stereo" }), audioTrack("fre", { language: "fre", label: "Stereo" }), audioTrack("pt", { language: "pt-BR" })];
+
+  expect([matchTrack(french, players, tracks)?.id, matchTrack(brazilian, players, tracks)?.id]).toEqual(["fre", "pt"]);
+});
+
+test("player tracks in one language match the API tracks in that language in order, told apart by label", () => {
+  const players = [
+    { language: "en", label: "English (Stereo)" },
+    { language: "ja", label: "Japanese" },
+    { language: "en", label: "English (Commentary)" },
+  ];
+  const tracks = [audioTrack("stereo", { label: "Stereo" }), audioTrack("japanese", { language: "jpn" }), audioTrack("commentary", { label: "Commentary" })];
+
+  expect(matchTrack({ language: "en", label: "English (Commentary)" }, players, tracks)?.id).toBe("commentary");
+});
+
+test("a player track matches no API track the stream doesn't carry", () => {
+  const english = { language: "en", label: "English" };
+  const tracks = [subtitleTrack("pgs", { codec: "hdmv_pgs_subtitle", text: false, inStream: false }), subtitleTrack("srt", { language: "en", codec: "srt", external: true })];
+
+  expect([matchTrack(english, [english], tracks)?.id, matchTrack({ language: "de", label: "German" }, [english], tracks)]).toEqual(["srt", undefined]);
+});
+
+test("an API track finds the player track in its place among the player tracks of its language", () => {
+  const players = [
+    { language: "en", label: "English (Stereo)" },
+    { language: "ja", label: "Japanese" },
+    { language: "en", label: "English (Commentary)" },
+  ];
+  const tracks = [
+    audioTrack("stereo", { label: "Stereo" }),
+    audioTrack("japanese", { language: "jpn" }),
+    audioTrack("commentary", { label: "Commentary" }),
+    audioTrack("german", { language: "ger" }),
+  ];
+
+  expect(tracks.map((track) => playerTrackFor(track, players, tracks)?.label)).toEqual([
+    "English (Stereo)",
+    "Japanese",
+    "English (Commentary)",
+    undefined,
+  ]);
 });

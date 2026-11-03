@@ -156,6 +156,15 @@ pub async fn call(
     let audio_track_id = audio.map(|x| x.id);
     let subtitle_track_id = subtitle.map(|x| x.id());
     let mut reasons = profile.direct_play_reasons(&container, video, audio, subtitle);
+    for reason in profile.tv_subtitle_reasons(
+        session_client_kind,
+        media_file.subtitle_streams.get(),
+        media_file.subtitle_files.get(),
+    ) {
+        if !reasons.contains(&reason) {
+            reasons.push(reason);
+        }
+    }
     if force_hls && reasons.is_empty() {
         reasons.push(PlayReason::ForcedHls);
     }
