@@ -1208,7 +1208,7 @@ components:
           maximum: 1
           examples: [0.42]
         watched:
-          description: Whether the user has watched the movie or episode, or every episode of the show.
+          description: Whether the user has watched the movie or episode. It is false for a show.
           type: boolean
           examples: [false]
         episode:

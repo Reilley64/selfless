@@ -2,8 +2,10 @@ import { useListSeasonEpisodes } from "@selfless/api-client";
 import { useRouter } from "expo-router";
 import { Pressable, Text, View } from "react-native-css/components";
 import { playHref } from "./playHref";
+import { ProgressBar } from "./ProgressBar";
 import { runtimeLabel } from "./runtimeLabel";
 import { ArtworkImage } from "./Tile";
+import { WatchedMark } from "./WatchedMark";
 
 export function EpisodeList({ seasonId }: { seasonId: string }) {
   const router = useRouter();
@@ -30,6 +32,10 @@ export function EpisodeList({ seasonId }: { seasonId: string }) {
                   resizeMode="cover"
                 />
               )}
+              {episode.progress != null && (
+                <ProgressBar progress={episode.progress} className="absolute right-2 bottom-2 left-2" />
+              )}
+              {episode.watched && <WatchedMark className="absolute top-2 right-2" />}
             </View>
             <View className="flex-1 gap-1">
               <View className="flex-row items-center gap-3">

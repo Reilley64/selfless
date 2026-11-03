@@ -64,3 +64,17 @@ test("on TV, a tile asks for the image width of its layout in design pixels", as
 
   expect(await drawnAt("tile-fanart", 480)).toContain("/480/v1");
 });
+
+test("a tile shows the user's progress bar and no watched mark while they are part way through", async () => {
+  await render(<Tile tile={{ ...arrival, progress: 0.42 }} />);
+
+  expect(screen.getByRole("progressbar")).toHaveAccessibilityValue({ now: 42 });
+  expect(screen.queryByLabelText("Watched")).toBeNull();
+});
+
+test("a watched tile shows the watched mark and no progress bar", async () => {
+  await render(<Tile tile={{ ...arrival, watched: true }} />);
+
+  expect(screen.getByLabelText("Watched")).toBeOnTheScreen();
+  expect(screen.queryByRole("progressbar")).toBeNull();
+});

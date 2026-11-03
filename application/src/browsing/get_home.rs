@@ -10,6 +10,8 @@ pub use output::Row;
 pub use output::RowKind;
 
 use crate::browsing::Tile;
+use crate::browsing::episode_watch_states;
+use crate::browsing::movie_watches;
 use crate::browsing::season_counts;
 use crate::browsing::title_images;
 use crate::ports::persistence::DbScope;
@@ -18,7 +20,7 @@ use domain::Episode;
 use domain::Movie;
 use domain::Season;
 use domain::Show;
-use domain::first_episode;
+use domain::show_play_target;
 use domain::sort_key;
 use jiff::Timestamp;
 use jiff::civil::Date;
@@ -38,7 +40,7 @@ struct Title<'a> {
     released: Option<Date>,
 }
 
-pub async fn call(dependencies: impl Into<Dependencies>) -> Result<Output, Error> {
+pub async fn call(dependencies: impl Into<Dependencies>, user_id: Uuid) -> Result<Output, Error> {
     let Dependencies {
         mut db_context,
         clock,
@@ -145,15 +147,28 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<Output, Error
         .flat_map(|(_, ids)| ids.iter().copied())
         .chain(featured)
         .collect();
-    let play_episode_id = featured.and_then(|id| {
-        first_episode(
+    let featured_episodes: Vec<(&Season, &Episode)> = featured
+        .map(|id| {
             episodes
                 .iter()
                 .filter_map(|x| Some((*season_of.get(&x.season_id)?, x)))
-                .filter(|(season, _)| season.show_id == id),
-        )
-        .map(|(_, episode)| episode.id)
-    });
+                .filter(|(season, _)| season.show_id == id)
+                .collect()
+        })
+        .unwrap_or_default();
+    let states = episode_watch_states(
+        &mut db_context,
+        user_id,
+        featured_episodes.iter().map(|(_, x)| x.id).collect(),
+    )
+    .await
+    .map_err(Error::caused_by)?;
+    let play_episode_id = show_play_target(
+        featured_episodes
+            .iter()
+            .map(|&(season, episode)| (season, episode, states.get(&episode.id))),
+    )
+    .map(|x| x.episode.id);
     let now = clock.call();
     let mut movie_images = title_images(
         &mut db_context,
@@ -185,13 +200,21 @@ pub async fn call(dependencies: impl Into<Dependencies>) -> Result<Output, Error
     )
     .await
     .map_err(Error::caused_by)?;
+    let mut watches = movie_watches(
+        &mut db_context,
+        user_id,
+        movies.iter().filter(|x| shown.contains(&x.id)),
+    )
+    .await
+    .map_err(Error::caused_by)?;
     let season_counts = season_counts(&seasons);
     let tiles: HashMap<Uuid, Tile> = movies
         .into_iter()
         .filter(|x| shown.contains(&x.id))
         .map(|movie| {
             let images = movie_images.remove(&movie.id).unwrap_or_default();
-            (movie.id, Tile::movie(movie, images))
+            let watch = watches.remove(&movie.id).unwrap_or_default();
+            (movie.id, Tile::movie(movie, images, watch))
         })
         .chain(
             shows
@@ -226,14 +249,18 @@ mod tests {
     use crate::ports::Clock;
     use crate::ports::persistence::DbContext;
     use crate::ports::persistence::DbScope;
+    use crate::test::add_media_file;
     use crate::test::add_season;
     use crate::test::at;
     use crate::test::episode;
     use crate::test::mock_db_context;
     use crate::test::movie;
     use crate::test::show;
+    use crate::test::stop_at;
     use crate::test::url_signer;
+    use crate::test::watch_to_the_end;
     use domain::Show;
+    use jiff::SignedDuration;
     use jiff::civil::Date;
     use jiff::civil::date;
     use std::collections::HashMap;
@@ -296,11 +323,18 @@ mod tests {
     }
 
     async fn home(db_context: &DbContext) -> Output {
-        call(Dependencies {
-            db_context: db_context.clone(),
-            clock: Clock::new(FakeClock::new().reader()),
-            url_signer: url_signer(),
-        })
+        home_for(db_context, Uuid::new_v4()).await
+    }
+
+    async fn home_for(db_context: &DbContext, user_id: Uuid) -> Output {
+        call(
+            Dependencies {
+                db_context: db_context.clone(),
+                clock: Clock::new(FakeClock::new().reader()),
+                url_signer: url_signer(),
+            },
+            user_id,
+        )
         .await
         .unwrap()
     }
@@ -564,5 +598,54 @@ mod tests {
         let featured = output.featured.unwrap();
         assert_eq!(featured.tile.title, "Arrival");
         assert_eq!(featured.play_episode_id, None);
+    }
+
+    #[tokio::test]
+    async fn the_featured_show_plays_and_the_tiles_show_progress_from_the_users_watch_state() {
+        let mut db_context = mock_db_context().await;
+        let arrival_file = add_media_file(&db_context, Some(2_400_000)).await;
+        movie(&db_context, "Arrival")
+            .added_at(Some(at("2026-10-29T08:00:00Z")))
+            .media_file_id(Some(arrival_file))
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap();
+        let severance = show(&db_context, "Severance");
+        let dated = |number| Episode {
+            number,
+            air_date: Some(date(2022, 2, 18)),
+            ..EPISODE
+        };
+        let episodes = add_show(&mut db_context, severance, &[dated(1), dated(2)]).await;
+        let first_file = add_media_file(&db_context, None).await;
+        db_context
+            .episodes()
+            .filter(domain::Episode::fields().id().eq(episodes[&(1, 1)]))
+            .update()
+            .media_file_id(Some(first_file))
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap();
+        let noor = Uuid::new_v4();
+        watch_to_the_end(&db_context, noor, first_file, "2026-11-01T20:00:00Z").await;
+        stop_at(
+            &db_context,
+            noor,
+            arrival_file,
+            SignedDuration::from_mins(10),
+            "2026-11-02T20:00:00Z",
+        )
+        .await;
+
+        let output = home_for(&db_context, noor).await;
+
+        let featured = output.featured.unwrap();
+        assert_eq!(featured.tile.title, "Severance");
+        assert_eq!(featured.play_episode_id, Some(episodes[&(1, 2)]));
+        let arrival = &output.rows[0].tiles[0];
+        assert_eq!(
+            (arrival.title.as_str(), arrival.progress),
+            ("Arrival", Some(0.25))
+        );
     }
 }

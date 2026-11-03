@@ -165,8 +165,8 @@ impl From<Tile> for TileBody {
                 logo: tile.images.logo.map(ImageBody::from),
                 thumb: tile.images.thumb.map(ImageBody::from),
             },
-            progress: None,
-            watched: false,
+            progress: tile.progress,
+            watched: tile.watched,
             episode: (),
         }
     }

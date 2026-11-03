@@ -1,13 +1,12 @@
 import { useGetEpisode } from "@selfless/api-client";
-import { ActionButton, EpisodeHeader, playHref } from "@selfless/ui";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { EpisodeHeader, PlayActions, playHref } from "@selfless/ui";
+import { useLocalSearchParams } from "expo-router";
 import { ScrollView, View } from "react-native-css/components";
 import { ServerUnreachable } from "../../components/form";
 import { NotFound } from "../../components/NotFound";
 
 export default function Episode() {
   const { episodeId } = useLocalSearchParams<{ episodeId: string }>();
-  const router = useRouter();
   const { data, isError } = useGetEpisode(episodeId);
   if (data?.status === 404) {
     return <NotFound />;
@@ -26,7 +25,7 @@ export default function Episode() {
   return (
     <ScrollView className="flex-1 bg-background" contentContainerClassName="pb-16">
       <EpisodeHeader episode={episode}>
-        <ActionButton label="Play" primary onPress={() => router.push(playHref({ episodeId: episode.id }))} />
+        <PlayActions href={playHref({ episodeId: episode.id })} resumePosition={episode.play.resumePosition} />
       </EpisodeHeader>
     </ScrollView>
   );

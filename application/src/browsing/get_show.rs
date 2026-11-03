@@ -10,6 +10,7 @@ pub use output::Play;
 pub use output::Season;
 pub use output::Show;
 
+use crate::browsing::episode_watch_states;
 use crate::browsing::more_like_this;
 use crate::browsing::season_counts;
 use crate::browsing::title_images;
@@ -17,13 +18,17 @@ use crate::ports::persistence::DbScope;
 use domain::Actor;
 use domain::Artwork;
 use domain::Episode;
-use domain::first_episode;
+use domain::show_play_target;
 use std::collections::HashMap;
 use uuid::Uuid;
 
 const CAST_SIZE: usize = 10;
 
-pub async fn call(dependencies: impl Into<Dependencies>, show_id: Uuid) -> Result<Output, Error> {
+pub async fn call(
+    dependencies: impl Into<Dependencies>,
+    user_id: Uuid,
+    show_id: Uuid,
+) -> Result<Output, Error> {
     let Dependencies {
         mut db_context,
         clock,
@@ -67,20 +72,28 @@ pub async fn call(dependencies: impl Into<Dependencies>, show_id: Uuid) -> Resul
         .exec(db_context.executor_mut())
         .await
         .map_err(Error::caused_by)?;
+    let states = episode_watch_states(
+        &mut db_context,
+        user_id,
+        episodes.iter().map(|x| x.id).collect(),
+    )
+    .await
+    .map_err(Error::caused_by)?;
     let season_of: HashMap<_, _> = seasons.iter().map(|x| (x.id, x)).collect();
-    let Some((play_season, play_episode)) = first_episode(
+    let Some(target) = show_play_target(
         episodes
             .iter()
-            .filter_map(|x| Some((*season_of.get(&x.season_id)?, x))),
+            .filter_map(|x| Some((*season_of.get(&x.season_id)?, x, states.get(&x.id)))),
     ) else {
         return Ok(Output::NotFound);
     };
     let play = Play {
-        episode_id: play_episode.id,
-        episode_number: play_episode.number,
-        episode_title: play_episode.title.clone(),
-        season_id: play_season.id,
-        season_number: play_season.number,
+        episode_id: target.episode.id,
+        episode_number: target.episode.number,
+        episode_title: target.episode.title.clone(),
+        season_id: target.season.id,
+        season_number: target.season.number,
+        verb: target.verb,
     };
     let mut episode_counts = HashMap::<Uuid, i64>::new();
     for episode in &episodes {
@@ -106,6 +119,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, show_id: Uuid) -> Resul
     .unwrap_or_default();
     let more_like_this = more_like_this(
         &mut db_context,
+        user_id,
         &show.genres,
         show.id,
         &url_signer,
@@ -157,12 +171,17 @@ mod tests {
     use crate::ports::Clock;
     use crate::ports::persistence::DbContext;
     use crate::ports::persistence::DbScope;
+    use crate::test::add_media_file;
     use crate::test::add_season;
     use crate::test::episode;
     use crate::test::mock_db_context;
     use crate::test::show;
+    use crate::test::stop_at;
     use crate::test::url_signer;
+    use crate::test::watch_to_the_end;
     use domain::ArtworkKind;
+    use domain::PlayVerb;
+    use jiff::SignedDuration;
     use jiff::Timestamp;
     use std::collections::HashMap;
     use test_fixtures::FakeClock;
@@ -176,21 +195,35 @@ mod tests {
     }
 
     async fn get(db_context: &DbContext, show_id: Uuid) -> Output {
-        call(dependencies(db_context), show_id).await.unwrap()
+        call(dependencies(db_context), Uuid::new_v4(), show_id)
+            .await
+            .unwrap()
     }
 
     async fn get_show(db_context: &DbContext, show_id: Uuid) -> Show {
-        match get(db_context, show_id).await {
+        show_for(db_context, Uuid::new_v4(), show_id).await
+    }
+
+    async fn show_for(db_context: &DbContext, user_id: Uuid, show_id: Uuid) -> Show {
+        match call(dependencies(db_context), user_id, show_id)
+            .await
+            .unwrap()
+        {
             Output::Show(show) => *show,
             Output::NotFound => panic!("the show is not found"),
         }
+    }
+
+    struct AddedEpisode {
+        id: Uuid,
+        media_file_id: Uuid,
     }
 
     async fn add_show(
         db_context: &mut DbContext,
         title: &str,
         episodes: &[(i64, i64, bool)],
-    ) -> (Uuid, HashMap<(i64, i64), Uuid>) {
+    ) -> (Uuid, HashMap<(i64, i64), AddedEpisode>) {
         let show = show(db_context, title)
             .exec(db_context.executor_mut())
             .await
@@ -206,13 +239,21 @@ mod tests {
                     id
                 }
             };
+            let media_file_id = add_media_file(db_context, None).await;
             let episode = episode(db_context, season_id)
                 .number(number)
                 .in_library(visible)
+                .media_file_id(Some(media_file_id))
                 .exec(db_context.executor_mut())
                 .await
                 .unwrap();
-            ids.insert((season, number), episode.id);
+            ids.insert(
+                (season, number),
+                AddedEpisode {
+                    id: episode.id,
+                    media_file_id,
+                },
+            );
         }
         (show.id, ids)
     }
@@ -359,9 +400,57 @@ mod tests {
                 page.play.season_number,
                 page.play.episode_number
             ),
-            (episodes[&(1, 2)], season_one, 1, 2)
+            (episodes[&(1, 2)].id, season_one, 1, 2)
         );
         assert_eq!(page.play.episode_title, "Good News About Hell");
+    }
+
+    #[tokio::test]
+    async fn each_user_plays_the_show_from_their_own_watch_state() {
+        let mut db_context = mock_db_context().await;
+        let (severance, episodes) = add_show(
+            &mut db_context,
+            "Severance",
+            &[(1, 1, true), (1, 2, true), (2, 1, true)],
+        )
+        .await;
+        let (noor, ravi, mina) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+        watch_to_the_end(
+            &db_context,
+            noor,
+            episodes[&(1, 1)].media_file_id,
+            "2026-11-01T20:00:00Z",
+        )
+        .await;
+        stop_at(
+            &db_context,
+            ravi,
+            episodes[&(2, 1)].media_file_id,
+            SignedDuration::from_secs(1534),
+            "2026-11-02T20:00:00Z",
+        )
+        .await;
+
+        let mut plays = Vec::new();
+        for user_id in [noor, ravi, mina] {
+            let play = show_for(&db_context, user_id, severance).await.play;
+            plays.push((play.season_number, play.episode_number, play.verb));
+        }
+
+        assert_eq!(
+            plays,
+            [
+                (1, 2, PlayVerb::Play),
+                (
+                    2,
+                    1,
+                    PlayVerb::Resume {
+                        position_seconds: 1534
+                    }
+                ),
+                (1, 1, PlayVerb::Play),
+            ]
+        );
     }
 
     #[tokio::test]
@@ -378,7 +467,7 @@ mod tests {
 
         assert_eq!(
             (page.play.episode_id, page.play.season_number),
-            (episodes[&(0, 1)], 0)
+            (episodes[&(0, 1)].id, 0)
         );
         assert_eq!(page.season_count, 0);
     }

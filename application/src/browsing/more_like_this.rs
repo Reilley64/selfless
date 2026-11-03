@@ -1,4 +1,5 @@
 use crate::browsing::Tile;
+use crate::browsing::movie_watches;
 use crate::browsing::season_counts;
 use crate::browsing::title_images;
 use crate::browsing::visible_season;
@@ -24,6 +25,7 @@ enum Title {
 
 pub(crate) async fn more_like_this(
     db_context: &mut DbContext,
+    user_id: Uuid,
     genres: &[String],
     title_id: Uuid,
     url_signer: &UrlSigner,
@@ -74,6 +76,14 @@ pub(crate) async fn more_like_this(
         .exec(db_context.executor_mut())
         .await?;
     let season_counts = season_counts(&seasons);
+    let movies: Vec<&Movie> = titles
+        .iter()
+        .filter_map(|(_, x)| match x {
+            Title::Movie(movie) => Some(movie),
+            Title::Show(_) => None,
+        })
+        .collect();
+    let mut watches = movie_watches(db_context, user_id, movies).await?;
     let mut images = title_images(
         db_context,
         |x| x.movie_id.or(x.show_id),
@@ -90,7 +100,10 @@ pub(crate) async fn more_like_this(
         .map(|(_, title)| {
             let images = images.remove(&title.id()).unwrap_or_default();
             match title {
-                Title::Movie(movie) => Tile::movie(movie, images),
+                Title::Movie(movie) => {
+                    let watch = watches.remove(&movie.id).unwrap_or_default();
+                    Tile::movie(movie, images, watch)
+                }
                 Title::Show(show) => {
                     let season_count = season_counts.get(&show.id).copied().unwrap_or_default();
                     Tile::show(show, season_count, images)

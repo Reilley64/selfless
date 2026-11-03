@@ -4,11 +4,14 @@ use crate::routes::api::tile::CursorParam;
 use crate::routes::api::tile::SortParam;
 use crate::routes::api::tile::TileBody;
 use crate::routes::api::tile::TilePageBody;
+use crate::user_auth::CurrentSession;
 use application::browsing::get_show;
+use domain::PlayVerb;
 use infrastructure::AppState;
 use serde::Serialize;
 use topcoat::context::Cx;
 use topcoat::context::app_context;
+use topcoat::context::request_context;
 use topcoat::router::content::Json;
 use topcoat::router::path_param;
 use topcoat::router::query_params;
@@ -50,7 +53,8 @@ pub(crate) async fn show(cx: &Cx) -> topcoat::Result<Response> {
     let Ok(show_id) = path_param::<ShowId>(cx) else {
         return NOT_FOUND.into_response(cx);
     };
-    match get_show::call(app_context::<AppState>(cx), *show_id).await? {
+    let user_id = request_context::<CurrentSession>(cx).user.id;
+    match get_show::call(app_context::<AppState>(cx), user_id, *show_id).await? {
         get_show::Output::Show(page) => Json(&ShowPageBody::from(*page)).into_response(cx),
         get_show::Output::NotFound => NOT_FOUND.into_response(cx),
     }
@@ -104,6 +108,7 @@ struct PlayBody {
 #[serde(rename_all = "camelCase")]
 enum Verb {
     Play,
+    Resume,
 }
 
 #[derive(Serialize)]
@@ -152,8 +157,14 @@ impl From<get_show::Show> for ShowPageBody {
                 })
                 .collect(),
             play: PlayBody {
-                verb: Verb::Play,
-                resume_position: None,
+                verb: match page.play.verb {
+                    PlayVerb::Play => Verb::Play,
+                    PlayVerb::Resume { .. } => Verb::Resume,
+                },
+                resume_position: match page.play.verb {
+                    PlayVerb::Play => None,
+                    PlayVerb::Resume { position_seconds } => Some(position_seconds as f64),
+                },
                 season: PlaySeasonBody {
                     id: page.play.season_id,
                     number: page.play.season_number,
@@ -175,9 +186,11 @@ impl From<get_show::Show> for ShowPageBody {
 
 #[cfg(test)]
 mod tests {
+    use crate::test::add_media_file;
     use crate::test::add_show;
     use crate::test::serve;
     use crate::test::signed_in_user;
+    use crate::test::stop_at;
     use application::ports::persistence::DbScope;
     use domain::ArtworkKind;
     use domain::Episode;
@@ -185,6 +198,7 @@ mod tests {
     use domain::Show;
     use http::Method;
     use http::StatusCode;
+    use jiff::SignedDuration;
     use jiff::civil::date;
     use serde_json::json;
     use test_app::TestApp;
@@ -392,6 +406,64 @@ mod tests {
                     "episode": { "id": first_episode, "number": 1, "title": "Good News About Hell" },
                 },
                 "moreLikeThis": null,
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn the_show_page_resumes_the_signed_in_users_paused_episode() {
+        let app = TestApp::new().await;
+        let (noor, token) = signed_in_user(&app, "Noor", "a long passphrase about tea").await;
+        let mut db_context = app.state.db_context.clone();
+        let severance = add_show(&app, "Severance", &[1, 2]).await;
+        let season_two = db_context
+            .seasons()
+            .filter(
+                Season::fields()
+                    .show_id()
+                    .eq(severance)
+                    .and(Season::fields().number().eq(2)),
+            )
+            .get(db_context.executor_mut())
+            .await
+            .unwrap()
+            .id;
+        let paused = db_context
+            .episodes()
+            .filter(Episode::fields().season_id().eq(season_two))
+            .get(db_context.executor_mut())
+            .await
+            .unwrap()
+            .id;
+        let media_file = add_media_file(&app, None).await;
+        db_context
+            .episodes()
+            .filter(Episode::fields().id().eq(paused))
+            .update()
+            .media_file_id(Some(media_file))
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap();
+        stop_at(&app, noor, media_file, SignedDuration::from_secs(1534)).await;
+        let server = serve(&app).await;
+
+        let (status, page) = server
+            .request(
+                Method::GET,
+                &format!("/api/shows/{severance}/v1"),
+                Some(&token),
+                None,
+            )
+            .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            page["play"],
+            json!({
+                "verb": "resume",
+                "resumePosition": 1534.0,
+                "season": { "id": season_two, "number": 2 },
+                "episode": { "id": paused, "number": 1, "title": "Good News About Hell" },
             })
         );
     }

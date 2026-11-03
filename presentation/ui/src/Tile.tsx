@@ -3,6 +3,8 @@ import { type Ref, useState } from "react";
 import { type ImageResizeMode, PixelRatio, Platform, type View as HostView } from "react-native";
 import { Image, Pressable, Text, View } from "react-native-css/components";
 import { imageUrl } from "./imageUrl";
+import { ProgressBar } from "./ProgressBar";
+import { WatchedMark } from "./WatchedMark";
 
 const pixelWidth = (layoutWidth: number) =>
   Platform.isTV ? layoutWidth : PixelRatio.getPixelSizeForLayoutSize(layoutWidth);
@@ -67,6 +69,8 @@ export function Tile({
               {tile.title}
             </Text>
           )}
+          {tile.progress != null && <ProgressBar progress={tile.progress} className="absolute right-2 bottom-2 left-2" />}
+          {tile.watched && <WatchedMark className="absolute top-2 right-2" />}
           {Platform.isTV && focused && (
             <View className="absolute inset-0 rounded-medium border-(length:--spacing-focus-ring-tv-width) border-focus-ring" />
           )}

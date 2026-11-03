@@ -23,6 +23,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
 use test_fixtures::FakeClock;
+use uuid::Uuid;
 
 #[tokio::test]
 async fn image_requests_are_counted_by_whether_the_cache_held_the_image() {
@@ -71,6 +72,7 @@ async fn image_requests_are_counted_by_whether_the_cache_held_the_image() {
             clock: clock.clone(),
             url_signer: url_signer.clone(),
         },
+        Uuid::new_v4(),
         None,
         GridSort::Title,
         None,

@@ -11,6 +11,12 @@ pub struct WatchState {
 }
 
 impl WatchState {
+    pub fn progress(&self, duration_ms: Option<i64>) -> Option<f64> {
+        let position_ms = self.resume_position_seconds? * 1000;
+        let duration_ms = duration_ms.filter(|x| *x > 0)?;
+        Some((position_ms as f64 / duration_ms as f64).min(1.0))
+    }
+
     pub fn after_report(
         &self,
         position: SignedDuration,
@@ -61,6 +67,21 @@ mod tests {
             watched_at: None,
             last_played: Some(at(EARLIER)),
         }
+    }
+
+    #[test]
+    fn the_progress_is_the_resume_position_over_the_duration() {
+        let half_way = resuming_at(1200);
+
+        assert_eq!(half_way.progress(Some(2_400_000)), Some(0.5));
+        assert_eq!(half_way.progress(None), None);
+        assert_eq!(half_way.progress(Some(0)), None);
+        assert_eq!(WatchState::default().progress(Some(2_400_000)), None);
+    }
+
+    #[test]
+    fn the_progress_of_a_resume_position_past_the_probed_duration_is_whole() {
+        assert_eq!(resuming_at(3000).progress(Some(2_400_000)), Some(1.0));
     }
 
     #[test]

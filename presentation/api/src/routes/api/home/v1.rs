@@ -1,4 +1,5 @@
 use crate::routes::api::tile::TileBody;
+use crate::user_auth::CurrentSession;
 use application::browsing::get_home::FeaturedTitle;
 use application::browsing::get_home::Row;
 use application::browsing::get_home::RowKind;
@@ -6,6 +7,7 @@ use infrastructure::AppState;
 use serde::Serialize;
 use topcoat::context::Cx;
 use topcoat::context::app_context;
+use topcoat::context::request_context;
 use topcoat::router::content::Json;
 use topcoat::router::response::IntoResponse;
 use topcoat::router::response::Response;
@@ -64,7 +66,11 @@ impl From<Row> for RowBody {
 
 #[route(GET "/api/(user)/home/v1")]
 pub(crate) async fn home(cx: &Cx) -> topcoat::Result<Response> {
-    let home = application::browsing::get_home::call(app_context::<AppState>(cx)).await?;
+    let home = application::browsing::get_home::call(
+        app_context::<AppState>(cx),
+        request_context::<CurrentSession>(cx).user.id,
+    )
+    .await?;
     Json(&HomeBody {
         featured: home.featured.map(FeaturedTitleBody::from),
         rows: home.rows.into_iter().map(RowBody::from).collect(),

@@ -4,11 +4,13 @@ use crate::routes::api::tile::CursorParam;
 use crate::routes::api::tile::SortParam;
 use crate::routes::api::tile::TileBody;
 use crate::routes::api::tile::TilePageBody;
+use crate::user_auth::CurrentSession;
 use application::browsing::get_movie;
 use infrastructure::AppState;
 use serde::Serialize;
 use topcoat::context::Cx;
 use topcoat::context::app_context;
+use topcoat::context::request_context;
 use topcoat::router::content::Json;
 use topcoat::router::path_param;
 use topcoat::router::query_params;
@@ -35,6 +37,7 @@ pub(crate) async fn movies(cx: &Cx) -> topcoat::Result<Response> {
         .transpose()?;
     let page = application::browsing::list_movies::call(
         app_context::<AppState>(cx),
+        request_context::<CurrentSession>(cx).user.id,
         query.genre.clone(),
         sort.into(),
         after,
@@ -50,7 +53,8 @@ pub(crate) async fn movie(cx: &Cx) -> topcoat::Result<Response> {
     let Ok(movie_id) = path_param::<MovieId>(cx) else {
         return NOT_FOUND.into_response(cx);
     };
-    match get_movie::call(app_context::<AppState>(cx), *movie_id).await? {
+    let user_id = request_context::<CurrentSession>(cx).user.id;
+    match get_movie::call(app_context::<AppState>(cx), user_id, *movie_id).await? {
         get_movie::Output::Movie(page) => Json(&MoviePageBody::from(*page)).into_response(cx),
         get_movie::Output::NotFound => NOT_FOUND.into_response(cx),
     }
@@ -113,10 +117,10 @@ impl From<get_movie::Movie> for MoviePageBody {
                 })
                 .collect(),
             images: TitleImagesBody::from(page.images),
-            progress: None,
-            watched: false,
+            progress: page.progress,
+            watched: page.watched,
             play: MoviePlayBody {
-                resume_position: None,
+                resume_position: page.resume_position_seconds.map(|x| x as f64),
             },
             more_like_this: page
                 .more_like_this
@@ -130,14 +134,17 @@ impl From<get_movie::Movie> for MoviePageBody {
 #[cfg(test)]
 mod tests {
     use crate::test::add_artwork;
+    use crate::test::add_media_file;
     use crate::test::add_movie;
     use crate::test::movie;
     use crate::test::serve;
     use crate::test::signed_in_user;
+    use crate::test::stop_at;
     use application::ports::persistence::DbScope;
     use domain::ArtworkKind;
     use http::Method;
     use http::StatusCode;
+    use jiff::SignedDuration;
     use jiff::Timestamp;
     use jiff::ToSpan;
     use jiff::civil::date;
@@ -257,6 +264,57 @@ mod tests {
                 "play": { "resumePosition": null },
                 "moreLikeThis": null,
             })
+        );
+    }
+
+    #[tokio::test]
+    async fn the_movie_page_and_its_tiles_carry_the_signed_in_users_watch_state() {
+        let app = TestApp::new().await;
+        let (noor, token) = signed_in_user(&app, "Noor", "a long passphrase about tea").await;
+        let (_, ravi) = signed_in_user(&app, "Ravi", "a long passphrase about tea").await;
+        let mut db_context = app.state.db_context.clone();
+        let arrival_file = add_media_file(&app, Some(2_400_000)).await;
+        let arrival = movie(&app, "Arrival")
+            .media_file_id(Some(arrival_file))
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap();
+        let sicario_file = add_media_file(&app, Some(6_000_000)).await;
+        movie(&app, "Sicario")
+            .media_file_id(Some(sicario_file))
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap();
+        stop_at(&app, noor, arrival_file, SignedDuration::from_mins(20)).await;
+        stop_at(&app, noor, sicario_file, SignedDuration::from_mins(50)).await;
+        let server = serve(&app).await;
+
+        let mut views = Vec::new();
+        for token in [&token, &ravi] {
+            let (status, page) = server
+                .request(
+                    Method::GET,
+                    &format!("/api/movies/{}/v1", arrival.id),
+                    Some(token),
+                    None,
+                )
+                .await;
+            assert_eq!(status, StatusCode::OK);
+            views.push(json!([
+                page["progress"],
+                page["watched"],
+                page["play"],
+                page["moreLikeThis"][0]["progress"],
+                page["moreLikeThis"][0]["watched"],
+            ]));
+        }
+
+        assert_eq!(
+            views,
+            [
+                json!([0.5, false, { "resumePosition": 1200.0 }, null, true]),
+                json!([null, false, { "resumePosition": null }, null, false]),
+            ]
         );
     }
 

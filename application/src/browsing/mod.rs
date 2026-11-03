@@ -2,6 +2,7 @@ mod image;
 mod more_like_this;
 mod resizer;
 mod tile;
+mod watch_states;
 
 pub mod clean_image_cache;
 pub mod get_episode;
@@ -26,6 +27,9 @@ use domain::Show;
 use more_like_this::more_like_this;
 use std::collections::HashMap;
 use uuid::Uuid;
+use watch_states::MovieWatch;
+use watch_states::episode_watch_states;
+use watch_states::movie_watches;
 
 pub use tile::Cursor;
 pub use tile::SortKey;

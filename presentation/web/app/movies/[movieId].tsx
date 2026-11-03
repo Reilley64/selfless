@@ -1,7 +1,7 @@
 import { useGetMovie } from "@selfless/api-client";
-import { MovieHeader, TileRow, tilePath } from "@selfless/ui";
-import { Link, useLocalSearchParams, useRouter } from "expo-router";
-import { Pressable, ScrollView, Text, View } from "react-native-css/components";
+import { MovieHeader, PlayActions, playHref, TileRow, tilePath } from "@selfless/ui";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { ScrollView, View } from "react-native-css/components";
 import { ServerUnreachable } from "../../components/form";
 import { NotFound } from "../../components/NotFound";
 
@@ -26,11 +26,7 @@ export default function Movie() {
   return (
     <ScrollView className="flex-1 bg-background" contentContainerClassName="gap-6 pb-16">
       <MovieHeader movie={movie}>
-        <Link href={`/play/movies/${movie.id}`} asChild>
-          <Pressable className="h-button-web-height justify-center rounded-small bg-button-primary px-5 hover:bg-button-focus">
-            <Text className="font-sans font-bold text-web-body text-text-primary">Play</Text>
-          </Pressable>
-        </Link>
+        <PlayActions href={playHref({ movieId: movie.id })} resumePosition={movie.play.resumePosition} />
       </MovieHeader>
       {movie.moreLikeThis.length > 0 && (
         <TileRow

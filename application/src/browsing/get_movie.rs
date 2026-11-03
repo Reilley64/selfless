@@ -9,6 +9,7 @@ pub use output::Movie;
 pub use output::Output;
 
 use crate::browsing::more_like_this;
+use crate::browsing::movie_watches;
 use crate::browsing::title_images;
 use crate::ports::persistence::DbScope;
 use domain::Actor;
@@ -17,7 +18,11 @@ use uuid::Uuid;
 
 const CAST_SIZE: usize = 10;
 
-pub async fn call(dependencies: impl Into<Dependencies>, movie_id: Uuid) -> Result<Output, Error> {
+pub async fn call(
+    dependencies: impl Into<Dependencies>,
+    user_id: Uuid,
+    movie_id: Uuid,
+) -> Result<Output, Error> {
     let Dependencies {
         mut db_context,
         clock,
@@ -56,8 +61,14 @@ pub async fn call(dependencies: impl Into<Dependencies>, movie_id: Uuid) -> Resu
     .map_err(Error::caused_by)?
     .remove(&movie.id)
     .unwrap_or_default();
+    let watch = movie_watches(&mut db_context, user_id, [&movie])
+        .await
+        .map_err(Error::caused_by)?
+        .remove(&movie.id)
+        .unwrap_or_default();
     let more_like_this = more_like_this(
         &mut db_context,
+        user_id,
         &movie.genres,
         movie.id,
         &url_signer,
@@ -86,6 +97,9 @@ pub async fn call(dependencies: impl Into<Dependencies>, movie_id: Uuid) -> Resu
             })
             .collect(),
         images,
+        resume_position_seconds: watch.state.resume_position_seconds,
+        progress: watch.progress,
+        watched: watch.state.watched,
         more_like_this,
     })))
 }
@@ -98,13 +112,17 @@ mod tests {
     use crate::ports::Clock;
     use crate::ports::persistence::DbContext;
     use crate::ports::persistence::DbScope;
+    use crate::test::add_media_file;
     use crate::test::add_season;
     use crate::test::episode;
     use crate::test::mock_db_context;
     use crate::test::movie;
     use crate::test::show;
+    use crate::test::stop_at;
     use crate::test::url_signer;
+    use crate::test::watch_to_the_end;
     use domain::ArtworkKind;
+    use jiff::SignedDuration;
     use jiff::Timestamp;
     use test_fixtures::FakeClock;
 
@@ -117,7 +135,9 @@ mod tests {
     }
 
     async fn get(db_context: &DbContext, movie_id: Uuid) -> Output {
-        call(dependencies(db_context), movie_id).await.unwrap()
+        call(dependencies(db_context), Uuid::new_v4(), movie_id)
+            .await
+            .unwrap()
     }
 
     async fn add_artwork(db_context: &mut DbContext, movie_id: Uuid, kind: ArtworkKind) -> Uuid {
@@ -338,6 +358,69 @@ mod tests {
         assert_eq!(
             more_like_this(&output),
             (0..20).map(|x| format!("Movie {x:02}")).collect::<Vec<_>>()
+        );
+    }
+
+    #[tokio::test]
+    async fn each_user_sees_their_own_resume_position_progress_and_watched_state() {
+        let mut db_context = mock_db_context().await;
+        let arrival_file = add_media_file(&db_context, Some(2_400_000)).await;
+        let arrival = movie(&db_context, "Arrival")
+            .genres(names(&["Drama"]))
+            .media_file_id(Some(arrival_file))
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap();
+        let sicario_file = add_media_file(&db_context, Some(6_000_000)).await;
+        movie(&db_context, "Sicario")
+            .genres(names(&["Drama"]))
+            .media_file_id(Some(sicario_file))
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap();
+        let (noor, ravi, mina) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+        stop_at(
+            &db_context,
+            noor,
+            arrival_file,
+            SignedDuration::from_mins(20),
+            "2026-11-02T20:00:00Z",
+        )
+        .await;
+        stop_at(
+            &db_context,
+            noor,
+            sicario_file,
+            SignedDuration::from_mins(25),
+            "2026-11-02T21:00:00Z",
+        )
+        .await;
+        watch_to_the_end(&db_context, ravi, arrival_file, "2026-11-02T20:00:00Z").await;
+
+        let mut views = Vec::new();
+        for user_id in [noor, ravi, mina] {
+            let Output::Movie(page) = call(dependencies(&db_context), user_id, arrival.id)
+                .await
+                .unwrap()
+            else {
+                panic!("the movie is not found");
+            };
+            let sicario = &page.more_like_this[0];
+            views.push((
+                page.resume_position_seconds,
+                page.progress,
+                page.watched,
+                sicario.progress,
+            ));
+        }
+
+        assert_eq!(
+            views,
+            [
+                (Some(1200), Some(0.5), false, Some(0.25)),
+                (None, None, true, None),
+                (None, None, false, None),
+            ]
         );
     }
 

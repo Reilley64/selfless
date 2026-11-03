@@ -1,3 +1,4 @@
+use crate::browsing::MovieWatch;
 use crate::browsing::TileImages;
 use domain::Movie;
 use domain::Show;
@@ -16,10 +17,12 @@ pub struct Tile {
     pub plot: Option<String>,
     pub kind: TileKind,
     pub images: TileImages,
+    pub progress: Option<f64>,
+    pub watched: bool,
 }
 
 impl Tile {
-    pub(crate) fn movie(movie: Movie, images: TileImages) -> Self {
+    pub(crate) fn movie(movie: Movie, images: TileImages, watch: MovieWatch) -> Self {
         Self {
             id: movie.id,
             title: movie.title,
@@ -31,6 +34,8 @@ impl Tile {
                 runtime_minutes: movie.runtime_minutes,
             },
             images,
+            progress: watch.progress,
+            watched: watch.state.watched,
         }
     }
 
@@ -44,6 +49,8 @@ impl Tile {
             plot: show.overview,
             kind: TileKind::Show { season_count },
             images,
+            progress: None,
+            watched: false,
         }
     }
 }

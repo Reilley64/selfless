@@ -1,5 +1,6 @@
 use crate::browsing::Tile;
 use crate::browsing::TileImages;
+use domain::PlayVerb;
 use uuid::Uuid;
 
 #[derive(Debug)]
@@ -48,4 +49,5 @@ pub struct Play {
     pub episode_title: String,
     pub season_id: Uuid,
     pub season_number: i64,
+    pub verb: PlayVerb,
 }

@@ -15,4 +15,6 @@ pub struct Episode {
     pub runtime_minutes: Option<i64>,
     pub plot: Option<String>,
     pub thumb: Option<Image>,
+    pub progress: Option<f64>,
+    pub watched: bool,
 }

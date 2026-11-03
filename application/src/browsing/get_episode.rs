@@ -10,6 +10,7 @@ pub use output::Show;
 pub use output::SubtitleLanguage;
 
 use crate::browsing::Image;
+use crate::browsing::episode_watch_states;
 use crate::ports::persistence::DbScope;
 use domain::Artwork;
 use domain::MediaFile;
@@ -17,6 +18,7 @@ use uuid::Uuid;
 
 pub async fn call(
     dependencies: impl Into<Dependencies>,
+    user_id: Uuid,
     episode_id: Uuid,
 ) -> Result<Output, Error> {
     let Dependencies {
@@ -52,6 +54,7 @@ pub async fn call(
         .await
         .map_err(Error::caused_by)?;
     let mut runtime_minutes = None;
+    let mut duration_ms = None;
     let mut audio_languages = Vec::new();
     let mut subtitle_languages = Vec::new();
     if let Some(media_file_id) = episode.media_file_id {
@@ -65,6 +68,7 @@ pub async fn call(
             .await
             .map_err(Error::caused_by)?;
         runtime_minutes = media_file.as_ref().and_then(MediaFile::runtime_minutes);
+        duration_ms = media_file.as_ref().and_then(|x| x.duration_ms);
         let (mut audio_streams, mut subtitle_streams, mut subtitle_files) = match media_file {
             Some(x) => (
                 x.audio_streams.into_inner(),
@@ -103,6 +107,12 @@ pub async fn call(
             }
         }
     }
+    let state = episode_watch_states(&mut db_context, user_id, vec![episode.id])
+        .await
+        .map_err(Error::caused_by)?
+        .remove(&episode.id)
+        .map(|x| x.watch_state())
+        .unwrap_or_default();
     let now = clock.call();
     let thumb = db_context
         .artwork()
@@ -147,6 +157,9 @@ pub async fn call(
         },
         audio_languages,
         subtitle_languages,
+        resume_position_seconds: state.resume_position_seconds,
+        progress: state.progress(duration_ms),
+        watched: state.watched,
     })))
 }
 
@@ -161,8 +174,11 @@ mod tests {
     use crate::test::episode;
     use crate::test::mock_db_context;
     use crate::test::show;
+    use crate::test::stop_at;
     use crate::test::url_signer;
+    use crate::test::watch_to_the_end;
     use domain::ArtworkKind;
+    use jiff::SignedDuration;
     use jiff::Timestamp;
     use jiff::civil::date;
     use test_fixtures::FakeClock;
@@ -176,7 +192,9 @@ mod tests {
     }
 
     async fn get(db_context: &DbContext, episode_id: Uuid) -> Output {
-        call(dependencies(db_context), episode_id).await.unwrap()
+        call(dependencies(db_context), Uuid::new_v4(), episode_id)
+            .await
+            .unwrap()
     }
 
     async fn get_episode(db_context: &DbContext, episode_id: Uuid) -> Episode {
@@ -478,6 +496,43 @@ mod tests {
         assert_eq!(
             widths(page.show.logo.as_ref()),
             Some((logo, vec![300, 600]))
+        );
+    }
+
+    #[tokio::test]
+    async fn each_user_sees_their_own_resume_position_progress_and_watched_state() {
+        let mut db_context = mock_db_context().await;
+        let (episodes, media_file) = add_episode_with_file(&mut db_context, &[2]).await;
+        let (noor, ravi, mina) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+        stop_at(
+            &db_context,
+            noor,
+            media_file,
+            SignedDuration::from_secs(1415),
+            "2026-11-02T20:00:00Z",
+        )
+        .await;
+        watch_to_the_end(&db_context, ravi, media_file, "2026-11-02T20:00:00Z").await;
+
+        let mut views = Vec::new();
+        for user_id in [noor, ravi, mina] {
+            let Output::Episode(page) = call(dependencies(&db_context), user_id, episodes[0])
+                .await
+                .unwrap()
+            else {
+                panic!("the episode is not found");
+            };
+            let percent = page.progress.map(|x| (x * 100.0).round());
+            views.push((page.resume_position_seconds, percent, page.watched));
+        }
+
+        assert_eq!(
+            views,
+            [
+                (Some(1415), Some(50.0), false),
+                (None, None, true),
+                (None, None, false),
+            ]
         );
     }
 }
