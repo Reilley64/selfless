@@ -1,4 +1,5 @@
 use crate::browsing::Image;
+use domain::SubtitleLanguage;
 use jiff::civil::Date;
 use uuid::Uuid;
 
@@ -32,11 +33,4 @@ pub struct Show {
     pub id: Uuid,
     pub title: String,
     pub logo: Option<Image>,
-}
-
-#[derive(Debug, PartialEq)]
-pub struct SubtitleLanguage {
-    pub language: String,
-    pub hearing_impaired: bool,
-    pub forced: bool,
 }
