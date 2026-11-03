@@ -24,6 +24,7 @@ use crate::ports::SonarrShow;
 use crate::ports::persistence::DbContext;
 use crate::ports::persistence::DbScope;
 use domain::HeldRemoval;
+use domain::HeldRemovalItem;
 use domain::Movie;
 use domain::ReconcileResult;
 use domain::Show;
@@ -356,40 +357,38 @@ async fn remove_or_hold(
     source: Source,
     listing: &Listing,
 ) -> Result<(), Error> {
-    db_context
+    let mut transaction = db_context.transaction().await.map_err(Error::caused_by)?;
+    transaction
         .held_removals()
         .filter(HeldRemoval::fields().source().eq(source))
         .delete()
-        .exec(db_context.executor_mut())
+        .exec(transaction.executor_mut())
         .await
         .map_err(Error::caused_by)?;
-    if HeldRemoval::holds(listing.absent.len(), listing.total) {
-        tracing::warn!(
-            selfless.library.source = source.name(),
-            "held a removal of more than half of a source's items"
-        );
-        let mut transaction = db_context.transaction().await.map_err(Error::caused_by)?;
-        transaction
-            .held_removals()
-            .create()
-            .source(source)
-            .exec(transaction.executor_mut())
-            .await
-            .map_err(Error::caused_by)?;
-        for item_id in &listing.absent {
-            transaction
-                .held_removal_items()
-                .create()
-                .source(source)
-                .item_id(*item_id)
-                .exec(transaction.executor_mut())
-                .await
-                .map_err(Error::caused_by)?;
-        }
+    if !HeldRemoval::holds(listing.absent.len(), listing.total) {
         transaction.commit().await.map_err(Error::caused_by)?;
-        return Ok(());
+        return remove(db_context, source, listing.absent.clone(), &listing.listed).await;
     }
-    remove(db_context, source, listing.absent.clone(), &listing.listed).await
+    tracing::warn!(
+        selfless.library.source = source.name(),
+        "held a removal of more than half of a source's items"
+    );
+    transaction
+        .held_removals()
+        .create()
+        .source(source)
+        .items(
+            listing
+                .absent
+                .iter()
+                .map(|x| HeldRemovalItem::create().item_id(*x))
+                .collect::<Vec<_>>(),
+        )
+        .exec(transaction.executor_mut())
+        .await
+        .map_err(Error::caused_by)?;
+    transaction.commit().await.map_err(Error::caused_by)?;
+    Ok(())
 }
 
 pub(crate) async fn remove(
