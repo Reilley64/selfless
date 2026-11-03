@@ -1,12 +1,17 @@
 export { clientId } from "./clientId";
+export { type DetailFact, DetailHeader, type DetailItem } from "./DetailHeader";
 export { FocusGuide, type FocusGuideInstance } from "./FocusGuide";
 export { GridSelectors, useGridQuery } from "./GridSelectors";
 export { initials } from "./initials";
 export { forgetInviteIdempotencyKey, inviteIdempotencyKey } from "./inviteIdempotencyKey";
 export { serverUnreachable } from "./messages";
+export { MovieHeader } from "./MovieHeader";
 export { randomUuid } from "./randomUuid";
+export { runtimeLabel } from "./runtimeLabel";
 export { ServerInfo } from "./ServerInfo";
 export { type PickerUser, type SessionStorage, startTvSession, startWebSession } from "./session";
 export { startTelemetry } from "./telemetry/startTelemetry";
 export { Tile } from "./Tile";
 export { TileGrid } from "./TileGrid";
+export { TileRow } from "./TileRow";
+export { tilePath } from "./tilePath";
