@@ -11,7 +11,6 @@ use crate::ports::FindMediaFile;
 use crate::ports::ListSubtitleFiles;
 use crate::ports::ReadEpisodeFolder;
 use crate::ports::ReadEpisodeNfo;
-use crate::ports::ReadNfoError;
 use crate::ports::ReadShowFolder;
 use crate::ports::ReadShowNfo;
 use crate::ports::ShowFolder;
@@ -35,6 +34,7 @@ use domain::SonarrId;
 use domain::Source;
 use futures_util::future::try_join_all;
 use jiff::Timestamp;
+use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -154,55 +154,58 @@ pub(crate) async fn inspect(
             |path| files.read_show_nfo.call(path),
         )
         .await?;
-        let mut nfo_roots = HashMap::new();
-        let mut episode_nfos = Vec::new();
-        for source_episode in &source_show.episodes {
-            let nfo_file = source_episode
+        let nfo_file = |source_episode: &SourceEpisode| {
+            source_episode
                 .media_file
                 .as_ref()
                 .and_then(|x| episode_folders.get(&x.path))
-                .and_then(|x| x.nfo.as_ref());
-            episode_nfos.push(match nfo_file {
-                None => Nfo::Missing,
-                Some(nfo_file)
-                    if !domain::needs_reread(
-                        stored_nfo_modified_at
-                            .get(&source_episode.tvdb_id)
-                            .copied()
-                            .flatten(),
-                        nfo_file.modified_at,
-                    ) =>
-                {
-                    Nfo::Unchanged
-                }
-                Some(nfo_file) => {
-                    if !nfo_roots.contains_key(&nfo_file.path) {
-                        let roots = match files.read_episode_nfo.call(&nfo_file.path).await {
-                            Ok(roots) => Some(roots),
-                            Err(ReadNfoError::UnreadableNfo(error)) => {
-                                metadata::warn_unreadable(&error, &nfo_file.path);
-                                None
-                            }
-                            Err(ReadNfoError::UnreadableFile(error)) => return Err(error),
-                        };
-                        nfo_roots.insert(nfo_file.path.clone(), roots);
-                    }
-                    match &nfo_roots[&nfo_file.path] {
-                        None => Nfo::Unreadable(nfo_file.path.clone()),
-                        Some(roots) => match EpisodeNfo::matching(
-                            roots,
-                            source_episode.sonarr_id,
-                            source_episode.season_number,
-                            source_episode.episode_number,
-                            &sonarr_ids,
-                        ) {
-                            Some(root) => Nfo::Read(root.clone(), nfo_file.modified_at),
-                            None => Nfo::Missing,
-                        },
-                    }
-                }
-            });
+                .and_then(|x| x.nfo.as_ref())
+        };
+        let mut nfo_files = BTreeMap::new();
+        for source_episode in &source_show.episodes {
+            if let Some(file) = nfo_file(source_episode) {
+                let stored = stored_nfo_modified_at
+                    .get(&source_episode.tvdb_id)
+                    .copied()
+                    .flatten();
+                nfo_files
+                    .entry(file.path.clone())
+                    .and_modify(|(_, x)| {
+                        if *x != stored {
+                            *x = None;
+                        }
+                    })
+                    .or_insert((file.clone(), stored));
+            }
         }
+        let mut nfos = HashMap::new();
+        for (path, (file, stored)) in nfo_files {
+            let nfo =
+                metadata::read_nfo(Some(file), stored, |path| files.read_episode_nfo.call(path))
+                    .await?;
+            nfos.insert(path, nfo);
+        }
+        let episode_nfos = source_show
+            .episodes
+            .iter()
+            .map(
+                |source_episode| match nfo_file(source_episode).map(|x| &nfos[&x.path]) {
+                    None | Some(Nfo::Missing) => Nfo::Missing,
+                    Some(Nfo::Unchanged) => Nfo::Unchanged,
+                    Some(Nfo::Unreadable(path)) => Nfo::Unreadable(path.clone()),
+                    Some(Nfo::Read(entries, modified_at)) => match EpisodeNfo::matching(
+                        entries,
+                        source_episode.sonarr_id,
+                        source_episode.season_number,
+                        source_episode.episode_number,
+                        &sonarr_ids,
+                    ) {
+                        Some(entry) => Nfo::Read(entry.clone(), *modified_at),
+                        None => Nfo::Missing,
+                    },
+                },
+            )
+            .collect::<Vec<_>>();
         Ok::<_, UnreadableFile>((found, episode_folders, folder, nfo, episode_nfos))
     };
     let (found, episode_folders, folder, nfo, episode_nfos) = match read.await {

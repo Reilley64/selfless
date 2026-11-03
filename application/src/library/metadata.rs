@@ -2,7 +2,6 @@ use crate::ports::FoundFile;
 use crate::ports::PortFuture;
 use crate::ports::ReadNfoError;
 use crate::ports::UnreadableFile;
-use crate::ports::UnreadableNfo;
 use crate::ports::persistence::DbScope;
 use domain::Actor;
 use domain::Artwork;
@@ -29,20 +28,16 @@ pub(crate) async fn read_nfo<T>(
         Some(file) => match read(&file.path).await {
             Ok(nfo) => Ok(Nfo::Read(nfo, file.modified_at)),
             Err(ReadNfoError::UnreadableNfo(error)) => {
-                warn_unreadable(&error, &file.path);
+                tracing::warn!(
+                    error = &error as &dyn std::error::Error,
+                    file.path = file.path,
+                    "failed to read an NFO file"
+                );
                 Ok(Nfo::Unreadable(file.path))
             }
             Err(ReadNfoError::UnreadableFile(error)) => Err(error),
         },
     }
-}
-
-pub(crate) fn warn_unreadable(error: &UnreadableNfo, path: &str) {
-    tracing::warn!(
-        error = error as &dyn std::error::Error,
-        file.path = path,
-        "failed to read an NFO file"
-    );
 }
 
 pub(crate) fn warn_unreadable_file(error: &UnreadableFile) {
