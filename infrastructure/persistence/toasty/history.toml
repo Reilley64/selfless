@@ -29,3 +29,8 @@ snapshot_name = "20261030_065714_snapshot.toml"
 id = 3759367077797623889
 name = "20261102_230512_invite_email_outbox.sql"
 snapshot_name = "20261102_230512_snapshot.toml"
+
+[[migrations]]
+id = 6080205868210475351
+name = "20261103_015518_invite_email_refused.sql"
+snapshot_name = "20261103_015518_snapshot.toml"

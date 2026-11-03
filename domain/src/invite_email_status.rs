@@ -4,5 +4,5 @@ use jiff::Timestamp;
 pub enum InviteEmailStatus {
     Queued { queued_at: Timestamp },
     Sent { sent_at: Timestamp },
-    Rejected { rejected_at: Timestamp },
+    Refused { refused_at: Timestamp },
 }

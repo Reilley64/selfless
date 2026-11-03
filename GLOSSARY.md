@@ -58,7 +58,7 @@ _Avoid_: Delivered
 
 **Refused**:
 An invite whose email the mail server refused for its address. It is not sent again until an admin resends it.
-_Avoid_: Bounced, failed
+_Avoid_: Bounced, failed, rejected
 
 **Admin**:
 An account that runs the server through the admin app. An admin is not a user, cannot watch, and never appears in the user picker.

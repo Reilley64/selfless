@@ -1,5 +1,5 @@
 use crate::ports::AcquireLock;
-use crate::ports::EmailRejected;
+use crate::ports::EmailRefused;
 use crate::ports::LockGuard;
 use crate::ports::SendEmail;
 use crate::ports::SendEmailError;
@@ -47,6 +47,6 @@ pub(crate) fn failing_mailer() -> SendEmail {
 
 pub(crate) fn refusing_mailer() -> SendEmail {
     SendEmail::new(|_, _, _| {
-        Box::pin(async { Err(SendEmailError::caused_by(EmailRejected::new())) })
+        Box::pin(async { Err(SendEmailError::caused_by(EmailRefused::new())) })
     })
 }

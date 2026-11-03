@@ -183,11 +183,11 @@ impl SendEmailError {
 #[derive(ohno::Error, Default)]
 #[no_constructors]
 #[display("the mail server refused the email")]
-pub struct EmailRejected {
+pub struct EmailRefused {
     core: ohno::OhnoCore,
 }
 
-impl EmailRejected {
+impl EmailRefused {
     pub fn new() -> Self {
         Self::default()
     }

@@ -7,7 +7,7 @@ pub use error::Error;
 pub use output::Output;
 
 use crate::invites::invite_email;
-use crate::ports::EmailRejected;
+use crate::ports::EmailRefused;
 use crate::ports::persistence::DbScope;
 use crate::tokens;
 use domain::Invite;
@@ -52,15 +52,15 @@ pub async fn call(
                 .await
                 .map_err(Error::caused_by)?;
         }
-        Err(error) if error.find_source::<EmailRejected>().is_some() => {
+        Err(error) if error.find_source::<EmailRefused>().is_some() => {
             tracing::warn!(
                 error = &error as &dyn std::error::Error,
                 "the mail server refused an invite email"
             );
             invite
                 .update()
-                .email_status(InviteEmailStatus::Rejected {
-                    rejected_at: clock.call(),
+                .email_status(InviteEmailStatus::Refused {
+                    refused_at: clock.call(),
                 })
                 .exec(db_context.executor_mut())
                 .await
@@ -275,7 +275,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_refused_address_marks_the_invite_rejected() {
+    async fn a_refused_address_marks_the_invite_refused() {
         let invites = Invites::new().await;
         let invite_id = invites.queue().await;
         let logs = Logs::default();
@@ -294,8 +294,8 @@ mod tests {
         let invite = invites.invite(invite_id).await.unwrap();
         assert_eq!(
             invite.email_status,
-            InviteEmailStatus::Rejected {
-                rejected_at: invites.clock.now()
+            InviteEmailStatus::Refused {
+                refused_at: invites.clock.now()
             }
         );
         assert_eq!(invite.token_hash, None);

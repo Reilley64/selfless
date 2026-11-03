@@ -1,7 +1,7 @@
 use application::attributes::SELFLESS_EMAIL_OUTCOME;
 use application::attributes::SELFLESS_EMAIL_SMTP_REPLY_CODE;
 use application::attributes::selfless_email_outcome;
-use application::ports::EmailRejected;
+use application::ports::EmailRefused;
 use application::ports::SendEmail;
 use application::ports::SendEmailError;
 use application::spans::SELFLESS_EMAIL_SEND;
@@ -95,7 +95,7 @@ where
                     .to(recipient
                         .as_str()
                         .parse()
-                        .map_err(|_| SendEmailError::caused_by(EmailRejected::new()))?)
+                        .map_err(|_| SendEmailError::caused_by(EmailRefused::new()))?)
                     .subject(subject)
                     .header(ContentType::TEXT_PLAIN)
                     .body(body)
@@ -109,7 +109,7 @@ where
                             Span::current()
                                 .record(SELFLESS_EMAIL_SMTP_REPLY_CODE, i64::from(u16::from(code)));
                             if MAILBOX_REFUSAL_CODES.contains(&u16::from(code)) {
-                                SendEmailError::caused_by(EmailRejected::caused_by(SmtpReply(code)))
+                                SendEmailError::caused_by(EmailRefused::caused_by(SmtpReply(code)))
                             } else {
                                 SendEmailError::caused_by(SmtpReply(code))
                             }
@@ -285,7 +285,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_mailbox_refusal_marks_the_email_rejected() {
+    async fn a_mailbox_refusal_marks_the_email_refused() {
         for (command, code) in [
             ("RCPT", 550),
             ("RCPT", 551),
@@ -303,10 +303,10 @@ mod tests {
             let error = send_through(server.port(), None).await.unwrap_err();
 
             let chain = chain(&error);
-            let rejected = error
-                .find_source::<EmailRejected>()
+            let refused = error
+                .find_source::<EmailRefused>()
                 .unwrap_or_else(|| panic!("{command} {code} is not a refusal: {chain}"));
-            let reply = rejected
+            let reply = refused
                 .source()
                 .and_then(|x| x.downcast_ref::<SmtpReply>())
                 .unwrap_or_else(|| panic!("{command} {code}: {chain}"));
@@ -337,7 +337,7 @@ mod tests {
                 .unwrap_or_else(|| panic!("{command} {code}: {chain}"));
             assert_eq!(u16::from(reply.0), code, "{command}: {chain}");
             assert!(
-                error.find_source::<EmailRejected>().is_none(),
+                error.find_source::<EmailRefused>().is_none(),
                 "{command} {code} is a refusal: {chain}"
             );
             assert!(!chain.contains(RECIPIENT), "{command} {code}: {chain}");
@@ -353,14 +353,14 @@ mod tests {
         let error = send_through(port, None).await.unwrap_err();
 
         assert!(
-            error.find_source::<EmailRejected>().is_none(),
+            error.find_source::<EmailRefused>().is_none(),
             "{}",
             chain(&error)
         );
     }
 
     #[tokio::test]
-    async fn an_address_the_adapter_cannot_parse_marks_the_email_rejected() {
+    async fn an_address_the_adapter_cannot_parse_marks_the_email_refused() {
         let transport = AsyncStubTransport::new_ok();
         let send_email = send_email_through(transport.clone(), FROM.parse().unwrap());
 
@@ -374,7 +374,7 @@ mod tests {
             .unwrap_err();
 
         let chain = chain(&error);
-        assert!(error.find_source::<EmailRejected>().is_some(), "{chain}");
+        assert!(error.find_source::<EmailRefused>().is_some(), "{chain}");
         assert!(!chain.contains("maya ali"), "{chain}");
         assert_eq!(transport.messages().await, []);
     }
