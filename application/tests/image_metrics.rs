@@ -117,8 +117,8 @@ async fn image_requests_are_counted_by_whether_the_cache_held_the_image() {
             dependencies(),
             fanart.id,
             url.width,
-            url.expires,
-            &url.signature,
+            url.signed_url.expires,
+            &url.signed_url.signature,
         )
         .await
         .unwrap();
@@ -127,7 +127,7 @@ async fn image_requests_are_counted_by_whether_the_cache_held_the_image() {
         dependencies(),
         fanart.id,
         480,
-        fanart.urls[0].expires,
+        fanart.urls[0].signed_url.expires,
         "tampered",
     )
     .await

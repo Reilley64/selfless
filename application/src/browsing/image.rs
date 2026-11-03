@@ -1,5 +1,6 @@
 use crate::ports::persistence::DbContext;
 use crate::ports::persistence::DbScope;
+use crate::url_signer::SignedUrl;
 use crate::url_signer::UrlSigner;
 use domain::Artwork;
 use domain::ArtworkKind;
@@ -16,8 +17,7 @@ pub struct Image {
 #[derive(Clone, Debug)]
 pub struct ImageUrl {
     pub width: i64,
-    pub expires: Timestamp,
-    pub signature: String,
+    pub signed_url: SignedUrl,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -47,14 +47,10 @@ impl Image {
                 .kind
                 .widths()
                 .iter()
-                .map(|&width| {
-                    let url =
-                        url_signer.sign(&resource(artwork.id, width, artwork.modified_at), now);
-                    ImageUrl {
-                        width,
-                        expires: url.expires,
-                        signature: url.signature,
-                    }
+                .map(|&width| ImageUrl {
+                    width,
+                    signed_url: url_signer
+                        .sign(&resource(artwork.id, width, artwork.modified_at), now),
                 })
                 .collect(),
         }
