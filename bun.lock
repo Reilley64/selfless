@@ -40,6 +40,7 @@
         "@expo/metro-runtime": "~58.0.15",
         "@expo/vector-icons": "^15.0.2",
         "@formatjs/intl-displaynames": "^8.0.1",
+        "@formatjs/intl-getcanonicallocales": "^3.3.0",
         "@selfless/api-client": "workspace:*",
         "@selfless/ui": "workspace:*",
         "@tanstack/react-query": "^5.105.0",
@@ -498,6 +499,8 @@
     "@formatjs/fast-memoize": ["@formatjs/fast-memoize@3.1.7", "", {}, "sha512-zXfhLpvA6T7+efdt9JLbBwZ00tT7NsBMDVnDu8rpHeNNv8KfRZAMo2gkG0k9lK/Nzc//3kJ9pImsfuJxk3KhUA=="],
 
     "@formatjs/intl-displaynames": ["@formatjs/intl-displaynames@8.0.1", "", { "dependencies": { "@formatjs/intl-localematcher": "0.10.1" } }, "sha512-8RTQvKIGx+SAqI+bvVrrupwzeEZGGzdzJwVbZaK9U5VKuVo34LOFOkn7GX9KfwHuVIKxM7pKv8yYTs6UIkeyTA=="],
+
+    "@formatjs/intl-getcanonicallocales": ["@formatjs/intl-getcanonicallocales@3.3.0", "", {}, "sha512-ndj9jw/LHAftSe34D/A6+lj3Y7GHVfPEZ6FZP2wjd8/beYeh3d1sjlSpZSBlzegSKS3U3mUEIzLCpI0+jKNT6w=="],
 
     "@formatjs/intl-localematcher": ["@formatjs/intl-localematcher@0.10.1", "", { "dependencies": { "@formatjs/fast-memoize": "3.1.7" } }, "sha512-gBqglQK9rXuHsLmM8wzTMBy4Xo4d0jamirIVKuEL8F1rwbskWdpMA1kZarSkny+uvr5q/K6GSzE0Rcq1wZLl3g=="],
 

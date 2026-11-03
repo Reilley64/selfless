@@ -47,12 +47,14 @@ export default function Show() {
       </ShowHeader>
       <ShowEpisodes show={show} />
       {show.moreLikeThis.length > 0 && (
-        <TileRow
-          title="More like this"
-          tiles={show.moreLikeThis}
-          onPressTile={(tile) => router.push(tilePath(tile))}
-          onFocusTile={() => scroll.current?.scrollToEnd({ animated: true })}
-        />
+        <FocusGuide autoFocus>
+          <TileRow
+            title="More like this"
+            tiles={show.moreLikeThis}
+            onPressTile={(tile) => router.push(tilePath(tile))}
+            onFocusTile={() => scroll.current?.scrollToEnd({ animated: true })}
+          />
+        </FocusGuide>
       )}
     </ScrollView>
   );

@@ -17,11 +17,12 @@ export function useShowSeason(show: ShowPage): ShowSeason | undefined {
 }
 
 function SeasonColumn({ seasons, current }: { seasons: ShowSeason[]; current: ShowSeason }) {
-  const [currentSeason, setCurrentSeason] = useState<FocusGuideInstance | null>(null);
+  const [nodes, setNodes] = useState<Record<string, FocusGuideInstance>>({});
+  const currentNode = nodes[current.id];
   return (
     <FocusGuide
       autoFocus
-      destinations={currentSeason ? [currentSeason] : []}
+      destinations={currentNode ? [currentNode] : []}
       role="tablist"
       className="w-[300px] gap-2"
     >
@@ -30,7 +31,12 @@ function SeasonColumn({ seasons, current }: { seasons: ShowSeason[]; current: Sh
         return (
           <Pressable
             key={season.id}
-            ref={selected ? (node) => setCurrentSeason(node as unknown as FocusGuideInstance | null) : undefined}
+            ref={(node) => {
+              const guide = node as unknown as FocusGuideInstance | null;
+              if (guide) {
+                setNodes((x) => (x[season.id] === guide ? x : { ...x, [season.id]: guide }));
+              }
+            }}
             role="tab"
             aria-label={season.name}
             aria-selected={selected}
@@ -67,7 +73,9 @@ export function ShowEpisodes({ show }: { show: ShowPage }) {
         </Text>
         <View className="flex-row items-start gap-[50px]">
           <SeasonColumn seasons={show.seasons} current={season} />
-          <EpisodeList key={season.id} seasonId={season.id} />
+          <FocusGuide key={season.id} autoFocus className="flex-1">
+            <EpisodeList seasonId={season.id} />
+          </FocusGuide>
         </View>
       </View>
     );

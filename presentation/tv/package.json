@@ -14,6 +14,7 @@
     "@expo/metro-runtime": "~58.0.15",
     "@expo/vector-icons": "^15.0.2",
     "@formatjs/intl-displaynames": "^8.0.1",
+    "@formatjs/intl-getcanonicallocales": "^3.3.0",
     "@selfless/api-client": "workspace:*",
     "@selfless/ui": "workspace:*",
     "@tanstack/react-query": "^5.105.0",

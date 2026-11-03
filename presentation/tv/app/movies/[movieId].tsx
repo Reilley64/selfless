@@ -36,12 +36,14 @@ export default function Movie() {
         </FocusGuide>
       </MovieHeader>
       {movie.moreLikeThis.length > 0 && (
-        <TileRow
-          title="More like this"
-          tiles={movie.moreLikeThis}
-          onPressTile={(tile) => router.push(tilePath(tile))}
-          onFocusTile={() => scroll.current?.scrollToEnd({ animated: true })}
-        />
+        <FocusGuide autoFocus>
+          <TileRow
+            title="More like this"
+            tiles={movie.moreLikeThis}
+            onPressTile={(tile) => router.push(tilePath(tile))}
+            onFocusTile={() => scroll.current?.scrollToEnd({ animated: true })}
+          />
+        </FocusGuide>
       )}
     </ScrollView>
   );
