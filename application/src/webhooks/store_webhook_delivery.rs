@@ -27,6 +27,7 @@ pub async fn call(
     let Dependencies {
         clock,
         mut db_context,
+        read_webhook_event_type,
         webhook_passwords,
     } = dependencies.into();
     if password.as_ref() != Some(webhook_passwords.get(source)) {
@@ -47,7 +48,7 @@ pub async fn call(
         );
         return Ok(Output::Rejected);
     }
-    let event_type = webhook_deliveries::event_type(&body);
+    let event_type = read_webhook_event_type.call(&body);
     let received_at = clock.call();
     let mut carrier = HashMap::new();
     TraceContextPropagator::new().inject_context(&Span::current().context(), &mut carrier);

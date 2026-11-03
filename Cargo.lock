@@ -266,8 +266,6 @@ dependencies = [
  "opentelemetry",
  "opentelemetry-appender-tracing",
  "opentelemetry_sdk",
- "serde",
- "serde_json",
  "sha2 0.11.1",
  "test-fixtures",
  "toasty",
@@ -4117,6 +4115,7 @@ dependencies = [
  "radarr",
  "reqwest",
  "serde_json",
+ "servarr",
  "settings",
  "sonarr",
  "telemetry",
@@ -4249,9 +4248,11 @@ dependencies = [
 name = "servarr"
 version = "0.1.0"
 dependencies = [
+ "application",
  "ohno",
  "reqwest",
  "serde",
+ "serde_json",
  "tracing",
  "url",
 ]

@@ -118,6 +118,7 @@ opentelemetry-otlp = { workspace = true }
 opentelemetry_sdk = { workspace = true }
 persistence = { workspace = true }
 radarr = { workspace = true }
+servarr = { workspace = true }
 settings = { workspace = true }
 sonarr = { workspace = true }
 telemetry = { workspace = true }
