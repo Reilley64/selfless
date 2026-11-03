@@ -124,11 +124,11 @@ function Video({
     const showAudio = (track: PlaybackAudioTrack) => {
       const playerTrack = playerTrackFor(track, available.current.audio, playback.audioTracks);
       if (playerTrack) {
-        play(player, { audioTrack: playerTrack });
+        showTracks(player, { audioTrack: playerTrack });
       }
     };
     const showSubtitle = (track: PlaybackSubtitleTrack | null) => {
-      play(player, {
+      showTracks(player, {
         subtitleTrack: track && (playerTrackFor(track, available.current.subtitle, playback.subtitleTracks) ?? null),
       });
     };
@@ -263,7 +263,7 @@ function Video({
   );
 }
 
-function play(player: VideoPlayer, tracks: Partial<Pick<VideoPlayer, "audioTrack" | "subtitleTrack">>) {
+function showTracks(player: VideoPlayer, tracks: Partial<Pick<VideoPlayer, "audioTrack" | "subtitleTrack">>) {
   Object.assign(player, tracks);
 }
 
