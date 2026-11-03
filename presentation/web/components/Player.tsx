@@ -6,7 +6,15 @@ import {
   startPlayback,
   useGetMe,
 } from "@selfless/api-client";
-import { createPlayerLogic, type PlaybackSpans, type Resume, startPlaybackSpans, type Tracks } from "@selfless/ui";
+import {
+  createPlayerLogic,
+  NextEpisodeButton,
+  type NextEpisodeButtonState,
+  type PlaybackSpans,
+  type Resume,
+  startPlaybackSpans,
+  type Tracks,
+} from "@selfless/ui";
 import { getParser } from "bowser";
 import { type Href, useRouter } from "expo-router";
 import HlsJs, { Events } from "hls.js";
@@ -35,13 +43,13 @@ const languageNames = new Intl.DisplayNames([navigator.language], { type: "langu
 
 type Start = { response: Awaited<ReturnType<typeof startPlayback>>; spans: PlaybackSpans } | "unreachable";
 
-type PlayerProps = { mediaFileId: string; startPosition: number; backHref: Href };
+type PlayerProps = { mediaFileId: string; startPosition: number; backHref: Href; titleHref: Href };
 
 export function Player(props: PlayerProps) {
   return <Playing key={`${props.mediaFileId}@${props.startPosition}`} {...props} />;
 }
 
-function Playing({ mediaFileId, startPosition, backHref }: PlayerProps) {
+function Playing({ mediaFileId, startPosition, backHref, titleHref }: PlayerProps) {
   const { data: me, isError } = useGetMe();
   const userId = me?.status === 200 ? me.data.id : undefined;
   const [start, setStart] = useState<Start>();
@@ -113,6 +121,7 @@ function Playing({ mediaFileId, startPosition, backHref }: PlayerProps) {
             spans={start.spans}
             resume={resume}
             restart={setResume}
+            titleHref={titleHref}
           />
         </Screen>
       );
@@ -136,13 +145,17 @@ function Video({
   spans,
   resume,
   restart,
+  titleHref,
 }: {
   playback: Playback;
   spans: PlaybackSpans;
   resume: Resume;
   restart: (resume: Resume) => void;
+  titleHref: Href;
 }) {
+  const router = useRouter();
   const [failed, setFailed] = useState(false);
+  const [nextButton, setNextButton] = useState<NextEpisodeButtonState | null>(null);
   const [selected, setSelected] = useState<Tracks>({
     audioTrackId: playback.audioTrackId,
     subtitleTrackId: playback.subtitleTrackId,
@@ -193,10 +206,13 @@ function Video({
           showSubtitle(track);
           setSelected((current) => ({ ...current, subtitleTrackId: track?.id ?? null }));
         },
+        showNextEpisode: setNextButton,
+        playNextEpisode: (episode) => router.replace(`/play/episodes/${episode.id}?position=0`),
+        returnToTitle: () => router.replace(titleHref),
         spans,
       }),
     };
-  }, [playback, resume.forceHls, restart, spans]);
+  }, [playback, resume.forceHls, restart, spans, router, titleHref]);
   useEffect(() => {
     const stop = () => logic.handle({ type: "stopped", position: position.current });
     const closed = (event: PageTransitionEvent) => {
@@ -281,7 +297,7 @@ function Video({
         }}
         onSeeked={(event) => logic.handle({ type: "seeked", position: at(event.currentTarget) })}
         onTimeUpdate={(event) => logic.handle({ type: "position", position: at(event.currentTarget) })}
-        onEnded={(event) => logic.handle({ type: "stopped", position: at(event.currentTarget) })}
+        onEnded={(event) => logic.handle({ type: "ended", position: at(event.currentTarget) })}
         onError={(event) =>
           logic.handle({
             type: "failed",
@@ -296,6 +312,13 @@ function Video({
         onAudio={logic.selectAudio}
         onSubtitle={logic.selectSubtitle}
       />
+      {nextButton && playback.nextEpisode && (
+        <NextEpisodeButton
+          episode={playback.nextEpisode}
+          countdown={nextButton.countdown}
+          onPress={logic.playNextEpisode}
+        />
+      )}
     </>
   );
 }

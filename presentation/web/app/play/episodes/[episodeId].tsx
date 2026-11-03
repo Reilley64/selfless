@@ -26,6 +26,7 @@ export default function PlayEpisode() {
       mediaFileId={data.data.mediaFileId}
       startPosition={position === undefined ? (data.data.play.resumePosition ?? 0) : Number(position)}
       backHref={`/episodes/${episodeId}`}
+      titleHref={`/shows/${data.data.show.id}`}
     />
   );
 }
