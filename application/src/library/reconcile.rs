@@ -26,6 +26,7 @@ use crate::ports::persistence::DbContext;
 use crate::ports::persistence::DbScope;
 use domain::HeldRemoval;
 use domain::HeldRemovalItem;
+use domain::LastReconcile;
 use domain::Movie;
 use domain::ReconcileResult;
 use domain::Show;
@@ -182,11 +183,7 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
             .await
             .map_err(Error::caused_by)?
             .update()
-            .last_reconcile_started_at(Some(started_at))
-            .last_reconcile_duration_ms(Some(
-                i64::try_from(duration.as_millis()).unwrap_or(i64::MAX),
-            ))
-            .last_reconcile_result(Some(result))
+            .last_reconcile(Some(LastReconcile::new(started_at, duration, result)))
             .exec(db_context.executor_mut())
             .await
             .map_err(Error::caused_by)
@@ -674,7 +671,8 @@ mod tests {
                 .exec(db_context.executor_mut())
                 .await
                 .unwrap()
-                .last_reconcile_result
+                .last_reconcile
+                .map(|x| x.result())
         }
 
         async fn status(&self) -> sync_status::Output {

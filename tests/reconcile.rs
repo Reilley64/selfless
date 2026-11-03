@@ -77,7 +77,8 @@ async fn the_first_reconcile_at_startup_imports_every_movie_and_show() {
             states
                 .iter()
                 .find(|x: &&SourceState| x.source == source)
-                .and_then(|x| x.last_reconcile_result)
+                .and_then(|x| x.last_reconcile)
+                .map(|x| x.result())
         };
         Some((result(Source::Radarr)?, result(Source::Sonarr)?))
     })
