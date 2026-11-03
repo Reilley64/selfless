@@ -71,19 +71,22 @@ impl Fixture {
 
     async fn reconciled(&self, source: Source) -> SourceStatus {
         let started_at = self.server.clock.now();
-        eventually(async || {
+        let source_status = async || {
             let status = self.status().await;
-            let status = match source {
+            match source {
                 Source::Radarr => status.radarr,
                 Source::Sonarr => status.sonarr,
-            };
-            status
+            }
+        };
+        eventually(async || {
+            source_status()
+                .await
                 .last_reconcile
-                .as_ref()
                 .is_some_and(|x| x.started_at == started_at)
-                .then_some(status)
+                .then_some(())
         })
-        .await
+        .await;
+        source_status().await
     }
 
     async fn sync_now(&self, source: Source) -> SourceStatus {
