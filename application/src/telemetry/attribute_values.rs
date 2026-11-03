@@ -63,6 +63,7 @@ pub(crate) fn reason_kinds(reasons: &[PlayReason]) -> Value {
                     PlayReason::VideoRange(_) => "videoRange",
                     PlayReason::AudioCodec(_) => "audioCodec",
                     PlayReason::AudioChannels(_) => "audioChannels",
+                    PlayReason::Subtitle(_) => "subtitle",
                     PlayReason::NoKeyframeIndex => "noKeyframeIndex",
                     PlayReason::ForcedHls => "forcedHls",
                 }

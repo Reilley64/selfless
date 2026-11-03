@@ -6,8 +6,13 @@ import {
   StackContextManager,
   TracerProvider,
 } from "@opentelemetry/sdk-trace";
-import type { PlayMethod, reportPlaybackProgressResponse } from "@selfless/api-client";
-import { type ProgressReport, type Resume, createPlayerLogic, startPlaybackSpans } from "./playerLogic";
+import type {
+  PlayMethod,
+  PlaybackAudioTrack,
+  PlaybackSubtitleTrack,
+  reportPlaybackProgressResponse,
+} from "@selfless/api-client";
+import { type ProgressReport, type Resume, createPlayerLogic, matchTrack, startPlaybackSpans } from "./playerLogic";
 
 const userId = "01890a5d-ac96-774b-bcce-b302099a8057";
 const mediaFileId = "01890a5d-ac96-774b-bcce-b302099a8060";
@@ -278,4 +283,50 @@ test("a play request that fails ends the first playback span with failed", () =>
   expect(events(finished)).toEqual([["selfless.playback.failed"]]);
   expect(first?.attributes["error.type"]).toBe("422");
   expect(first?.status.code).toBe(SpanStatusCode.ERROR);
+});
+
+function audioTrack(id: string, language: string | null, label: string | null): PlaybackAudioTrack {
+  return { id, language, label, codec: "aac", channels: 2, default: false, inStream: true };
+}
+
+function subtitleTrack(id: string, language: string, codec: string, inStream: boolean): PlaybackSubtitleTrack {
+  return {
+    id,
+    language,
+    label: null,
+    codec,
+    default: false,
+    forced: false,
+    hearingImpaired: false,
+    external: codec === "srt",
+    text: inStream,
+    inStream,
+  };
+}
+
+test("a player track matches the API track in its language, whether the language has two or three letters", () => {
+  const french = { language: "fr", label: "French" };
+  const brazilian = { language: "pt_BR", label: "Portuguese (BR)" };
+  const players = [french, brazilian];
+  const tracks = [audioTrack("eng", "eng", "Stereo"), audioTrack("fre", "fre", "Stereo"), audioTrack("pt", "pt-BR", null)];
+
+  expect([matchTrack(french, players, tracks)?.id, matchTrack(brazilian, players, tracks)?.id]).toEqual(["fre", "pt"]);
+});
+
+test("player tracks in one language match the API tracks in that language in order, told apart by label", () => {
+  const players = [
+    { language: "en", label: "English (Stereo)" },
+    { language: "ja", label: "Japanese" },
+    { language: "en", label: "English (Commentary)" },
+  ];
+  const tracks = [audioTrack("stereo", "eng", "Stereo"), audioTrack("japanese", "jpn", null), audioTrack("commentary", "eng", "Commentary")];
+
+  expect(matchTrack({ language: "en", label: "English (Commentary)" }, players, tracks)?.id).toBe("commentary");
+});
+
+test("a player track matches no API track the stream doesn't carry", () => {
+  const english = { language: "en", label: "English" };
+  const tracks = [subtitleTrack("pgs", "eng", "hdmv_pgs_subtitle", false), subtitleTrack("srt", "en", "srt", true)];
+
+  expect([matchTrack(english, [english], tracks)?.id, matchTrack({ language: "de", label: "German" }, [english], tracks)]).toEqual(["srt", undefined]);
 });

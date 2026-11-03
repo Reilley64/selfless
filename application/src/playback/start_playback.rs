@@ -122,6 +122,11 @@ pub async fn call(
         .min_by_key(|x| x.index);
     let audio = AudioStream::selected_by_default(media_file.audio_streams.get());
     let mut reasons = profile.direct_play_reasons(&container, video, audio);
+    reasons.extend(profile.tv_subtitle_reasons(
+        session_client_kind,
+        media_file.subtitle_streams.get(),
+        media_file.subtitle_files.get(),
+    ));
     if force_hls && reasons.is_empty() {
         reasons.push(PlayReason::ForcedHls);
     }

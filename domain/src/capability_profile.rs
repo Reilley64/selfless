@@ -2,7 +2,10 @@ use crate::AudioCodecSupport;
 use crate::AudioStream;
 use crate::AudioTranscode;
 use crate::AudioTranscodeCodec;
+use crate::ClientKind;
 use crate::PlayReason;
+use crate::SubtitleFile;
+use crate::SubtitleStream;
 use crate::VideoCodecSupport;
 use crate::VideoStream;
 
@@ -34,6 +37,30 @@ impl CapabilityProfile {
             }
         }
         reasons.extend(audio.and_then(|x| self.audio_reason(x)));
+        reasons
+    }
+
+    pub fn tv_subtitle_reasons(
+        &self,
+        client_kind: ClientKind,
+        streams: &[SubtitleStream],
+        files: &[SubtitleFile],
+    ) -> Vec<PlayReason> {
+        if client_kind == ClientKind::Web {
+            return Vec::new();
+        }
+        let mut reasons = Vec::new();
+        let uncovered = streams
+            .iter()
+            .filter(|x| x.text && !self.subtitle_codecs.contains(&x.codec))
+            .map(|x| x.codec.clone())
+            .chain(files.iter().map(SubtitleFile::codec));
+        for codec in uncovered {
+            let reason = PlayReason::Subtitle(codec);
+            if !reasons.contains(&reason) {
+                reasons.push(reason);
+            }
+        }
         reasons
     }
 
@@ -126,6 +153,80 @@ mod tests {
             title: None,
             is_default: true,
         }
+    }
+
+    fn subtitle_stream(codec: &str, text: bool) -> SubtitleStream {
+        SubtitleStream {
+            id: Uuid::nil(),
+            media_file_id: Uuid::nil(),
+            media_file: Deferred::default(),
+            index: 2,
+            codec: codec.to_owned(),
+            language: Some("eng".to_owned()),
+            title: None,
+            is_default: false,
+            forced: false,
+            hearing_impaired: false,
+            text,
+        }
+    }
+
+    fn subtitle_file(path: &str) -> SubtitleFile {
+        SubtitleFile {
+            id: Uuid::nil(),
+            media_file_id: Uuid::nil(),
+            media_file: Deferred::default(),
+            path: path.to_owned(),
+            language: Some("en".to_owned()),
+            hearing_impaired: false,
+            forced: false,
+        }
+    }
+
+    #[test]
+    fn on_a_tv_every_text_subtitle_must_be_embedded_in_a_codec_the_profile_lists() {
+        let mut profile = browser();
+        profile.subtitle_codecs = vec!["subrip".to_owned()];
+        let covered = [
+            subtitle_stream("subrip", true),
+            subtitle_stream("hdmv_pgs_subtitle", false),
+        ];
+        let uncovered = [
+            subtitle_stream("subrip", true),
+            subtitle_stream("ass", true),
+            subtitle_stream("ass", true),
+        ];
+
+        let reasons = [
+            profile.tv_subtitle_reasons(ClientKind::GoogleTv, &covered, &[]),
+            profile.tv_subtitle_reasons(
+                ClientKind::AppleTv,
+                &uncovered,
+                &[subtitle_file("/movies/Arrival.en.srt")],
+            ),
+        ];
+
+        assert_eq!(
+            reasons,
+            [
+                vec![],
+                vec![
+                    PlayReason::Subtitle("ass".to_owned()),
+                    PlayReason::Subtitle("srt".to_owned()),
+                ],
+            ]
+        );
+    }
+
+    #[test]
+    fn a_browser_plays_directly_whatever_text_subtitles_the_file_has() {
+        let reasons = browser().tv_subtitle_reasons(
+            ClientKind::Web,
+            &[subtitle_stream("ass", true)],
+            &[subtitle_file("/movies/Arrival.en.srt")],
+        );
+
+        assert_eq!(reasons, []);
     }
 
     #[test]
