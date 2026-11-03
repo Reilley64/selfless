@@ -2,6 +2,7 @@ use crate::attributes::SELFLESS_LIBRARY_SOURCE;
 use crate::metrics::SELFLESS_LIBRARY_ITEMS_ADDED;
 use crate::metrics::SELFLESS_LIBRARY_ITEMS_CHANGED;
 use crate::metrics::SELFLESS_LIBRARY_ITEMS_REMOVED;
+use crate::telemetry::attribute_values::library_source;
 use domain::Source;
 use opentelemetry::KeyValue;
 use opentelemetry::global;
@@ -22,5 +23,11 @@ pub(crate) fn count(source: Source, change: Change) {
         .u64_counter(name)
         .with_unit("{item}")
         .build()
-        .add(1, &[KeyValue::new(SELFLESS_LIBRARY_SOURCE, source.name())]);
+        .add(
+            1,
+            &[KeyValue::new(
+                SELFLESS_LIBRARY_SOURCE,
+                library_source(source),
+            )],
+        );
 }

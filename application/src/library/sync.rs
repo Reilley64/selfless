@@ -17,7 +17,11 @@ use uuid::Uuid;
 pub(crate) struct Error;
 
 pub(crate) fn lock_key(source: Source) -> String {
-    AcquireLock::key("library", "reconcile", 1, [source.name().to_owned()])
+    let source = match source {
+        Source::Radarr => "radarr",
+        Source::Sonarr => "sonarr",
+    };
+    AcquireLock::key("library", "reconcile", 1, [source.to_owned()])
 }
 
 pub(crate) enum Removal {

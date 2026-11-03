@@ -1,3 +1,5 @@
+use crate::telemetry::attribute_values::library_source;
+use crate::telemetry::attribute_values::reconcile_result;
 mod dependencies;
 mod error;
 mod output;
@@ -78,8 +80,8 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
     let start = Instant::now();
     let span = tracing::info_span!(
         "reconcile",
-        otel.name = format!("reconcile {}", source.name()),
-        selfless.library.source = source.name(),
+        otel.name = format!("reconcile {}", library_source(source)),
+        selfless.library.source = library_source(source),
         selfless.reconcile.result = field::Empty,
     );
     let reconciled = async {
@@ -133,15 +135,13 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
         let failed_calls = failed_metadata_calls + listing.failed_calls;
         if failed_calls > 0 {
             return Err(Error::caused_by(format!(
-                "{failed_calls} calls to {} failed, so nothing was removed",
-                source.name()
+                "{failed_calls} calls to {source:?} failed, so nothing was removed"
             )));
         }
         if listing.unreadable_items > 0 {
             return Err(Error::caused_by(format!(
-                "{} items from {} had unreadable files, so nothing was removed",
-                listing.unreadable_items,
-                source.name()
+                "{} items from {source:?} had unreadable files, so nothing was removed",
+                listing.unreadable_items
             )));
         }
         remove_or_hold(&mut db_context, source, listing).await
@@ -157,14 +157,14 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
             span.in_scope(|| {
                 tracing::warn!(
                     error = error as &dyn std::error::Error,
-                    selfless.library.source = source.name(),
+                    selfless.library.source = library_source(source),
                     "failed to reconcile the library"
                 );
             });
             ReconcileResult::Failed
         }
     };
-    span.record(SELFLESS_RECONCILE_RESULT, result.name());
+    span.record(SELFLESS_RECONCILE_RESULT, reconcile_result(result));
     global::meter("selfless")
         .f64_histogram(SELFLESS_RECONCILE_DURATION)
         .with_unit("s")
@@ -172,8 +172,8 @@ pub async fn call(dependencies: impl Into<Dependencies>, source: Source) -> Resu
         .record(
             duration.as_secs_f64(),
             &[
-                KeyValue::new(SELFLESS_LIBRARY_SOURCE, source.name()),
-                KeyValue::new(SELFLESS_RECONCILE_RESULT, result.name()),
+                KeyValue::new(SELFLESS_LIBRARY_SOURCE, library_source(source)),
+                KeyValue::new(SELFLESS_RECONCILE_RESULT, reconcile_result(result)),
             ],
         );
     let recorded = async {
@@ -207,7 +207,7 @@ fn record_kodi_metadata(
         Err(error) => {
             tracing::warn!(
                 error = &error as &dyn std::error::Error,
-                selfless.library.source = source.name(),
+                selfless.library.source = library_source(source),
                 "failed to read the metadata settings"
             );
             1
@@ -399,7 +399,7 @@ async fn remove_or_hold(
             .map_err(Error::caused_by);
     }
     tracing::warn!(
-        selfless.library.source = source.name(),
+        selfless.library.source = library_source(source),
         "held a removal of more than half of a source's items"
     );
     let items = match listing.removal {

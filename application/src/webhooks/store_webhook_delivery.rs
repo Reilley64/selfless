@@ -1,3 +1,4 @@
+use crate::telemetry::attribute_values::webhook_source;
 mod dependencies;
 mod error;
 mod output;
@@ -37,7 +38,7 @@ pub async fn call(
             .map_err(Error::caused_by)?;
         webhook_deliveries::count(source, None, Outcome::Rejected);
         tracing::warn!(
-            selfless.webhook.source = source.name(),
+            selfless.webhook.source = webhook_source(source),
             "rejected a webhook delivery with a wrong or missing password"
         );
         return Ok(Output::Rejected);

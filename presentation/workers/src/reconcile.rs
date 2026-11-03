@@ -1,3 +1,4 @@
+use application::telemetry::attribute_values::library_source;
 use domain::Source;
 use infrastructure::AppState;
 use std::collections::HashMap;
@@ -28,7 +29,7 @@ async fn reconcile(state: AppState, interval: Duration) {
                         sources.remove(&id);
                     }
                     Err(error) => {
-                        let source = sources.remove(&error.id()).map(Source::name);
+                        let source = sources.remove(&error.id()).map(library_source);
                         tracing::error!(
                             error = &error as &dyn Error,
                             selfless.library.source = source,
