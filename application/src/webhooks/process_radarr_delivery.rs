@@ -10,7 +10,7 @@ use crate::attributes::SELFLESS_WEBHOOK_EVENT_TYPE;
 use crate::attributes::SELFLESS_WEBHOOK_OUTCOME;
 use crate::attributes::SELFLESS_WEBHOOK_SOURCE;
 use crate::library::sync_movie;
-use crate::ports::RadarrWebhook;
+use crate::ports::MovieWebhookDelivery;
 use crate::webhooks::webhook_deliveries;
 use crate::webhooks::webhook_deliveries::Outcome;
 use domain::Source;
@@ -42,7 +42,7 @@ pub async fn call(
         span.set_attribute(SELFLESS_WEBHOOK_EVENT_TYPE, event_type.clone());
     }
     let synced = match read_radarr_webhook.call(&body) {
-        Ok(RadarrWebhook::Movie { radarr_id }) => sync_movie::call(
+        Ok(MovieWebhookDelivery::Movie { radarr_id }) => sync_movie::call(
             sync_movie::Dependencies {
                 db_context,
                 find_media_file,
@@ -57,7 +57,7 @@ pub async fn call(
         )
         .await
         .map(|_| Outcome::Processed),
-        Ok(RadarrWebhook::Ignored) => Ok(Outcome::Ignored),
+        Ok(MovieWebhookDelivery::Ignored) => Ok(Outcome::Ignored),
         Err(error) => {
             tracing::warn!(
                 messaging.message.id = %id,
@@ -138,7 +138,7 @@ mod tests {
     async fn a_failed_sync_returns_an_error() {
         let movie_calls = Arc::new(AtomicUsize::new(0));
         let dependencies = dependencies(
-            ReadRadarrWebhook::new(|_| Ok(RadarrWebhook::Movie { radarr_id: 42 })),
+            ReadRadarrWebhook::new(|_| Ok(MovieWebhookDelivery::Movie { radarr_id: 42 })),
             movie_calls.clone(),
         )
         .await;

@@ -643,24 +643,25 @@ impl UnreadableFile {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum RadarrWebhook {
+pub enum MovieWebhookDelivery {
     Movie { radarr_id: i64 },
     Ignored,
 }
 
-type ReadRadarrWebhookFn = dyn Fn(&[u8]) -> Result<RadarrWebhook, UnreadableWebhook> + Send + Sync;
+type ReadRadarrWebhookFn =
+    dyn Fn(&[u8]) -> Result<MovieWebhookDelivery, UnreadableWebhook> + Send + Sync;
 
 #[derive(Clone)]
 pub struct ReadRadarrWebhook(Arc<ReadRadarrWebhookFn>);
 
 impl ReadRadarrWebhook {
     pub fn new(
-        f: impl Fn(&[u8]) -> Result<RadarrWebhook, UnreadableWebhook> + Send + Sync + 'static,
+        f: impl Fn(&[u8]) -> Result<MovieWebhookDelivery, UnreadableWebhook> + Send + Sync + 'static,
     ) -> Self {
         Self(Arc::new(f))
     }
 
-    pub fn call(&self, body: &[u8]) -> Result<RadarrWebhook, UnreadableWebhook> {
+    pub fn call(&self, body: &[u8]) -> Result<MovieWebhookDelivery, UnreadableWebhook> {
         (self.0)(body)
     }
 }
@@ -732,24 +733,25 @@ impl ReadShowNfo {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum SonarrWebhook {
+pub enum ShowWebhookDelivery {
     Show { sonarr_id: i64 },
     Ignored,
 }
 
-type ReadSonarrWebhookFn = dyn Fn(&[u8]) -> Result<SonarrWebhook, UnreadableWebhook> + Send + Sync;
+type ReadSonarrWebhookFn =
+    dyn Fn(&[u8]) -> Result<ShowWebhookDelivery, UnreadableWebhook> + Send + Sync;
 
 #[derive(Clone)]
 pub struct ReadSonarrWebhook(Arc<ReadSonarrWebhookFn>);
 
 impl ReadSonarrWebhook {
     pub fn new(
-        f: impl Fn(&[u8]) -> Result<SonarrWebhook, UnreadableWebhook> + Send + Sync + 'static,
+        f: impl Fn(&[u8]) -> Result<ShowWebhookDelivery, UnreadableWebhook> + Send + Sync + 'static,
     ) -> Self {
         Self(Arc::new(f))
     }
 
-    pub fn call(&self, body: &[u8]) -> Result<SonarrWebhook, UnreadableWebhook> {
+    pub fn call(&self, body: &[u8]) -> Result<ShowWebhookDelivery, UnreadableWebhook> {
         (self.0)(body)
     }
 }

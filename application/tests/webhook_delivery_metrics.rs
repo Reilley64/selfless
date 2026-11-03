@@ -5,10 +5,10 @@ use application::ports::FindMediaFile;
 use application::ports::GetRadarrMovie;
 use application::ports::GetSonarrShow;
 use application::ports::ListSubtitleFiles;
+use application::ports::MovieWebhookDelivery;
 use application::ports::ProbeError;
 use application::ports::ProbeMediaFile;
 use application::ports::RadarrError;
-use application::ports::RadarrWebhook;
 use application::ports::ReadEpisodeFolder;
 use application::ports::ReadEpisodeNfo;
 use application::ports::ReadMovieFolder;
@@ -18,7 +18,7 @@ use application::ports::ReadShowFolder;
 use application::ports::ReadShowNfo;
 use application::ports::ReadSonarrWebhook;
 use application::ports::ReadWebhookEventType;
-use application::ports::SonarrWebhook;
+use application::ports::ShowWebhookDelivery;
 use application::ports::UnreadableNfo;
 use application::ports::UnreadableWebhook;
 use application::ports::persistence;
@@ -161,14 +161,14 @@ async fn deliveries_are_counted_as_stored_rejected_processed_ignored_skipped_and
     store(&db_context, Source::Sonarr, PASSWORD, "Test").await;
     process_radarr(
         &db_context,
-        ReadRadarrWebhook::new(|_| Ok(RadarrWebhook::Movie { radarr_id: 1 })),
+        ReadRadarrWebhook::new(|_| Ok(MovieWebhookDelivery::Movie { radarr_id: 1 })),
         "MovieDelete",
     )
     .await
     .unwrap();
     process_radarr(
         &db_context,
-        ReadRadarrWebhook::new(|_| Ok(RadarrWebhook::Ignored)),
+        ReadRadarrWebhook::new(|_| Ok(MovieWebhookDelivery::Ignored)),
         "Grab",
     )
     .await
@@ -182,20 +182,20 @@ async fn deliveries_are_counted_as_stored_rejected_processed_ignored_skipped_and
     .unwrap();
     process_radarr(
         &db_context,
-        ReadRadarrWebhook::new(|_| Ok(RadarrWebhook::Movie { radarr_id: 42 })),
+        ReadRadarrWebhook::new(|_| Ok(MovieWebhookDelivery::Movie { radarr_id: 42 })),
         "Download",
     )
     .await
     .unwrap_err();
     process_sonarr(
         &db_context,
-        ReadSonarrWebhook::new(|_| Ok(SonarrWebhook::Show { sonarr_id: 7 })),
+        ReadSonarrWebhook::new(|_| Ok(ShowWebhookDelivery::Show { sonarr_id: 7 })),
         "Download",
     )
     .await;
     process_sonarr(
         &db_context,
-        ReadSonarrWebhook::new(|_| Ok(SonarrWebhook::Ignored)),
+        ReadSonarrWebhook::new(|_| Ok(ShowWebhookDelivery::Ignored)),
         "Test",
     )
     .await;

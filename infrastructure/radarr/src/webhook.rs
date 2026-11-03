@@ -1,4 +1,4 @@
-use application::ports::RadarrWebhook;
+use application::ports::MovieWebhookDelivery;
 use application::ports::ReadRadarrWebhook;
 use application::ports::UnreadableWebhook;
 use serde::Deserialize;
@@ -44,7 +44,7 @@ pub fn read_webhook() -> ReadRadarrWebhook {
                 | RadarrEvent::Rename { movie }
                 | RadarrEvent::MovieAdded { movie }
                 | RadarrEvent::MovieDelete { movie }
-                | RadarrEvent::MovieFileDelete { movie } => RadarrWebhook::Movie {
+                | RadarrEvent::MovieFileDelete { movie } => MovieWebhookDelivery::Movie {
                     radarr_id: movie.id,
                 },
                 RadarrEvent::Test
@@ -53,7 +53,7 @@ pub fn read_webhook() -> ReadRadarrWebhook {
                 | RadarrEvent::HealthRestored
                 | RadarrEvent::ApplicationUpdate
                 | RadarrEvent::ManualInteractionRequired
-                | RadarrEvent::Other => RadarrWebhook::Ignored,
+                | RadarrEvent::Other => MovieWebhookDelivery::Ignored,
             },
         )
     })
@@ -63,7 +63,7 @@ pub fn read_webhook() -> ReadRadarrWebhook {
 mod tests {
     use super::*;
 
-    fn read(name: &str) -> Result<RadarrWebhook, UnreadableWebhook> {
+    fn read(name: &str) -> Result<MovieWebhookDelivery, UnreadableWebhook> {
         let body = std::fs::read(format!(
             "{}/../../test/fixtures/radarr/webhooks/{name}.json",
             env!("CARGO_MANIFEST_DIR")
@@ -84,7 +84,7 @@ mod tests {
         ] {
             assert_eq!(
                 read(name).unwrap(),
-                RadarrWebhook::Movie { radarr_id: 42 },
+                MovieWebhookDelivery::Movie { radarr_id: 42 },
                 "{name}"
             );
         }
@@ -100,7 +100,7 @@ mod tests {
             "application-update",
             "manual-interaction-required",
         ] {
-            assert_eq!(read(name).unwrap(), RadarrWebhook::Ignored, "{name}");
+            assert_eq!(read(name).unwrap(), MovieWebhookDelivery::Ignored, "{name}");
         }
     }
 

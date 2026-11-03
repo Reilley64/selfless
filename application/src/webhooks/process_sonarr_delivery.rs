@@ -10,7 +10,7 @@ use crate::attributes::SELFLESS_WEBHOOK_EVENT_TYPE;
 use crate::attributes::SELFLESS_WEBHOOK_OUTCOME;
 use crate::attributes::SELFLESS_WEBHOOK_SOURCE;
 use crate::library::sync_show;
-use crate::ports::SonarrWebhook;
+use crate::ports::ShowWebhookDelivery;
 use crate::webhooks::webhook_deliveries;
 use crate::webhooks::webhook_deliveries::Outcome;
 use domain::Source;
@@ -44,7 +44,7 @@ pub async fn call(
         span.set_attribute(SELFLESS_WEBHOOK_EVENT_TYPE, event_type.clone());
     }
     let synced = match read_sonarr_webhook.call(&body) {
-        Ok(SonarrWebhook::Show { sonarr_id }) => sync_show::call(
+        Ok(ShowWebhookDelivery::Show { sonarr_id }) => sync_show::call(
             sync_show::Dependencies {
                 db_context,
                 find_media_file,
@@ -61,7 +61,7 @@ pub async fn call(
         )
         .await
         .map(|_| Outcome::Processed),
-        Ok(SonarrWebhook::Ignored) => Ok(Outcome::Ignored),
+        Ok(ShowWebhookDelivery::Ignored) => Ok(Outcome::Ignored),
         Err(error) => {
             tracing::warn!(
                 messaging.message.id = %id,
@@ -146,7 +146,7 @@ mod tests {
     async fn a_failed_sync_returns_an_error() {
         let show_calls = Arc::new(AtomicUsize::new(0));
         let dependencies = dependencies(
-            ReadSonarrWebhook::new(|_| Ok(SonarrWebhook::Show { sonarr_id: 42 })),
+            ReadSonarrWebhook::new(|_| Ok(ShowWebhookDelivery::Show { sonarr_id: 42 })),
             show_calls.clone(),
         )
         .await;
