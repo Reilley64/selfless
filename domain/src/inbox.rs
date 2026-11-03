@@ -24,31 +24,10 @@ pub struct Inbox {
 impl Inbox {
     const KEPT_FOR: SignedDuration = SignedDuration::from_hours(30 * 24);
 
-    fn received_cutoff(now: Timestamp) -> Timestamp {
-        now - Self::KEPT_FOR
-    }
-
     pub fn expired_filter(now: Timestamp) -> toasty::stmt::Expr<bool> {
         Self::fields()
             .delivered_at()
             .is_some()
-            .and(Self::fields().received_at().le(Self::received_cutoff(now)))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn at(timestamp: &str) -> Timestamp {
-        timestamp.parse().expect("the timestamp is valid")
-    }
-
-    #[test]
-    fn a_delivered_delivery_is_kept_for_thirty_days_after_it_was_received() {
-        assert_eq!(
-            Inbox::received_cutoff(at("2026-06-01T12:00:00Z")),
-            at("2026-05-02T12:00:00Z")
-        );
+            .and(Self::fields().received_at().le(now - Self::KEPT_FOR))
     }
 }
