@@ -1,13 +1,16 @@
-import { Platform } from "react-native";
+import type { Ref } from "react";
+import { type View as HostView, Platform } from "react-native";
 import { Pressable, Text } from "react-native-css/components";
 
 export function ActionButton({
+  ref,
   label,
   primary = false,
   small = false,
   onPress,
   onFocus,
 }: {
+  ref?: Ref<HostView>;
   label: string;
   primary?: boolean;
   small?: boolean;
@@ -22,6 +25,7 @@ export function ActionButton({
   const text = Platform.isTV ? "text-tv-body" : small ? "text-web-meta" : "text-web-body";
   return (
     <Pressable
+      ref={ref}
       role="button"
       className={`group justify-center rounded-small transition-transform hover:scale-105 hover:bg-button-focus focus:scale-105 focus:bg-button-focus ${size} ${primary ? "bg-button-primary" : "bg-button-background"}`}
       onPress={onPress}

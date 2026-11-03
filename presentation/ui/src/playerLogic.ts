@@ -13,6 +13,7 @@ import {
   SELFLESS_PLAYBACK_PAUSED,
   SELFLESS_PLAYBACK_SEEKED,
   SELFLESS_PLAYBACK_STARTED,
+  SELFLESS_PLAYBACK_STILL_WATCHING_PROMPT,
   SELFLESS_PLAYBACK_STOPPED,
   SELFLESS_PLAYBACK_SWITCHED,
 } from "./telemetry/events";
@@ -31,7 +32,9 @@ export type Tracks = { audioTrackId: string | null; subtitleTrackId: string | nu
 
 export type ProgressReport = { position: number; paused: boolean; stopped: boolean } & Tracks;
 
-export type Resume = { position: number; paused: boolean; forceHls: boolean; tracks?: Tracks };
+export type EpisodeStart = { autoplayed: number; stillWatching: boolean };
+
+export type Resume = { position: number; paused: boolean; forceHls: boolean; tracks?: Tracks } & EpisodeStart;
 
 export type PlaybackSpans = ReturnType<typeof startPlaybackSpans>;
 
@@ -42,6 +45,8 @@ export type NextEpisodeButtonState = { countdown: number | null };
 export const reportInterval = 10_000;
 
 const nextEpisodeLead = 5;
+
+const autoplaysBeforeAsking = 3;
 
 export function startPlaybackSpans(userId: string, mediaFileId: string) {
   const tracer = trace.getTracer("@selfless/ui");
@@ -64,6 +69,7 @@ export function startPlaybackSpans(userId: string, mediaFileId: string) {
     paused: end(SELFLESS_PLAYBACK_PAUSED),
     seeked: end(SELFLESS_PLAYBACK_SEEKED),
     stopped: end(SELFLESS_PLAYBACK_STOPPED),
+    stillWatchingPrompt: end(SELFLESS_PLAYBACK_STILL_WATCHING_PROMPT),
     failed(errorType: string) {
       const span = spanFor(SELFLESS_PLAYBACK_FAILED);
       span.setAttribute(ATTR_ERROR_TYPE, errorType);
@@ -81,9 +87,18 @@ export function startPlaybackSpans(userId: string, mediaFileId: string) {
 }
 
 export function createPlayerLogic({
-  playback: { method, duration, audioTracks, audioTrackId, subtitleTrackId, nextEpisode, autoplayNextEpisode },
+  playback: {
+    method,
+    duration,
+    audioTracks,
+    audioTrackId,
+    subtitleTrackId,
+    nextEpisode,
+    autoplayNextEpisode,
+    askIfStillWatching,
+  },
+  resume,
   audioSwitchesInPlace,
-  forceHls,
   sendReport,
   restart,
   showError,
@@ -92,6 +107,8 @@ export function createPlayerLogic({
   showNextEpisode,
   playNextEpisode,
   returnToTitle,
+  showStillWatching,
+  play,
   spans,
 }: {
   playback: Pick<
@@ -103,21 +120,25 @@ export function createPlayerLogic({
     | "subtitleTrackId"
     | "nextEpisode"
     | "autoplayNextEpisode"
+    | "askIfStillWatching"
   >;
+  resume: Resume;
   audioSwitchesInPlace: boolean;
-  forceHls: boolean;
   sendReport: (report: ProgressReport) => ReturnType<typeof reportPlaybackProgress>;
   restart: (resume: Resume) => void;
   showError: () => void;
   switchAudio: (track: PlaybackAudioTrack) => void;
   switchSubtitle: (track: PlaybackSubtitleTrack | null) => void;
   showNextEpisode: (button: NextEpisodeButtonState | null) => void;
-  playNextEpisode: (episode: PlaybackNextEpisode) => void;
+  playNextEpisode: (episode: PlaybackNextEpisode, start: EpisodeStart) => void;
   returnToTitle: () => void;
+  showStillWatching: (show: boolean) => void;
+  play: () => void;
   spans: PlaybackSpans;
 }) {
+  const { forceHls } = resume;
+  let { paused, autoplayed, stillWatching } = resume;
   let position = 0;
-  let paused = false;
   let stopped = false;
   let tracks: Tracks = { audioTrackId, subtitleTrackId };
   let timer: ReturnType<typeof setInterval> | undefined;
@@ -148,7 +169,7 @@ export function createPlayerLogic({
           response.data.type === "urn:selfless:problem:playback-ended"
         ) {
           end();
-          restart({ position, paused, forceHls, tracks });
+          restartAt({});
         }
       },
       () => undefined,
@@ -160,10 +181,12 @@ export function createPlayerLogic({
     report();
     updateButton();
   };
+  const restartAt = (changes: Partial<Resume>) =>
+    restart({ position, paused, forceHls, tracks, autoplayed, stillWatching, ...changes });
   const switchStream = (switched: Tracks, throughHls: boolean) => {
     end();
     spans.switched();
-    restart({ position, paused, forceHls: forceHls || throughHls, tracks: switched });
+    restartAt({ forceHls: forceHls || throughHls, tracks: switched });
   };
   const restartTimer = () => {
     clearInterval(timer);
@@ -177,7 +200,14 @@ export function createPlayerLogic({
       position = event.position;
       switch (event.type) {
         case "playing":
+          if (paused) {
+            autoplayed = 0;
+          }
           paused = false;
+          if (stillWatching) {
+            stillWatching = false;
+            showStillWatching(false);
+          }
           if (timer === undefined) {
             spans.started();
             restartTimer();
@@ -191,6 +221,7 @@ export function createPlayerLogic({
           break;
         case "seeked":
           if (timer !== undefined) {
+            autoplayed = 0;
             spans.seeked();
           }
           break;
@@ -198,7 +229,7 @@ export function createPlayerLogic({
           if (method === "directPlay") {
             end();
             spans.switched(event.errorType);
-            restart({ position, paused, forceHls: true, tracks });
+            restartAt({ forceHls: true });
           } else {
             spans.failed(event.errorType);
             showError();
@@ -209,10 +240,13 @@ export function createPlayerLogic({
           break;
         case "ended":
           stop();
-          if (nextEpisode !== null && autoplayNextEpisode) {
-            playNextEpisode(nextEpisode);
-          } else {
+          if (nextEpisode === null || !autoplayNextEpisode) {
             returnToTitle();
+          } else if (askIfStillWatching && autoplayed >= autoplaysBeforeAsking) {
+            spans.stillWatchingPrompt();
+            playNextEpisode(nextEpisode, { autoplayed: 0, stillWatching: true });
+          } else {
+            playNextEpisode(nextEpisode, { autoplayed: autoplayed + 1, stillWatching: false });
           }
           break;
       }
@@ -223,7 +257,12 @@ export function createPlayerLogic({
         return;
       }
       stop();
-      playNextEpisode(nextEpisode);
+      playNextEpisode(nextEpisode, { autoplayed: 0, stillWatching: false });
+    },
+    keepWatching() {
+      stillWatching = false;
+      showStillWatching(false);
+      play();
     },
     selected() {
       return tracks;
@@ -244,6 +283,7 @@ export function createPlayerLogic({
       if (stopped || track.id === tracks.audioTrackId) {
         return;
       }
+      autoplayed = 0;
       if (track.inStream && audioSwitchesInPlace) {
         tracks = { ...tracks, audioTrackId: track.id };
         switchAudio(track);
@@ -255,6 +295,7 @@ export function createPlayerLogic({
       if (stopped || (track?.id ?? null) === tracks.subtitleTrackId) {
         return;
       }
+      autoplayed = 0;
       if (track === null || track.inStream) {
         tracks = { ...tracks, subtitleTrackId: track?.id ?? null };
         switchSubtitle(track);

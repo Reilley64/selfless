@@ -6,7 +6,12 @@ import { Player } from "../../../components/Player";
 import { ServerUnreachable } from "../../../components/ServerUnreachable";
 
 export default function PlayEpisode() {
-  const { episodeId, position } = useLocalSearchParams<{ episodeId: string; position?: string }>();
+  const { episodeId, position, autoplayed, stillWatching } = useLocalSearchParams<{
+    episodeId: string;
+    position?: string;
+    autoplayed?: string;
+    stillWatching?: string;
+  }>();
   const { data, isError } = useGetEpisode(episodeId, { query: { staleTime: Infinity, refetchOnWindowFocus: false } });
   if (data?.status === 404 || (data?.status === 200 && !data.data.mediaFileId)) {
     return <NotFound />;
@@ -21,6 +26,8 @@ export default function PlayEpisode() {
     <Player
       mediaFileId={data.data.mediaFileId}
       startPosition={position === undefined ? (data.data.play.resumePosition ?? 0) : Number(position)}
+      autoplayed={Number(autoplayed ?? 0)}
+      stillWatching={stillWatching === "true"}
       titleHref={`/shows/${data.data.show.id}`}
     />
   );
