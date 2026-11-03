@@ -48,7 +48,7 @@ export function PlaybackSettingsToggles({ autoFocus = false }: { autoFocus?: boo
               {label}
             </Text>
             <View
-              className={`justify-center rounded-pill ${Platform.isTV ? "h-10 w-[72px] px-1" : "h-6 w-11 px-0.5"} ${settings[setting] ? "items-end bg-accent" : "items-start bg-surface-raised"}`}
+              className={`justify-center rounded-pill ${Platform.isTV ? "h-10 w-[72px] px-1" : "h-6 w-11 px-0.5"} ${settings[setting] ? "items-end bg-accent" : "items-start bg-surface-raised group-hover:bg-text-inverse group-focus:bg-text-inverse"}`}
             >
               <View className={`rounded-pill bg-text-primary ${Platform.isTV ? "size-8" : "size-5"}`} />
             </View>
