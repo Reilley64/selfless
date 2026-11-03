@@ -75,14 +75,7 @@ impl Invites {
         )
         .await
         .unwrap();
-        let body = self.mailer.sent().last().unwrap().body.clone();
-        body.split(&format!("{ORIGIN}/invite#"))
-            .nth(1)
-            .unwrap()
-            .split_whitespace()
-            .next()
-            .unwrap()
-            .to_owned()
+        self.mailer.sent().last().unwrap().invite_token(ORIGIN)
     }
 
     async fn accept(

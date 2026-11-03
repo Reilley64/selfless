@@ -21,14 +21,12 @@ use persistence::HandleOutboxError;
 use persistence::QueuePauses;
 use persistence::consume_outbox;
 use persistence_test::db_context;
-use std::io;
-use std::io::Write;
 use std::sync::Arc;
-use std::sync::Mutex;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 use test_fixtures::FakeClock;
+use test_fixtures::Logs;
 use test_fixtures::ScriptedSmtpServer;
 use test_fixtures::TestDatabase;
 use tokio_util::sync::CancellationToken;
@@ -69,26 +67,6 @@ fn trace_and_log(exporter: &InMemorySpanExporter, logs: &Logs) -> DefaultGuard {
                     .with_writer(move || logs.clone()),
             ),
     )
-}
-
-#[derive(Clone, Default)]
-struct Logs(Arc<Mutex<Vec<u8>>>);
-
-impl Logs {
-    fn text(&self) -> String {
-        String::from_utf8(self.0.lock().unwrap().clone()).unwrap()
-    }
-}
-
-impl Write for Logs {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(buffer);
-        Ok(buffer.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
 }
 
 async fn enqueue(db_context: &DbContext) -> Uuid {

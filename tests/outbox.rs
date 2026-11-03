@@ -1,11 +1,11 @@
+#[path = "../test/persistence.rs"]
+mod persistence_test;
 #[path = "../test/selfless.rs"]
 mod selfless_test;
 
 use application::invites::create_invite;
 use application::ports::Clock;
-use application::ports::persistence::DbContext;
 use domain::EmailAddress;
-use persistence::DatabaseSettings;
 use reqwest::Method;
 use reqwest::StatusCode;
 use reqwest::header::HeaderMap;
@@ -26,13 +26,7 @@ async fn an_invite_email_goes_out_while_the_server_runs() {
     let mailer = FakeMailer::default();
     let server =
         selfless_test::start(selfless_test::settings(database.url()), &clock, &mailer).await;
-    let settings = DatabaseSettings {
-        url: database.url(),
-    };
-    let db_context = DbContext::new(
-        persistence::connect(&settings).await.unwrap(),
-        settings.location(),
-    );
+    let db_context = persistence_test::db_context(&database).await;
 
     create_invite::call(
         create_invite::Dependencies {
@@ -55,14 +49,7 @@ async fn an_invite_email_goes_out_while_the_server_runs() {
     })
     .await
     .expect("the worker sends the invite email");
-    let token = email
-        .body
-        .split(&format!("{ORIGIN}/invite#"))
-        .nth(1)
-        .unwrap()
-        .split_whitespace()
-        .next()
-        .unwrap();
+    let token = email.invite_token(ORIGIN);
     let mut headers = HeaderMap::new();
     headers.insert(
         "idempotency-key",

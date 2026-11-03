@@ -88,11 +88,9 @@ mod tests {
     use domain::EmailAddress;
     use domain::Password;
     use jiff::SignedDuration;
-    use std::io;
-    use std::sync::Arc;
-    use std::sync::Mutex;
     use test_fixtures::FakeClock;
     use test_fixtures::FakeMailer;
+    use test_fixtures::Logs;
     use tracing::level_filters::LevelFilter;
     use tracing_subscriber::layer::SubscriberExt;
 
@@ -199,34 +197,7 @@ mod tests {
         }
 
         fn last_token(&self) -> String {
-            let body = self.mailer.sent().last().unwrap().body.clone();
-            body.split(&format!("{ORIGIN}/invite#"))
-                .nth(1)
-                .unwrap()
-                .split_whitespace()
-                .next()
-                .unwrap()
-                .to_owned()
-        }
-    }
-
-    #[derive(Clone, Default)]
-    struct Logs(Arc<Mutex<Vec<u8>>>);
-
-    impl io::Write for Logs {
-        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-            self.0.lock().unwrap().extend_from_slice(buf);
-            Ok(buf.len())
-        }
-
-        fn flush(&mut self) -> io::Result<()> {
-            Ok(())
-        }
-    }
-
-    impl Logs {
-        fn text(&self) -> String {
-            String::from_utf8(self.0.lock().unwrap().clone()).unwrap()
+            self.mailer.sent().last().unwrap().invite_token(ORIGIN)
         }
     }
 

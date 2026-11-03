@@ -11,6 +11,19 @@ pub struct SentEmail {
     pub body: String,
 }
 
+impl SentEmail {
+    pub fn invite_token(&self, origin: &str) -> String {
+        self.body
+            .split(&format!("{origin}/invite#"))
+            .nth(1)
+            .unwrap()
+            .split_whitespace()
+            .next()
+            .unwrap()
+            .to_owned()
+    }
+}
+
 #[derive(Clone, Default)]
 pub struct FakeMailer {
     sent: Arc<Mutex<Vec<SentEmail>>>,
