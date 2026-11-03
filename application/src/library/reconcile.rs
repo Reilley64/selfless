@@ -421,3 +421,438 @@ pub(crate) async fn remove(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::library::Reconciles;
+    use crate::library::sync_status;
+    use crate::library::sync_status::ApiCall;
+    use crate::library::sync_status::ReconcileProgress;
+    use crate::ports::CheckRadarrKodiMetadata;
+    use crate::ports::CheckSonarrKodiMetadata;
+    use crate::ports::Clock;
+    use crate::ports::FindMediaFile;
+    use crate::ports::FoundMediaFile;
+    use crate::ports::RadarrError;
+    use crate::ports::RadarrMovie;
+    use crate::ports::RadarrMovieFile;
+    use crate::ports::SonarrEpisode;
+    use crate::ports::SonarrEpisodeFile;
+    use crate::ports::SonarrError;
+    use crate::ports::SonarrShowListing;
+    use crate::test::empty_episode_folder;
+    use crate::test::empty_movie_folder;
+    use crate::test::empty_show_folder;
+    use crate::test::failing_prober;
+    use crate::test::mock_db_context;
+    use crate::test::no_subtitle_files;
+    use crate::test::unreadable_episode_nfo;
+    use crate::test::unreadable_movie_nfo;
+    use crate::test::unreadable_show_nfo;
+    use jiff::Timestamp;
+    use std::sync::Arc;
+    use test_fixtures::FakeClock;
+    use tokio::sync::Notify;
+
+    const ARRIVAL: i64 = 42;
+    const DUNE: i64 = 43;
+    const SICARIO: i64 = 44;
+    const BLADE_RUNNER: i64 = 45;
+    const SEVERANCE: i64 = 7;
+    const ANDOR: i64 = 8;
+
+    fn title(id: i64) -> &'static str {
+        match id {
+            ARRIVAL => "Arrival",
+            DUNE => "Dune",
+            SICARIO => "Sicario",
+            BLADE_RUNNER => "Blade Runner 2049",
+            SEVERANCE => "Severance",
+            ANDOR => "Andor",
+            _ => unreachable!(),
+        }
+    }
+
+    fn radarr_movie(tmdb_id: i64) -> RadarrMovie {
+        RadarrMovie {
+            radarr_id: tmdb_id,
+            tmdb_id,
+            title: title(tmdb_id).to_owned(),
+            year: 2016,
+            overview: None,
+            genres: Vec::new(),
+            movie_file: Some(RadarrMovieFile {
+                path: format!("/movies/{}.mkv", title(tmdb_id)),
+                date_added: Timestamp::UNIX_EPOCH,
+            }),
+        }
+    }
+
+    fn sonarr_listing(sonarr_id: i64) -> SonarrShowListing {
+        SonarrShowListing {
+            sonarr_id,
+            tvdb_id: sonarr_id,
+            path: format!("/tv/{}", title(sonarr_id)),
+            title: title(sonarr_id).to_owned(),
+            year: None,
+            genres: Vec::new(),
+            overview: None,
+        }
+    }
+
+    fn sonarr_episodes(sonarr_id: i64) -> Vec<SonarrEpisode> {
+        vec![SonarrEpisode {
+            sonarr_id,
+            tvdb_id: sonarr_id,
+            season_number: 1,
+            episode_number: 1,
+            title: "Pilot".to_owned(),
+            air_date: None,
+            overview: None,
+            episode_file: Some(SonarrEpisodeFile {
+                path: format!("/tv/{}/S01E01.mkv", title(sonarr_id)),
+                date_added: Timestamp::UNIX_EPOCH,
+            }),
+        }]
+    }
+
+    #[derive(Clone)]
+    struct Library {
+        db_context: DbContext,
+        clock: FakeClock,
+        reconciles: Reconciles,
+        source_health: SourceHealth,
+        radarr: Arc<Mutex<Result<Vec<RadarrMovie>, &'static str>>>,
+        sonarr: Arc<Mutex<Result<Vec<i64>, &'static str>>>,
+        failing_episodes: Arc<Mutex<HashSet<i64>>>,
+        held_episodes: Arc<Mutex<Option<HeldEpisodes>>>,
+        radarr_kodi: Arc<Mutex<Result<bool, &'static str>>>,
+        sonarr_kodi: Arc<Mutex<Result<bool, &'static str>>>,
+    }
+
+    #[derive(Clone)]
+    struct HeldEpisodes {
+        sonarr_id: i64,
+        reached: Arc<Notify>,
+        released: Arc<Notify>,
+    }
+
+    impl Library {
+        async fn new() -> Self {
+            Self {
+                db_context: mock_db_context().await,
+                clock: FakeClock::new(),
+                reconciles: Reconciles::default(),
+                source_health: SourceHealth::default(),
+                radarr: Arc::new(Mutex::new(Ok(Vec::new()))),
+                sonarr: Arc::new(Mutex::new(Ok(Vec::new()))),
+                failing_episodes: Arc::default(),
+                held_episodes: Arc::default(),
+                radarr_kodi: Arc::new(Mutex::new(Ok(true))),
+                sonarr_kodi: Arc::new(Mutex::new(Ok(true))),
+            }
+        }
+
+        fn radarr_lists(&self, ids: &[i64]) {
+            self.radarr_lists_movies(ids.iter().copied().map(radarr_movie).collect());
+        }
+
+        fn radarr_lists_movies(&self, movies: Vec<RadarrMovie>) {
+            *self.radarr.lock().unwrap() = Ok(movies);
+        }
+
+        fn sonarr_lists(&self, ids: &[i64]) {
+            *self.sonarr.lock().unwrap() = Ok(ids.to_vec());
+        }
+
+        fn dependencies(&self) -> Dependencies {
+            let radarr = self.radarr.clone();
+            let sonarr = self.sonarr.clone();
+            let failing_episodes = self.failing_episodes.clone();
+            let held_episodes = self.held_episodes.clone();
+            let radarr_kodi = self.radarr_kodi.clone();
+            let sonarr_kodi = self.sonarr_kodi.clone();
+            Dependencies {
+                check_radarr_kodi_metadata: CheckRadarrKodiMetadata::new(move || {
+                    let enabled = *radarr_kodi.lock().unwrap();
+                    Box::pin(async move { enabled.map_err(RadarrError::caused_by) })
+                }),
+                check_sonarr_kodi_metadata: CheckSonarrKodiMetadata::new(move || {
+                    let enabled = *sonarr_kodi.lock().unwrap();
+                    Box::pin(async move { enabled.map_err(SonarrError::caused_by) })
+                }),
+                clock: Clock::new(self.clock.reader()),
+                db_context: self.db_context.clone(),
+                find_media_file: FindMediaFile::new(|_| {
+                    Box::pin(async {
+                        Some(FoundMediaFile {
+                            size: 1,
+                            modified_at: Timestamp::UNIX_EPOCH,
+                        })
+                    })
+                }),
+                get_sonarr_episodes: GetSonarrEpisodes::new(move |sonarr_id| {
+                    let failing = failing_episodes.lock().unwrap().contains(&sonarr_id);
+                    let held = held_episodes
+                        .lock()
+                        .unwrap()
+                        .clone()
+                        .filter(|x| x.sonarr_id == sonarr_id);
+                    Box::pin(async move {
+                        if let Some(held) = held {
+                            held.reached.notify_one();
+                            held.released.notified().await;
+                        }
+                        if failing {
+                            return Err(SonarrError::caused_by("500 Internal Server Error"));
+                        }
+                        Ok(sonarr_episodes(sonarr_id))
+                    })
+                }),
+                list_radarr_movies: ListRadarrMovies::new(move || {
+                    let movies = radarr.lock().unwrap().clone();
+                    Box::pin(async move { movies.map_err(RadarrError::caused_by) })
+                }),
+                list_sonarr_shows: ListSonarrShows::new(move || {
+                    let ids = sonarr.lock().unwrap().clone();
+                    Box::pin(async move {
+                        ids.map(|x| x.into_iter().map(sonarr_listing).collect())
+                            .map_err(SonarrError::caused_by)
+                    })
+                }),
+                list_subtitle_files: no_subtitle_files(),
+                prober: failing_prober(),
+                read_episode_folder: empty_episode_folder(),
+                read_episode_nfo: unreadable_episode_nfo(),
+                read_movie_folder: empty_movie_folder(),
+                read_movie_nfo: unreadable_movie_nfo(),
+                read_show_folder: empty_show_folder(),
+                read_show_nfo: unreadable_show_nfo(),
+                reconciles: self.reconciles.clone(),
+                source_health: self.source_health.clone(),
+            }
+        }
+
+        async fn reconcile(&self, source: Source) -> Option<ReconcileResult> {
+            call(self.dependencies(), source).await.unwrap();
+            let mut db_context = self.db_context.clone();
+            db_context
+                .source_states()
+                .filter(domain::SourceState::fields().source().eq(source))
+                .one()
+                .exec(db_context.executor_mut())
+                .await
+                .unwrap()
+                .last_reconcile_result
+        }
+
+        async fn status(&self) -> sync_status::Output {
+            sync_status::call(sync_status::Dependencies {
+                db_context: self.db_context.clone(),
+                reconciles: self.reconciles.clone(),
+                source_health: self.source_health.clone(),
+            })
+            .await
+            .unwrap()
+        }
+
+        async fn movie_titles(&self) -> Vec<String> {
+            let mut db_context = self.db_context.clone();
+            let mut titles = db_context
+                .movies()
+                .all()
+                .exec(db_context.executor_mut())
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|x| x.title)
+                .collect::<Vec<_>>();
+            titles.sort();
+            titles
+        }
+
+        async fn show_titles(&self) -> Vec<String> {
+            let mut db_context = self.db_context.clone();
+            let mut titles = db_context
+                .shows()
+                .all()
+                .exec(db_context.executor_mut())
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|x| x.title)
+                .collect::<Vec<_>>();
+            titles.sort();
+            titles
+        }
+    }
+
+    #[tokio::test]
+    async fn a_reconcile_adds_new_movies_and_removes_movies_radarr_no_longer_lists() {
+        let library = Library::new().await;
+        library.radarr_lists(&[ARRIVAL, DUNE, SICARIO]);
+        library.reconcile(Source::Radarr).await;
+
+        library.radarr_lists(&[ARRIVAL, DUNE, BLADE_RUNNER]);
+        let result = library.reconcile(Source::Radarr).await;
+
+        assert_eq!(result, Some(ReconcileResult::Succeeded));
+        assert_eq!(
+            library.movie_titles().await,
+            ["Arrival", "Blade Runner 2049", "Dune"]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_reconcile_records_when_it_started_and_its_result() {
+        let library = Library::new().await;
+        library.radarr_lists(&[ARRIVAL]);
+
+        library.reconcile(Source::Radarr).await;
+
+        let last_reconcile = library.status().await.radarr.last_reconcile.unwrap();
+        assert_eq!(last_reconcile.started_at, library.clock.now());
+        assert_eq!(last_reconcile.result, ReconcileResult::Succeeded);
+    }
+
+    #[tokio::test]
+    async fn a_reconcile_re_syncs_a_movie_whose_radarr_data_changed() {
+        let library = Library::new().await;
+        library.radarr_lists(&[ARRIVAL]);
+        library.reconcile(Source::Radarr).await;
+
+        let mut arrival = radarr_movie(ARRIVAL);
+        arrival.title = "Arrival (Extended)".to_owned();
+        library.radarr_lists_movies(vec![arrival]);
+        library.reconcile(Source::Radarr).await;
+
+        assert_eq!(library.movie_titles().await, ["Arrival (Extended)"]);
+    }
+
+    #[tokio::test]
+    async fn a_failed_listing_call_removes_nothing() {
+        let library = Library::new().await;
+        library.radarr_lists(&[ARRIVAL, DUNE]);
+        library.reconcile(Source::Radarr).await;
+
+        *library.radarr.lock().unwrap() = Err("500 Internal Server Error");
+        let result = library.reconcile(Source::Radarr).await;
+
+        assert_eq!(result, Some(ReconcileResult::Failed));
+        assert_eq!(library.movie_titles().await, ["Arrival", "Dune"]);
+    }
+
+    #[tokio::test]
+    async fn a_failed_metadata_call_removes_nothing_but_still_adds_movies() {
+        let library = Library::new().await;
+        library.radarr_lists(&[ARRIVAL, DUNE]);
+        library.reconcile(Source::Radarr).await;
+
+        library.radarr_lists(&[ARRIVAL, SICARIO]);
+        *library.radarr_kodi.lock().unwrap() = Err("500 Internal Server Error");
+        let result = library.reconcile(Source::Radarr).await;
+
+        assert_eq!(result, Some(ReconcileResult::Failed));
+        assert_eq!(library.movie_titles().await, ["Arrival", "Dune", "Sicario"]);
+    }
+
+    #[tokio::test]
+    async fn a_failed_episodes_call_removes_no_show_until_every_call_succeeds() {
+        let library = Library::new().await;
+        library.sonarr_lists(&[SEVERANCE, ANDOR]);
+        library.reconcile(Source::Sonarr).await;
+
+        library.sonarr_lists(&[SEVERANCE]);
+        library.failing_episodes.lock().unwrap().insert(SEVERANCE);
+        let failed = library.reconcile(Source::Sonarr).await;
+        let after_failure = library.show_titles().await;
+        library.failing_episodes.lock().unwrap().clear();
+        let succeeded = library.reconcile(Source::Sonarr).await;
+
+        assert_eq!(failed, Some(ReconcileResult::Failed));
+        assert_eq!(after_failure, ["Andor", "Severance"]);
+        assert_eq!(succeeded, Some(ReconcileResult::Succeeded));
+        assert_eq!(library.show_titles().await, ["Severance"]);
+    }
+
+    #[tokio::test]
+    async fn the_sync_status_shows_imported_n_of_m_while_a_reconcile_runs() {
+        let library = Library::new().await;
+        library.sonarr_lists(&[SEVERANCE, ANDOR]);
+        let held = HeldEpisodes {
+            sonarr_id: ANDOR,
+            reached: Arc::new(Notify::new()),
+            released: Arc::new(Notify::new()),
+        };
+        *library.held_episodes.lock().unwrap() = Some(held.clone());
+
+        let reconciling = tokio::spawn(call(library.dependencies(), Source::Sonarr));
+        held.reached.notified().await;
+        let running = library.status().await.sonarr.reconcile_progress;
+        let shows_while_running = library.show_titles().await;
+        held.released.notify_one();
+        reconciling.await.unwrap().unwrap();
+
+        assert_eq!(
+            running,
+            Some(ReconcileProgress {
+                imported: 1,
+                total: Some(2),
+            })
+        );
+        assert_eq!(shows_while_running, ["Severance"]);
+        assert_eq!(library.status().await.sonarr.reconcile_progress, None);
+        assert_eq!(library.show_titles().await, ["Andor", "Severance"]);
+    }
+
+    #[tokio::test]
+    async fn each_reconcile_records_whether_kodi_metadata_is_on_in_radarr_and_sonarr() {
+        let library = Library::new().await;
+        *library.sonarr_kodi.lock().unwrap() = Ok(false);
+        library.reconcile(Source::Radarr).await;
+        library.reconcile(Source::Sonarr).await;
+        let first = library.status().await;
+
+        *library.radarr_kodi.lock().unwrap() = Ok(false);
+        *library.sonarr_kodi.lock().unwrap() = Ok(true);
+        library.reconcile(Source::Radarr).await;
+        library.reconcile(Source::Sonarr).await;
+        let second = library.status().await;
+
+        assert_eq!(first.radarr.kodi_metadata, Some(true));
+        assert_eq!(first.sonarr.kodi_metadata, Some(false));
+        assert_eq!(second.radarr.kodi_metadata, Some(false));
+        assert_eq!(second.sonarr.kodi_metadata, Some(true));
+    }
+
+    #[tokio::test]
+    async fn a_reconcile_records_whether_its_last_call_to_radarr_and_sonarr_succeeded() {
+        let library = Library::new().await;
+        *library.radarr.lock().unwrap() = Err("401 Unauthorized");
+        library.sonarr_lists(&[SEVERANCE]);
+        library.failing_episodes.lock().unwrap().insert(SEVERANCE);
+        library.reconcile(Source::Radarr).await;
+        library.reconcile(Source::Sonarr).await;
+        let failed = library.status().await;
+
+        library.radarr_lists(&[]);
+        library.failing_episodes.lock().unwrap().clear();
+        library.reconcile(Source::Radarr).await;
+        library.reconcile(Source::Sonarr).await;
+        let succeeded = library.status().await;
+
+        assert!(
+            matches!(&failed.radarr.last_api_call, Some(ApiCall::Failed(x)) if x.contains("401 Unauthorized")),
+            "{:?}",
+            failed.radarr.last_api_call
+        );
+        assert!(
+            matches!(&failed.sonarr.last_api_call, Some(ApiCall::Failed(x)) if x.contains("500 Internal Server Error")),
+            "{:?}",
+            failed.sonarr.last_api_call
+        );
+        assert_eq!(succeeded.radarr.last_api_call, Some(ApiCall::Succeeded));
+        assert_eq!(succeeded.sonarr.last_api_call, Some(ApiCall::Succeeded));
+    }
+}
