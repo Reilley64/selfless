@@ -1,10 +1,8 @@
 #[path = "../test/selfless.rs"]
 mod selfless_test;
-mod support;
 
 use reqwest::StatusCode;
 use serde_json::json;
-use support::TestServer;
 use test_fixtures::FakeClock;
 use test_fixtures::FakeMailer;
 use test_fixtures::Proxy;
@@ -53,7 +51,12 @@ async fn readiness_is_down_and_liveness_stays_up_when_postgresql_is_unreachable(
 #[tokio::test]
 async fn readiness_is_out_of_service_after_shutdown_starts() {
     let database = TestDatabase::create().await;
-    let server = TestServer::start(database.url()).await;
+    let server = selfless_test::start(
+        selfless_test::settings(database.url()),
+        &FakeClock::new(),
+        &FakeMailer::default(),
+    )
+    .await;
 
     server.shut_down();
     let (status, body) = server.get("/actuator/health/readiness/v1").await;

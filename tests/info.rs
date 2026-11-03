@@ -1,15 +1,22 @@
-mod support;
+#[path = "../test/selfless.rs"]
+mod selfless_test;
 
 use reqwest::StatusCode;
 use serde_json::json;
 use std::process::Command;
-use support::TestDatabase;
-use support::TestServer;
+use test_fixtures::FakeClock;
+use test_fixtures::FakeMailer;
+use test_fixtures::TestDatabase;
 
 #[tokio::test]
 async fn info_reports_the_build_and_git_fields() {
     let database = TestDatabase::create().await;
-    let server = TestServer::start(database.url()).await;
+    let server = selfless_test::start(
+        selfless_test::settings(database.url()),
+        &FakeClock::new(),
+        &FakeMailer::default(),
+    )
+    .await;
 
     let (status, body) = server.get("/actuator/info/v1").await;
 
