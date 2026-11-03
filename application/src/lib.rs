@@ -13,6 +13,7 @@ pub mod telemetry;
 pub mod trace_context;
 pub mod url_signer;
 pub mod users;
+pub mod watch_progress;
 pub mod webhooks;
 
 #[cfg(test)]

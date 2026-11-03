@@ -4,11 +4,13 @@ use domain::Admin;
 use domain::AdminSession;
 use domain::Artwork;
 use domain::Episode;
+use domain::EpisodeWatchState;
 use domain::HeldRemoval;
 use domain::Inbox;
 use domain::Invite;
 use domain::MediaFile;
 use domain::Movie;
+use domain::MovieWatchState;
 use domain::Outbox;
 use domain::Season;
 use domain::Session;
@@ -96,6 +98,10 @@ pub trait DbScope {
         DbSet::new()
     }
 
+    fn episode_watch_states(&self) -> DbSet<EpisodeWatchState> {
+        DbSet::new()
+    }
+
     fn held_removals(&self) -> DbSet<HeldRemoval> {
         DbSet::new()
     }
@@ -113,6 +119,10 @@ pub trait DbScope {
     }
 
     fn movies(&self) -> DbSet<Movie> {
+        DbSet::new()
+    }
+
+    fn movie_watch_states(&self) -> DbSet<MovieWatchState> {
         DbSet::new()
     }
 

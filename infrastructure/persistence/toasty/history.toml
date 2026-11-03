@@ -109,3 +109,8 @@ snapshot_name = "20261103_102632_snapshot.toml"
 id = 3715521200510682525
 name = "20261103_102715_movies_radarr_id_unique.sql"
 snapshot_name = "20261103_102715_snapshot.toml"
+
+[[migrations]]
+id = 2855235943933101649
+name = "20261103_122237_watch_states.sql"
+snapshot_name = "20261103_122237_snapshot.toml"
