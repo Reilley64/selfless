@@ -32,6 +32,8 @@ If the concept you need isn't in the glossary yet, that's a signal: either you'r
 
 ## Flag ADR conflicts
 
+When you amend an ADR or rename a glossary term, search the spec that builds on it and the open pull request's description for the old wording, and update both.
+
 If your output contradicts an existing ADR page, surface it explicitly rather than silently overriding:
 
 > _Contradicts ADR-0007 (event-sourced orders), but worth reopening because…_
