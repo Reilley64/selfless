@@ -44,6 +44,15 @@ async fn serve_dir(app: &TestApp, web_dir: PathBuf) -> TestServer {
 }
 
 pub(crate) async fn signed_in_user(app: &TestApp, name: &str, password: &str) -> (Uuid, String) {
+    signed_in_on(app, name, password, ClientKind::Web).await
+}
+
+pub(crate) async fn signed_in_on(
+    app: &TestApp,
+    name: &str,
+    password: &str,
+    client_kind: ClientKind,
+) -> (Uuid, String) {
     create_user::call(
         &app.state,
         name.to_owned(),
@@ -56,7 +65,7 @@ pub(crate) async fn signed_in_user(app: &TestApp, name: &str, password: &str) ->
         &app.state,
         name.to_owned(),
         password.to_owned(),
-        ClientKind::Web,
+        client_kind,
         "Firefox on macOS".to_owned(),
         Uuid::new_v4(),
     )

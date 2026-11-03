@@ -212,6 +212,7 @@ impl From<PlayReason> for ReasonBody {
             ),
             PlayReason::AudioCodec(x) => ("audioCodec", Some(x)),
             PlayReason::AudioChannels(x) => ("audioChannels", Some(x.to_string())),
+            PlayReason::Subtitle(x) => ("subtitle", Some(x)),
             PlayReason::NoKeyframeIndex => ("noKeyframeIndex", None),
             PlayReason::ForcedHls => ("forcedHls", None),
         };
@@ -415,11 +416,13 @@ mod tests {
     use crate::test::add_show;
     use crate::test::movie;
     use crate::test::serve;
+    use crate::test::signed_in_on;
     use crate::test::signed_in_user;
     use application::ports::ReadKeyframes;
     use application::ports::persistence::DbScope;
     use domain::AudioTranscode;
     use domain::AudioTranscodeCodec;
+    use domain::ClientKind;
     use domain::Episode;
     use domain::HdrType;
     use domain::MediaFile;
@@ -891,6 +894,42 @@ mod tests {
         assert_eq!(subtitle_status, StatusCode::OK);
         assert_eq!(subtitle_headers[CONTENT_TYPE], "text/vtt");
         assert_eq!(subtitle, WEBVTT.as_bytes());
+    }
+
+    #[tokio::test]
+    async fn a_tv_session_remuxes_a_file_whose_text_subtitle_sits_beside_it() {
+        let app = TestApp::new().await;
+        let (_, token) = signed_in_on(&app, NAME, PASSWORD, ClientKind::AppleTv).await;
+        let (media_file_id, file) = add_media_file(&app, "mp4", Some(MP4)).await;
+        add_movie_playing(&app, media_file_id, true).await;
+        let mut db_context = app.state.db_context.clone();
+        db_context
+            .media_files()
+            .find(media_file_id)
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap()
+            .unwrap()
+            .subtitle_files()
+            .create()
+            .path(file.0.with_extension("en.srt").to_str().unwrap())
+            .language(Some("en".to_owned()))
+            .hearing_impaired(false)
+            .forced(false)
+            .exec(db_context.executor_mut())
+            .await
+            .unwrap();
+        let server = serve(&app).await;
+
+        let (status, playback) =
+            start_for(&server, &token, media_file_id, apple_tv_profile()).await;
+
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(playback["method"], "remux");
+        assert_eq!(
+            playback["reasons"],
+            json!([{ "kind": "subtitle", "value": "srt" }])
+        );
     }
 
     #[tokio::test]
