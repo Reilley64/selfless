@@ -1,6 +1,8 @@
 export { ActionButton } from "./ActionButton";
 export { clientId } from "./clientId";
 export { type DetailFact, DetailHeader, type DetailItem } from "./DetailHeader";
+export { EpisodeList } from "./EpisodeList";
+export { episodeLabel } from "./episodeLabel";
 export { FeaturedTitle } from "./FeaturedTitle";
 export { FocusGuide, type FocusGuideInstance } from "./FocusGuide";
 export { GridSelectors, useGridQuery } from "./GridSelectors";
@@ -13,6 +15,8 @@ export { playHref } from "./playHref";
 export { randomUuid } from "./randomUuid";
 export { runtimeLabel } from "./runtimeLabel";
 export { ServerInfo } from "./ServerInfo";
+export { ShowEpisodes, useShowSeason } from "./ShowEpisodes";
+export { ShowHeader, showPlayLabel } from "./ShowHeader";
 export { type PickerUser, type SessionStorage, startTvSession, startWebSession } from "./session";
 export { startTelemetry } from "./telemetry/startTelemetry";
 export { ArtworkImage, Tile } from "./Tile";

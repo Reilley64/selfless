@@ -19,7 +19,7 @@ export function useGridQuery(): { genre?: string; sort?: SortParameter } {
 
 type Option = { value?: string; label: string; count?: number };
 
-function Select({
+export function Select({
   label,
   current,
   options,
