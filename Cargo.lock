@@ -6288,7 +6288,12 @@ dependencies = [
  "application",
  "base64 0.22.1",
  "domain",
+ "http",
  "infrastructure",
+ "serde_json",
+ "test-app",
+ "test-fixtures",
+ "tokio",
  "topcoat",
  "tracing",
 ]
