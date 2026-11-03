@@ -11,8 +11,8 @@ A device check runs the TV app on the Android TV emulator or the tvOS Simulator,
 
 1. Create a scratch database (`docs/agents/migrations.md`, "Scratch databases").
 2. Pick a free port, one for which `lsof -iTCP:<port> -sTCP:LISTEN` prints nothing.
-3. Start the server from your worktree: `mise exec -- env DATABASE__URL=<scratch URL> HTTP__PORT=<port> cargo run`. It is up when `curl localhost:<port>/actuator/health/readiness/v1` reports `UP`. The TV app asks for this server's address on first launch. `README.md` gives the host name each platform uses.
-4. Seed users with `mise run dev:seed-users`, against the same database and your server's URL. It prints two users with their passwords, and a second run does not fail.
+3. Start the server from your worktree: `DATABASE__URL=<scratch URL> HTTP__PORT=<port> mise exec -- cargo run`. It is up when `curl localhost:<port>/actuator/health/readiness/v1` reports `UP`. The TV app asks for this server's address on first launch. `README.md` gives the host name each platform uses.
+4. Seed users with `DATABASE__URL=<scratch URL> mise run dev:seed-users http://localhost:<port>`. It prints the two users it makes and their passwords, and a second run does not fail.
 
 For a web check, run `bun run export` before you start the server. The server serves the export at `/`.
 
@@ -49,7 +49,7 @@ A class name used for the first time, or a token after `bun run generate:theme`,
 
 - Use T3 Code's browser preview on `http://localhost:<server port>`.
 - To check behaviour on an origin that is not a secure context, such as the homelab's `http://selfless.localdomain`, open `http://<LAN IP>:<server port>`. There `crypto.randomUUID` is undefined.
-- Without the T3 browser, use Playwright from a temporary directory outside the repository: `PATH=$(mise where -C <repo> bun)/bin:$PATH bun add playwright-core`, with Chromium from `~/Library/Caches/ms-playwright/` as `executablePath`. `bun add` inside the repository changes its `package.json`.
+- Without T3 Code's browser preview, use Playwright from a temporary directory outside the repository: `PATH=$(mise where -C <repo> bun)/bin:$PATH bun add playwright-core`, with Chromium from `~/Library/Caches/ms-playwright/` as `executablePath`. `bun add` inside the repository changes its `package.json`.
 
 ## 5. Clean up
 
@@ -58,7 +58,7 @@ Clean up after every check, also a failed one:
 1. Stop the server and Metro.
 2. Remove the port forward with `adb reverse --remove tcp:<metro port>`.
 3. Drop the scratch database.
-4. Delete `presentation/tv/android` or `presentation/tv/ios` if you built them. Each holds over 1 GB.
+4. Delete `presentation/tv/android` and `presentation/tv/ios` if you built them. The Android folder alone holds about 1.4 GB.
 5. Release the lock: `rm -rf ~/.device-locks/<udid or AVD name>`.
 
 ## TV behaviour to expect

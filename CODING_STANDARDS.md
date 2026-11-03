@@ -1,6 +1,6 @@
 # Coding standards
 
-The `code-review` step applies these rules to each diff. Each rule is a judgement call. `cargo fmt`, Clippy with `-D warnings`, `cargo deny`, TypeScript, ESLint, vacuum, Weaver, actionlint and `mise run lint:versions` own the mechanical rules. The ADRs and the Telemetry conventions page in Plane own the architecture decisions. Cite them when a diff breaks one.
+The `code-review` step applies these rules to each diff. Each rule is a judgement call. `cargo fmt`, Clippy with `-D warnings`, `cargo deny`, TypeScript, ESLint, vacuum, Weaver, actionlint, `mise run lint:versions` and `mise run lint:comments` own the mechanical rules. The ADRs and the Telemetry conventions page in Plane own the architecture decisions. Cite them when a diff breaks one.
 
 ## Code
 

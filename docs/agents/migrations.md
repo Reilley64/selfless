@@ -29,6 +29,6 @@ A model field with `#[column(type = "custom")]` panics when the PostgreSQL drive
 Use a scratch database to try a migration or to run a server of your own. The shared `selfless` database belongs to `mise run dev` and every other worktree.
 
 - Create one: `docker exec selfless-postgres-1 psql -U selfless -c 'CREATE DATABASE selfless_<ticket>'`.
-- Point a command at it with `mise exec -- env DATABASE__URL=postgres://selfless:selfless@localhost:5432/selfless_<ticket> <command>`. Put `env` after `mise exec --`, so the command gets the scratch URL whatever the shell exported. A plain `mise exec -- <command>` can run on the shared database.
+- Point a command at it by setting `DATABASE__URL` in its environment, such as `DATABASE__URL=postgres://selfless:selfless@localhost:5432/selfless_<ticket> mise exec -- <command>`. `mise.toml` keeps a value that is already set. A command run without one uses the shared database.
 - A migration that adds a `NOT NULL` column without a default fails on a table that has rows. selfless has no released database, so recreate the scratch database, or delete the rows first.
 - Drop it when you are done: `docker exec selfless-postgres-1 psql -U selfless -c 'DROP DATABASE selfless_<ticket> WITH (FORCE)'`.

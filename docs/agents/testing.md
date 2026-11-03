@@ -26,7 +26,7 @@
 
 ## Tracing, logs and metrics
 
-- Install a test's subscriber with `test_fixtures::set_default_subscriber`. tracing-core caches whether a span or event is enabled the first time any thread reaches it. A test without a subscriber can then cache a callsite as disabled for a test that has one. The fixture keeps a second dispatcher registered, so tracing-core asks every subscriber.
+- Install a test's subscriber with `test_fixtures::set_default_subscriber`. Clippy bans `tracing::subscriber::set_default`. tracing-core caches whether a span or event is enabled the first time any thread reaches it. A test without a subscriber can then cache a callsite as disabled for a test that has one. The fixture keeps a second dispatcher registered, so tracing-core asks every subscriber.
 - Install the subscriber after `TestApp::new()` or `mock_db_context()`, because Toasty logs a warning about the SQLite pool while it builds the mocked database. `TestServer::serve` runs the server on the test's current-thread runtime, so the subscriber also sees the server task's spans and logs.
 - Capture log text with `test_fixtures::Logs`: pass `move || logs.clone()` to a fmt layer's `with_writer`, then read `logs.text()`. Filter with `EnvFilter::new("info")`, because at `trace` Toasty logs the values it binds.
 - An `error!` event inside a span already sets that span's status to Error, so a test of a failure span checks `error.type`, not only the status.
