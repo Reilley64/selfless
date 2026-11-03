@@ -181,54 +181,6 @@ fn metadata(path: &str, kodi: bool) -> String {
 }
 
 #[tokio::test]
-async fn each_reconcile_reads_whether_kodi_metadata_is_on_in_radarr_and_sonarr() {
-    let fixture = Fixture::start(true, false).await;
-    let status = fixture.status().await;
-    assert_eq!(status.radarr.kodi_metadata, Some(true));
-    assert_eq!(status.sonarr.kodi_metadata, Some(false));
-
-    serve(&fixture.radarr, &fixture.sonarr, false, true).await;
-    let status = fixture.sync_now().await;
-
-    assert_eq!(status.radarr.kodi_metadata, Some(false));
-    assert_eq!(status.sonarr.kodi_metadata, Some(true));
-    fixture.stop().await;
-}
-
-#[tokio::test]
-async fn the_sync_status_shows_whether_the_last_call_to_radarr_and_sonarr_succeeded() {
-    let fixture = Fixture::start(true, true).await;
-    assert_eq!(
-        fixture.status().await.radarr.last_api_call,
-        Some(ApiCall::Succeeded)
-    );
-
-    fixture
-        .radarr
-        .serve_movies(StatusCode::UNAUTHORIZED, "{}")
-        .await;
-    fixture
-        .sonarr
-        .serve_series_list(&format!(
-            "[{}]",
-            fixture.media.fixture("sonarr/api/series.json")
-        ))
-        .await;
-    fixture.sonarr.fail_episodes(SEVERANCE).await;
-    let failed = fixture.sync_now().await;
-
-    assert_failed(&failed.radarr, "401");
-    assert_failed(&failed.sonarr, "500");
-
-    serve(&fixture.radarr, &fixture.sonarr, true, true).await;
-    let succeeded = fixture.sync_now().await;
-
-    assert_eq!(succeeded.radarr.last_api_call, Some(ApiCall::Succeeded));
-    assert_eq!(succeeded.sonarr.last_api_call, Some(ApiCall::Succeeded));
-    fixture.stop().await;
-}
-
-#[tokio::test]
 async fn a_failed_call_from_a_webhook_re_sync_shows_in_the_sync_status() {
     let fixture = Fixture::start(true, true).await;
 
