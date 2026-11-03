@@ -1,19 +1,27 @@
 import type { Tile, TilePage } from "@selfless/api-client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, renderRouter, screen } from "expo-router/testing-library";
-import { Platform } from "react-native";
+import { Platform, View } from "react-native";
 import { MoviesGrid } from "./GridPage";
 
 beforeAll(() => {
   Object.defineProperty(globalThis, "location", { value: new URL("http://localhost:8081/"), configurable: true });
 });
 
+const view = (View as unknown as { prototype: { requestTVFocus?: () => void } }).prototype;
+let focused: string[];
+
 beforeEach(() => {
   jest.spyOn(Platform, "isTV", "get").mockReturnValue(true);
+  focused = [];
+  view.requestTVFocus = function (this: { props: { accessibilityLabel?: string } }) {
+    focused.push(this.props.accessibilityLabel ?? "");
+  };
 });
 
 afterEach(() => {
   jest.restoreAllMocks();
+  delete view.requestTVFocus;
 });
 
 jest.mock("./FocusGuide", () => {
@@ -71,6 +79,12 @@ async function renderMovies() {
   await screen.findByLabelText("Movie 1");
 }
 
+test("on TV, the first tile takes focus when the first page loads", async () => {
+  await renderMovies();
+
+  expect(focused).toEqual(["Movie 1"]);
+});
+
 test("on TV, choosing a sort above the grid reloads it from the first page", async () => {
   await renderMovies();
 
@@ -79,4 +93,5 @@ test("on TV, choosing a sort above the grid reloads it from the first page", asy
 
   expect(await screen.findByLabelText("Movie 9")).toBeOnTheScreen();
   expect(screen.queryByLabelText("Movie 1")).not.toBeOnTheScreen();
+  expect(focused).toEqual(["Movie 1"]);
 });

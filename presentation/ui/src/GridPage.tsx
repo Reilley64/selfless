@@ -1,8 +1,8 @@
 import { type TilePage, useListMoviesInfinite, useListShowsInfinite } from "@selfless/api-client";
 import type { InfiniteData, UseInfiniteQueryResult } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import { useEffect, useRef } from "react";
-import { Platform, useWindowDimensions } from "react-native";
+import { useRef } from "react";
+import { type View as HostView, Platform, useWindowDimensions } from "react-native";
 import { Text, View } from "react-native-css/components";
 import { FocusGuide, type FocusGuideInstance } from "./FocusGuide";
 import { GridSelectors, useGridQuery } from "./GridSelectors";
@@ -45,16 +45,14 @@ function GridPage({
   const router = useRouter();
   const { genre, sort } = useGridQuery();
   const { width } = useWindowDimensions();
-  const grid = useRef<FocusGuideInstance>(null);
   const focusOnLoad = useRef(true);
   const tiles = query.data?.pages.flatMap((page) => (page.status === 200 ? page.data.tiles : [])) ?? [];
-  const loaded = tiles.length > 0;
-  useEffect(() => {
-    if (loaded && focusOnLoad.current) {
+  const focusFirstTile = (tile: HostView | null) => {
+    if (tile && focusOnLoad.current) {
       focusOnLoad.current = false;
-      grid.current?.requestTVFocus();
+      (tile as unknown as FocusGuideInstance).requestTVFocus();
     }
-  }, [loaded]);
+  };
   const loadMore = () => {
     if (query.hasNextPage && !query.isFetchingNextPage) {
       void query.fetchNextPage();
@@ -80,7 +78,7 @@ function GridPage({
           </View>
           {error}
         </View>
-        <FocusGuide autoFocus ref={grid} className="flex-1 pr-[50px] pl-[140px]">
+        <FocusGuide autoFocus className="flex-1 pr-[50px] pl-[140px]">
           <TileGrid
             key={`${genre} ${sort}`}
             tiles={tiles}
@@ -88,6 +86,7 @@ function GridPage({
             onEndReached={loadMore}
             onPressTile={(tile) => router.push(tilePath(tile))}
             header={<View className="h-4" />}
+            firstTileRef={focusFirstTile}
           />
         </FocusGuide>
       </View>

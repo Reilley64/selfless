@@ -1,7 +1,7 @@
 import type { Tile as TileData } from "@selfless/api-client";
 import { FlashList } from "@shopify/flash-list";
-import type { ReactElement } from "react";
-import { Platform } from "react-native";
+import type { ReactElement, Ref } from "react";
+import { type View as HostView, Platform } from "react-native";
 import { View } from "react-native-css/components";
 import { Tile } from "./Tile";
 
@@ -13,12 +13,14 @@ export function TileGrid({
   onEndReached,
   onPressTile,
   header,
+  firstTileRef,
 }: {
   tiles: TileData[];
   numColumns: number;
   onEndReached: () => void;
   onPressTile?: (tile: TileData) => void;
   header?: ReactElement;
+  firstTileRef?: Ref<HostView>;
 }) {
   return (
     <FlashList
@@ -31,6 +33,7 @@ export function TileGrid({
       renderItem={({ item, index }) => (
         <View className={Platform.isTV ? "px-[10px] pb-tile-tv-gap" : "px-2 pb-8"}>
           <Tile
+            ref={index === 0 ? firstTileRef : undefined}
             tile={item}
             onPress={onPressTile && (() => onPressTile(item))}
             onFocus={() => {

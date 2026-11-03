@@ -1,6 +1,6 @@
 import type { Artwork, Tile as TileData } from "@selfless/api-client";
-import { useState } from "react";
-import { type ImageResizeMode, PixelRatio, Platform } from "react-native";
+import { type Ref, useState } from "react";
+import { type ImageResizeMode, PixelRatio, Platform, type View as HostView } from "react-native";
 import { Image, Pressable, Text, View } from "react-native-css/components";
 import { imageUrl } from "./imageUrl";
 
@@ -31,10 +31,12 @@ export function ArtworkImage({
 }
 
 export function Tile({
+  ref,
   tile,
   onPress,
   onFocus,
 }: {
+  ref?: Ref<HostView>;
   tile: TileData;
   onPress?: () => void;
   onFocus?: () => void;
@@ -42,6 +44,7 @@ export function Tile({
   const { fanart, logo } = tile.images;
   return (
     <Pressable
+      ref={ref}
       className={`aspect-video w-full justify-end overflow-hidden rounded-medium bg-surface p-3 ${Platform.isTV ? "transition-transform focus:scale-107" : ""}`}
       aria-label={tile.title}
       onPress={onPress}
